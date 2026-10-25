@@ -14,7 +14,7 @@
     "migrate:up": "node scripts/migrate.js up",
     "migrate:down": "node scripts/migrate.js down",
     "lint": "node scripts/check-foundation.js",
-    "test": "NODE_ENV=test node --no-warnings --test tests/*.test.js",
+    "test": "NODE_ENV=test node --no-warnings --test --test-concurrency=1 tests/*.test.js",
     "verify": "npm run lint && npm test"
   },
   "dependencies": {
