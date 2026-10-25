@@ -8,7 +8,7 @@ const ROOT_DIR = path.resolve(__dirname, '..', '..');
 
 /**
  * Lightweight zero-dependency .env loader so environments work cleanly
- * across local dev, CI, cPanel Passenger, and VPS without extra runtime deps.
+ * across local dev, CI, cPanel Passenger, and SSH CLI scripts.
  * Existing process.env variables always take precedence over .env file entries.
  */
 function loadDotEnvFile(envFilePath = path.join(ROOT_DIR, '.env')) {
@@ -72,6 +72,17 @@ function buildConfig(overrides = {}) {
     sessionSecret = crypto.randomBytes(32).toString('hex');
   }
 
+  const defaultDbClient = nodeEnv === 'production' ? 'mysql' : 'sqlite';
+  const dbClient = String(raw.DB_CLIENT || defaultDbClient).trim().toLowerCase();
+  if (!['mysql', 'sqlite'].includes(dbClient)) {
+    throw new Error(`Invalid DB_CLIENT "${dbClient}". Expected "mysql" or "sqlite".`);
+  }
+  if (nodeEnv === 'production' && dbClient !== 'mysql') {
+    throw new Error(
+      'PRODUCTION DATABASE ERROR: SQLite is prohibited in production. Set DB_CLIENT=mysql for BestWebHostBD MySQL.'
+    );
+  }
+
   const defaultSqliteFile =
     nodeEnv === 'test'
       ? path.join(ROOT_DIR, 'data', 'mrtumi.test.db')
@@ -80,6 +91,10 @@ function buildConfig(overrides = {}) {
   const sqlitePath = raw.SQLITE_PATH
     ? path.resolve(ROOT_DIR, String(raw.SQLITE_PATH))
     : defaultSqliteFile;
+
+  const uploadDir = raw.UPLOAD_DIR
+    ? path.resolve(ROOT_DIR, String(raw.UPLOAD_DIR))
+    : path.join(ROOT_DIR, 'public', 'uploads');
 
   const seedDemoData =
     nodeEnv === 'production'
@@ -103,14 +118,17 @@ function buildConfig(overrides = {}) {
     currencyCode: String(raw.CURRENCY_CODE || 'BDT'),
     currencySymbol: String(raw.CURRENCY_SYMBOL || '৳'),
     sessionSecret,
+    uploadDir,
     db: Object.freeze({
-      client: String(raw.DB_CLIENT || 'sqlite').toLowerCase(),
+      client: dbClient,
       sqlitePath,
       host: String(raw.DB_HOST || '127.0.0.1'),
       port: Number(raw.DB_PORT || 3306),
       name: String(raw.DB_NAME || ''),
       user: String(raw.DB_USER || ''),
       password: String(raw.DB_PASSWORD || ''),
+      charset: String(raw.DB_CHARSET || 'utf8mb4'),
+      timezone: String(raw.DB_TIMEZONE || '+00:00'),
       connectionLimit: Number(raw.DB_CONNECTION_LIMIT || 10),
     }),
     seedDemoData,

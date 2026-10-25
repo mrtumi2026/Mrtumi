@@ -1,47 +1,52 @@
-# BESTWEBHOSTBD & cPANEL COMPATIBILITY MATRIX
+# BESTWEBHOSTBD HOSTING & cPANEL COMPATIBILITY SPECIFICATION
 **Project:** Mr. Tumi Grocery & Gift  
-**Hosting Provider:** BestWebHostBD (`bestwebhostbd.com` / `my.bestwebhostbd.com`)  
-**Owner's Purchased Package:** `UNVERIFIED` (`OWNER APPROVAL REQUIRED`)  
-**Last Audited:** 2026-10-25 (`Asia/Dhaka`)  
+**Hosting Provider:** BestWebHostBD  
+**Last Updated:** 2026-10-25 (`Asia/Dhaka`)  
 
 ---
 
-## 1. Executive Summary: Why Package Verification Is Mandatory Before Locking Phase 03
+## 1. Confirmed vs. Unverified Hosting Capabilities
 
-Publicly published product specifications from **BestWebHostBD** show that **Node.js support varies sharply across their hosting tiers**—and even contains conflicting marketing text on certain BDIX plan pages:
+Per engineering governance rules, capabilities confirmed by BestWebHostBD support through the owner are strictly separated from runtime, database-version, and operational details that have **not yet been independently verified** on the target server.
 
-| BestWebHostBD Product Line | Public URL Inspected | Advertised Control Panel & OS | Advertised Database | Advertised Node.js Support |
+### 1.1 Confirmed Capabilities (Owner-Confirmed via BestWebHostBD Support)
+
+| # | Capability | Evidence Source | Status | Architectural Impact |
 |---|---|---|---|---|
-| **Standard Web Hosting** (`Basic ৳1,699/yr`, `Plus ৳2,199/yr`, `Business ৳2,999/yr`) | `bestwebhostbd.com/hosting/web-hosting/` | cPanel + CloudLinux + LiteSpeed (`1–2 GB RAM`, `100k–300k inodes`) | MySQL (`5 / 10 / 30` DBs) | **`NO` across all 3 tiers** (`PHP, Laravel: YES`, `Node js: NO`) |
-| **Budget Shared Hosting** (`Value`, `Standard`) & **Singapore Webhost** (`Basic SG`–`Business SG`) | `my.bestwebhostbd.com/index.php/store/budget-shared-hosting`, `/store/singapore-webhost` | cPanel + LiteSpeed (`1–4 GB RAM`, `100k–500k inodes`) | MySQL (`3–100` DBs) | **Not listed** on specification cards |
-| **BDIX Web Hosting** (`Basic ৳1,999/yr`, `Plus ৳2,499/yr`, `Advance ৳3,499/yr`, `Business ৳4,999/yr`) | `bestwebhostbd.com/hosting/bdix-web-host/` & `my.bestwebhostbd.com/index.php/store/bdix-webhost` | cPanel + CloudLinux + LiteSpeed (`1–4 GB RAM`, `100k–500k inodes`) | MySQL (`10–150` / `Unlimited` DBs) | **Conflicting public docs:** Main spec table lists `NO` for `Basic`, `Plus`, `Advance` and **`YES` only for `Business (৳4,999/yr)`**, while WHMCS summary cards list `"Node js support"` across BDIX tiers |
-| **Premium Hosting** (`Alfa Pro ৳3,000/yr`, `Alfa Plus ৳4,000/yr`, `Alfa Swift ৳5,000/yr`, `Alfa Business ৳8,000/yr`) | `bestwebhostbd.com/hosting/premium-web-host/` | cPanel + CloudLinux (`2 GB RAM`, `2 Core CPU`) | Unlimited MySQL | **`YES` across all 4 Alfa tiers** |
-| **USA Webhost** (`Basic ৳1,500/yr`–`Business ৳4,000/yr`) | `bestwebhostbd.com/hosting/usa-web-host/` | cPanel + CloudLinux (`2 GB RAM`, `2 Core CPU`, `200k–800k inodes`) | MySQL (`10–150` DBs) | **`YES` across all 4 tiers** |
-| **Turbo Cloud Hosting** (`Turbo Lite`–`Turbo Advance` / `MEGA ৳9,999/yr`–`SWIFT ৳19,999/yr`) | `bestwebhostbd.com/hosting/turbo-hosting/`, `my.bestwebhostbd.com/index.php/store/cloud-web-hosting` | cPanel + CloudLinux + LiteSpeed (`2 GB RAM`, `30 Entry Processes`, `100 NPROC`) | Unlimited MySQL + phpMyAdmin | **`YES` across all Turbo tiers** |
-| **VPS Hosting** (`VPS1 ৳2,500/mo`–`VPS-05 ৳15,000/mo`) | `bestwebhostbd.com/hosting/vps-hosting/` | Full Root Access (`1–8 vCPU`, `2–16 GB RAM`, `60–350 GB NVMe`) | Self-managed MySQL / PostgreSQL / SQLite | **Full Root Support** (any Node.js LTS, PM2/systemd, Docker, Nginx) |
-
-> **Critical Rule Applied:** Provider-wide marketing pages **do not** prove what is enabled on the owner's specific purchased account. Until verified in the owner's dashboard, every account-specific capability below remains **`UNVERIFIED`**.
+| **C-01** | **Node.js Application Support** | Owner confirmation from BestWebHostBD support | **`CONFIRMED` (Owner-Provided)** | Existing **Node.js + Express + EJS modular monolith** is retained; no PHP/Laravel framework rewrite is needed. |
+| **C-02** | **SSH Terminal Access** | Owner confirmation from BestWebHostBD support | **`CONFIRMED` (Owner-Provided)** | Enables Git-based release pulls, CLI dependency installation (`npm ci --omit=dev`), non-interactive database migrations, and diagnostic health checks. |
+| **C-03** | **MySQL Is the Only Supported Database** | Owner confirmation from BestWebHostBD support | **`CONFIRMED` (Owner-Provided)** | **MySQL (`InnoDB`, `utf8mb4`) is locked as the mandatory production database.** PostgreSQL is ruled out, and **SQLite must NOT be used in production**. |
 
 ---
 
-## 2. Account-Level Hosting Requirements & Verification Matrix
+### 1.2 Still-Unverified Hosting Details (`UNVERIFIED` Until Checked on Server)
 
-| # | Hosting Requirement | Why Mr. Tumi Needs It | Provider-Wide Evidence vs Current Prototype Reality | Account Status | Owner Action Required (Do NOT share passwords) |
-|---|---|---|---|---|---|
-| 1 | **Exact Purchased Hosting Package** | Determines whether Node.js is included at all or requires a plan upgrade / stack change | BestWebHostBD sells PHP-only shared plans (`Web Hosting Basic/Plus/Business`, lower `BDIX` spec table) alongside Node-enabled cPanel plans (`Alfa`, `Turbo`, `USA`, `BDIX Business`) and `VPS` | **`UNVERIFIED`** | Log in to `my.bestwebhostbd.com` → **Services → My Services** and copy the exact product/plan name (e.g., `BDIX Business`, `Alfa Pro`, `Web Hosting Plus`, etc.). |
-| 2 | **Supported Node.js Versions** | Current prototype imports native `node:sqlite`, which **requires Node.js `>= 22.5.0`**. CloudLinux `alt-nodejs` on many cPanel hosts stops at Node `18` or `20`! | BestWebHostBD pages do not publish exact `alt-nodejs` selector versions (`18`, `20`, or `22`). If cPanel only offers Node `18` or `20`, `node:sqlite` will fail at boot unless Phase 03 switches production DB driver to pure-JS `mysql2`. | **`UNVERIFIED`** | In cPanel → **Software** section, check if **Setup Node.js App** exists. Click **Create Application** (without saving) and list the versions shown in the **Node.js version** dropdown. |
-| 3 | **Node.js Application Startup Method** | Determines whether app boots via Phusion Passenger / LiteSpeed `lsnode` (`app.js`) or systemd/PM2 (`server.js`) | CloudLinux cPanel plans use **Setup Node.js App** (Passenger / `lsnode` binding internal socket/port via `app.js`). Background `nohup`/`pm2` daemons on shared CloudLinux are killed by LVE process reapers. Phase 02 added `app.js` for Passenger compatibility. | **`UNVERIFIED`** | Confirm whether cPanel uses **Setup Node.js App** (`Application startup file` field) or whether the account is an unmanaged/managed **VPS** with root service control. |
-| 4 | **Persistent SQLite Write Support** | Prototype currently writes to `./data/pholbazar.db` using SQLite WAL (`.db-wal` / `.db-shm` shared memory mmap) | On shared CloudLinux + Passenger: (a) multiple worker processes cause `SQLITE_BUSY` lock contention on financial/order writes; (b) cPanel weekly file backups copy `.db` mid-write without WAL checkpointing; (c) C++ `better-sqlite3` often fails `node-gyp` build inside CageFS. | **`UNVERIFIED`** | Do **not** rely on SQLite for multi-process cPanel production until verified; confirm **MySQL** availability below so Phase 03 can target MySQL in production while keeping SQLite for zero-daemon local/CI tests. |
-| 5 | **MySQL / PostgreSQL Availability** | Production ACID transactions, row-level locking (`SELECT ... FOR UPDATE`), `BIGINT` paisa ledger, and safe cPanel backups | BestWebHostBD advertises **MySQL (`5` to `Unlimited` DBs) + phpMyAdmin** on every cPanel plan. **PostgreSQL is NOT advertised** on any BestWebHostBD shared/cPanel plan. | **`UNVERIFIED`** | In cPanel → **Databases**, confirm whether **MySQL® Databases** / **MySQL® Database Wizard** (and/or **PostgreSQL Databases**) is visible and note remaining database quota. |
-| 6 | **SSH / Terminal Access & Package Installation Restrictions** | Needed to run `git pull`, `npm ci --omit=dev` (or `"Run NPM Install"` button), and DB migrations | BestWebHostBD advertises `YES SSH Access` on most plans, with CloudLinux limits (`1–2 GB RAM`, `100–150 Max Processes`, `100k–500k inodes`). Heavy `node_modules` trees or native C++ compilation can hit `NPROC` / memory / inode caps. | **`UNVERIFIED`** | In cPanel → **Advanced**, check whether **Terminal** (or **SSH Access**) is visible, and check `"Run NPM Install"` inside **Setup Node.js App**. |
-| 7 | **Cron & Background Worker Capabilities** | Needed for BulkSMSBD retry queue, order OTP expiry cleanup, incomplete-checkout sweep, and courier tracking sync | Passenger on shared cPanel **suspends idle Node.js processes** after inactivity, meaning in-memory `setInterval()` timers stop running when traffic is quiet! cPanel **Cron Jobs** running a CLI script (`node scripts/cron-runner.js`) every `5` minutes is required on shared hosting. | **`UNVERIFIED`** | In cPanel → **Advanced → Cron Jobs**, confirm Cron Jobs is enabled and check whether `*/5 * * * *` (every 5 minutes) is permitted by host policy. |
-| 8 | **Resource & Process Limits (LVE / Inodes)** | Prevents `503 Service Unavailable` / `508 Resource Limit Is Reached` during Flash Sales or campaign spikes | Public BestWebHostBD tables show `1–4 GB RAM`, `1–4 CPU Cores`, `20–50 Entry Processes`, `100–150 NPROC`, `10–100 MB/s I/O`, and `100,000–800,000 Inodes`. Current lean Express app uses only `5` runtime npm packages (~`65–95 MB` RAM, `<1,500` inodes). | **`UNVERIFIED`** | In cPanel right-hand **Statistics** sidebar, read: **Physical Memory Usage**, **Entry Processes**, **Number of Processes**, **I/O Usage**, and **File Usage (Inodes)** limits. |
-| 9 | **Persistent Uploads, Backups & Outbound API Connectivity** | Product/banner/complaint uploads must survive deployments; server must reach Bangladesh courier, payment, fraud, SMS & Meta CAPI HTTPS endpoints | BestWebHostBD advertises Weekly Automatic Backups (Basic/Plus/Business/BDIX) or Daily 30-Day Backups (Alfa/Turbo). Some shared hosts block outbound custom ports (`587`/`2525` SMTP) or rate-limit external `443` cURL/fetch calls via CSF firewall. | **`UNVERIFIED`** | Confirm backup frequency on your plan, and once deployed to staging in Phase 10–13, run our built-in outbound connectivity health probe (`443` HTTPS to Steadfast/Pathao/RedX/bKash/ShurjoPay/UddoktaPay/BDCourier/BulkSMSBD + SMTP). |
+None of the items below have been assumed or fabricated. Our Phase 02 architecture (`docs/ARCHITECTURE.md`) and MySQL migration plan (`docs/MYSQL_MIGRATION_PLAN.md`) are engineered defensively so they remain compatible across common cPanel/CloudLinux variations until verified:
+
+| # | Capability / Parameter | Why It Matters | Current Status | Safe Engineering Mitigation & Verification Action |
+|---|---|---|---|---|
+| **U-01** | **Exact Node.js Runtime Version(s)** (`18.x`, `20.x`, or `22.x`) | Prototype `src/db/database.js` uses `node:sqlite` (`Node >= 22.5.0`). If the server provides Node `18` or `20`, top-level `require('node:sqlite')` would fail at startup. | **`UNVERIFIED`** | **Mitigation:** Phase 03 decouples production boot from `node:sqlite` by using pure-JS `mysql2/promise` (supports Node `>= 18.18 LTS`, `20 LTS`, and `22 LTS`) and only lazy-loading `node:sqlite` in local Node 22 test runs.<br>**Owner/SSH Check:** Run `node -v` and check available versions in cPanel **Setup Node.js App** (or `ls /opt/alt/alt-nodejs*/root/usr/bin/node`). |
+| **U-02** | **Exact MySQL / MariaDB Server Version** (`MySQL 5.7` vs `MySQL 8.0+` vs `MariaDB 10.3–10.11`) | Expression defaults (`DEFAULT (CURRENT_DATE)`), enforced `CHECK` constraints, `JSON` defaults, and `CTE`/window features differ across MySQL `5.7`, MySQL `8.0`, and MariaDB `10.x`. | **`UNVERIFIED`** | **Mitigation:** `docs/MYSQL_MIGRATION_PLAN.md` uses portable `InnoDB` + `utf8mb4_unicode_ci` DDL (`BIGINT`, `VARCHAR`, `LONGTEXT`, `DATETIME DEFAULT CURRENT_TIMESTAMP`) compatible with **MySQL 5.7+, MySQL 8.0+, and MariaDB 10.3+**.<br>**Owner/SSH Check:** Run `mysql --version` or `SELECT VERSION();` in phpMyAdmin/MySQL CLI. |
+| **U-03** | **Application Process Manager & Startup Mechanism** | Shared CloudLinux cPanel typically uses **Phusion Passenger / LiteSpeed `lsnode`** (`Setup Node.js App` + `app.js`), which manages port binding automatically and kills unauthorized background daemons (`pm2`/`nohup`). | **`UNVERIFIED`** | **Mitigation:** Repository includes both `app.js` (Passenger/`lsnode` entry) and `server.js` (standalone HTTP entry honoring `process.env.PORT`).<br>**Owner Check:** Confirm whether cPanel **Software → Setup Node.js App** manages the app lifecycle. |
+| **U-04** | **Persistent Upload Directory & Symlink Rules** | Uploaded product/banner/complaint files inside an app release folder can be overwritten during clean deployments if not stored in a persistent path outside the release directory. | **`UNVERIFIED`** | **Mitigation:** `UPLOAD_DIR` is environment-configurable (`src/config/env.js`), allowing storage in `/home/<user>/mrtumi_storage/uploads` symlinked or served safely.<br>**Owner/SSH Check:** Verify symlink & read/write permissions inside the cPanel home directory prior to Phase 05/06 media rollout. |
+| **U-05** | **Cron Job Availability & Minimum Frequency** | Passenger suspends idle Node.js web processes when traffic is quiet, pausing in-memory `setInterval` timers (affecting SMS retries, OTP expiry cleanup, and courier status sync). | **`UNVERIFIED`** | **Mitigation:** Design scheduled tasks as idempotent CLI jobs (`scripts/cron-runner.js`) triggered by **cPanel → Cron Jobs** rather than relying on in-memory timers.<br>**Owner Check:** Confirm **Cron Jobs** icon in cPanel and minimum allowed interval (e.g., `*/5 * * * *`). |
+| **U-06** | **CloudLinux LVE Resource & Inode Quotas** | RAM (`1–4 GB`), Entry Processes (`20–50`), Max Processes (`NPROC 100–150`), I/O, and Inode caps (`100k–500k`) govern MySQL connection pool size and npm install behavior. | **`UNVERIFIED`** | **Mitigation:** Keep dependencies lean (avoid bloated frontend build trees) and default `DB_CONNECTION_LIMIT=10` so MySQL `max_user_connections` is never exhausted.<br>**Owner Check:** Inspect cPanel right-hand **Statistics** panel (RAM, Entry Processes, NPROC, Inodes). |
+| **U-07** | **Outbound API Egress & SMTP Ports** | Server must make outbound HTTPS (`443`) requests to Steadfast, Pathao, RedX, bKash, ShurjoPay, UddoktaPay, BDCourier, BulkSMSBD, and Meta CAPI, plus SMTP (`465`/`587`). | **`UNVERIFIED`** | **Mitigation:** Phase 10–13 & 18 include admin connectivity self-tests that report exact HTTP/TLS/port failures honestly.<br>**Owner/SSH Check:** Test `curl -I https://portal.packzy.com` via SSH during staging setup. |
+| **U-08** | **Host Backup Schedule & MySQL Point-in-Time Recovery** | Provider-level weekly/daily backups may not match e-commerce RPO requirements for orders and financial ledgers. | **`UNVERIFIED`** | **Mitigation:** Implement our own scheduled `mysqldump` + uploads archive script (`scripts/backup.sh` in Phase 20) alongside cPanel backups. |
 
 ---
 
-## 3. Security Notice on Credentials
+## 2. Non-Destructive Read-Only SSH Discovery Commands (For Owner Reference)
 
-Per Master Plan Rules 7–8 and Phase 02 Step 1.5:
-- **Never** send your cPanel username/password, WHMCS password, SSH private key, or MySQL root/user password in chat or commit them to GitHub.
-- Only share **non-sensitive plan facts** (plan name, Node.js version list from dropdown, whether MySQL & Cron icons exist, and LVE resource numbers from the cPanel Statistics sidebar).
+Because **SSH access is confirmed**, you can verify `U-01` through `U-07` in under 30 seconds by running the following **read-only** command in your BestWebHostBD SSH terminal (**never paste passwords or secret keys into chat**):
+
+```bash
+echo "=== OS & Kernel ===" && uname -a
+echo "=== Default Node & NPM ===" && (node -v 2>/dev/null || echo "not in default PATH") && (npm -v 2>/dev/null || true)
+echo "=== CloudLinux Node Selector Versions ===" && ls -d /opt/alt/alt-nodejs* 2>/dev/null || echo "no /opt/alt/alt-nodejs found"
+echo "=== MySQL / MariaDB Client Version ===" && mysql --version 2>/dev/null || echo "mysql client not in PATH"
+echo "=== Cron Crontab Check ===" && (crontab -l 2>/dev/null | wc -l) || echo "crontab restricted"
+echo "=== Disk & Inode Quota ===" && quota -s 2>/dev/null || df -h ~
+```
+
+Sharing only that non-sensitive version output before or during Phase 03 will let us lock the exact Node selector path and MySQL dialect version with 100% precision.

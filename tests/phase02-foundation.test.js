@@ -63,10 +63,22 @@ test('env.js enforces Bangladesh defaults (Asia/Dhaka, BDT, bn/en) and rejects w
 
   const prodCfg = buildConfig({
     NODE_ENV: 'production',
+    DB_CLIENT: 'mysql',
     SESSION_SECRET: 'a'.repeat(48),
   });
   assert.equal(prodCfg.isProduction, true);
+  assert.equal(prodCfg.db.client, 'mysql');
   assert.equal(prodCfg.seedDemoData, false);
+
+  assert.throws(
+    () =>
+      buildConfig({
+        NODE_ENV: 'production',
+        DB_CLIENT: 'sqlite',
+        SESSION_SECRET: 'a'.repeat(48),
+      }),
+    /SQLite is prohibited in production/
+  );
 });
 
 describeServerBoot();

@@ -88,6 +88,7 @@ const requiredDocs = [
   'docs/PHASE_01_REFERENCE_AUDIT.md',
   'docs/ARCHITECTURE.md',
   'docs/CPANEL_COMPATIBILITY.md',
+  'docs/MYSQL_MIGRATION_PLAN.md',
 ];
 for (const rel of requiredDocs) {
   const full = path.join(ROOT, rel);
