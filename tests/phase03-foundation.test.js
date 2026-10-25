@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const http = require('http');
 const express = require('express');
@@ -256,7 +257,7 @@ describe('Phase 03 — Migration Loader, Validator, Logger Redaction, CSRF, Rate
     assert.ok(totalCreateTables >= 70, `Expected >= 70 InnoDB tables, got ${totalCreateTables}`);
 
     // Reject migration directory with missing .down.sql
-    const tmpDir = fs.mkdtempSync(path.join(__dirname, '..', 'data', 'mig-test-'));
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mrtumi-mig-test-'));
     try {
       fs.writeFileSync(path.join(tmpDir, '0001_broken.up.sql'), 'CREATE TABLE t (id INT);');
       assert.throws(

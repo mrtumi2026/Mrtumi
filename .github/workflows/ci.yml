@@ -73,4 +73,11 @@ jobs:
           npm run migrate:down -- 3
 
       - name: Run automated unit, portal regression & live MySQL 8.0 test suites
-        run: npm test
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee /tmp/test-output.log || {
+            grep -E "(not ok|error:|expected:|actual:)" /tmp/test-output.log | head -n 20 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            exit 1
+          }

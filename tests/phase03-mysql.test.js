@@ -12,6 +12,7 @@
  */
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const bcrypt = require('bcryptjs');
 const { test, describe, before, after } = require('node:test');
@@ -123,9 +124,9 @@ describe('Phase 03 — Real MySQL 8.0 Schema, Migrations, Constraints, Transacti
     assert.equal(statusAfterUp.every((s) => s.applied), true);
 
     const tableMeta = await dbClient.queryAll(
-      `SELECT table_name AS name, engine, table_collation AS collation
+      `SELECT TABLE_NAME AS name, ENGINE AS engine, TABLE_COLLATION AS collation
        FROM information_schema.tables
-       WHERE table_schema = ? AND table_name <> 'schema_migrations'`,
+       WHERE TABLE_SCHEMA = ? AND TABLE_NAME <> 'schema_migrations'`,
       [testDbConfig.name]
     );
     assert.equal(tableMeta.length, 71, 'All 71 domain tables must be created');
@@ -147,9 +148,9 @@ describe('Phase 03 — Real MySQL 8.0 Schema, Migrations, Constraints, Transacti
     );
 
     const remainingTables = await dbClient.queryAll(
-      `SELECT table_name AS name
+      `SELECT TABLE_NAME AS name
        FROM information_schema.tables
-       WHERE table_schema = ? AND table_name <> 'schema_migrations'`,
+       WHERE TABLE_SCHEMA = ? AND TABLE_NAME <> 'schema_migrations'`,
       [testDbConfig.name]
     );
     assert.equal(remainingTables.length, 0, 'All domain tables must drop cleanly on full rollback');
@@ -162,7 +163,7 @@ describe('Phase 03 — Real MySQL 8.0 Schema, Migrations, Constraints, Transacti
   test('2. Migration checksum tamper detection, out-of-order rejection, and failed statement handling', async (t) => {
     if (!pool) return t.skip(SKIP_REASON);
 
-    const tmpDir = fs.mkdtempSync(path.join(__dirname, '..', 'data', 'mysql-mig-'));
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mrtumi-mysql-mig-'));
     try {
       // Copy real migrations into temp dir and tamper with 0001
       const realDir = path.join(__dirname, '..', 'src', 'db', 'migrations');
