@@ -28,9 +28,7 @@ jobs:
           --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot_ci_password --silent"
           --health-interval=5s
           --health-timeout=5s
-          --health-retries=15
-          --character-set-server=utf8mb4
-          --collation-server=utf8mb4_unicode_ci
+          --health-retries=20
 
     env:
       TZ: Asia/Dhaka
