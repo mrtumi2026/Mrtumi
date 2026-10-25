@@ -3,6 +3,28 @@
     return window.__withPbSid ? window.__withPbSid(url) : url;
   }
 
+  function i18nStr(key, fallback) {
+    var dict = window.__MT_I18N || {};
+    return dict[key] || fallback;
+  }
+
+  function getCsrfToken() {
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.getAttribute('content') || '' : '';
+  }
+
+  function jsonHeaders() {
+    var headers = {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    };
+    var csrf = getCsrfToken();
+    if (csrf) {
+      headers['X-CSRF-Token'] = csrf;
+    }
+    return headers;
+  }
+
   function notify(type, msg) {
     if (window.toastr) {
       window.toastr.options = { positionClass: 'toast-top-right', timeOut: 3200 };
@@ -44,16 +66,17 @@
       if (!cart.length) {
         wrap.innerHTML =
           '<div class="text-center py-5 text-muted">' +
-          '<div style="font-size:44px;">🧺</div>' +
-          '<p class="fw-semibold mt-2 mb-1">আপনার কার্ট বর্তমানে খালি</p>' +
-          '<small>পছন্দের তাজা ফল কার্টে যোগ করুন</small>' +
+          '<div style="font-size:44px;" aria-hidden="true">🧺</div>' +
+          '<p class="fw-semibold mt-2 mb-1">' + escapeHtml(i18nStr('miniCartEmptyTitle', 'Your cart is empty')) + '</p>' +
+          '<small>' + escapeHtml(i18nStr('miniCartEmptySub', 'Add groceries or gift items to get started')) + '</small>' +
           '</div>';
       } else {
+        var removeLabel = i18nStr('removeLabel', 'Remove');
         wrap.innerHTML = cart
           .map(function (it) {
             var lineTotal = Number(it.price) * Number(it.qty);
             return (
-              '<div class="d-flex align-items-center justify-content-between border-bottom py-2.5 gap-2" style="padding:10px 0;">' +
+              '<div class="d-flex align-items-center justify-content-between border-bottom gap-2" style="padding:10px 0;">' +
               '  <div class="d-flex align-items-center gap-2">' +
               '    <img src="' + escapeHtml(it.image) + '" style="width:50px;height:50px;border-radius:10px;object-fit:cover;" alt="" />' +
               '    <div>' +
@@ -68,7 +91,7 @@
               '  </div>' +
               '  <div class="text-end">' +
               '    <div class="fw-bold text-success small">৳' + lineTotal.toLocaleString('en-IN') + '</div>' +
-              '    <button type="button" class="btn btn-link text-danger p-0 small text-decoration-none" style="font-size:12px;" onclick="window.removeCartItem(\'' + escapeHtml(it.key) + '\')" title="মুছুন"><i class="fas fa-trash-alt"></i></button>' +
+              '    <button type="button" class="btn btn-link text-danger p-0 small text-decoration-none" style="font-size:12px;" onclick="window.removeCartItem(\'' + escapeHtml(it.key) + '\')" aria-label="' + escapeHtml(removeLabel) + '" title="' + escapeHtml(removeLabel) + '"><i class="fas fa-trash-alt" aria-hidden="true"></i></button>' +
               '  </div>' +
               '</div>'
             );
@@ -77,7 +100,6 @@
       }
     }
 
-    // Also notify checkout / cart page if it registered a callback
     if (typeof window.onCartStateUpdated === 'function') {
       window.onCartStateUpdated({
         cart: cart,
@@ -99,34 +121,31 @@
     opts = opts || {};
     return fetch('/cart/add', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
+      headers: jsonHeaders(),
       body: JSON.stringify(payload),
     })
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (!d || !d.success) {
-          notify('error', (d && d.message) || 'কার্টে যোগ করতে সমস্যা হয়েছে।');
+          notify('error', (d && d.message) || i18nStr('networkErrorMsg', 'Unable to add item to cart.'));
           return d;
         }
         window.syncCartUI(d, Boolean(opts.openDrawer));
-        notify('success', d.message || 'কার্টে যোগ করা হয়েছে!');
+        notify('success', d.message);
         if (opts.redirectToCheckout || d.redirect) {
           window.location.href = navUrl(d.redirect || '/customer/checkout');
         }
         return d;
       })
       .catch(function () {
-        notify('error', 'নেটওয়ার্ক সমস্যা, অনুগ্রহ করে আবার চেষ্টা করুন।');
+        notify('error', i18nStr('networkErrorMsg', 'Network error — please try again.'));
       });
   };
 
   window.updateCartItemQty = function (key, newQty) {
     fetch('/cart/update', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      headers: jsonHeaders(),
       body: JSON.stringify({ key: key, qty: newQty }),
     })
       .then(function (r) { return r.json(); })
@@ -138,14 +157,14 @@
   window.removeCartItem = function (key) {
     fetch('/cart/remove', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      headers: jsonHeaders(),
       body: JSON.stringify({ key: key }),
     })
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (d && d.success) {
           window.syncCartUI(d, false);
-          notify('success', d.message || 'পণ্যটি কার্ট থেকে সরানো হয়েছে।');
+          notify('success', d.message || i18nStr('removedFromCartMsg', 'Item removed from cart.'));
         }
       });
   };
@@ -186,7 +205,7 @@
     document.getElementById('qoQty').value = 1;
 
     var sizesWrap = document.getElementById('qoSizesWrap');
-    var sizes = String(prod.sizes || '১ কেজি').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+    var sizes = String(prod.sizes || 'Standard').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
     sizesWrap.innerHTML = sizes
       .map(function (sz, i) {
         return (
@@ -224,7 +243,7 @@
     return {
       product_id: Number(document.getElementById('qoProdId').value),
       qty: Math.max(1, parseInt(document.getElementById('qoQty').value || '1', 10)),
-      size: szEl ? szEl.value : '১ কেজি',
+      size: szEl ? szEl.value : 'Standard',
       color: clEl ? clEl.value : '',
     };
   }
@@ -233,6 +252,7 @@
   function initCountdowns() {
     document.querySelectorAll('[data-countdown]').forEach(function (el) {
       var target = new Date(el.getAttribute('data-countdown')).getTime();
+      if (!Number.isFinite(target)) return;
       function tick() {
         var diff = Math.max(0, target - Date.now());
         var d = Math.floor(diff / 86400000);
@@ -255,9 +275,48 @@
 
   document.addEventListener('DOMContentLoaded', function () {
     initCountdowns();
-
-    // Render initial cart state into Mini Cart Drawer
     window.syncCartUI({ cart: window.__INITIAL_CART || [] }, false);
+
+    // Product Detail Image Gallery Thumbnails
+    document.querySelectorAll('.js-gallery-thumb').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var src = btn.getAttribute('data-src');
+        var mainImg = document.getElementById('mainProdImg');
+        if (mainImg && src) {
+          mainImg.src = src;
+        }
+        document.querySelectorAll('.js-gallery-thumb').forEach(function (b) {
+          b.classList.remove('border-success', 'border-2');
+        });
+        btn.classList.add('border-success', 'border-2');
+      });
+    });
+
+    // Product Detail Structured Variant Radio Sync
+    document.querySelectorAll('.js-variant-radio').forEach(function (radio) {
+      radio.addEventListener('change', function () {
+        if (!radio.checked) return;
+        var priceText = radio.getAttribute('data-price-formatted');
+        var sku = radio.getAttribute('data-sku');
+        var stock = Number(radio.getAttribute('data-stock') || 0);
+        var priceEl = document.getElementById('prodActivePrice');
+        var skuEl = document.getElementById('prodSkuText');
+        var qtyInput = document.getElementById('pQty');
+        var addBtn = document.getElementById('prodAddCartBtn');
+        var buyBtn = document.getElementById('prodBuyNowBtn');
+
+        if (priceEl && priceText) priceEl.textContent = priceText;
+        if (skuEl && sku) skuEl.textContent = sku;
+        if (qtyInput) {
+          qtyInput.max = String(Math.max(1, stock));
+          if (parseInt(qtyInput.value || '1', 10) > Math.max(1, stock)) {
+            qtyInput.value = String(Math.max(1, stock));
+          }
+        }
+        if (addBtn) addBtn.disabled = stock <= 0;
+        if (buyBtn) buyBtn.disabled = stock <= 0;
+      });
+    });
 
     // Delegated clicks for Product Card Add-to-Cart & Quick-Order buttons
     document.addEventListener('click', function (e) {
@@ -265,7 +324,7 @@
       if (addBtn) {
         e.preventDefault();
         var pid = Number(addBtn.getAttribute('data-id'));
-        var sz = addBtn.getAttribute('data-size') || '১ কেজি';
+        var sz = addBtn.getAttribute('data-size') || 'Standard';
         addBtn.disabled = true;
         window.addToCartAjax({ product_id: pid, qty: 1, size: sz }, { openDrawer: true }).finally(function () {
           addBtn.disabled = false;
@@ -321,7 +380,7 @@
         if (submitBtn) submitBtn.disabled = true;
         fetch('/order/quick-submit', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          headers: jsonHeaders(),
           body: JSON.stringify(body),
         })
           .then(function (r) { return r.json(); })
@@ -330,12 +389,12 @@
               notify('success', d.message);
               window.location.href = navUrl(d.redirect);
             } else {
-              notify('error', (d && d.message) || 'অর্ডার সম্পন্ন করতে সমস্যা হয়েছে।');
+              notify('error', (d && d.message) || i18nStr('networkErrorMsg', 'Unable to place order.'));
               if (submitBtn) submitBtn.disabled = false;
             }
           })
           .catch(function () {
-            notify('error', 'নেটওয়ার্ক সমস্যা, আবার চেষ্টা করুন।');
+            notify('error', i18nStr('networkErrorMsg', 'Network error — please try again.'));
             if (submitBtn) submitBtn.disabled = false;
           });
       });
@@ -356,6 +415,11 @@
 
       prodForm.addEventListener('submit', function (e) {
         e.preventDefault();
+        var variantRadios = prodForm.querySelectorAll('input[name="variant_id"]');
+        if (variantRadios.length > 0 && !prodForm.querySelector('input[name="variant_id"]:checked')) {
+          notify('error', i18nStr('selectRequiredVariant', 'Please select an option first.'));
+          return;
+        }
         var fd = new FormData(prodForm);
         var payload = Object.fromEntries(fd.entries());
         if (buyNowClicked) payload.buy_now = 1;
@@ -389,7 +453,7 @@
         b.style.borderRadius = '12px';
         b.style.fontSize = '13px';
         b.style.whiteSpace = 'pre-wrap';
-        if (role === 'user') { b.style.background = '#1b4332'; b.style.color = '#fff'; }
+        if (role === 'user') { b.style.background = '#0d3b26'; b.style.color = '#fff'; }
         else { b.style.background = '#f1f5f9'; b.style.color = '#1e293b'; }
         b.textContent = txt;
         d.appendChild(b);
@@ -403,7 +467,7 @@
         lsInput.value = '';
         fetch('/api/store-assistant', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: jsonHeaders(),
           body: JSON.stringify({ message: q }),
         })
           .then(function (r) { return r.json(); })
@@ -437,14 +501,19 @@
         var payload = Object.fromEntries(fd.entries());
         fetch('/api/complaint', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: jsonHeaders(),
           body: JSON.stringify(payload),
         })
           .then(function (r) { return r.json(); })
           .then(function (d) {
-            notify('success', d.message || 'অভিযোগ জমা হয়েছে!');
+            if (!d || !d.success) {
+              notify('error', (d && d.message) || i18nStr('networkErrorMsg', 'Error submitting form.'));
+              return;
+            }
+            notify('success', d.message);
             compForm.reset();
-            bootstrap.Modal.getInstance(document.getElementById('complaintModal')).hide();
+            var inst = bootstrap.Modal.getInstance(document.getElementById('complaintModal'));
+            if (inst) inst.hide();
           });
       });
     }

@@ -148,9 +148,22 @@ async function findCustomerById(id, poolOverride = null, config = env) {
 
 async function loadLayoutNavigationContext(isAdminPath = false, poolOverride = null, config = env) {
   if (!isMysqlMode(config) && !poolOverride) {
-    const navCategories = sqliteDb.all(
+    const rawCats = sqliteDb.all(
       'SELECT * FROM categories WHERE status = 1 ORDER BY sort_order ASC, id ASC'
     );
+    const rawSubcats = sqliteDb.all(
+      'SELECT * FROM subcategories WHERE status = 1 ORDER BY id ASC'
+    );
+    const subByCat = new Map();
+    for (const sc of rawSubcats) {
+      const cid = Number(sc.category_id);
+      if (!subByCat.has(cid)) subByCat.set(cid, []);
+      subByCat.get(cid).push(sc);
+    }
+    const navCategories = rawCats.map((c) => ({
+      ...c,
+      subcategories: subByCat.get(Number(c.id)) || [],
+    }));
     const footerPages = sqliteDb.all(
       'SELECT title, slug FROM cms_pages WHERE status = 1 ORDER BY id ASC'
     );
@@ -184,18 +197,32 @@ async function loadLayoutNavigationContext(isAdminPath = false, poolOverride = n
   }
 
   const client = getClient(poolOverride);
-  const [navCategories, footerPages, storeFeatures, socialLinks] = await Promise.all([
+  const [rawCats, rawSubcats, footerPages, storeFeatures, socialLinks] = await Promise.all([
     client.queryAll(
       'SELECT `id`, `name_bn` AS `name`, `name_bn`, `name_en`, `slug`, `icon`, `image_url` AS `image`, `front_view` FROM `categories` WHERE `status` = 1 ORDER BY `sort_order` ASC, `id` ASC'
+    ),
+    client.queryAll(
+      'SELECT `id`, `category_id`, `name_bn` AS `name`, `name_bn`, `name_en`, `slug` FROM `subcategories` WHERE `status` = 1 ORDER BY `id` ASC'
     ),
     client.queryAll(
       'SELECT `title_bn` AS `title`, `title_bn`, `title_en`, `slug` FROM `cms_pages` WHERE `status` = 1 ORDER BY `id` ASC'
     ),
     client.queryAll(
-      'SELECT `id`, `title_bn` AS `title`, `subtitle_bn` AS `subtitle`, `icon`, `status` FROM `features` WHERE `status` = 1 ORDER BY `id` ASC'
+      'SELECT `id`, `title_bn` AS `title`, `title_bn`, `title_en`, `subtitle_bn` AS `subtitle`, `subtitle_bn`, `subtitle_en`, `icon`, `status` FROM `features` WHERE `status` = 1 ORDER BY `id` ASC'
     ),
     client.queryAll('SELECT * FROM `social_links` WHERE `status` = 1 ORDER BY `id` ASC'),
   ]);
+
+  const subByCat = new Map();
+  for (const sc of rawSubcats) {
+    const cid = Number(sc.category_id);
+    if (!subByCat.has(cid)) subByCat.set(cid, []);
+    subByCat.get(cid).push(sc);
+  }
+  const navCategories = rawCats.map((c) => ({
+    ...c,
+    subcategories: subByCat.get(Number(c.id)) || [],
+  }));
 
   let pendingOrdersCount = 0;
   let pendingOrdersList = [];

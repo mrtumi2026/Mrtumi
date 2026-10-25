@@ -3,10 +3,35 @@
   <head>
     <meta charset="utf-8" />
     <meta name="pb-sid" content="<%= typeof sessionToken !== 'undefined' ? sessionToken : '' %>" />
-    <title><%= typeof title !== 'undefined' ? (title + ' | ') : '' %><%= siteSettings.seo_meta_title || siteSettings.site_name %></title>
+    <meta name="csrf-token" content="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>" />
+    <%
+      const metaObj = (typeof pageMeta !== 'undefined' && pageMeta) ? pageMeta : {};
+      const resolvedTitle = typeof title !== 'undefined' && title
+        ? title
+        : (metaObj.title || '');
+      const fullTitle = resolvedTitle
+        ? (resolvedTitle + ' | ' + siteSettings.site_name)
+        : (siteSettings.seo_meta_title || siteSettings.site_name);
+      const resolvedDesc = metaObj.description || siteSettings.seo_meta_description || '';
+    %>
+    <title><%= fullTitle %></title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="<%= siteSettings.seo_meta_description || '' %>" />
+    <meta name="description" content="<%= resolvedDesc %>" />
     <meta name="keywords" content="<%= siteSettings.seo_keywords || '' %>" />
+    <% if (metaObj.robots) { %>
+      <meta name="robots" content="<%= metaObj.robots %>" />
+    <% } %>
+    <% if (metaObj.canonicalUrl) { %>
+      <link rel="canonical" href="<%= metaObj.canonicalUrl %>" />
+      <meta property="og:url" content="<%= metaObj.canonicalUrl %>" />
+    <% } %>
+    <meta property="og:site_name" content="<%= siteSettings.site_name %>" />
+    <meta property="og:title" content="<%= fullTitle %>" />
+    <meta property="og:description" content="<%= resolvedDesc %>" />
+    <meta property="og:type" content="<%= metaObj.ogType || 'website' %>" />
+    <% if (metaObj.ogImage) { %>
+      <meta property="og:image" content="<%= metaObj.ogImage %>" />
+    <% } %>
     <link rel="shortcut icon" href="<%= siteSettings.favicon || '/uploads/brand/mrtumi-placeholder-favicon.svg' %>" />
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -18,6 +43,9 @@
     <link href="/frontEnd/css/storefront.css" rel="stylesheet" />
     <link href="/shared/css/mrtumi-design-system.css" rel="stylesheet" />
     <script src="/frontEnd/js/pb-session.js"></script>
+    <% if (metaObj.jsonLd) { %>
+      <script type="application/ld+json"><%- JSON.stringify(metaObj.jsonLd).replace(/</g, '\\u003c') %></script>
+    <% } %>
   </head>
   <body>
     <a href="#mainContent" class="mt-skip-link"><%= t('a11y.skipToContent') %></a>
@@ -72,12 +100,16 @@
             <button type="submit" aria-label="<%= t('common.search') %>"><i class="fas fa-search" aria-hidden="true"></i></button>
           </form>
 
-          <!-- Language Switcher + Cart + Checkout + Portals -->
+          <!-- Language Switcher + Support + Cart + Checkout + Portals -->
           <div class="d-flex align-items-center gap-1 gap-sm-2 order-2 order-lg-3">
             <%- include('../../partials/lang-switch', { variant: 'light' }) %>
 
             <a href="/track-order" class="btn btn-outline-success btn-sm rounded-pill px-3 d-none d-xl-inline-flex align-items-center gap-1">
               <i class="fas fa-truck-fast" aria-hidden="true"></i> <%= t('common.trackOrder') %>
+            </a>
+
+            <a href="/contact" class="btn btn-outline-secondary btn-sm rounded-pill px-3 d-none d-xxl-inline-flex align-items-center gap-1">
+              <i class="fas fa-headset" aria-hidden="true"></i> <%= t('store.contactNav') %>
             </a>
 
             <button
@@ -108,16 +140,18 @@
                 <li><a class="dropdown-item fw-semibold" href="/reseller/dashboard"><i class="fas fa-handshake text-primary me-2"></i>🤝 <%= t('reseller.portalName') %></a></li>
                 <li><hr class="dropdown-divider" /></li>
                 <li><a class="dropdown-item small" href="/track-order"><i class="fas fa-truck-fast text-secondary me-2"></i><%= t('common.trackOrder') %></a></li>
+                <li><a class="dropdown-item small" href="/contact"><i class="fas fa-headset text-secondary me-2"></i><%= t('store.contactNav') %></a></li>
               </ul>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Category Navigation Strip -->
+      <!-- Category & Storefront Navigation Strip -->
       <nav class="pb-cat-nav" aria-label="<%= t('a11y.categoryNavigation') %>">
         <div class="container d-flex align-items-center">
           <a href="/" class="pb-cat-link <%= currentPath === '/' ? 'active' : '' %>">🏠 <%= t('common.home') %></a>
+          <a href="/all-products" class="pb-cat-link <%= currentPath === '/all-products' ? 'active' : '' %>">🛒 <%= t('common.allProducts') %></a>
           <a href="/flash-sales" class="pb-cat-link <%= currentPath === '/flash-sales' ? 'active' : '' %> text-danger">⚡ <%= t('common.flashSale') %></a>
           <a href="/hot-deals" class="pb-cat-link <%= currentPath === '/hot-deals' ? 'active' : '' %>">🔥 <%= t('common.hotDeal') %></a>
           <% navCategories.forEach(function(cat) { %>
@@ -125,14 +159,15 @@
               <span aria-hidden="true"><%= cat.icon || '🛒' %></span> <%= cat.name %>
             </a>
           <% }) %>
-          <a href="/all-products" class="pb-cat-link <%= currentPath === '/all-products' ? 'active' : '' %>"><%= t('common.allProducts') %></a>
           <a href="/blogs" class="pb-cat-link <%= currentPath === '/blogs' ? 'active' : '' %>"><%= t('common.blogs') %></a>
+          <a href="/faq" class="pb-cat-link <%= currentPath === '/faq' ? 'active' : '' %>"><%= t('store.faqNav') %></a>
+          <a href="/contact" class="pb-cat-link <%= currentPath === '/contact' ? 'active' : '' %>"><%= t('store.contactNav') %></a>
         </div>
       </nav>
     </header>
 
     <!-- Mobile Navigation Offcanvas Drawer (<992px) -->
-    <div class="offcanvas offcanvas-start" tabindex="-1" id="mobileStoreNavDrawer" aria-labelledby="mobileStoreNavLabel" style="width: 300px; max-width: 88vw;">
+    <div class="offcanvas offcanvas-start" tabindex="-1" id="mobileStoreNavDrawer" aria-labelledby="mobileStoreNavLabel" style="width: 310px; max-width: 88vw;">
       <div class="offcanvas-header border-bottom" style="background: #f0fdf4;">
         <h6 class="offcanvas-title fw-bold mb-0 text-dark" id="mobileStoreNavLabel"><%= siteSettings.site_name %></h6>
         <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="<%= t('a11y.mobileMenuClose') %>"></button>
@@ -151,15 +186,25 @@
             <li class="mb-1"><a href="/hot-deals" class="d-block py-2 px-2 rounded-2 text-decoration-none text-dark fw-semibold">🔥 <%= t('common.hotDeal') %></a></li>
             <li class="mb-1"><a href="/track-order" class="d-block py-2 px-2 rounded-2 text-decoration-none text-dark fw-semibold">📦 <%= t('common.trackOrder') %></a></li>
             <li class="mb-1"><a href="/blogs" class="d-block py-2 px-2 rounded-2 text-decoration-none text-dark fw-semibold">📰 <%= t('common.blogs') %></a></li>
+            <li class="mb-1"><a href="/about" class="d-block py-2 px-2 rounded-2 text-decoration-none text-dark fw-semibold">ℹ️ <%= t('store.aboutNav') %></a></li>
+            <li class="mb-1"><a href="/faq" class="d-block py-2 px-2 rounded-2 text-decoration-none text-dark fw-semibold">❓ <%= t('store.faqNav') %></a></li>
+            <li class="mb-1"><a href="/contact" class="d-block py-2 px-2 rounded-2 text-decoration-none text-dark fw-semibold">📞 <%= t('store.contactNav') %></a></li>
           </ul>
 
           <div class="small fw-bold text-uppercase text-muted mb-2"><%= t('store.categoriesTitle') %></div>
           <ul class="list-unstyled mb-3">
             <% navCategories.forEach(function(cat) { %>
               <li class="mb-1">
-                <a href="/category/<%= cat.slug %>" class="d-block py-1.5 px-2 rounded-2 text-decoration-none text-secondary small fw-semibold">
+                <a href="/category/<%= cat.slug %>" class="d-block py-1.5 px-2 rounded-2 text-decoration-none text-dark small fw-semibold">
                   <%= cat.icon || '🛒' %> <%= cat.name %>
                 </a>
+                <% if (cat.subcategories && cat.subcategories.length) { %>
+                  <div class="ps-4 d-flex flex-wrap gap-1 mt-1 mb-1">
+                    <% cat.subcategories.forEach(function(sc) { %>
+                      <a href="/subcategory/<%= sc.slug %>" class="badge bg-light text-secondary border text-decoration-none fw-normal"><%= sc.name %></a>
+                    <% }) %>
+                  </div>
+                <% } %>
               </li>
             <% }) %>
           </ul>

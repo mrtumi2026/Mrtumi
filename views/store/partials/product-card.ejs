@@ -1,48 +1,97 @@
 <%
   const hasDiscount = p.old_price && Number(p.old_price) > Number(p.new_price);
-  const discPct = hasDiscount ? Math.round(((Number(p.old_price) - Number(p.new_price)) / Number(p.old_price)) * 100) : 0;
-  const outOfStock = Number(p.stock || 0) <= 0;
+  const discPct = typeof p.discount_pct === 'number' && p.discount_pct > 0
+    ? p.discount_pct
+    : (hasDiscount ? Math.round(((Number(p.old_price) - Number(p.new_price)) / Number(p.old_price)) * 100) : 0);
+  const availStock = typeof p.available_stock === 'number' ? p.available_stock : Number(p.stock || 0);
+  const outOfStock = availStock <= 0;
+  const requiresOptionModal = Boolean(p.has_required_options);
 %>
-<article class="pb-card">
+<article class="pb-card" data-product-id="<%= p.id %>" data-sku="<%= p.sku || p.code || '' %>">
   <a href="/product/<%= p.slug %>" class="pb-card-img-wrap d-block">
     <% if (discPct > 0) { %>
       <span class="pb-disc-badge">-<%= fmt.number(discPct) %>%</span>
     <% } %>
     <% if (outOfStock) { %>
       <span class="badge bg-dark position-absolute top-0 end-0 m-2 z-2"><%= t('common.outOfStock') %></span>
+    <% } else if (p.is_gift_eligible) { %>
+      <span class="badge position-absolute top-0 end-0 m-2 z-2" style="background:#b45309;color:#fff;">🎁 <%= t('store.giftReadyBadge') %></span>
     <% } %>
     <img src="<%= p.image %>" alt="<%= p.name %>" loading="lazy" />
   </a>
 
   <div class="pb-card-body">
+    <% if (p.category_name || p.unit) { %>
+      <div class="d-flex justify-content-between align-items-center gap-1 mb-1" style="font-size:11px;color:#475569;">
+        <span class="text-truncate"><%= p.category_name || '' %></span>
+        <% if (p.unit) { %>
+          <span class="badge bg-light text-dark border fw-normal"><%= p.unit %></span>
+        <% } %>
+      </div>
+    <% } %>
+
     <a href="/product/<%= p.slug %>" class="pb-card-title mb-1"><%= p.name %></a>
 
     <div class="mt-auto pt-1">
-      <div class="mb-1">
+      <div class="mb-1 d-flex align-items-baseline flex-wrap gap-1">
         <% if (hasDiscount) { %>
           <span class="pb-price-old"><%= fmt.bdt(p.old_price) %></span>
         <% } %>
         <span class="pb-price-new"><%= fmt.bdt(p.new_price) %></span>
       </div>
 
+      <% if (p.has_valid_wholesale) { %>
+        <div class="mb-1">
+          <span class="badge bg-success-subtle text-success border border-success-subtle" style="font-size:10.5px;">
+            📦 <%= t('store.wholesaleAvailableBadge') %> (<%= fmt.number(p.wholesale_min_qty) %>+)
+          </span>
+        </div>
+      <% } %>
+
       <% if (typeof showStockMeta !== 'undefined' && showStockMeta) { %>
-        <div class="text-muted mb-2" style="font-size: 11.5px;">
-          <%= locale === 'bn' ? 'স্টক:' : 'Stock:' %> <%= fmt.number(p.stock || 0) %>
+        <div class="mb-2" style="font-size: 11.5px; color: <%= outOfStock ? '#dc2626' : '#475569' %>;">
+          <% if (outOfStock) { %>
+            <%= t('common.outOfStock') %>
+          <% } else if (p.is_low_stock) { %>
+            <%= t('store.lowStockBadge', { count: fmt.number(availStock) }) %>
+          <% } else { %>
+            <%= t('store.stockAvailableCount', { count: fmt.number(availStock) }) %>
+          <% } %>
         </div>
       <% } %>
 
       <div class="d-flex gap-1 mt-2">
-        <button
-          type="button"
-          class="btn-add-cart-card js-add-to-cart"
-          data-id="<%= p.id %>"
-          data-size="<%= (p.sizes || 'Standard').split(',')[0].trim() %>"
-          aria-label="<%= t('store.addToCart') %>: <%= p.name %>"
-          title="<%= t('store.addToCart') %>"
-          <%= outOfStock ? 'disabled' : '' %>
-        >
-          <i class="fas fa-cart-plus" aria-hidden="true"></i>
-        </button>
+        <% if (requiresOptionModal) { %>
+          <button
+            type="button"
+            class="btn-add-cart-card js-quick-order"
+            data-id="<%= p.id %>"
+            data-name="<%= p.name %>"
+            data-price="<%= p.new_price %>"
+            data-old-price="<%= p.old_price || 0 %>"
+            data-image="<%= p.image %>"
+            data-sizes="<%= p.sizes || p.unit || 'Standard' %>"
+            data-colors="<%= p.colors || '' %>"
+            data-stock="<%= availStock %>"
+            aria-label="<%= t('store.selectOption') %>: <%= p.name %>"
+            title="<%= t('store.selectOption') %>"
+            <%= outOfStock ? 'disabled' : '' %>
+          >
+            <i class="fas fa-sliders" aria-hidden="true"></i>
+          </button>
+        <% } else { %>
+          <button
+            type="button"
+            class="btn-add-cart-card js-add-to-cart"
+            data-id="<%= p.id %>"
+            data-size="<%= (p.sizes || p.unit || 'Standard').split(',')[0].trim() %>"
+            aria-label="<%= t('store.addToCart') %>: <%= p.name %>"
+            title="<%= t('store.addToCart') %>"
+            <%= outOfStock ? 'disabled' : '' %>
+          >
+            <i class="fas fa-cart-plus" aria-hidden="true"></i>
+          </button>
+        <% } %>
 
         <button
           type="button"
@@ -52,12 +101,12 @@
           data-price="<%= p.new_price %>"
           data-old-price="<%= p.old_price || 0 %>"
           data-image="<%= p.image %>"
-          data-sizes="<%= p.sizes || 'Standard' %>"
+          data-sizes="<%= p.sizes || p.unit || 'Standard' %>"
           data-colors="<%= p.colors || '' %>"
-          data-stock="<%= p.stock %>"
+          data-stock="<%= availStock %>"
           <%= outOfStock ? 'disabled' : '' %>
         >
-          ⚡ <%= t('store.orderNow') %>
+          ⚡ <%= requiresOptionModal ? t('store.selectOption') : t('store.orderNow') %>
         </button>
       </div>
     </div>

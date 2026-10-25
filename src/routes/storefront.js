@@ -1,8 +1,69 @@
+'use strict';
+
 const express = require('express');
 const db = require('../db/database');
+const { asyncHandler } = require('../utils/asyncHandler');
+const { createRateLimiter } = require('../middleware/rateLimit');
+const storefrontRepo = require('../repositories/storefrontRepository');
 
 const router = express.Router();
 
+const publicFormLimiter = createRateLimiter({
+  keyPrefix: 'store_public_form',
+  windowMs: 60_000,
+  max: 20,
+});
+
+function escapeXml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+function buildBaseUrl(req) {
+  const proto = String(req.headers['x-forwarded-proto'] || req.protocol || 'http')
+    .split(',')[0]
+    .trim();
+  const host = String(req.get('host') || 'localhost:3000').trim();
+  return `${proto}://${host}`;
+}
+
+function buildPaginationBaseUrl(pathname, queryObj = {}) {
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(queryObj)) {
+    if (k === 'page' || k === '_sid' || v === undefined || v === null || String(v).trim() === '') {
+      continue;
+    }
+    params.set(k, String(v).trim());
+  }
+  const qs = params.toString();
+  return qs ? `${pathname}?${qs}` : pathname;
+}
+
+function renderStoreNotFound(req, res) {
+  const isEn = req.locale === 'en';
+  return res.status(404).render('store/page', {
+    mode: 'cms',
+    blogs: [],
+    relatedBlogs: [],
+    page: {
+      slug: '404',
+      title: isEn ? '404 — Page or Product Not Found' : '৪০৪ — পেজ বা পণ্যটি খুঁজে পাওয়া যায়নি',
+      content: isEn
+        ? 'Sorry, the product or page you requested is unavailable or has moved. Browse our verified grocery and gift catalog below.'
+        : 'দুঃখিত, আপনি যে পণ্য বা পেজটি খুঁজছেন তা বর্তমানে উপলব্ধ নেই। আমাদের যাচাইকৃত গ্রোসারি ও গিফট তালিকা থেকে পছন্দের পণ্য দেখুন।',
+    },
+    pageMeta: {
+      title: isEn ? '404 Not Found' : '৪০৪ খুঁজে পাওয়া যায়নি',
+      robots: 'noindex,follow',
+    },
+  });
+}
+
+// ─── Legacy Prototype Helpers (Scheduled for MySQL Conversion in Phases 07 & 08) ───
 function generateInvoiceId() {
   for (let i = 0; i < 10; i++) {
     const code = String(Math.floor(10000 + Math.random() * 90000));
@@ -38,9 +99,9 @@ function computeCartTotals(req) {
   const cartCount = cart.reduce((s, i) => s + (Number(i.qty) || 1), 0);
   const cartSubtotal = cart.reduce((s, i) => s + (Number(i.price) || 0) * (Number(i.qty) || 1), 0);
 
-  // Recalculate coupon discount if applied
+  // Recalculate coupon discount if applied (full MySQL coupon engine scheduled for Phase 07)
   let discount = 0;
-  if (req.session.appliedCoupon && req.session.appliedCoupon.code) {
+  if (req.session.appliedCoupon && req.session.appliedCoupon.code && !storefrontRepo.isMysqlMode()) {
     const cpn = db.get(
       'SELECT * FROM coupons WHERE UPPER(code) = ? AND status = 1',
       String(req.session.appliedCoupon.code).toUpperCase()
@@ -65,131 +126,320 @@ function computeCartTotals(req) {
   };
 }
 
-// ─── Storefront Home ───
-router.get('/', (_req, res) => {
-  const heroBanners = db.all("SELECT * FROM banners WHERE position = 'hero' AND status = 1 ORDER BY sort_order ASC");
-  const promoBanners = db.all("SELECT * FROM banners WHERE position = 'promo_mid' AND status = 1 ORDER BY sort_order ASC");
-  const flashProducts = db.all('SELECT * FROM products WHERE status = 1 AND is_flash_sale = 1 ORDER BY id ASC LIMIT 8');
-  const hotProducts = db.all('SELECT * FROM products WHERE status = 1 AND is_hot_deal = 1 ORDER BY id DESC LIMIT 8');
-  const allProducts = db.all('SELECT * FROM products WHERE status = 1 ORDER BY id ASC LIMIT 12');
+function resolveEffectiveUnitPrice(prod, matchedVariant, qty) {
+  if (
+    prod.has_valid_wholesale &&
+    prod.wholesale_price > 0 &&
+    prod.wholesale_min_qty >= 2 &&
+    qty >= prod.wholesale_min_qty
+  ) {
+    return Number(prod.wholesale_price);
+  }
+  if (matchedVariant && matchedVariant.price > 0) {
+    return Number(matchedVariant.price);
+  }
+  return Number(prod.new_price);
+}
 
-  const categories = db.all('SELECT * FROM categories WHERE status = 1 ORDER BY sort_order ASC');
-  const categorySections = categories
-    .map((cat) => ({
-      category: cat,
-      products: db.all('SELECT * FROM products WHERE status = 1 AND category_id = ? ORDER BY id ASC LIMIT 6', cat.id),
-    }))
-    .filter((sec) => sec.products.length > 0);
+// ============================================================================
+// PHASE 05 — MYSQL-FIRST STOREFRONT CATALOGUE, DETAIL, CONTENT & SEO ROUTES
+// ============================================================================
 
-  res.render('store/home', {
-    heroBanners,
-    promoBanners,
-    flashProducts,
-    hotProducts,
-    categorySections,
-    allProducts,
+// ─── Storefront Homepage ───
+router.get(
+  '/',
+  asyncHandler(async (req, res) => {
+    const baseUrl = buildBaseUrl(req);
+    const homeData = await storefrontRepo.getHomepageData({
+      locale: req.locale,
+      siteSettings: res.locals.siteSettings,
+    });
+
+    res.render('store/home', {
+      ...homeData,
+      pageMeta: {
+        canonicalUrl: `${baseUrl}/`,
+        ogType: 'website',
+        jsonLd: {
+          '@context': 'https://schema.org',
+          '@type': 'WebSite',
+          name: res.locals.siteSettings.site_name,
+          url: `${baseUrl}/`,
+          potentialAction: {
+            '@type': 'SearchAction',
+            target: `${baseUrl}/all-products?q={search_term_string}`,
+            'query-input': 'required name=search_term_string',
+          },
+        },
+      },
+    });
+  })
+);
+
+// ─── Shared Catalogue Listing Renderer ───
+async function renderCatalogueListing(req, res, preset = {}) {
+  const t = res.locals.t;
+  const baseUrl = buildBaseUrl(req);
+
+  const queryFilters = {
+    locale: req.locale,
+    q: preset.q !== undefined ? preset.q : String(req.query.q || '').trim(),
+    categorySlug: preset.categorySlug || String(req.query.category || '').trim(),
+    subcategorySlug: preset.subcategorySlug || String(req.query.subcategory || '').trim(),
+    childcategorySlug: preset.childcategorySlug || String(req.query.childcategory || '').trim(),
+    brandSlug: preset.brandSlug || String(req.query.brand || '').trim(),
+    dealType: preset.dealType || String(req.query.deal || '').trim(),
+    minPrice: req.query.min_price,
+    maxPrice: req.query.max_price,
+    inStockOnly: req.query.in_stock,
+    sort: req.query.sort || 'newest',
+    page: req.query.page || 1,
+    perPage: req.query.per_page || 12,
+  };
+
+  const [listing, facets] = await Promise.all([
+    storefrontRepo.listStorefrontProducts(queryFilters),
+    storefrontRepo.getCatalogFacets({ locale: req.locale }),
+  ]);
+
+  const activeCategory = queryFilters.categorySlug
+    ? facets.categories.find((c) => c.slug === queryFilters.categorySlug) || null
+    : null;
+
+  let activeSubcategory = null;
+  let activeChildcategory = null;
+  for (const c of facets.categories) {
+    for (const sc of c.subcategories || []) {
+      if (queryFilters.subcategorySlug && sc.slug === queryFilters.subcategorySlug) {
+        activeSubcategory = { ...sc, parentCategory: c };
+      }
+      for (const cc of sc.childcategories || []) {
+        if (queryFilters.childcategorySlug && cc.slug === queryFilters.childcategorySlug) {
+          activeChildcategory = { ...cc, parentSubcategory: sc, parentCategory: c };
+        }
+      }
+    }
+  }
+
+  const activeBrand = queryFilters.brandSlug
+    ? facets.brands.find((b) => b.slug === queryFilters.brandSlug) || null
+    : null;
+
+  if (preset.requireEntityMatch) {
+    if (preset.categorySlug && !activeCategory) return renderStoreNotFound(req, res);
+    if (preset.subcategorySlug && !activeSubcategory) return renderStoreNotFound(req, res);
+    if (preset.childcategorySlug && !activeChildcategory) return renderStoreNotFound(req, res);
+    if (preset.brandSlug && !activeBrand) return renderStoreNotFound(req, res);
+  }
+
+  let pageTitle = preset.pageTitle || t('common.allProducts');
+  let subtitle = preset.subtitle || t('store.catalogDefaultSub');
+
+  if (activeChildcategory) {
+    pageTitle = activeChildcategory.name;
+    subtitle = t('store.categoryBrowseSub', { name: activeChildcategory.name });
+  } else if (activeSubcategory) {
+    pageTitle = activeSubcategory.name;
+    subtitle = t('store.categoryBrowseSub', { name: activeSubcategory.name });
+  } else if (activeCategory) {
+    pageTitle = activeCategory.name;
+    subtitle = t('store.categoryBrowseSub', { name: activeCategory.name });
+  } else if (activeBrand) {
+    pageTitle = activeBrand.name;
+    subtitle = t('store.categoryBrowseSub', { name: activeBrand.name });
+  } else if (queryFilters.q) {
+    pageTitle = t('store.searchResultsTitle', { query: queryFilters.q });
+  }
+
+  const actionPath = preset.actionPath || req.path;
+  const paginationBaseUrl = buildPaginationBaseUrl(actionPath, req.query);
+
+  return res.render('store/catalog', {
+    pageTitle,
+    subtitle,
+    products: listing.items,
+    totalProducts: listing.total,
+    page: listing.page,
+    perPage: listing.perPage,
+    totalPages: listing.totalPages,
+    paginationBaseUrl,
+    actionPath,
+    searchQuery: queryFilters.q,
+    sort: listing.sort,
+    facets,
+    activeCategory,
+    activeSubcategory,
+    activeChildcategory,
+    activeBrand,
+    promoCountdownIso: preset.promoCountdownIso || null,
+    filterState: {
+      q: queryFilters.q,
+      category: queryFilters.categorySlug,
+      subcategory: queryFilters.subcategorySlug,
+      childcategory: queryFilters.childcategorySlug,
+      brand: queryFilters.brandSlug,
+      deal: queryFilters.dealType,
+      min_price: req.query.min_price ? String(req.query.min_price).trim() : '',
+      max_price: req.query.max_price ? String(req.query.max_price).trim() : '',
+      in_stock:
+        req.query.in_stock === '1' || req.query.in_stock === 'true' ? '1' : '',
+      sort: listing.sort,
+    },
+    pageMeta: {
+      title: pageTitle,
+      description: subtitle,
+      canonicalUrl: `${baseUrl}${actionPath}`,
+      ogType: 'website',
+    },
   });
-});
+}
 
-// ─── Product Listings (All / Search / Flash / Hot / Category) ───
-router.get('/all-products', (req, res) => {
-  const q = String(req.query.q || '').trim();
-  const sort = String(req.query.sort || 'newest');
+router.get(
+  ['/all-products', '/search'],
+  asyncHandler(async (req, res) => renderCatalogueListing(req, res, { actionPath: '/all-products' }))
+);
 
-  let orderBy = 'ORDER BY p.id DESC';
-  if (sort === 'price_asc') orderBy = 'ORDER BY p.new_price ASC';
-  if (sort === 'price_desc') orderBy = 'ORDER BY p.new_price DESC';
+router.get(
+  '/flash-sales',
+  asyncHandler(async (req, res) => {
+    const t = res.locals.t;
+    const flashWin = storefrontRepo.parsePromoWindow(
+      res.locals.siteSettings.flash_sale_enabled,
+      res.locals.siteSettings.flash_sale_end
+    );
+    return renderCatalogueListing(req, res, {
+      dealType: 'flash',
+      actionPath: '/flash-sales',
+      pageTitle: `⚡ ${t('store.flashSaleTitle')}`,
+      subtitle: t('store.flashSaleSub'),
+      promoCountdownIso: flashWin.active ? flashWin.countdownIso : null,
+    });
+  })
+);
 
-  const products = q
-    ? db.all(
-        `SELECT p.*, c.name AS category_name FROM products p
-         LEFT JOIN categories c ON c.id = p.category_id
-         WHERE p.status = 1 AND (p.name LIKE ? OR p.short_desc LIKE ? OR c.name LIKE ?)
-         ${orderBy}`,
-        `%${q}%`,
-        `%${q}%`,
-        `%${q}%`
-      )
-    : db.all(
-        `SELECT p.*, c.name AS category_name FROM products p
-         LEFT JOIN categories c ON c.id = p.category_id
-         WHERE p.status = 1 ${orderBy}`
-      );
+router.get(
+  '/hot-deals',
+  asyncHandler(async (req, res) => {
+    const t = res.locals.t;
+    const hotWin = storefrontRepo.parsePromoWindow(
+      res.locals.siteSettings.hot_deal_enabled,
+      res.locals.siteSettings.hot_deal_end
+    );
+    return renderCatalogueListing(req, res, {
+      dealType: 'hot',
+      actionPath: '/hot-deals',
+      pageTitle: `🔥 ${t('store.hotDealTitle')}`,
+      subtitle: t('store.hotDealBadge'),
+      promoCountdownIso: hotWin.active ? hotWin.countdownIso : null,
+    });
+  })
+);
 
-  res.render('store/catalog', {
-    pageTitle: q ? `"${q}" এর ফলাফল` : 'সকল প্রোডাক্ট',
-    subtitle: 'বাগান থেকে সংগৃহীত শতভাগ তাজা ও ফরমালিনমুক্ত ফল',
-    products,
-    searchQuery: q,
-    sort,
-  });
-});
+router.get(
+  '/category/:slug',
+  asyncHandler(async (req, res) =>
+    renderCatalogueListing(req, res, {
+      categorySlug: req.params.slug,
+      actionPath: `/category/${encodeURIComponent(req.params.slug)}`,
+      requireEntityMatch: true,
+    })
+  )
+);
 
-router.get('/flash-sales', (_req, res) => {
-  const products = db.all('SELECT * FROM products WHERE status = 1 AND is_flash_sale = 1 ORDER BY id ASC');
-  res.render('store/catalog', {
-    pageTitle: '⚡ Flash Sale — ঝলমলে ছাড়!',
-    subtitle: 'সীমিত সময়ের ধামাকা ডিসকাউন্ট — স্টক শেষ হওয়ার আগেই অর্ডার করুন',
-    products,
-    searchQuery: '',
-    sort: 'newest',
-  });
-});
+router.get(
+  '/subcategory/:slug',
+  asyncHandler(async (req, res) =>
+    renderCatalogueListing(req, res, {
+      subcategorySlug: req.params.slug,
+      actionPath: `/subcategory/${encodeURIComponent(req.params.slug)}`,
+      requireEntityMatch: true,
+    })
+  )
+);
 
-router.get('/hot-deals', (_req, res) => {
-  const products = db.all('SELECT * FROM products WHERE status = 1 AND is_hot_deal = 1 ORDER BY id DESC');
-  res.render('store/catalog', {
-    pageTitle: '🔥 Hot Deal — বিশেষ অফার',
-    subtitle: 'সেরা মূল্যে বাছাইকৃত প্রিমিয়াম ফলের প্যাক',
-    products,
-    searchQuery: '',
-    sort: 'newest',
-  });
-});
+router.get(
+  '/childcategory/:slug',
+  asyncHandler(async (req, res) =>
+    renderCatalogueListing(req, res, {
+      childcategorySlug: req.params.slug,
+      actionPath: `/childcategory/${encodeURIComponent(req.params.slug)}`,
+      requireEntityMatch: true,
+    })
+  )
+);
 
-router.get('/category/:slug', (req, res) => {
-  const cat = db.get('SELECT * FROM categories WHERE slug = ?', req.params.slug);
-  if (!cat) return res.redirect('/all-products');
-
-  const products = db.all('SELECT * FROM products WHERE status = 1 AND category_id = ? ORDER BY id DESC', cat.id);
-  res.render('store/catalog', {
-    pageTitle: cat.name,
-    subtitle: `${cat.name} ক্যাটাগরির সকল তাজা ফল`,
-    products,
-    searchQuery: '',
-    sort: 'newest',
-  });
-});
+router.get(
+  '/brand/:slug',
+  asyncHandler(async (req, res) =>
+    renderCatalogueListing(req, res, {
+      brandSlug: req.params.slug,
+      actionPath: `/brand/${encodeURIComponent(req.params.slug)}`,
+      requireEntityMatch: true,
+    })
+  )
+);
 
 // ─── Single Product Detail (/product/:slug) ───
-router.get('/product/:slug', (req, res) => {
-  const product = db.get(
-    `SELECT p.*, c.name AS category_name, c.slug AS category_slug, b.name AS brand_name
-     FROM products p
-     LEFT JOIN categories c ON c.id = p.category_id
-     LEFT JOIN brands b ON b.id = p.brand_id
-     WHERE p.slug = ? OR CAST(p.id AS TEXT) = ?`,
-    req.params.slug,
-    req.params.slug
-  );
-  if (!product) return res.redirect('/all-products');
+router.get(
+  '/product/:slug',
+  asyncHandler(async (req, res) => {
+    const detail = await storefrontRepo.getStorefrontProductDetail(req.params.slug, {
+      locale: req.locale,
+    });
+    if (!detail) {
+      return renderStoreNotFound(req, res);
+    }
 
-  const reviews = db.all(
-    "SELECT * FROM reviews WHERE product_id = ? AND status = 'approved' ORDER BY id DESC",
-    product.id
-  );
-  const relatedProducts = db.all(
-    'SELECT * FROM products WHERE status = 1 AND category_id = ? AND id != ? LIMIT 6',
-    product.category_id,
-    product.id
-  );
+    const baseUrl = buildBaseUrl(req);
+    const { product, reviews, reviewStats, relatedProducts } = detail;
 
-  res.render('store/product', {
-    product,
-    reviews,
-    relatedProducts,
-  });
-});
+    const jsonLd = {
+      '@context': 'https://schema.org',
+      '@type': 'Product',
+      name: product.name,
+      sku: product.sku,
+      image: product.gallery_images.map((img) =>
+        img.startsWith('http') ? img : `${baseUrl}${img}`
+      ),
+      description: product.short_desc || product.description || product.name,
+      brand: {
+        '@type': 'Brand',
+        name: product.brand_name || res.locals.brand.defaultProductBrand,
+      },
+      offers: {
+        '@type': 'Offer',
+        priceCurrency: 'BDT',
+        price: Number(product.new_price).toFixed(2),
+        availability: product.is_in_stock
+          ? 'https://schema.org/InStock'
+          : 'https://schema.org/OutOfStock',
+        url: `${baseUrl}/product/${encodeURIComponent(product.slug)}`,
+      },
+    };
+    if (reviewStats.count > 0) {
+      jsonLd.aggregateRating = {
+        '@type': 'AggregateRating',
+        ratingValue: reviewStats.averageRating,
+        reviewCount: reviewStats.count,
+      };
+    }
+
+    return res.render('store/product', {
+      product,
+      reviews,
+      reviewStats,
+      relatedProducts,
+      pageMeta: {
+        title: product.name,
+        description: (product.short_desc || product.description || product.name).slice(0, 160),
+        canonicalUrl: `${baseUrl}/product/${encodeURIComponent(product.slug)}`,
+        ogType: 'product',
+        ogImage: product.image.startsWith('http') ? product.image : `${baseUrl}${product.image}`,
+        jsonLd,
+      },
+    });
+  })
+);
 
 // ─── Dedicated Shopping Cart Page (/cart) ───
 router.get('/cart', (req, res) => {
@@ -197,119 +447,172 @@ router.get('/cart', (req, res) => {
   res.render('store/cart', state);
 });
 
-// ─── Cart Endpoints ───
-router.post('/cart/add', (req, res) => {
-  const { product_id, qty, size, color, buy_now } = req.body;
-  const prod = db.get('SELECT * FROM products WHERE id = ? AND status = 1', Number(product_id));
-  if (!prod) {
-    if (wantsJson(req)) {
-      return res.status(404).json({ success: false, message: 'পণ্য খুঁজে পাওয়া যায়নি।' });
+// ─── Cart Entry Endpoints (Product Lookup Backed by MySQL-First Repository) ───
+router.post(
+  '/cart/add',
+  asyncHandler(async (req, res) => {
+    const t = res.locals.t;
+    const { product_id, variant_id, qty, size, color, buy_now } = req.body;
+    const prod = await storefrontRepo.findProductForCart(product_id, { locale: req.locale });
+    if (!prod) {
+      const msg = t('store.productNotFoundMsg');
+      if (wantsJson(req)) {
+        return res.status(404).json({ success: false, message: msg });
+      }
+      req.flash('error', msg);
+      return res.redirect('/all-products');
     }
-    req.flash('error', 'পণ্য খুঁজে পাওয়া যায়নি।');
-    return res.redirect('/all-products');
-  }
 
-  if (Number(prod.stock) <= 0) {
-    if (wantsJson(req)) {
-      return res.status(400).json({ success: false, message: `"${prod.name}" বর্তমানে স্টক আউট।` });
+    let matchedVariant = null;
+    if (prod.variants && prod.variants.length > 0) {
+      if (variant_id) {
+        matchedVariant = prod.variants.find((v) => Number(v.id) === Number(variant_id)) || null;
+      }
+      if (!matchedVariant && (size || color)) {
+        matchedVariant =
+          prod.variants.find(
+            (v) =>
+              (!size || v.size_label === String(size).trim()) &&
+              (!color || !v.color_label || v.color_label === String(color).trim())
+          ) || null;
+      }
+      if (!matchedVariant) {
+        matchedVariant = prod.variants.find((v) => v.is_in_stock) || prod.variants[0];
+      }
     }
-    req.flash('error', `"${prod.name}" বর্তমানে স্টক আউট।`);
-    return res.redirect(req.get('Referrer') || `/product/${prod.slug}`);
-  }
 
-  const addQty = Math.max(1, Number(qty || 1));
-  const chosenSize = String(size || (prod.sizes ? prod.sizes.split(',')[0].trim() : '১ কেজি')).trim();
-  const chosenColor = String(color || (prod.colors ? prod.colors.split(',')[0].trim() : '')).trim();
+    const availableStock = matchedVariant
+      ? Number(matchedVariant.available_stock || 0)
+      : Number(prod.available_stock || 0);
 
-  if (!Array.isArray(req.session.cart)) req.session.cart = [];
-  const existing = req.session.cart.find(
-    (it) => Number(it.product_id) === Number(prod.id) && it.size === chosenSize && it.color === chosenColor
-  );
+    if (availableStock <= 0) {
+      const msg = t('store.outOfStockMsg', { name: prod.name });
+      if (wantsJson(req)) {
+        return res.status(400).json({ success: false, message: msg });
+      }
+      req.flash('error', msg);
+      return res.redirect(req.get('Referrer') || `/product/${prod.slug}`);
+    }
 
-  if (existing) {
-    existing.qty = Math.min(Number(prod.stock || 999), Number(existing.qty || 1) + addQty);
-    existing.price =
-      prod.wholesale_price > 0 && prod.wholesale_min_qty > 0 && existing.qty >= prod.wholesale_min_qty
-        ? Number(prod.wholesale_price)
-        : Number(prod.new_price);
-  } else {
-    const finalQty = Math.min(Number(prod.stock || 999), addQty);
-    const unitPrice =
-      prod.wholesale_price > 0 && prod.wholesale_min_qty > 0 && finalQty >= prod.wholesale_min_qty
-        ? Number(prod.wholesale_price)
-        : Number(prod.new_price);
+    const addQty = Math.max(1, parseInt(String(qty || '1'), 10) || 1);
+    const chosenSize = String(
+      (matchedVariant && matchedVariant.size_label) ||
+        size ||
+        prod.size_options[0] ||
+        prod.unit ||
+        'Standard'
+    ).trim();
+    const chosenColor = String(
+      (matchedVariant && matchedVariant.color_label) ||
+        color ||
+        prod.color_options[0] ||
+        ''
+    ).trim();
 
-    req.session.cart.push({
-      key: `${prod.id}-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      product_id: prod.id,
-      name: prod.name,
-      slug: prod.slug,
-      image: prod.image,
-      regular_price: Number(prod.new_price),
-      wholesale_price: Number(prod.wholesale_price || 0),
-      wholesale_min_qty: Number(prod.wholesale_min_qty || 0),
-      price: unitPrice,
-      qty: finalQty,
-      size: chosenSize,
-      color: chosenColor,
-    });
-  }
+    if (!Array.isArray(req.session.cart)) req.session.cart = [];
+    const existing = req.session.cart.find(
+      (it) =>
+        Number(it.product_id) === Number(prod.id) &&
+        Number(it.variant_id || 0) === Number(matchedVariant ? matchedVariant.id : 0) &&
+        it.size === chosenSize &&
+        it.color === chosenColor
+    );
 
-  const state = computeCartTotals(req);
-  const isBuyNow = String(buy_now || '') === '1' || buy_now === true;
+    if (existing) {
+      existing.qty = Math.min(availableStock, Number(existing.qty || 1) + addQty);
+      existing.price = resolveEffectiveUnitPrice(prod, matchedVariant, existing.qty);
+    } else {
+      const finalQty = Math.min(availableStock, addQty);
+      const baseRetail = matchedVariant && matchedVariant.price > 0 ? matchedVariant.price : prod.new_price;
+      const unitPrice = resolveEffectiveUnitPrice(prod, matchedVariant, finalQty);
 
-  if (wantsJson(req)) {
-    return res.json({
-      success: true,
-      message: `"${prod.name}" কার্টে যোগ করা হয়েছে!`,
-      ...state,
-      sessionToken: req.sessionID,
-      redirect: isBuyNow ? '/customer/checkout' : null,
-    });
-  }
+      req.session.cart.push({
+        key: `${prod.id}-${matchedVariant ? matchedVariant.id : 0}-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        product_id: prod.id,
+        variant_id: matchedVariant ? matchedVariant.id : null,
+        sku: matchedVariant ? matchedVariant.variant_sku : prod.sku,
+        name: prod.name,
+        slug: prod.slug,
+        image: prod.image,
+        regular_price: Number(baseRetail),
+        wholesale_price: Number(prod.wholesale_price || 0),
+        wholesale_min_qty: Number(prod.wholesale_min_qty || 0),
+        price: unitPrice,
+        qty: finalQty,
+        size: chosenSize,
+        color: chosenColor,
+      });
+    }
 
-  if (isBuyNow) {
-    return res.redirect('/customer/checkout');
-  }
-  req.flash('success', `"${prod.name}" কার্টে যোগ করা হয়েছে!`);
-  res.redirect(req.get('Referrer') || '/cart');
-});
+    const state = computeCartTotals(req);
+    const isBuyNow = String(buy_now || '') === '1' || buy_now === true;
+    const addedMsg = t('store.addedToCartMsg', { name: prod.name });
 
-router.post('/cart/update', (req, res) => {
-  const { key, qty } = req.body;
-  if (Array.isArray(req.session.cart)) {
-    const item = req.session.cart.find((i) => i.key === key);
-    if (item) {
-      const n = Number(qty);
-      if (n <= 0) {
-        req.session.cart = req.session.cart.filter((i) => i.key !== key);
-      } else {
-        const prod = db.get('SELECT * FROM products WHERE id = ?', item.product_id);
-        const maxStock = prod ? Math.max(1, Number(prod.stock || 999)) : 999;
-        item.qty = Math.min(maxStock, n);
-        if (prod) {
-          item.price =
-            prod.wholesale_price > 0 && prod.wholesale_min_qty > 0 && item.qty >= prod.wholesale_min_qty
-              ? Number(prod.wholesale_price)
-              : Number(prod.new_price);
+    if (wantsJson(req)) {
+      return res.json({
+        success: true,
+        message: addedMsg,
+        ...state,
+        sessionToken: req.sessionID,
+        redirect: isBuyNow ? '/customer/checkout' : null,
+      });
+    }
+
+    if (isBuyNow) {
+      return res.redirect('/customer/checkout');
+    }
+    req.flash('success', addedMsg);
+    return res.redirect(req.get('Referrer') || '/cart');
+  })
+);
+
+router.post(
+  '/cart/update',
+  asyncHandler(async (req, res) => {
+    const t = res.locals.t;
+    const { key, qty } = req.body;
+    if (Array.isArray(req.session.cart)) {
+      const item = req.session.cart.find((i) => i.key === key);
+      if (item) {
+        const n = Number(qty);
+        if (n <= 0) {
+          req.session.cart = req.session.cart.filter((i) => i.key !== key);
+        } else {
+          const prod = await storefrontRepo.findProductForCart(item.product_id, {
+            locale: req.locale,
+          });
+          const matchedVariant =
+            prod && item.variant_id
+              ? prod.variants.find((v) => Number(v.id) === Number(item.variant_id))
+              : null;
+          const maxStock = matchedVariant
+            ? Math.max(1, Number(matchedVariant.available_stock || 1))
+            : prod
+              ? Math.max(1, Number(prod.available_stock || 1))
+              : 999;
+          item.qty = Math.min(maxStock, Math.floor(n));
+          if (prod) {
+            item.price = resolveEffectiveUnitPrice(prod, matchedVariant, item.qty);
+          }
         }
       }
     }
-  }
 
-  const state = computeCartTotals(req);
-  if (wantsJson(req)) {
-    return res.json({
-      success: true,
-      message: 'কার্ট আপডেট করা হয়েছে।',
-      ...state,
-      sessionToken: req.sessionID,
-    });
-  }
-  res.redirect(req.get('Referrer') || '/customer/checkout');
-});
+    const state = computeCartTotals(req);
+    if (wantsJson(req)) {
+      return res.json({
+        success: true,
+        message: t('store.updatedCartMsg'),
+        ...state,
+        sessionToken: req.sessionID,
+      });
+    }
+    return res.redirect(req.get('Referrer') || '/customer/checkout');
+  })
+);
 
 router.post('/cart/remove', (req, res) => {
+  const t = res.locals.t;
   const { key } = req.body;
   if (Array.isArray(req.session.cart)) {
     req.session.cart = req.session.cart.filter((i) => i.key !== key);
@@ -318,29 +621,30 @@ router.post('/cart/remove', (req, res) => {
   if (wantsJson(req)) {
     return res.json({
       success: true,
-      message: 'পণ্যটি কার্ট থেকে সরানো হয়েছে।',
+      message: t('store.removedFromCartMsg'),
       ...state,
       sessionToken: req.sessionID,
     });
   }
-  res.redirect(req.get('Referrer') || '/customer/checkout');
+  return res.redirect(req.get('Referrer') || '/customer/checkout');
 });
 
 router.post('/cart/clear', (req, res) => {
+  const t = res.locals.t;
   req.session.cart = [];
   delete req.session.appliedCoupon;
   if (wantsJson(req)) {
     return res.json({
       success: true,
-      message: 'কার্ট খালি করা হয়েছে।',
+      message: t('store.clearedCartMsg'),
       cart: [],
       cartCount: 0,
       cartSubtotal: 0,
       discount: 0,
     });
   }
-  req.flash('success', 'শপিং কার্ট খালি করা হয়েছে।');
-  res.redirect('/cart');
+  req.flash('success', t('store.clearedCartMsg'));
+  return res.redirect('/cart');
 });
 
 router.get('/cart/json', (req, res) => {
@@ -350,6 +654,11 @@ router.get('/cart/json', (req, res) => {
     sessionToken: req.sessionID,
   });
 });
+
+// ============================================================================
+// DEFERRED CHECKOUT, ORDER & LANDING PAGE ROUTES (SCHEDULED PHASES 07, 08, 15)
+// Documented in `docs/PHASE_05_CUSTOMER_STOREFRONT.md` §2.2
+// ============================================================================
 
 // ─── Direct 1-Click Quick Order (from Quick Order Modal or Product Page) ───
 router.post('/order/quick-submit', (req, res) => {
@@ -418,7 +727,7 @@ router.post('/order/quick-submit', (req, res) => {
   const totalAmount = subtotal + shippingCharge;
   const inv = generateInvoiceId();
   const trafficSource = detectTrafficSource(req);
-  const chosenSize = String(size || (prod.sizes ? prod.sizes.split(',')[0].trim() : '১ কেজি')).trim();
+  const chosenSize = String(size || (prod.sizes ? prod.sizes.split(',')[0].trim() : 'Standard')).trim();
   const chosenColor = String(color || '').trim();
 
   const ordRes = db.run(
@@ -484,7 +793,7 @@ router.post('/order/quick-submit', (req, res) => {
       message: `অর্ডার #${inv} সফলভাবে সম্পন্ন হয়েছে!`,
     });
   }
-  res.redirect(successUrl);
+  return res.redirect(successUrl);
 });
 
 // ─── Coupon Validation ───
@@ -599,8 +908,6 @@ router.post('/customer/checkout', (req, res) => {
   }
 
   const clientIp = req.ip || '';
-
-  // Check IP / Phone Block
   const blocked = db.get(
     'SELECT * FROM ip_blocks WHERE status = 1 AND (ip_or_phone = ? OR ip_or_phone = ?)',
     cleanPhone,
@@ -661,7 +968,7 @@ router.post('/customer/checkout', (req, res) => {
       item.image,
       Number(item.price),
       Number(item.qty),
-      item.size || '১ কেজি',
+      item.size || 'Standard',
       item.color || ''
     );
     db.run(
@@ -676,10 +983,8 @@ router.post('/customer/checkout', (req, res) => {
     db.run('UPDATE coupons SET used_count = used_count + 1 WHERE code = ?', appliedCoupon.code);
   }
 
-  // Mark abandoned order resolved if any
   db.run("DELETE FROM incomplete_orders WHERE phone = ? AND status = 'abandoned'", cleanPhone);
 
-  // Upsert customer
   const existingCust = db.get('SELECT id FROM customers WHERE phone = ?', cleanPhone);
   if (!existingCust) {
     db.run(
@@ -700,7 +1005,7 @@ router.post('/customer/checkout', (req, res) => {
   req.session.cart = [];
   delete req.session.appliedCoupon;
 
-  res.redirect(`/order-success/${inv}`);
+  return res.redirect(`/order-success/${inv}`);
 });
 
 router.get('/order-success/:invoiceId', (req, res) => {
@@ -713,10 +1018,9 @@ router.get('/order-success/:invoiceId', (req, res) => {
   );
   if (!order) return res.redirect('/');
   const items = db.all('SELECT * FROM order_items WHERE order_id = ?', order.id);
-  res.render('store/order-success', { order, items });
+  return res.render('store/order-success', { order, items });
 });
 
-// Allow customer to cancel order while still pending
 router.post('/order/:invoiceId/cancel', (req, res) => {
   const order = db.get('SELECT * FROM orders WHERE invoice_id = ?', req.params.invoiceId);
   if (!order) return res.redirect('/track-order');
@@ -739,14 +1043,13 @@ router.post('/order/:invoiceId/cancel', (req, res) => {
     }
   }
   req.flash('success', `অর্ডার #${order.invoice_id} বাতিল করা হয়েছে।`);
-  res.redirect(`/track-order?q=${order.invoice_id}`);
+  return res.redirect(`/track-order?q=${order.invoice_id}`);
 });
 
-// ─── Order Tracking (/track-order, /order-track, /site/order-track) ───
 router.get(['/track-order', '/order-track', '/site/order-track'], (req, res) => {
   const query = String(req.query.q || '').trim().replace(/^#/, '');
   let orders = [];
-  if (query) {
+  if (query && !storefrontRepo.isMysqlMode()) {
     orders = db.all(
       `SELECT o.*, COALESCE(os.name, o.status) AS status_label, COALESCE(os.color, '#f59e0b') AS status_color
        FROM orders o
@@ -763,12 +1066,13 @@ router.get(['/track-order', '/order-track', '/site/order-track'], (req, res) => 
   res.render('store/track-order', { query, orders });
 });
 
-// ─── Single Product Landing Page (/campaign/:slug) ───
 router.get('/campaign/:slug', (req, res) => {
   const campaign = db.get('SELECT * FROM campaigns WHERE slug = ? AND status = 1', req.params.slug);
   if (!campaign) return res.redirect('/');
-  const product = db.get('SELECT * FROM products WHERE id = ?', campaign.product_id) || db.get('SELECT * FROM products LIMIT 1');
-  res.render('store/campaign', { campaign, product });
+  const product =
+    db.get('SELECT * FROM products WHERE id = ?', campaign.product_id) ||
+    db.get('SELECT * FROM products LIMIT 1');
+  return res.render('store/campaign', { campaign, product });
 });
 
 router.post('/campaign/:slug/order', (req, res) => {
@@ -808,136 +1112,324 @@ router.post('/campaign/:slug/order', (req, res) => {
     Number(campaign.offer_price),
     orderQty
   );
-  res.redirect(`/order-success/${inv}`);
+  return res.redirect(`/order-success/${inv}`);
 });
 
-// ─── Blogs & CMS Pages ───
-router.get('/blogs', (_req, res) => {
-  const blogs = db.all('SELECT * FROM blogs WHERE status = 1 ORDER BY id DESC');
-  res.render('store/page', { mode: 'blogs', blogs, page: null });
-});
+// ============================================================================
+// PHASE 05 — BLOGS, CMS POLICIES, ABOUT, FAQ, CONTACT, SUPPORT & SEO ENDPOINTS
+// ============================================================================
 
-router.get('/blog/:slug', (req, res) => {
-  const blog = db.get('SELECT * FROM blogs WHERE slug = ?', req.params.slug);
-  if (!blog) return res.redirect('/blogs');
-  res.render('store/page', { mode: 'blog_detail', blogs: [], page: blog });
-});
-
-router.get('/page/:slug', (req, res) => {
-  const page = db.get('SELECT * FROM cms_pages WHERE slug = ?', req.params.slug);
-  if (!page) return res.redirect('/');
-  res.render('store/page', { mode: 'cms', blogs: [], page });
-});
-
-// ─── Customer APIs (Live Support Chat, Complaint, Reviews, Social Proof Toast, Sitemap) ───
-router.post('/api/store-assistant', (req, res) => {
-  const msg = String(req.body.message || '').trim();
-  const q = msg.toLowerCase();
-
-  const numMatch = msg.match(/\d{5,11}/);
-  if (numMatch) {
-    const token = numMatch[0];
-    const ord = db.get('SELECT * FROM orders WHERE invoice_id = ? OR phone = ? ORDER BY id DESC LIMIT 1', token, token);
-    if (ord) {
-      return res.json({
-        success: true,
-        reply: `📦 অর্ডার পাওয়া গেছে!\n• ইনভয়েস: #${ord.invoice_id}\n• নাম: ${ord.customer_name}\n• মোট মূল্য: ৳${ord.amount}\n• বর্তমান স্ট্যাটাস: ${ord.status.toUpperCase()}${ord.courier_tracking_id ? '\n• কুরিয়ার ট্র্যাকিং: ' + ord.courier_tracking_id : ''}`,
-      });
-    }
-  }
-
-  if (q.includes('দাম') || q.includes('লিচু') || q.includes('প্রোডাক্ট') || q.includes('খুঁজুন')) {
-    const prods = db.all('SELECT name, new_price FROM products WHERE status = 1 LIMIT 5');
-    return res.json({
-      success: true,
-      reply:
-        '🍒 আমাদের জনপ্রিয় তাজা ফলসমূহ:\n' +
-        prods.map((p) => `• ${p.name} — ৳${p.new_price}`).join('\n') +
-        '\n\nযেকোনো পণ্যের "🛒 কার্টে যোগ" বা "অর্ডার করুন" বাটনে ক্লিক করে খুব সহজেই অর্ডার করতে পারবেন!',
+router.get(
+  '/blogs',
+  asyncHandler(async (req, res) => {
+    const baseUrl = buildBaseUrl(req);
+    const blogData = await storefrontRepo.listBlogs({
+      locale: req.locale,
+      category: req.query.category,
+      page: req.query.page,
+      perPage: 6,
     });
-  }
-
-  if (q.includes('ট্র্যাক') || q.includes('track')) {
-    return res.json({
-      success: true,
-      reply: '📦 অর্ডার ট্র্যাক করতে আপনার ৫ সংখ্যার Invoice নম্বর (যেমন: 32721) অথবা অর্ডারের মোবাইল নম্বর এখানে লিখে পাঠান!',
+    res.render('store/page', {
+      mode: 'blogs',
+      blogs: blogData.items,
+      relatedBlogs: [],
+      page: null,
+      blogPagination: {
+        page: blogData.page,
+        totalPages: blogData.totalPages,
+        baseUrl: buildPaginationBaseUrl('/blogs', req.query),
+      },
+      pageMeta: {
+        title: res.locals.t('common.blogs'),
+        description: res.locals.t('store.blogSub'),
+        canonicalUrl: `${baseUrl}/blogs`,
+        ogType: 'website',
+      },
     });
-  }
+  })
+);
 
-  if (q.includes('রিফান্ড') || q.includes('refund') || q.includes('রিটার্ন')) {
-    return res.json({
-      success: true,
-      reply: '💰 রিটার্ন ও রিফান্ড নীতি: ডেলিভারি ম্যানের সামনে ফল চেক করে নিন। কোনো সমস্যা থাকলে সাথে সাথে রিটার্ন অথবা ২৪ ঘণ্টার মধ্যে জানালে ১০০% রিপ্লেসমেন্ট/রিফান্ড পাবেন।',
+router.get(
+  '/blog/:slug',
+  asyncHandler(async (req, res) => {
+    const found = await storefrontRepo.getBlogBySlug(req.params.slug, { locale: req.locale });
+    if (!found) return renderStoreNotFound(req, res);
+
+    const baseUrl = buildBaseUrl(req);
+    return res.render('store/page', {
+      mode: 'blog_detail',
+      blogs: [],
+      relatedBlogs: found.relatedBlogs,
+      page: found.blog,
+      pageMeta: {
+        title: found.blog.title,
+        description: found.blog.summary,
+        canonicalUrl: `${baseUrl}/blog/${encodeURIComponent(found.blog.slug)}`,
+        ogType: 'article',
+        ogImage: found.blog.image.startsWith('http')
+          ? found.blog.image
+          : `${baseUrl}${found.blog.image}`,
+      },
     });
-  }
+  })
+);
 
-  res.json({
-    success: true,
-    reply:
-      req.locale === 'en'
-        ? 'Welcome to Mr. Tumi Grocery & Gift! 😊\nHow can we help you today?\n• Search product prices & stock\n• Enter your Invoice ID or phone number to track an order\n• Click Feedback/Complaint in the footer for support.'
-        : 'স্বাগতম মি. তুমি গ্রোসারি অ্যান্ড গিফট-এ! 😊\nআপনি নিচের যেকোনো বিষয়ে জানতে পারেন:\n• পণ্যের দাম ও স্টক তথ্য জানতে নাম লিখুন\n• অর্ডার ট্র্যাক করতে ইনভয়েস বা মোবাইল নম্বর লিখুন\n• অভিযোগ বা পরামর্শ জানাতে ফুটারের সহায়তা বাটনে ক্লিক করুন।',
+router.get(
+  '/about',
+  asyncHandler(async (req, res) => {
+    const baseUrl = buildBaseUrl(req);
+    const cms = await storefrontRepo.getCmsPageBySlug('about-us', { locale: req.locale });
+    const page = cms || {
+      slug: 'about-us',
+      title: res.locals.t('store.aboutNav'),
+      content: res.locals.t('store.footerTagline'),
+    };
+    return res.render('store/page', {
+      mode: 'cms',
+      blogs: [],
+      relatedBlogs: [],
+      page,
+      pageMeta: {
+        title: page.title,
+        canonicalUrl: `${baseUrl}/about`,
+        ogType: 'website',
+      },
+    });
+  })
+);
+
+router.get('/faq', (req, res) => {
+  const t = res.locals.t;
+  const fmt = res.locals.fmt;
+  const s = res.locals.siteSettings;
+  const baseUrl = buildBaseUrl(req);
+
+  const faqItems = [
+    { q: t('store.faqQ1'), a: t('store.faqA1') },
+    {
+      q: t('store.faqQ2'),
+      a: t('store.faqA2', {
+        insideFee: fmt.bdt(Number(s.inside_dhaka_charge || 60)),
+        outsideFee: fmt.bdt(Number(s.outside_dhaka_charge || 120)),
+        freeMin: fmt.bdt(Number(s.free_shipping_min || 2500)),
+      }),
+    },
+    { q: t('store.faqQ3'), a: t('store.faqA3') },
+    { q: t('store.faqQ4'), a: t('store.faqA4') },
+    { q: t('store.faqQ5'), a: t('store.faqA5') },
+  ];
+
+  res.render('store/page', {
+    mode: 'faq',
+    blogs: [],
+    relatedBlogs: [],
+    page: { title: t('store.faqPageTitle') },
+    faqItems,
+    pageMeta: {
+      title: t('store.faqPageTitle'),
+      description: t('store.faqPageSub'),
+      canonicalUrl: `${baseUrl}/faq`,
+      ogType: 'website',
+    },
   });
 });
 
-router.post('/api/complaint', (req, res) => {
-  const { name, phone, invoice_id, details } = req.body;
-  if (!name || !phone || !details) {
-    return res.status(400).json({ success: false, message: 'নাম, মোবাইল ও বিস্তারিত তথ্য আবশ্যক।' });
-  }
-  db.run(
-    'INSERT INTO complaints (name, phone, invoice_id, details) VALUES (?, ?, ?, ?)',
-    name.trim(),
-    phone.trim(),
-    (invoice_id || '').trim(),
-    details.trim()
-  );
-  res.json({ success: true, message: 'আপনার অভিযোগ সফলভাবে জমা হয়েছে। আমাদের সাপোর্ট টিম দ্রুত যোগাযোগ করবে।' });
+router.get('/contact', (req, res) => {
+  const t = res.locals.t;
+  const baseUrl = buildBaseUrl(req);
+  res.render('store/page', {
+    mode: 'contact',
+    blogs: [],
+    relatedBlogs: [],
+    page: { title: t('store.contactPageTitle') },
+    pageMeta: {
+      title: t('store.contactPageTitle'),
+      description: t('store.contactPageSub'),
+      canonicalUrl: `${baseUrl}/contact`,
+      ogType: 'website',
+    },
+  });
 });
 
-router.post('/api/contact', (req, res) => {
-  const { name, phone, email, subject, message } = req.body;
-  if (name && message) {
-    db.run(
-      'INSERT INTO contact_messages (name, phone, email, subject, message) VALUES (?, ?, ?, ?, ?)',
-      name,
-      phone || '',
-      email || '',
-      subject || '',
-      message
-    );
-  }
-  req.flash('success', 'আপনার বার্তা সফলভাবে পাঠানো হয়েছে!');
-  res.redirect(req.get('Referrer') || '/');
-});
+router.get(
+  '/page/:slug',
+  asyncHandler(async (req, res) => {
+    const page = await storefrontRepo.getCmsPageBySlug(req.params.slug, { locale: req.locale });
+    if (!page) return renderStoreNotFound(req, res);
 
-router.post('/api/newsletter', (req, res) => {
-  const val = String(req.body.email_or_phone || '').trim();
-  if (val) {
-    try {
-      db.run('INSERT INTO newsletter_subscribers (email_or_phone) VALUES (?)', val);
-    } catch (_e) {}
-  }
-  req.flash('success', 'নিউজলেটারে সাবস্ক্রাইব করার জন্য ধন্যবাদ!');
-  res.redirect(req.get('Referrer') || '/');
-});
+    const baseUrl = buildBaseUrl(req);
+    return res.render('store/page', {
+      mode: 'cms',
+      blogs: [],
+      relatedBlogs: [],
+      page,
+      pageMeta: {
+        title: page.title,
+        canonicalUrl: `${baseUrl}/page/${encodeURIComponent(page.slug)}`,
+        ogType: 'website',
+      },
+    });
+  })
+);
 
-router.post('/api/review', (req, res) => {
-  const { product_id, customer_name, rating, comment } = req.body;
-  if (product_id && customer_name && comment) {
-    db.run(
-      "INSERT INTO reviews (product_id, customer_name, rating, comment, status) VALUES (?, ?, ?, ?, 'pending')",
-      Number(product_id),
-      customer_name.trim(),
-      Math.min(5, Math.max(1, Number(rating || 5))),
-      comment.trim()
-    );
-    req.flash('success', 'আপনার রিভিউ জমা হয়েছে! অ্যাডমিন অনুমোদনের পর প্রদর্শিত হবে।');
-  }
-  res.redirect(req.get('Referrer') || '/');
-});
+// ─── Customer Support Assistant, Complaint, Contact, Newsletter, Review & SEO ───
+router.post(
+  '/api/store-assistant',
+  asyncHandler(async (req, res) => {
+    const msg = String(req.body.message || '').trim();
+    const q = msg.toLowerCase();
+    const fmt = res.locals.fmt;
+    const isEn = req.locale === 'en';
+
+    const numMatch = msg.match(/\d{5,11}/);
+    if (numMatch && !storefrontRepo.isMysqlMode()) {
+      const token = numMatch[0];
+      const ord = db.get(
+        'SELECT * FROM orders WHERE invoice_id = ? OR phone = ? ORDER BY id DESC LIMIT 1',
+        token,
+        token
+      );
+      if (ord) {
+        return res.json({
+          success: true,
+          reply: isEn
+            ? `📦 Order Found!\n• Invoice: #${ord.invoice_id}\n• Customer: ${ord.customer_name}\n• Total: ${fmt.bdt(ord.amount)}\n• Status: ${String(ord.status || '').toUpperCase()}${ord.courier_tracking_id ? '\n• Courier Tracking: ' + ord.courier_tracking_id : ''}`
+            : `📦 অর্ডার পাওয়া গেছে!\n• ইনভয়েস: #${ord.invoice_id}\n• নাম: ${ord.customer_name}\n• মোট মূল্য: ${fmt.bdt(ord.amount)}\n• বর্তমান স্ট্যাটাস: ${String(ord.status || '').toUpperCase()}${ord.courier_tracking_id ? '\n• কুরিয়ার ট্র্যাকিং: ' + ord.courier_tracking_id : ''}`,
+        });
+      }
+    }
+
+    if (
+      q.includes('দাম') ||
+      q.includes('price') ||
+      q.includes('প্রোডাক্ট') ||
+      q.includes('খুঁজুন') ||
+      q.includes('product') ||
+      q.includes('gift') ||
+      q.includes('গিফট')
+    ) {
+      const listing = await storefrontRepo.listStorefrontProducts({
+        locale: req.locale,
+        perPage: 5,
+      });
+      if (listing.items.length > 0) {
+        return res.json({
+          success: true,
+          reply:
+            (isEn ? '🛒 Available Products:\n' : '🛒 আমাদের উপলব্ধ পণ্যসমূহ:\n') +
+            listing.items.map((p) => `• ${p.name} — ${fmt.bdt(p.new_price)}`).join('\n'),
+        });
+      }
+    }
+
+    if (q.includes('ট্র্যাক') || q.includes('track')) {
+      return res.json({
+        success: true,
+        reply: isEn
+          ? '📦 Visit /track-order or send your Invoice ID / mobile number here to check your order status.'
+          : '📦 অর্ডার ট্র্যাক করতে /track-order পেজে যান অথবা আপনার ইনভয়েস বা মোবাইল নম্বর এখানে লিখে পাঠান!',
+      });
+    }
+
+    return res.json({
+      success: true,
+      reply: isEn
+        ? 'Welcome to Mr. Tumi Grocery & Gift! 😊\nHow can we help you today?\n• Ask for product prices & availability\n• Track an order via /track-order\n• Visit /contact or use Feedback & Complaint for support.'
+        : 'স্বাগতম মি. তুমি গ্রোসারি অ্যান্ড গিফট-এ! 😊\nআপনি নিচের যেকোনো বিষয়ে জানতে পারেন:\n• পণ্যের দাম ও স্টক তথ্য জানতে নাম লিখুন\n• অর্ডার ট্র্যাক করতে ইনভয়েস বা মোবাইল নম্বর লিখুন\n• সহায়তা বা অভিযোগের জন্য /contact পেজ দেখুন।',
+    });
+  })
+);
+
+router.post(
+  '/api/complaint',
+  publicFormLimiter,
+  asyncHandler(async (req, res) => {
+    const t = res.locals.t;
+    const result = await storefrontRepo.submitComplaint({
+      name: req.body.name,
+      phone: req.body.phone,
+      invoiceNo: req.body.invoice_id || req.body.invoice_no,
+      details: req.body.details,
+    });
+    if (!result.ok) {
+      return res.status(400).json({ success: false, message: t('store.complaintValidationError') });
+    }
+    return res.json({ success: true, message: t('store.complaintSuccessMsg') });
+  })
+);
+
+router.post(
+  '/api/contact',
+  publicFormLimiter,
+  asyncHandler(async (req, res) => {
+    const t = res.locals.t;
+    const result = await storefrontRepo.submitContactMessage({
+      name: req.body.name,
+      phone: req.body.phone,
+      email: req.body.email,
+      subject: req.body.subject,
+      message: req.body.message,
+    });
+    if (!result.ok) {
+      if (wantsJson(req)) {
+        return res.status(400).json({ success: false, message: t('store.contactValidationError') });
+      }
+      req.flash('error', t('store.contactValidationError'));
+      return res.redirect(req.get('Referrer') || '/contact');
+    }
+    if (wantsJson(req)) {
+      return res.json({ success: true, message: t('store.contactSuccessMsg') });
+    }
+    req.flash('success', t('store.contactSuccessMsg'));
+    return res.redirect(req.get('Referrer') || '/contact');
+  })
+);
+
+router.post(
+  '/api/newsletter',
+  publicFormLimiter,
+  asyncHandler(async (req, res) => {
+    const t = res.locals.t;
+    await storefrontRepo.subscribeNewsletter(req.body.email_or_phone);
+    if (wantsJson(req)) {
+      return res.json({ success: true, message: t('store.newsletterSuccessMsg') });
+    }
+    req.flash('success', t('store.newsletterSuccessMsg'));
+    return res.redirect(req.get('Referrer') || '/');
+  })
+);
+
+router.post(
+  '/api/review',
+  publicFormLimiter,
+  asyncHandler(async (req, res) => {
+    const t = res.locals.t;
+    const result = await storefrontRepo.submitProductReview({
+      productId: req.body.product_id,
+      customerId: req.customerUser ? req.customerUser.id : null,
+      customerName: req.body.customer_name,
+      rating: req.body.rating,
+      comment: req.body.comment,
+    });
+    if (!result.ok) {
+      if (wantsJson(req)) {
+        return res.status(400).json({ success: false, message: t('store.reviewValidationError') });
+      }
+      req.flash('error', t('store.reviewValidationError'));
+      return res.redirect(req.get('Referrer') || '/all-products');
+    }
+    if (wantsJson(req)) {
+      return res.json({ success: true, status: 'pending', message: t('store.reviewSubmittedPending') });
+    }
+    req.flash('success', t('store.reviewSubmittedPending'));
+    return res.redirect(req.get('Referrer') || '/');
+  })
+);
 
 router.get('/api/recent-verified-order', (_req, res) => {
+  if (storefrontRepo.isMysqlMode()) {
+    return res.json({ enabled: false });
+  }
   const s = db.getSettings();
   if (s.sale_notification_enabled === '0') {
     return res.json({ enabled: false });
@@ -950,7 +1442,7 @@ router.get('/api/recent-verified-order', (_req, res) => {
      ORDER BY RANDOM() LIMIT 1`
   );
   if (!ord) return res.json({ enabled: false });
-  res.json({
+  return res.json({
     enabled: true,
     customer: ord.customer_name,
     location: ord.address,
@@ -960,24 +1452,51 @@ router.get('/api/recent-verified-order', (_req, res) => {
   });
 });
 
-router.get('/sitemap.xml', (req, res) => {
-  const baseUrl = `${req.protocol}://${req.get('host')}`;
-  const prods = db.all('SELECT slug FROM products WHERE status = 1');
-  const cats = db.all('SELECT slug FROM categories WHERE status = 1');
-  const urls = [
-    `${baseUrl}/`,
-    `${baseUrl}/all-products`,
-    `${baseUrl}/flash-sales`,
-    `${baseUrl}/hot-deals`,
-    `${baseUrl}/cart`,
-    ...cats.map((c) => `${baseUrl}/category/${c.slug}`),
-    ...prods.map((p) => `${baseUrl}/product/${p.slug}`),
-  ];
-  const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${urls.map((u) => `  <url><loc>${u}</loc></url>`).join('\n')}
-</urlset>`;
-  res.type('application/xml').send(xml);
+router.get('/robots.txt', (req, res) => {
+  const baseUrl = buildBaseUrl(req);
+  const txt = [
+    'User-agent: *',
+    'Allow: /',
+    'Disallow: /admin/',
+    'Disallow: /vendor/',
+    'Disallow: /reseller/',
+    'Disallow: /cart',
+    'Disallow: /customer/checkout',
+    'Disallow: /api/',
+    `Sitemap: ${baseUrl}/sitemap.xml`,
+    '',
+  ].join('\n');
+  res.type('text/plain').send(txt);
 });
+
+router.get(
+  '/sitemap.xml',
+  asyncHandler(async (req, res) => {
+    const baseUrl = buildBaseUrl(req);
+    const entries = await storefrontRepo.getSitemapEntries();
+    const urls = [
+      `${baseUrl}/`,
+      `${baseUrl}/all-products`,
+      `${baseUrl}/flash-sales`,
+      `${baseUrl}/hot-deals`,
+      `${baseUrl}/about`,
+      `${baseUrl}/faq`,
+      `${baseUrl}/contact`,
+      `${baseUrl}/blogs`,
+      ...entries.categories.map((c) => `${baseUrl}/category/${encodeURIComponent(c.slug)}`),
+      ...entries.subcategories.map((sc) => `${baseUrl}/subcategory/${encodeURIComponent(sc.slug)}`),
+      ...entries.childcategories.map((cc) => `${baseUrl}/childcategory/${encodeURIComponent(cc.slug)}`),
+      ...entries.brands.map((b) => `${baseUrl}/brand/${encodeURIComponent(b.slug)}`),
+      ...entries.products.map((p) => `${baseUrl}/product/${encodeURIComponent(p.slug)}`),
+      ...entries.blogs.map((b) => `${baseUrl}/blog/${encodeURIComponent(b.slug)}`),
+      ...entries.pages.map((pg) => `${baseUrl}/page/${encodeURIComponent(pg.slug)}`),
+    ];
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${urls.map((u) => `  <url><loc>${escapeXml(u)}</loc></url>`).join('\n')}
+</urlset>`;
+    res.type('application/xml').send(xml);
+  })
+);
 
 module.exports = router;

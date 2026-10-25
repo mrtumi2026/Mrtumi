@@ -91,6 +91,8 @@ const requiredDocs = [
   'docs/MYSQL_MIGRATION_PLAN.md',
   'docs/PHASE_03_DB_TRANSITION.md',
   'docs/PHASE_04_UI_DESIGN_SYSTEM.md',
+  'docs/PHASE_05_CUSTOMER_STOREFRONT.md',
+  'src/repositories/storefrontRepository.js',
   'public/shared/css/mrtumi-design-system.css',
   'public/shared/js/mrtumi-ui.js',
   'public/uploads/brand/mrtumi-placeholder-logo.svg',
@@ -111,7 +113,12 @@ check(
   JSON.stringify(bnKeys) === JSON.stringify(enKeys),
   `1:1 i18n key parity between bn (${bnKeys.length}) and en (${enKeys.length})`
 );
-for (const uiFile of [...walkFiles(path.join(ROOT, 'views')), ...walkFiles(path.join(ROOT, 'public'), '.svg'), ...walkFiles(path.join(ROOT, 'public'), '.css')]) {
+for (const uiFile of [
+  ...walkFiles(path.join(ROOT, 'views')),
+  ...walkFiles(path.join(ROOT, 'public'), '.svg'),
+  ...walkFiles(path.join(ROOT, 'public'), '.css'),
+  ...walkFiles(path.join(ROOT, 'public'), '.js'),
+]) {
   const relUi = path.relative(ROOT, uiFile);
   const txt = fs.readFileSync(uiFile, 'utf8');
   check(!/ফল\s*বাজার/.test(txt), `No legacy reference brand ("ফল বাজার") in ${relUi}`);

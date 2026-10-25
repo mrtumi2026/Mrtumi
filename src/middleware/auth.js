@@ -107,10 +107,30 @@ async function attachGlobals(req, res, next) {
     res.locals.cartCount = cartCount;
     res.locals.cartSubtotal = cartSubtotal;
 
-    // Categories, CMS pages & social links for storefront header/footer
-    res.locals.navCategories = navContext.navCategories;
-    res.locals.footerPages = navContext.footerPages;
-    res.locals.storeFeatures = navContext.storeFeatures;
+    // Categories, CMS pages & social links for storefront header/footer (localized per activeLocale)
+    const localizeNavLabel = (bnOrDefault, enCandidate) => {
+      const cleanEn = replaceLegacyBrandTokens(String(enCandidate || '').trim(), 'en');
+      const cleanBn = replaceLegacyBrandTokens(String(bnOrDefault || '').trim(), 'bn');
+      return activeLocale === 'en' ? cleanEn || cleanBn : cleanBn || cleanEn;
+    };
+
+    res.locals.navCategories = (navContext.navCategories || []).map((c) => ({
+      ...c,
+      name: localizeNavLabel(c.name_bn || c.name, c.name_en),
+      subcategories: (c.subcategories || []).map((sc) => ({
+        ...sc,
+        name: localizeNavLabel(sc.name_bn || sc.name, sc.name_en),
+      })),
+    }));
+    res.locals.footerPages = (navContext.footerPages || []).map((fp) => ({
+      ...fp,
+      title: localizeNavLabel(fp.title_bn || fp.title, fp.title_en),
+    }));
+    res.locals.storeFeatures = (navContext.storeFeatures || []).map((ft) => ({
+      ...ft,
+      title: localizeNavLabel(ft.title_bn || ft.title, ft.title_en),
+      subtitle: localizeNavLabel(ft.subtitle_bn || ft.subtitle, ft.subtitle_en),
+    }));
     res.locals.socialLinks = navContext.socialLinks;
 
     if (isAdminPath) {

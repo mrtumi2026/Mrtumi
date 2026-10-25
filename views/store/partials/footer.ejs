@@ -56,12 +56,31 @@
             </p>
             <div class="small mb-1">📍 <%= siteSettings.site_address %></div>
             <div class="small mb-1">📞 <%= t('common.hotline') %>: <strong><%= siteSettings.site_phone %></strong></div>
-            <div class="small">✉️ <%= siteSettings.site_email %></div>
+            <div class="small mb-3">✉️ <%= siteSettings.site_email %></div>
+
+            <% if (typeof socialLinks !== 'undefined' && socialLinks && socialLinks.length) { %>
+              <div class="d-flex flex-wrap gap-2 mt-2">
+                <% socialLinks.forEach(function(sl) { %>
+                  <a
+                    href="<%= sl.url %>"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="btn btn-sm btn-outline-light rounded-pill px-3"
+                    aria-label="<%= sl.platform %>"
+                  >
+                    <%= sl.platform %>
+                  </a>
+                <% }) %>
+              </div>
+            <% } %>
           </div>
 
           <div class="col-6 col-lg-2">
             <h6 class="fw-bold text-white mb-3"><%= t('store.footerCategories') %></h6>
             <ul class="list-unstyled small">
+              <li class="mb-2"><a href="/all-products" style="color: #cbd5e1;" class="text-decoration-none"><%= t('common.allProducts') %></a></li>
+              <li class="mb-2"><a href="/flash-sales" style="color: #cbd5e1;" class="text-decoration-none"><%= t('common.flashSale') %></a></li>
+              <li class="mb-2"><a href="/hot-deals" style="color: #cbd5e1;" class="text-decoration-none"><%= t('common.hotDeal') %></a></li>
               <% navCategories.slice(0, 5).forEach(function(c) { %>
                 <li class="mb-2"><a href="/category/<%= c.slug %>" style="color: #cbd5e1;" class="text-decoration-none"><%= c.name %></a></li>
               <% }) %>
@@ -71,25 +90,37 @@
           <div class="col-6 col-lg-3">
             <h6 class="fw-bold text-white mb-3"><%= t('store.footerPolicies') %></h6>
             <ul class="list-unstyled small">
-              <li class="mb-2"><a href="/cart" style="color: #cbd5e1;" class="text-decoration-none"><%= t('common.cart') %></a></li>
+              <li class="mb-2"><a href="/about" style="color: #cbd5e1;" class="text-decoration-none"><%= t('store.aboutNav') %></a></li>
+              <li class="mb-2"><a href="/faq" style="color: #cbd5e1;" class="text-decoration-none"><%= t('store.faqNav') %></a></li>
+              <li class="mb-2"><a href="/contact" style="color: #cbd5e1;" class="text-decoration-none"><%= t('store.contactNav') %></a></li>
+              <li class="mb-2"><a href="/blogs" style="color: #cbd5e1;" class="text-decoration-none"><%= t('common.blogs') %></a></li>
               <li class="mb-2"><a href="/track-order" style="color: #cbd5e1;" class="text-decoration-none"><%= t('common.trackOrder') %></a></li>
               <% footerPages.forEach(function(fp) { %>
-                <li class="mb-2"><a href="/page/<%= fp.slug %>" style="color: #cbd5e1;" class="text-decoration-none"><%= fp.title %></a></li>
+                <% if (fp.slug !== 'about-us') { %>
+                  <li class="mb-2"><a href="/page/<%= fp.slug %>" style="color: #cbd5e1;" class="text-decoration-none"><%= fp.title %></a></li>
+                <% } %>
               <% }) %>
-              <li class="mb-2"><a href="/admin/dashboard" class="text-warning text-decoration-none">🔐 <%= t('admin.controlPanel') %></a></li>
-              <li class="mb-2"><a href="/vendor/dashboard" class="text-warning text-decoration-none">🏪 <%= t('vendor.portalName') %></a></li>
-              <li class="mb-2"><a href="/reseller/dashboard" class="text-warning text-decoration-none">🤝 <%= t('reseller.portalName') %></a></li>
             </ul>
           </div>
 
           <div class="col-lg-3">
             <h6 class="fw-bold text-white mb-3"><%= t('store.subscribe') %></h6>
             <p class="small" style="color: #cbd5e1;"><%= locale === 'bn' ? 'নতুন গ্রোসারি ও গিফট অফারের আপডেট পান:' : 'Get updates on grocery & gift deals:' %></p>
-            <form action="/api/newsletter" method="POST" class="d-flex gap-2">
+            <form action="/api/newsletter" method="POST" class="d-flex gap-2 mb-3">
+              <input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>" />
               <label for="footerNewsletterInput" class="visually-hidden"><%= t('store.newsletterPlaceholder') %></label>
               <input type="text" id="footerNewsletterInput" name="email_or_phone" class="form-control form-control-sm" placeholder="<%= t('store.newsletterPlaceholder') %>" required />
               <button type="submit" class="btn btn-warning btn-sm fw-bold px-3"><%= t('store.subscribe') %></button>
             </form>
+
+            <div class="pt-2 border-top border-secondary border-opacity-25 small">
+              <div class="fw-semibold text-white mb-2"><%= t('store.footerPortals') %></div>
+              <div class="d-flex flex-wrap gap-2">
+                <a href="/admin/dashboard" class="badge bg-dark border text-warning text-decoration-none py-1.5 px-2">🔐 <%= t('admin.controlPanel') %></a>
+                <a href="/vendor/dashboard" class="badge bg-dark border text-light text-decoration-none py-1.5 px-2">🏪 <%= t('vendor.portalName') %></a>
+                <a href="/reseller/dashboard" class="badge bg-dark border text-light text-decoration-none py-1.5 px-2">🤝 <%= t('reseller.portalName') %></a>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -217,10 +248,21 @@
       </div>
     </div>
 
-    <!-- Initial Cart State for JS -->
+    <!-- Initial Cart & Bilingual Client Strings for JS -->
     <script>
-      window.__INITIAL_CART = <%- JSON.stringify(cart || []) %>;
+      window.__INITIAL_CART = <%- JSON.stringify(cart || []).replace(/</g, '\\u003c') %>;
       window.__FREE_SHIP_MIN = <%= Number(siteSettings.free_shipping_min || 2500) %>;
+      window.__MT_I18N = <%- JSON.stringify({
+        locale: locale,
+        miniCartEmptyTitle: t('store.miniCartEmptyTitle'),
+        miniCartEmptySub: t('store.miniCartEmptySub'),
+        removedFromCartMsg: t('store.removedFromCartMsg'),
+        networkErrorMsg: t('store.networkErrorMsg'),
+        selectRequiredVariant: t('store.selectRequiredVariant'),
+        removeLabel: t('a11y.removeItem'),
+        inStockLabel: t('common.inStock'),
+        outOfStockLabel: t('common.outOfStock'),
+      }).replace(/</g, '\\u003c') %>;
     </script>
 
     <!-- Verified Order Social Proof Popup -->
@@ -251,8 +293,8 @@
       </div>
 
       <div class="px-2 py-2 bg-light border-bottom d-flex flex-wrap gap-1">
-        <button type="button" class="btn btn-sm btn-white border rounded-pill py-0 px-2 ls-quick-btn" data-q="প্রোডাক্ট খুঁজুন" style="font-size:11px;">🔍 <%= t('common.search') %></button>
-        <button type="button" class="btn btn-sm btn-white border rounded-pill py-0 px-2 ls-quick-btn" data-q="অর্ডার ট্র্যাক" style="font-size:11px;">📦 <%= t('common.trackOrder') %></button>
+        <button type="button" class="btn btn-sm btn-white border rounded-pill py-0 px-2 ls-quick-btn" data-q="<%= locale === 'en' ? 'Show products and prices' : 'প্রোডাক্ট খুঁজুন' %>" style="font-size:11px;">🔍 <%= t('common.search') %></button>
+        <button type="button" class="btn btn-sm btn-white border rounded-pill py-0 px-2 ls-quick-btn" data-q="<%= locale === 'en' ? 'Track order' : 'অর্ডার ট্র্যাক' %>" style="font-size:11px;">📦 <%= t('common.trackOrder') %></button>
         <button type="button" class="btn btn-sm btn-white border rounded-pill py-0 px-2 ls-quick-btn" data-action="complaint" style="font-size:11px;">📝 <%= t('store.complaintBox') %></button>
       </div>
 
@@ -280,6 +322,7 @@
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<%= t('a11y.closeModal') %>"></button>
           </div>
           <div class="modal-body">
+            <input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>" />
             <div class="mb-2">
               <label for="compName" class="form-label small fw-semibold"><%= t('store.yourName') %> *</label>
               <input type="text" id="compName" name="name" class="form-control form-control-sm" required />

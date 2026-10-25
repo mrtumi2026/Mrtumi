@@ -7,66 +7,244 @@
       <p class="text-muted"><%= t('store.blogSub') %></p>
     </div>
 
-    <div class="row g-4">
-      <% blogs.forEach(function(b) { %>
-        <div class="col-md-6">
-          <article class="bg-white rounded-4 border overflow-hidden h-100 shadow-sm">
-            <img src="<%= b.image || '/uploads/banner/banner-1.jpg' %>" class="w-100" style="height: 220px; object-fit: cover;" alt="<%= b.title %>" />
-            <div class="p-4">
-              <div class="small text-muted mb-2">✍️ <%= b.author %> • <%= fmt.date(b.created_at) %></div>
-              <h2 class="h5 fw-bold mb-2"><%= replaceLegacyBrandTokens(b.title) %></h2>
-              <p class="text-secondary small mb-3"><%= replaceLegacyBrandTokens(b.summary) %></p>
-              <a href="/blog/<%= b.slug %>" class="btn btn-outline-success btn-sm rounded-pill px-3"><%= t('store.readMore') %> →</a>
-            </div>
-          </article>
-        </div>
-      <% }) %>
-    </div>
+    <% if (!blogs || !blogs.length) { %>
+      <%- include('../partials/empty-state', {
+        icon: '📰',
+        title: t('common.noRecords'),
+        description: t('store.blogSub'),
+        actionUrl: '/all-products',
+        actionLabel: t('common.allProducts')
+      }) %>
+    <% } else { %>
+      <div class="row g-4">
+        <% blogs.forEach(function(b) { %>
+          <div class="col-md-6 col-lg-4">
+            <article class="bg-white rounded-4 border overflow-hidden h-100 shadow-xs d-flex flex-column">
+              <img src="<%= b.image || '/uploads/banner/banner-1.jpg' %>" class="w-100" style="height: 205px; object-fit: cover;" alt="<%= b.title %>" loading="lazy" />
+              <div class="p-4 d-flex flex-column flex-grow-1">
+                <div class="small text-muted mb-2">
+                  <% if (b.category) { %>
+                    <span class="badge bg-success-subtle text-success me-1"><%= b.category %></span>
+                  <% } %>
+                  ✍️ <%= b.author %> &bull; <%= fmt.date(b.created_at) %>
+                </div>
+                <h2 class="h5 fw-bold mb-2"><%= b.title %></h2>
+                <p class="text-secondary small mb-3 flex-grow-1"><%= b.summary %></p>
+                <a href="/blog/<%= b.slug %>" class="btn btn-outline-success btn-sm rounded-pill px-3 align-self-start"><%= t('store.readMore') %> →</a>
+              </div>
+            </article>
+          </div>
+        <% }) %>
+      </div>
+
+      <% if (typeof blogPagination !== 'undefined' && blogPagination && blogPagination.totalPages > 1) { %>
+        <%- include('../partials/pagination', {
+          currentPage: blogPagination.page,
+          totalPages: blogPagination.totalPages,
+          baseUrl: blogPagination.baseUrl
+        }) %>
+      <% } %>
+    <% } %>
 
   <% } else if (mode === 'blog_detail' && page) { %>
-    <article class="bg-white rounded-4 border p-4 p-md-5 mx-auto shadow-sm" style="max-width: 820px;">
+    <article class="bg-white rounded-4 border p-4 p-md-5 mx-auto shadow-sm mb-4" style="max-width: 840px;">
       <a href="/blogs" class="text-success small text-decoration-none fw-semibold">← <%= t('store.backToBlogs') %></a>
-      <h1 class="fw-bold fs-3 mt-2 mb-2"><%= replaceLegacyBrandTokens(page.title) %></h1>
-      <div class="small text-muted mb-4">✍️ <%= page.author %> • <%= fmt.date(page.created_at) %></div>
+      <h1 class="fw-bold fs-3 mt-2 mb-2"><%= page.title %></h1>
+      <div class="small text-muted mb-4">
+        <% if (page.category) { %>
+          <span class="badge bg-success-subtle text-success me-2"><%= page.category %></span>
+        <% } %>
+        ✍️ <%= page.author %> &bull; <%= fmt.date(page.created_at) %>
+      </div>
       <% if (page.image) { %>
         <img src="<%= page.image %>" class="w-100 rounded-4 mb-4" style="max-height: 360px; object-fit: cover;" alt="<%= page.title %>" />
       <% } %>
-      <div style="white-space: pre-line; line-height: 1.9; font-size: 16px;"><%= replaceLegacyBrandTokens(page.content || page.summary) %></div>
+      <div style="white-space: pre-line; line-height: 1.9; font-size: 16px;"><%= page.content || page.summary %></div>
     </article>
 
+    <% if (typeof relatedBlogs !== 'undefined' && relatedBlogs && relatedBlogs.length) { %>
+      <section class="mx-auto" style="max-width: 840px;" aria-label="Related Articles">
+        <h2 class="h5 fw-bold mb-3">📰 <%= t('common.blogs') %></h2>
+        <div class="row g-3">
+          <% relatedBlogs.forEach(function(rb) { %>
+            <div class="col-md-4">
+              <a href="/blog/<%= rb.slug %>" class="bg-white rounded-4 border p-3 d-block h-100 text-decoration-none">
+                <div class="small text-muted mb-1"><%= fmt.date(rb.created_at) %></div>
+                <div class="fw-bold text-dark small"><%= rb.title %></div>
+              </a>
+            </div>
+          <% }) %>
+        </div>
+      </section>
+    <% } %>
+
+  <% } else if (mode === 'faq') { %>
+    <div class="mx-auto" style="max-width: 860px;">
+      <div class="mb-4">
+        <h1 class="fw-bold fs-3 mb-1">❓ <%= t('store.faqPageTitle') %></h1>
+        <p class="text-muted"><%= t('store.faqPageSub') %></p>
+      </div>
+
+      <div class="accordion rounded-4 overflow-hidden border shadow-xs mb-4" id="storeFaqAccordion">
+        <% (faqItems || []).forEach(function(item, idx) { %>
+          <div class="accordion-item border-0 border-bottom">
+            <h2 class="accordion-header" id="faqHead_<%= idx %>">
+              <button
+                class="accordion-button <%= idx > 0 ? 'collapsed' : '' %> fw-bold"
+                type="button"
+                data-bs-toggle="collapse"
+                data-bs-target="#faqCollapse_<%= idx %>"
+                aria-expanded="<%= idx === 0 ? 'true' : 'false' %>"
+                aria-controls="faqCollapse_<%= idx %>"
+              >
+                <%= item.q %>
+              </button>
+            </h2>
+            <div
+              id="faqCollapse_<%= idx %>"
+              class="accordion-collapse collapse <%= idx === 0 ? 'show' : '' %>"
+              aria-labelledby="faqHead_<%= idx %>"
+              data-bs-parent="#storeFaqAccordion"
+            >
+              <div class="accordion-body text-secondary" style="line-height: 1.8;">
+                <%= item.a %>
+              </div>
+            </div>
+          </div>
+        <% }) %>
+      </div>
+
+      <div class="bg-white rounded-4 border p-4 d-flex justify-content-between align-items-center flex-wrap gap-3">
+        <div>
+          <h2 class="h6 fw-bold mb-1">🎧 <%= t('store.contactPageTitle') %></h2>
+          <p class="small text-muted mb-0"><%= t('store.contactPageSub') %></p>
+        </div>
+        <div class="d-flex gap-2">
+          <a href="/track-order" class="btn btn-outline-success btn-sm rounded-pill px-3">📦 <%= t('common.trackOrder') %></a>
+          <a href="/contact" class="mt-btn mt-btn-primary btn-sm rounded-pill px-3">📞 <%= t('store.contactNav') %></a>
+        </div>
+      </div>
+    </div>
+
+  <% } else if (mode === 'contact') { %>
+    <div class="mx-auto" style="max-width: 960px;">
+      <div class="mb-4">
+        <h1 class="fw-bold fs-3 mb-1">📞 <%= t('store.contactPageTitle') %></h1>
+        <p class="text-muted"><%= t('store.contactPageSub') %></p>
+      </div>
+
+      <div class="row g-4">
+        <div class="col-lg-5">
+          <div class="bg-white rounded-4 border p-4 h-100 d-flex flex-column justify-content-between">
+            <div>
+              <div class="mb-3 pb-3 border-bottom">
+                <div class="small text-muted fw-semibold"><%= t('common.hotline') %></div>
+                <div class="fs-5 fw-bold text-success"><%= siteSettings.site_phone %></div>
+              </div>
+              <div class="mb-3 pb-3 border-bottom">
+                <div class="small text-muted fw-semibold"><%= t('store.supportHoursTitle') %></div>
+                <div class="fw-semibold text-dark"><%= t('store.supportHoursValue') %></div>
+              </div>
+              <div class="mb-3 pb-3 border-bottom">
+                <div class="small text-muted fw-semibold"><%= t('store.emailTitle') %></div>
+                <div class="fw-semibold text-dark"><%= siteSettings.site_email %></div>
+              </div>
+              <div class="mb-3">
+                <div class="small text-muted fw-semibold"><%= t('store.addressTitle') %></div>
+                <div class="text-secondary small"><%= siteSettings.site_address %></div>
+              </div>
+            </div>
+
+            <div class="p-3 rounded-3 bg-light border mt-3">
+              <div class="fw-bold small mb-1">📝 <%= t('store.complaintCtaTitle') %></div>
+              <p class="text-muted small mb-2"><%= t('store.complaintCtaSub') %></p>
+              <button
+                type="button"
+                class="btn btn-outline-success btn-sm w-100 fw-semibold"
+                data-bs-toggle="modal"
+                data-bs-target="#complaintModal"
+              >
+                <%= t('store.openComplaintModalBtn') %>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-lg-7">
+          <div class="bg-white rounded-4 border p-4 h-100">
+            <h2 class="h5 fw-bold mb-3">📩 <%= t('store.contactFormHeading') %></h2>
+            <form action="/api/contact" method="POST" class="row g-3">
+              <input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>" />
+              <div class="col-md-6">
+                <label for="contactPageName" class="form-label small fw-semibold"><%= t('store.yourName') %> *</label>
+                <input type="text" id="contactPageName" name="name" class="form-control" placeholder="<%= t('store.yourName') %> *" required />
+              </div>
+              <div class="col-md-6">
+                <label for="contactPagePhone" class="form-label small fw-semibold"><%= t('store.mobileNumber') %> *</label>
+                <input type="tel" id="contactPagePhone" name="phone" class="form-control" placeholder="<%= t('store.mobilePlaceholder') %> *" required />
+              </div>
+              <div class="col-md-6">
+                <label for="contactPageEmail" class="form-label small fw-semibold">Email</label>
+                <input type="email" id="contactPageEmail" name="email" class="form-control" placeholder="name@example.com" />
+              </div>
+              <div class="col-md-6">
+                <label for="contactPageSubject" class="form-label small fw-semibold"><%= t('store.subject') %></label>
+                <input type="text" id="contactPageSubject" name="subject" class="form-control" placeholder="<%= t('store.subject') %>" />
+              </div>
+              <div class="col-12">
+                <label for="contactPageMsg" class="form-label small fw-semibold"><%= t('store.yourMessage') %> *</label>
+                <textarea id="contactPageMsg" name="message" rows="4" class="form-control" placeholder="<%= t('store.yourMessage') %>" required></textarea>
+              </div>
+              <div class="col-12">
+                <button type="submit" class="mt-btn mt-btn-primary px-4"><%= t('store.sendMessage') %></button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+
   <% } else if (page) { %>
-    <article class="bg-white rounded-4 border p-4 p-md-5 mx-auto shadow-sm" style="max-width: 820px;">
-      <% if (typeof requiresOwnerCopyReview === 'function' && requiresOwnerCopyReview(page.slug, page.content)) { %>
+    <article class="bg-white rounded-4 border p-4 p-md-5 mx-auto shadow-sm" style="max-width: 840px;">
+      <% if (typeof requiresOwnerCopyReview === 'function' && requiresOwnerCopyReview(page.slug, page.content) && !page.hasExplicitEnglishCopy) { %>
         <%- include('../partials/copy-review-notice') %>
       <% } %>
 
       <h1 class="fw-bold fs-3 border-bottom pb-3 mb-4"><%= replaceLegacyBrandTokens(page.title) %></h1>
       <div style="white-space: pre-line; line-height: 1.9; font-size: 15.5px;" class="mb-4"><%= replaceLegacyBrandTokens(page.content) %></div>
 
-      <div class="bg-light rounded-4 p-4 border mt-4">
-        <h2 class="h5 fw-bold mb-3">📩 <%= t('store.contactFormHeading') %></h2>
-        <form action="/api/contact" method="POST" class="row g-3">
-          <div class="col-md-6">
-            <label for="pageContactName" class="form-label small fw-semibold"><%= t('store.yourName') %> *</label>
-            <input type="text" id="pageContactName" name="name" class="form-control" placeholder="<%= t('store.yourName') %> *" required />
-          </div>
-          <div class="col-md-6">
-            <label for="pageContactPhone" class="form-label small fw-semibold"><%= t('store.mobileNumber') %> *</label>
-            <input type="tel" id="pageContactPhone" name="phone" class="form-control" placeholder="<%= t('store.mobilePlaceholder') %> *" required />
-          </div>
-          <div class="col-12">
-            <label for="pageContactSubject" class="form-label small fw-semibold"><%= t('store.subject') %></label>
-            <input type="text" id="pageContactSubject" name="subject" class="form-control" placeholder="<%= t('store.subject') %>" />
-          </div>
-          <div class="col-12">
-            <label for="pageContactMsg" class="form-label small fw-semibold"><%= t('store.yourMessage') %> *</label>
-            <textarea id="pageContactMsg" name="message" rows="3" class="form-control" placeholder="<%= t('store.yourMessage') %>" required></textarea>
-          </div>
-          <div class="col-12">
-            <button type="submit" class="mt-btn mt-btn-primary px-4"><%= t('store.sendMessage') %></button>
-          </div>
-        </form>
-      </div>
+      <% if (page.slug === '404') { %>
+        <div class="d-flex flex-wrap gap-2 mt-3">
+          <a href="/" class="mt-btn mt-btn-primary"><%= t('common.home') %></a>
+          <a href="/all-products" class="btn btn-outline-success rounded-3 px-4"><%= t('common.allProducts') %></a>
+        </div>
+      <% } else { %>
+        <div class="bg-light rounded-4 p-4 border mt-4">
+          <h2 class="h5 fw-bold mb-3">📩 <%= t('store.contactFormHeading') %></h2>
+          <form action="/api/contact" method="POST" class="row g-3">
+            <input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>" />
+            <div class="col-md-6">
+              <label for="pageContactName" class="form-label small fw-semibold"><%= t('store.yourName') %> *</label>
+              <input type="text" id="pageContactName" name="name" class="form-control" placeholder="<%= t('store.yourName') %> *" required />
+            </div>
+            <div class="col-md-6">
+              <label for="pageContactPhone" class="form-label small fw-semibold"><%= t('store.mobileNumber') %> *</label>
+              <input type="tel" id="pageContactPhone" name="phone" class="form-control" placeholder="<%= t('store.mobilePlaceholder') %> *" required />
+            </div>
+            <div class="col-12">
+              <label for="pageContactSubject" class="form-label small fw-semibold"><%= t('store.subject') %></label>
+              <input type="text" id="pageContactSubject" name="subject" class="form-control" placeholder="<%= t('store.subject') %>" />
+            </div>
+            <div class="col-12">
+              <label for="pageContactMsg" class="form-label small fw-semibold"><%= t('store.yourMessage') %> *</label>
+              <textarea id="pageContactMsg" name="message" rows="3" class="form-control" placeholder="<%= t('store.yourMessage') %>" required></textarea>
+            </div>
+            <div class="col-12">
+              <button type="submit" class="mt-btn mt-btn-primary px-4"><%= t('store.sendMessage') %></button>
+            </div>
+          </form>
+        </div>
+      <% } %>
     </article>
   <% } %>
 </main>

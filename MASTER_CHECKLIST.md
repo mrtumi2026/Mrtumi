@@ -46,15 +46,16 @@
 | P04-02 | Bangla (`bn` default) & English (`en`) language switching + 1:1 parity dictionaries (`src/i18n/`, `/locale/:lang`) | `TESTED AND PASSED` | Persisted in session + `mrtumi_lang` cookie; legal/policy copy flagged for owner review (`copy-review-notice.ejs`) |
 | P04-03 | Responsive design system, WCAG AA tokens, accessible sidebar/mobile nav & reusable EJS components | `TESTED AND PASSED` | `mrtumi-design-system.css`, `mrtumi-ui.js`, `views/partials/*.ejs`, 43-item dark Admin sidebar & mobile offcanvas |
 | P04-04 | Bangladesh currency (`৳`), South Asian grouping, Bangla numerals & `Asia/Dhaka` timestamp formatters | `TESTED AND PASSED` | `src/utils/formatters.js`, verified in `tests/phase04-ui-i18n.test.js` |
-| P04-05 | Explicit owner approval gate to begin Phase 05 implementation | `OWNER APPROVAL REQUIRED` | Stop after Phase 04 and wait for owner sign-off + official logo/legal copy inputs |
+| P04-05 | Explicit owner approval gate to begin Phase 05 implementation | `TESTED AND PASSED` | Approved by owner to execute Phase 05 |
 
 ### PHASE 05 — Customer Storefront
 | ID | Feature / Deliverable | Status | Notes |
 |---|---|---|---|
-| P05-01 | Grocery & Gift homepage (banners, Flash Sale, Hot Deal, categories) | `NOT STARTED` | Rebrand & harden existing prototype |
-| P05-02 | Category, subcategory, childcategory, search, filter, sort & pagination | `NOT STARTED` | 100% DB-driven |
-| P05-03 | Product detail page (variants, gift options, wholesale tiers, related items) | `NOT STARTED` | Scheduled for Phase 05 |
-| P05-04 | Contact, FAQ, policy pages, blog, approved reviews, SEO & sitemap | `NOT STARTED` | Scheduled for Phase 05 |
+| P05-01 | Grocery & Gift homepage (DB banners, featured categories, validated Flash Sale & Hot Deal, gift showcase, blogs) | `TESTED AND PASSED` | `views/store/home.ejs` + MySQL-first `storefrontRepository.js` (zero fabricated countdowns/metrics) |
+| P05-02 | Category, subcategory, childcategory, brand, search, price/stock/deal filters, 5 sort modes & pagination | `TESTED AND PASSED` | `views/store/catalog.ejs`, `/category/:slug`, `/subcategory/:slug`, `/childcategory/:slug`, `/brand/:slug` |
+| P05-03 | Product detail page (DB gallery, `product_variants`/options, approved wholesale tier guard, cart entry points, related items) | `TESTED AND PASSED` | `views/store/product.ejs` + live MySQL 8.0 & local verification (`tests/phase05-*.test.js`) |
+| P05-04 | Contact, FAQ, About, policy pages (`copy-review-notice`), blog, moderated approved reviews, Product JSON-LD, `/sitemap.xml` & `/robots.txt` | `TESTED AND PASSED` | `views/store/page.ejs`, `/about`, `/faq`, `/contact`, `/blogs`, `/sitemap.xml`, `/robots.txt` |
+| P05-05 | Explicit owner approval gate to begin Phase 06 implementation | `OWNER APPROVAL REQUIRED` | Stop after Phase 05 and wait for owner sign-off |
 
 ### PHASE 06 — Products, Inventory, Purchases & Suppliers
 | ID | Feature / Deliverable | Status | Notes |

@@ -32,13 +32,13 @@ Phase 03 establishes the production-grade MySQL (`mysql2/promise`), versioned mi
 | `server.js` | `2` (`initializeDatabase:1, run:1`) | **`1` (guarded boot only)** | Error logging moved to `auditLogRepository.recordErrorLog`; `db.initializeDatabase()` runs ONLY when `!env.isProduction && env.db.client === 'sqlite'` |
 | `src/routes/apiFoundation.js` | *(new)* | **`0` direct** | `/health`, `/api/v1/health`, `/api/v1/csrf-token` backed by `pingPool()` on MySQL |
 
-### 2.2 Remaining Un-Migrated SQLite Callers (`439` `db.*` calls across `8` portal route files)
+### 2.2 Remaining Un-Migrated SQLite Callers (`411` `db.*` calls across `8` portal route files — updated after Phase 05)
 
 Every un-migrated file below is explicitly tracked and scheduled for repository conversion in its designated feature phase:
 
-| Un-Migrated Route File | `db.*` Call Count | Method Breakdown | Scheduled Conversion Phases | Domain Operations Covered |
+| Un-Migrated Route File | `db.*` Call Count | Method Breakdown / Notes | Scheduled Conversion Phases | Domain Operations Covered |
 |---|---:|---|---|---|
-| `src/routes/storefront.js` | `72` | `get:24, all:23, run:22, getSettings:3` | **Phases 05, 07, 08, 15, 16** | Storefront home, category/product browse, cart, 3-step checkout, order tracking, campaigns, reviews, customer account |
+| `src/routes/storefront.js` | `44` *(was `72`)* | **Phase 05 catalogue, detail, cart-lookup, CMS, FAQ, contact, blog, review & sitemap (`28` calls) migrated to `storefrontRepository.js`.** `44` deferred calls remain in checkout/order/landing-page routes (`docs/PHASE_05_CUSTOMER_STOREFRONT.md` §2.2). | **Phases 07, 08, 15** | Deferred: checkout, coupon, incomplete orders, quick-submit, order tracking/cancel, single-product landing page |
 | `src/routes/adminCatalog.js` | `44` | `all:19, run:22, get:3` | **Phases 06 & 15** | Categories, subcategories, childcategories, brands, attributes, products, stock & purchase CRUD |
 | `src/routes/adminOrders.js` | `74` | `run:37, all:22, get:15` | **Phases 08, 10, 11, 17** | Order pipeline, status transitions, POS checkout, courier booking, invoice/label generation, refunds |
 | `src/routes/adminDashboard.js` | `38` | `get:25, all:9, getSettings:3, run:1` | **Phases 09 & 18** | KPI cards, revenue/order summaries, source breakdown, operational alerts |
@@ -46,7 +46,7 @@ Every un-migrated file below is explicitly tracked and scheduled for repository 
 | `src/routes/adminOperations.js` | `96` | `run:58, all:35, get:3` | **Phases 12, 15, 16, 17, 18** | Campaigns, banners, coupons, blogs, CMS pages, fraud checks, IP blocks, vendor/reseller payouts, HRM & expenses |
 | `src/routes/vendorPanel.js` | `34` | `get:16, all:9, run:9` | **Phase 16** | Vendor registration/login, separate vendor product/stock submission, admin approval workflow, commissions & withdrawals |
 | `src/routes/resellerPanel.js` | `29` | `get:11, run:9, all:7, getSettings:2` | **Phase 16** | Reseller registration/login, warehouse-backed reseller orders, margin ledger & withdrawal requests |
-| **Total Remaining** | **`439`** | **`8` route files** | **Phases 05–18** | Converted module-by-module with ACID repository tests |
+| **Total Remaining** | **`411`** *(was `439`)* | **`8` route files** | **Phases 06–18** | Converted module-by-module with ACID repository tests |
 
 ---
 

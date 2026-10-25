@@ -2,7 +2,7 @@
 
 Bilingual (**Bangla `bn` + English `en`**) e-commerce, wholesale, multivendor, reseller, and POS platform engineered for Bangladesh (`BDT / ৳`, `Asia/Dhaka`).
 
-> **Current Phase:** **PHASE 04 — BRANDING, DESIGN SYSTEM AND BILINGUAL UI** (`TESTED AND PASSED`; awaiting explicit owner approval to start **Phase 05 — Customer Storefront**).
+> **Current Phase:** **PHASE 05 — CUSTOMER STOREFRONT** (`TESTED AND PASSED`; awaiting explicit owner approval to start **Phase 06 — Products, Inventory, Purchases and Suppliers**).
 
 ---
 
@@ -19,8 +19,9 @@ Bilingual (**Bangla `bn` + English `en`**) e-commerce, wholesale, multivendor, r
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Finalized Node.js + Express + EJS + Production MySQL architecture |
 | [`docs/CPANEL_COMPATIBILITY.md`](docs/CPANEL_COMPATIBILITY.md) | Confirmed vs `UNVERIFIED` BestWebHostBD capabilities & SSH check commands |
 | [`docs/MYSQL_MIGRATION_PLAN.md`](docs/MYSQL_MIGRATION_PLAN.md) | SQLite-to-MySQL DDL, `paisa` money math, transactions, backup & rollback plan |
-| [`docs/PHASE_03_DB_TRANSITION.md`](docs/PHASE_03_DB_TRANSITION.md) | Phase 03 staged caller inventory (`19` migrated vs `439` remaining route calls) |
+| [`docs/PHASE_03_DB_TRANSITION.md`](docs/PHASE_03_DB_TRANSITION.md) | Staged SQLite-to-MySQL caller inventory (`411` remaining route calls across Phases 06–18) |
 | [`docs/PHASE_04_UI_DESIGN_SYSTEM.md`](docs/PHASE_04_UI_DESIGN_SYSTEM.md) | Phase 04 frontend audit baseline, WCAG AA design tokens, temporary logo placeholders & `bn`/`en` i18n architecture |
+| [`docs/PHASE_05_CUSTOMER_STOREFRONT.md`](docs/PHASE_05_CUSTOMER_STOREFRONT.md) | Phase 05 storefront audit, MySQL-first `storefrontRepository.js`, deferred SQLite route map & SEO/catalogue spec |
 
 ---
 
