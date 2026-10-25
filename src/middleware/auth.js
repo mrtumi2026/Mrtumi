@@ -1,16 +1,67 @@
-const db = require('../db/database');
+'use strict';
 
-function attachGlobals(req, res, next) {
+const { getAllSettings } = require('../repositories/settingsRepository');
+const {
+  findActiveAdminById,
+  findVendorById,
+  findResellerById,
+  loadLayoutNavigationContext,
+} = require('../repositories/authRepository');
+const { hasPermission } = require('./rbac');
+
+/**
+ * Attaches global template variables (`siteSettings`, `navCategories`, `footerPages`,
+ * `storeFeatures`, `socialLinks`, `cart`, `flash`, portal session users, and RBAC helpers)
+ * via the async repository layer (MySQL in production/CI; SQLite in local prototype mode).
+ */
+async function attachGlobals(req, res, next) {
   try {
-    const settings = db.getSettings();
+    const isAdminPath = Boolean(req.path && req.path.startsWith('/admin'));
+
+    const [settings, navContext] = await Promise.all([
+      getAllSettings(),
+      loadLayoutNavigationContext(isAdminPath),
+    ]);
+
     res.locals.siteSettings = settings;
+    res.locals.settings = settings;
     res.locals.sessionToken = req.sessionID || '';
     res.locals.currentPath = req.path;
     res.locals.currentUrl = req.originalUrl;
-    res.locals.adminUser = req.session.adminUser || null;
-    res.locals.vendorUser = req.session.vendorUser || null;
-    res.locals.resellerUser = req.session.resellerUser || null;
-    res.locals.customerUser = req.session.customerUser || null;
+
+    let adminUser = req.session.adminUser || null;
+    if (isAdminPath && adminUser && adminUser.id) {
+      const freshAdmin = await findActiveAdminById(adminUser.id);
+      adminUser = freshAdmin || null;
+      if (!freshAdmin) {
+        delete req.session.adminUser;
+      }
+    }
+
+    let vendorUser = req.session.vendorUser || null;
+    if (req.path.startsWith('/vendor') && vendorUser && vendorUser.id) {
+      const freshV = await findVendorById(vendorUser.id);
+      if (freshV) vendorUser = freshV;
+    }
+
+    let resellerUser = req.session.resellerUser || null;
+    if (req.path.startsWith('/reseller') && resellerUser && resellerUser.id) {
+      const freshR = await findResellerById(resellerUser.id);
+      if (freshR) resellerUser = freshR;
+    }
+
+    const customerUser = req.session.customerUser || null;
+
+    req.adminUser = adminUser;
+    req.vendorUser = vendorUser;
+    req.resellerUser = resellerUser;
+    req.customerUser = customerUser;
+
+    res.locals.adminUser = adminUser;
+    res.locals.vendorUser = vendorUser;
+    res.locals.resellerUser = resellerUser;
+    res.locals.customerUser = customerUser;
+    res.locals.hasPermission = (permKey) => hasPermission(adminUser, permKey);
 
     // Flash messages for Toastr
     res.locals.flash = req.session.flash || null;
@@ -33,44 +84,26 @@ function attachGlobals(req, res, next) {
     res.locals.cartCount = cartCount;
     res.locals.cartSubtotal = cartSubtotal;
 
-    // Categories & CMS pages for storefront header/footer
-    res.locals.navCategories = db.all(
-      'SELECT * FROM categories WHERE status = 1 ORDER BY sort_order ASC, id ASC'
-    );
-    res.locals.footerPages = db.all(
-      'SELECT title, slug FROM cms_pages WHERE status = 1 ORDER BY id ASC'
-    );
-    res.locals.storeFeatures = db.all(
-      'SELECT * FROM features WHERE status = 1 ORDER BY id ASC'
-    );
-    res.locals.socialLinks = db.all(
-      'SELECT * FROM social_links WHERE status = 1 ORDER BY id ASC'
-    );
+    // Categories, CMS pages & social links for storefront header/footer
+    res.locals.navCategories = navContext.navCategories;
+    res.locals.footerPages = navContext.footerPages;
+    res.locals.storeFeatures = navContext.storeFeatures;
+    res.locals.socialLinks = navContext.socialLinks;
 
-    // Admin topbar & sidebar live badges
-    if (req.path.startsWith('/admin')) {
-      res.locals.pendingOrdersCount =
-        db.get("SELECT COUNT(*) AS cnt FROM orders WHERE status = 'pending'")?.cnt || 0;
-      res.locals.pendingOrdersList = db.all(
-        "SELECT id, invoice_id, customer_name, amount, created_at FROM orders WHERE status = 'pending' ORDER BY id DESC LIMIT 10"
-      );
-      res.locals.pendingReviewsCount =
-        db.get("SELECT COUNT(*) AS cnt FROM reviews WHERE status = 'pending'")?.cnt || 0;
+    if (isAdminPath) {
+      res.locals.pendingOrdersCount = navContext.pendingOrdersCount;
+      res.locals.pendingOrdersList = navContext.pendingOrdersList;
+      res.locals.pendingReviewsCount = navContext.pendingReviewsCount;
     }
 
-    // Refresh live vendor/reseller balance if logged in
-    if (req.path.startsWith('/vendor') && req.session.vendorUser) {
-      const freshV = db.get('SELECT * FROM vendors WHERE id = ?', req.session.vendorUser.id);
-      if (freshV) res.locals.vendorUser = freshV;
-    }
-    if (req.path.startsWith('/reseller') && req.session.resellerUser) {
-      const freshR = db.get('SELECT * FROM resellers WHERE id = ?', req.session.resellerUser.id);
-      if (freshR) res.locals.resellerUser = freshR;
-    }
+    return next();
   } catch (err) {
-    console.error('Error attaching globals:', err);
+    return next(err);
   }
-  next();
+}
+
+function setFlash(req, type, message) {
+  req.session.flash = { type, message };
 }
 
 function requireAdmin(req, res, next) {
@@ -80,26 +113,35 @@ function requireAdmin(req, res, next) {
     }
     return res.redirect('/admin/login');
   }
-  next();
+  return next();
 }
 
 function requireVendor(req, res, next) {
   if (!req.session || !req.session.vendorUser) {
     return res.redirect('/vendor/login');
   }
-  next();
+  return next();
 }
 
 function requireReseller(req, res, next) {
   if (!req.session || !req.session.resellerUser) {
     return res.redirect('/reseller/login');
   }
-  next();
+  return next();
+}
+
+function requireCustomer(req, res, next) {
+  if (!req.session || !req.session.customerUser) {
+    return res.redirect('/customer/login');
+  }
+  return next();
 }
 
 module.exports = {
   attachGlobals,
+  setFlash,
   requireAdmin,
   requireVendor,
   requireReseller,
+  requireCustomer,
 };

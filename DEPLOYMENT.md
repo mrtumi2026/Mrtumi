@@ -41,6 +41,6 @@ Before staging/production deployment, confirm the remaining `UNVERIFIED` server 
 
 1. **Pre-Release Snapshot:** Run `mysqldump --single-transaction --quick --default-character-set=utf8mb4` to `~/mrtumi_storage/backups/`.
 2. **Code & Dependencies:** `git fetch origin && git checkout <verified-commit>` → `npm ci --omit=dev`.
-3. **Schema Migration:** `npm run migrate:up` (checksum-verified, MySQL advisory-locked).
-4. **Reload & Smoke Test:** `touch tmp/restart.txt` → verify `/health` HTTP `200` and MySQL readiness.
-5. **Rollback if Needed:** `npm run migrate:down` (or full snapshot restore from `.sql.gz`) → checkout prior verified commit → `touch tmp/restart.txt`.
+3. **Schema Migration:** `CONFIRM_PRODUCTION_MIGRATION=true npm run migrate:up` (SHA-256 checksum-verified, MySQL `GET_LOCK` advisory-locked).
+4. **Reload & Smoke Test:** `touch tmp/restart.txt` → verify `/health` and `/api/v1/health` return HTTP `200` (`database.ok: true`, `database.client: "mysql"`).
+5. **Rollback if Needed:** `CONFIRM_PRODUCTION_MIGRATION=true npm run migrate:down -- 1` (or full snapshot restore from `.sql.gz`) → checkout prior verified commit → `touch tmp/restart.txt`.

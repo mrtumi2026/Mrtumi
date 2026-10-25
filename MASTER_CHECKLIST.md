@@ -27,16 +27,17 @@
 | P02-04 | Clean folder conventions, Passenger `app.js`, `.gitignore`, `.env.example` & secret removal | `TESTED AND PASSED` | Existing SQLite prototype preserved non-destructively |
 | P02-05 | Dev / test / prod config (`src/config/env.js`: blocks SQLite in `production`, enforces `Asia/Dhaka`, `BDT`, `bn`/`en`) | `TESTED AND PASSED` | Verified in `tests/phase02-foundation.test.js` |
 | P02-06 | Linting, EJS compilation, secret scanner (`scripts/check-foundation.js`) & GitHub Actions CI | `TESTED AND PASSED` | Verified via `npm run verify` |
-| P02-07 | Explicit owner approval gate to begin Phase 03 implementation | `OWNER APPROVAL REQUIRED` | Stop after Phase 02 and wait for owner sign-off |
+| P02-07 | Explicit owner approval gate to begin Phase 03 implementation | `TESTED AND PASSED` | Approved by owner to execute Phase 03 |
 
 ### PHASE 03 — Database, Backend & API Foundation
 | ID | Feature / Deliverable | Status | Notes |
 |---|---|---|---|
-| P03-01 | `mysql2` connection pool + versioned reversible MySQL migrations & rollback CLI | `NOT STARTED` | Starts after `P02-07` owner approval |
-| P03-02 | Foreign keys, indexes, constraints & minor-unit (`paisa` `BIGINT`) money schema | `NOT STARTED` | Per `docs/MYSQL_MIGRATION_PLAN.md` |
-| P03-03 | MySQL transaction wrapper (`FOR UPDATE`) & idempotency middleware | `NOT STARTED` | Duplicate-request & oversell protection |
-| P03-04 | Auth, CSRF, rate limiting, validation & consistent API/error format | `NOT STARTED` | Security foundation |
-| P03-05 | Structured PII-redacting logger, `/health` endpoint & MySQL CI test suite | `NOT STARTED` | Scheduled for Phase 03 |
+| P03-01 | `mysql2` connection pool + versioned reversible MySQL migrations & rollback CLI | `TESTED AND PASSED` | `src/db/mysqlPool.js`, `src/db/migrator.js`, `scripts/migrate.js` (`0001`–`0003`) |
+| P03-02 | Foreign keys, indexes, constraints & minor-unit (`paisa` `BIGINT`) money schema | `TESTED AND PASSED` | `71` `InnoDB` `utf8mb4_unicode_ci` tables + `src/utils/money.js` |
+| P03-03 | MySQL transaction wrapper (`FOR UPDATE`) & idempotency middleware | `TESTED AND PASSED` | `withTransaction`, `lockRowsById`, `idempotencyRepository.js`, `inventoryFoundationRepository.js` |
+| P03-04 | Auth, RBAC, CSRF, rate limiting, validation & consistent API/error format | `TESTED AND PASSED` | `src/middleware/{csrf,rateLimit,rbac,errorHandler}.js` + Phase 03 async repos |
+| P03-05 | Structured PII-redacting logger, `/health` endpoint & MySQL 8.0 CI test suite | `TESTED AND PASSED` | `src/utils/logger.js`, `src/routes/apiFoundation.js`, `.github/workflows/ci.yml` |
+| P03-06 | Explicit owner approval gate to begin Phase 04 implementation | `OWNER APPROVAL REQUIRED` | Stop after Phase 03 and wait for owner sign-off |
 
 ### PHASE 04 — Branding, Design System & Bilingual UI
 | ID | Feature / Deliverable | Status | Notes |

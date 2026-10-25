@@ -72,6 +72,21 @@ function buildConfig(overrides = {}) {
     sessionSecret = crypto.randomBytes(32).toString('hex');
   }
 
+  let csrfSecret = String(raw.CSRF_SECRET || '').trim();
+  const hasExplicitCsrf = raw.CSRF_SECRET !== undefined && csrfSecret !== '';
+  if (
+    nodeEnv === 'production' &&
+    hasExplicitCsrf &&
+    (csrfSecret.startsWith('REPLACE_WITH_') || csrfSecret.length < 32)
+  ) {
+    throw new Error(
+      'SECURITY ERROR: CSRF_SECRET must be at least 32 random characters in production.'
+    );
+  }
+  if (!csrfSecret || csrfSecret.startsWith('REPLACE_WITH_')) {
+    csrfSecret = crypto.createHmac('sha256', sessionSecret).update('mrtumi-csrf-v1').digest('hex');
+  }
+
   const defaultDbClient = nodeEnv === 'production' ? 'mysql' : 'sqlite';
   const dbClient = String(raw.DB_CLIENT || defaultDbClient).trim().toLowerCase();
   if (!['mysql', 'sqlite'].includes(dbClient)) {
@@ -118,6 +133,7 @@ function buildConfig(overrides = {}) {
     currencyCode: String(raw.CURRENCY_CODE || 'BDT'),
     currencySymbol: String(raw.CURRENCY_SYMBOL || '৳'),
     sessionSecret,
+    csrfSecret,
     uploadDir,
     db: Object.freeze({
       client: dbClient,

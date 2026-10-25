@@ -313,3 +313,14 @@ Whenever data is migrated between environments or restored from backup, cutover 
    - `SUM(products.stock_on_hand) == SUM(stock_ledger.qty_delta)` per product (`0` drift).
 4. **Wallet & Finance Ledger Parity:**
    - Exact sum parity on `vendors.balance_paisa`, `resellers.balance_paisa`, `resellers.deposit_paisa`, `fund_transactions.amount_paisa`, `expenses.amount_paisa`, and `salaries.net_salary_paisa`.
+
+---
+
+## 10. Phase 03 Implementation Status (`2026-10-25`)
+
+- **Implemented & Verified in Phase 03:**
+  - `src/db/mysqlPool.js`: `mysql2/promise` connection pool, `STRICT_TRANS_TABLES`, `utf8mb4`, UTC `+00:00`, `withTransaction`, and ascending `lockRowsById` (`SELECT ... FOR UPDATE`).
+  - `src/db/migrator.js` & `scripts/migrate.js`: Reversible `.up.sql` / `.down.sql` runner with `schema_migrations`, `SHA-256` checksum verification, `GET_LOCK` advisory locking, and `CONFIRM_PRODUCTION_MIGRATION=true` CLI safety guard.
+  - `src/db/migrations/0001..0003`: `71` `InnoDB` `utf8mb4_unicode_ci` tables (`11` + `18` + `42`) with `BIGINT` `*_paisa` money columns and explicit foreign keys.
+  - **Staged Caller Conversion:** Phase 03 core infrastructure callers (`sessionManager.js`, `auth.js`, `adminAuth.js`, `server.js` error logging, `/health`) now run via `src/repositories/*`; the 8 portal feature route files (`439` `db.*` calls) are tracked in `docs/PHASE_03_DB_TRANSITION.md` for conversion in Phases 05–18.
+

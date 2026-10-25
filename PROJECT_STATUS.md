@@ -3,8 +3,8 @@
 **Last Updated:** 2026-10-25 (`Asia/Dhaka`)  
 **Repository:** `mrtumi2026/Mrtumi` (Working Branch: `arena/8689c974-mrtumi`)  
 **Hosting Provider:** BestWebHostBD (`Node.js` + `SSH` + `MySQL-only` confirmed by owner via support; exact runtime/DB versions `UNVERIFIED` — see `docs/CPANEL_COMPATIBILITY.md`)  
-**Current Completed Phase:** **PHASE 02 — FINAL ARCHITECTURE AND GITHUB FOUNDATION**  
-**Gate Status:** `OWNER APPROVAL REQUIRED` — Waiting for explicit owner approval before starting **Phase 03**  
+**Current Completed Phase:** **PHASE 03 — DATABASE, BACKEND AND API FOUNDATION**  
+**Gate Status:** `OWNER APPROVAL REQUIRED` — Waiting for explicit owner approval before starting **Phase 04**  
 
 ---
 
@@ -13,9 +13,9 @@
 | Phase | Title | Status | Gate / Blocker |
 |---|---|---|---|
 | **Phase 01** | Reference Audit and Requirements | `TESTED AND PASSED` | Complete (`3611777`) |
-| **Phase 02** | Architecture, GitHub and Development Foundation | `TESTED AND PASSED` | **Complete.** Final architecture (`Express + EJS + MySQL`) & `MYSQL_MIGRATION_PLAN.md` verified; waiting for explicit owner sign-off (`OWNER APPROVAL REQUIRED`) before Phase 03 |
-| **Phase 03** | Database, Backend and API Foundation | `NOT STARTED` | Ready to implement `mysql2` pool, versioned MySQL migrations, `paisa` money math, transactions, CSRF, rate limits & `/health` upon owner approval |
-| **Phase 04** | Branding, Design System and Bilingual UI | `NOT STARTED` | Depends on Phase 03 (`bn` default + `en` toggle approved) |
+| **Phase 02** | Architecture, GitHub and Development Foundation | `TESTED AND PASSED` | Complete (`04c69bc`) |
+| **Phase 03** | Database, Backend and API Foundation | `TESTED AND PASSED` | **Complete.** `mysql2/promise` pool, reversible migrations `0001`–`0003` (`71` `InnoDB` `utf8mb4` tables), `paisa` money math, `FOR UPDATE` transactions, idempotency, RBAC/CSRF/rate-limit, PII logger, `/health`, Phase 03 async repositories & live `mysql:8.0` CI verified; waiting for explicit owner sign-off (`OWNER APPROVAL REQUIRED`) before Phase 04 |
+| **Phase 04** | Branding, Design System and Bilingual UI | `NOT STARTED` | Depends on Phase 03 owner approval (`bn` default + `en` toggle approved) |
 | **Phase 05** | Customer Storefront | `NOT STARTED` | Depends on Phase 03–04 |
 | **Phase 06** | Products, Inventory, Purchases and Suppliers | `NOT STARTED` | Depends on Phase 03 (`warehouse` vs `vendor` stock rules approved) |
 | **Phase 07** | Customer Accounts, Cart and Checkout | `NOT STARTED` | Depends on Phase 05–06 |
@@ -35,9 +35,11 @@
 
 ---
 
-## Summary of Finalized Phase 02 Deliverables
+## Summary of Finalized Phase 03 Deliverables & Staged Transition Honesty
 
-1. **`docs/CPANEL_COMPATIBILITY.md`** — Documents owner-confirmed BestWebHostBD facts (`Node.js`, `SSH`, `MySQL-only`) cleanly separated from `UNVERIFIED` server parameters (`U-01`–`U-08`) + 30-second read-only SSH version discovery commands.
-2. **`docs/ARCHITECTURE.md`** — Finalized architecture specification retaining the Express + EJS modular monolith with **MySQL (`InnoDB`, `utf8mb4`)** in production, covering all 13 required architectural pillars.
-3. **`docs/MYSQL_MIGRATION_PLAN.md`** — Complete 9-part SQLite-to-MySQL migration blueprint auditing all `50` existing tables and SQLite SQL idioms, defining portable MySQL DDL, `BIGINT` `paisa` money representation, `FOR UPDATE` transactional sequences, backup/rollback procedures, CI test DB strategy, and financial/row-count reconciliation queries.
-4. **Environment & CI Foundation (`src/config/env.js`, `.env.example`, `.gitignore`, `app.js`, `scripts/check-foundation.js`, `tests/phase02-foundation.test.js`, `.github/workflows/ci.yml`)** — Hard startup block against SQLite in `NODE_ENV=production`, zero secrets/demo passwords in Git, automated syntax/EJS/test verification.
+1. **MySQL Pool, Transactions & Checksum-Verified Migrations (`src/db/mysqlPool.js`, `src/db/migrator.js`, `scripts/migrate.js`, `src/db/migrations/0001..0003`):** `71` `InnoDB` `utf8mb4_unicode_ci` tables, `GET_LOCK` migration locking, SHA-256 checksum integrity, reverse-FK `down` rollbacks, `FOR UPDATE` row locking, and `CONFIRM_PRODUCTION_MIGRATION=true` CLI guard.
+2. **Backend Utilities & Security Middleware (`src/utils/*`, `src/middleware/{csrf,rateLimit,rbac,errorHandler}.js`, `src/routes/apiFoundation.js`):** Integer `paisa` (`1 BDT = 100 paisa`) arithmetic, PII/secret-redacting logger, CGNAT-safe rate limiting, synchronizer/HMAC CSRF protection, server-side RBAC, standardized JSON error/response envelopes, and `/health` readiness endpoint.
+3. **Staged SQLite-to-MySQL Transition (`docs/PHASE_03_DB_TRANSITION.md`):**
+   - **Migrated in Phase 03:** `sessionManager.js`, `auth.js`, `adminAuth.js`, `server.js` error logging, and `apiFoundation.js` (`19` infrastructure `db.*` calls replaced by `src/repositories/*`), plus `idempotencyRepository.js` and `inventoryFoundationRepository.js`.
+   - **Not Yet Migrated (Scheduled Phases 05–18):** `8` portal route files (`storefront.js`, `adminCatalog.js`, `adminOrders.js`, `adminDashboard.js`, `adminSettings.js`, `adminOperations.js`, `vendorPanel.js`, `resellerPanel.js` — `439` `db.*` calls) remain on the non-production local SQLite bridge while `assertSqliteAllowed()` blocks SQLite in production or when `DB_CLIENT=mysql`.
+   - **Data Preservation:** Local `data/pholbazar.db*` files remain untouched and untracked.

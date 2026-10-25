@@ -1,6 +1,6 @@
 {
   "name": "mr-tumi-grocery-gift",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Mr. Tumi Grocery & Gift — Bilingual (Bangla/English) E-Commerce, Multi-Vendor, Reseller & POS Platform for Bangladesh",
   "main": "server.js",
@@ -10,6 +10,9 @@
   "scripts": {
     "start": "test -d node_modules/express || npm install --no-audit --no-fund; node --no-warnings server.js",
     "dev": "node --no-warnings server.js",
+    "migrate:status": "node scripts/migrate.js status",
+    "migrate:up": "node scripts/migrate.js up",
+    "migrate:down": "node scripts/migrate.js down",
     "lint": "node scripts/check-foundation.js",
     "test": "NODE_ENV=test node --no-warnings --test tests/*.test.js",
     "verify": "npm run lint && npm test"
@@ -19,6 +22,7 @@
     "ejs": "^3.1.10",
     "express": "^4.21.1",
     "express-session": "^1.18.1",
-    "multer": "^2.0.1"
+    "multer": "^2.0.1",
+    "mysql2": "^3.24.6"
   }
 }

@@ -1,20 +1,53 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { DatabaseSync } = require('node:sqlite');
 const bcrypt = require('bcryptjs');
 const { env } = require('../config/env');
+const { DatabaseError } = require('../utils/errors');
 
-const dbPath = env.db.sqlitePath;
-const dataDir = path.dirname(dbPath);
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
+let lazyRawDb = null;
+
+/**
+ * Lazily opens the non-production SQLite prototype ONLY when `DB_CLIENT=sqlite`
+ * in development/test. Never loads `node:sqlite` or touches `data/pholbazar.db`
+ * when `DB_CLIENT=mysql` or `NODE_ENV=production`.
+ */
+function assertSqliteAllowed() {
+  const runtimeNodeEnv = String(process.env.NODE_ENV || env.nodeEnv || '').toLowerCase();
+  const runtimeDbClient = String(process.env.DB_CLIENT || env.db.client || '').toLowerCase();
+
+  if (env.isProduction || runtimeNodeEnv === 'production') {
+    throw new DatabaseError(
+      'SQLITE_PROHIBITED_IN_PRODUCTION',
+      'SQLite is strictly prohibited in production. Configure DB_CLIENT=mysql for BestWebHostBD MySQL.',
+      503
+    );
+  }
+  if (env.db.client === 'mysql' || runtimeDbClient === 'mysql') {
+    throw new DatabaseError(
+      'SQLITE_CALLER_NOT_MIGRATED',
+      'Legacy synchronous SQLite API called while DB_CLIENT=mysql is active. Use async MySQL repositories instead.',
+      503
+    );
+  }
 }
 
-const rawDb = new DatabaseSync(dbPath);
-rawDb.exec('PRAGMA journal_mode = WAL;');
-rawDb.exec('PRAGMA foreign_keys = ON;');
-rawDb.exec('PRAGMA busy_timeout = 5000;');
+function getRawDb() {
+  assertSqliteAllowed();
+  if (!lazyRawDb) {
+    const { DatabaseSync } = require('node:sqlite');
+    const dbPath = env.db.sqlitePath;
+    const dataDir = path.dirname(dbPath);
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
+    }
+    lazyRawDb = new DatabaseSync(dbPath);
+    lazyRawDb.exec('PRAGMA journal_mode = WAL;');
+    lazyRawDb.exec('PRAGMA foreign_keys = ON;');
+    lazyRawDb.exec('PRAGMA busy_timeout = 5000;');
+  }
+  return lazyRawDb;
+}
 
 function sanitizeParams(params) {
   return params.map((p) => {
@@ -25,24 +58,24 @@ function sanitizeParams(params) {
 }
 
 function all(sql, ...params) {
-  const stmt = rawDb.prepare(sql);
+  const stmt = getRawDb().prepare(sql);
   const rows = stmt.all(...sanitizeParams(params));
   return rows.map((r) => ({ ...r }));
 }
 
 function get(sql, ...params) {
-  const stmt = rawDb.prepare(sql);
+  const stmt = getRawDb().prepare(sql);
   const row = stmt.get(...sanitizeParams(params));
   return row ? { ...row } : null;
 }
 
 function run(sql, ...params) {
-  const stmt = rawDb.prepare(sql);
+  const stmt = getRawDb().prepare(sql);
   return stmt.run(...sanitizeParams(params));
 }
 
 function exec(sql) {
-  return rawDb.exec(sql);
+  return getRawDb().exec(sql);
 }
 
 function initializeDatabase() {
@@ -1346,7 +1379,11 @@ function seedIfEmpty() {
 }
 
 module.exports = {
-  rawDb,
+  get rawDb() {
+    return getRawDb();
+  },
+  assertSqliteAllowed,
+  getRawDb,
   all,
   get,
   run,

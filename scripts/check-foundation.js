@@ -89,10 +89,35 @@ const requiredDocs = [
   'docs/ARCHITECTURE.md',
   'docs/CPANEL_COMPATIBILITY.md',
   'docs/MYSQL_MIGRATION_PLAN.md',
+  'docs/PHASE_03_DB_TRANSITION.md',
 ];
 for (const rel of requiredDocs) {
   const full = path.join(ROOT, rel);
   check(fs.existsSync(full) && fs.statSync(full).size > 100, `Required file present: ${rel}`);
+}
+
+console.log('3b. Validating MySQL migration SQL pairs (InnoDB, utf8mb4, no FLOAT/DOUBLE money)...');
+const migrationsDir = path.join(ROOT, 'src', 'db', 'migrations');
+const upMigrations = walkFiles(migrationsDir, '.up.sql').sort();
+check(upMigrations.length >= 3, `Expected >= 3 MySQL .up.sql migrations, found ${upMigrations.length}`);
+for (const upPath of upMigrations) {
+  const downPath = upPath.replace(/\.up\.sql$/, '.down.sql');
+  const relUp = path.relative(ROOT, upPath);
+  check(fs.existsSync(downPath), `Paired rollback migration exists for ${relUp}`);
+  const upSql = fs.readFileSync(upPath, 'utf8');
+  const downSql = fs.existsSync(downPath) ? fs.readFileSync(downPath, 'utf8') : '';
+  const createNames = [...upSql.matchAll(/CREATE TABLE IF NOT EXISTS `([^`]+)`/g)].map((m) => m[1]);
+  const dropNames = [...downSql.matchAll(/DROP TABLE IF EXISTS `([^`]+)`/g)].map((m) => m[1]);
+  check(
+    JSON.stringify(dropNames) === JSON.stringify([...createNames].reverse()),
+    `Reverse FK drop order matches in ${path.basename(downPath)}`
+  );
+  check(!/\b(FLOAT|DOUBLE)\b/i.test(upSql), `No floating-point column types in ${relUp}`);
+  const engineCount = (upSql.match(/ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci/g) || []).length;
+  check(
+    engineCount === createNames.length,
+    `All ${createNames.length} tables in ${relUp} declare InnoDB + utf8mb4_unicode_ci`
+  );
 }
 
 const checklist = fs.readFileSync(path.join(ROOT, 'MASTER_CHECKLIST.md'), 'utf8');

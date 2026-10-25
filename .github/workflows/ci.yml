@@ -1,4 +1,4 @@
-name: CI — Lint, Security Scan & Tests
+name: CI — Lint, Security Scan, Portal & Real MySQL 8.0 Tests
 
 on:
   push:
@@ -12,11 +12,36 @@ permissions:
 
 jobs:
   verify:
-    name: Verify Foundation & Tests (Node 22)
+    name: Verify Foundation, MySQL 8.0 Migrations & Tests (Node 22)
     runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root_ci_password
+          MYSQL_DATABASE: mrtumi_test
+          MYSQL_USER: mrtumi_test
+          MYSQL_PASSWORD: mrtumi_test_pw
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot_ci_password --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=15
+          --character-set-server=utf8mb4
+          --collation-server=utf8mb4_unicode_ci
+
     env:
       TZ: Asia/Dhaka
       NODE_ENV: test
+      MYSQL_TEST_REQUIRED: "true"
+      MYSQL_TEST_HOST: 127.0.0.1
+      MYSQL_TEST_PORT: "3306"
+      MYSQL_TEST_DB: mrtumi_test
+      MYSQL_TEST_USER: mrtumi_test
+      MYSQL_TEST_PASSWORD: mrtumi_test_pw
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -30,8 +55,24 @@ jobs:
       - name: Install clean dependencies
         run: npm ci --no-audit --no-fund
 
-      - name: Run foundation lint, EJS compile & secret scan
+      - name: Verify production dependency audit
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Run foundation lint, EJS compile, migration SQL & secret scan
         run: npm run lint
 
-      - name: Run automated test suite
+      - name: Verify MySQL CLI migrator (up -> status -> down 3)
+        env:
+          DB_CLIENT: mysql
+          DB_HOST: 127.0.0.1
+          DB_PORT: "3306"
+          DB_NAME: mrtumi_test
+          DB_USER: mrtumi_test
+          DB_PASSWORD: mrtumi_test_pw
+        run: |
+          npm run migrate:up
+          npm run migrate:status
+          npm run migrate:down -- 3
+
+      - name: Run automated unit, portal regression & live MySQL 8.0 test suites
         run: npm test

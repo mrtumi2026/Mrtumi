@@ -1,18 +1,18 @@
+'use strict';
+
 const crypto = require('crypto');
-const db = require('../db/database');
+const { env } = require('../config/env');
+const {
+  getActiveSession,
+  upsertSession,
+  deleteSession,
+  purgeExpiredSessions,
+} = require('../repositories/sessionRepository');
+const { getClientIp } = require('./rateLimit');
 
 const COOKIE_NAME = 'pholbazar_sid';
 const MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
-
-function ensureSessionTable() {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS web_sessions (
-      sid TEXT PRIMARY KEY,
-      data TEXT NOT NULL DEFAULT '{}',
-      updated_at TEXT DEFAULT (datetime('now', 'localtime'))
-    );
-  `);
-}
+const TTL_MS = MAX_AGE_SECONDS * 1000;
 
 function parseCookies(cookieHeader) {
   const out = {};
@@ -40,7 +40,6 @@ function isValidSid(val) {
 function appendSidToUrl(targetUrl, sid) {
   if (!targetUrl || !sid) return targetUrl;
   const str = String(targetUrl);
-  // Only append to relative internal paths
   if (!str.startsWith('/') || str.startsWith('//')) return str;
   const [pathAndQuery, hash] = str.split('#');
   const sep = pathAndQuery.includes('?') ? '&' : '?';
@@ -48,90 +47,7 @@ function appendSidToUrl(targetUrl, sid) {
   return `${pathAndQuery}${sep}_sid=${encodeURIComponent(sid)}${hash ? '#' + hash : ''}`;
 }
 
-function sessionManager(req, res, next) {
-  ensureSessionTable();
-
-  const cookies = parseCookies(req.headers.cookie);
-  const cookieSid = cookies[COOKIE_NAME];
-  const headerSid = req.headers['x-pb-sid'];
-  const bodySid = req.body && typeof req.body === 'object' ? req.body._sid : undefined;
-  const querySid = req.query ? req.query._sid : undefined;
-
-  // Prefer explicit token from header/body/query if cookie was blocked in cross-origin iframe,
-  // or cookie if present and valid.
-  let sid = null;
-  let cameWithoutCookie = false;
-
-  for (const candidate of [headerSid, bodySid, querySid, cookieSid]) {
-    if (isValidSid(candidate)) {
-      sid = candidate.trim();
-      break;
-    }
-  }
-
-  if (!cookieSid || cookieSid !== sid) {
-    cameWithoutCookie = true;
-  }
-
-  let sessionObj = {};
-  if (sid) {
-    const row = db.get('SELECT data FROM web_sessions WHERE sid = ?', sid);
-    if (row && row.data) {
-      try {
-        sessionObj = JSON.parse(row.data) || {};
-      } catch (_e) {
-        sessionObj = {};
-      }
-    } else {
-      db.run('INSERT OR IGNORE INTO web_sessions (sid, data) VALUES (?, ?)', sid, '{}');
-    }
-  } else {
-    sid = crypto.randomBytes(20).toString('hex');
-    cameWithoutCookie = true;
-    db.run('INSERT INTO web_sessions (sid, data) VALUES (?, ?)', sid, '{}');
-  }
-
-  // Clean internal _sid from req.body so generic CRUD forms don't see it as a table field
-  if (req.body && typeof req.body === 'object' && '_sid' in req.body) {
-    delete req.body._sid;
-  }
-
-  req.sessionID = sid;
-  req.session = sessionObj;
-  req.session.save = (cb) => {
-    persistSession();
-    if (typeof cb === 'function') cb();
-  };
-  req.session.destroy = (cb) => {
-    try {
-      db.run('DELETE FROM web_sessions WHERE sid = ?', sid);
-    } catch (_e) {}
-    for (const k of Object.keys(req.session)) {
-      if (k !== 'save' && k !== 'destroy') delete req.session[k];
-    }
-    if (typeof cb === 'function') cb();
-  };
-
-  function persistSession() {
-    try {
-      const clone = {};
-      for (const [k, v] of Object.entries(req.session || {})) {
-        if (typeof v !== 'function') clone[k] = v;
-      }
-      const serialized = JSON.stringify(clone);
-      db.run(
-        `INSERT INTO web_sessions (sid, data, updated_at)
-         VALUES (?, ?, datetime('now', 'localtime'))
-         ON CONFLICT(sid) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`,
-        sid,
-        serialized
-      );
-    } catch (err) {
-      console.error('Session persist error:', err);
-    }
-  }
-
-  // Set cross-iframe compatible cookie (SameSite=None; Secure; Partitioned on HTTPS, SameSite=Lax on HTTP)
+function buildCookieHeader(req, sid) {
   const isHttps =
     req.secure ||
     String(req.headers['x-forwarded-proto'] || '').toLowerCase().includes('https');
@@ -142,34 +58,223 @@ function sessionManager(req, res, next) {
     `Max-Age=${MAX_AGE_SECONDS}`,
     'HttpOnly',
   ];
-  if (isHttps) {
+
+  if (env.isProduction) {
+    cookieParts.push('SameSite=Lax', 'Secure');
+  } else if (isHttps) {
     cookieParts.push('SameSite=None', 'Secure', 'Partitioned');
   } else {
     cookieParts.push('SameSite=Lax');
   }
-  res.setHeader('Set-Cookie', cookieParts.join('; '));
-  res.setHeader('X-PB-Sid', sid);
+  return cookieParts.join('; ');
+}
 
-  // Wrap res.redirect so sessions survive redirects even when browser blocks 3rd-party cookies in iframe
-  const origRedirect = res.redirect.bind(res);
-  res.redirect = function (statusOrUrl, maybeUrl) {
-    persistSession();
-    if (typeof statusOrUrl === 'number') {
-      const target = cameWithoutCookie ? appendSidToUrl(maybeUrl, sid) : maybeUrl;
-      return origRedirect(statusOrUrl, target);
+function detectSessionActor(sess) {
+  if (!sess) return { actorType: null, actorId: null };
+  if (sess.adminUser && sess.adminUser.id) {
+    return { actorType: 'admin', actorId: Number(sess.adminUser.id) };
+  }
+  if (sess.vendorUser && sess.vendorUser.id) {
+    return { actorType: 'vendor', actorId: Number(sess.vendorUser.id) };
+  }
+  if (sess.resellerUser && sess.resellerUser.id) {
+    return { actorType: 'reseller', actorId: Number(sess.resellerUser.id) };
+  }
+  if (sess.customerUser && sess.customerUser.id) {
+    return { actorType: 'customer', actorId: Number(sess.customerUser.id) };
+  }
+  return { actorType: null, actorId: null };
+}
+
+/**
+ * Async database-backed session middleware supporting MySQL (`web_sessions`) in production/CI
+ * and SQLite (`web_sessions`) in local non-production fallback.
+ */
+async function sessionManager(req, res, next) {
+  try {
+    const cookies = parseCookies(req.headers.cookie);
+    const cookieSid = cookies[COOKIE_NAME];
+    const headerSid = !env.isProduction ? req.headers['x-pb-sid'] : undefined;
+    const bodySid =
+      !env.isProduction && req.body && typeof req.body === 'object' ? req.body._sid : undefined;
+    const querySid = !env.isProduction && req.query ? req.query._sid : undefined;
+
+    let sid = null;
+    let cameWithoutCookie = false;
+
+    for (const candidate of [headerSid, bodySid, querySid, cookieSid]) {
+      if (isValidSid(candidate)) {
+        sid = candidate.trim();
+        break;
+      }
     }
-    const target = cameWithoutCookie ? appendSidToUrl(statusOrUrl, sid) : statusOrUrl;
-    return origRedirect(target);
-  };
 
-  // Persist session automatically before headers/body flush
-  const origEnd = res.end.bind(res);
-  res.end = function (...args) {
-    persistSession();
-    return origEnd(...args);
-  };
+    if (!cookieSid || cookieSid !== sid) {
+      cameWithoutCookie = true;
+    }
 
-  next();
+    const now = Date.now();
+    let sessionObj = {};
+
+    if (sid) {
+      const existing = await getActiveSession(sid, now);
+      if (existing && existing.dataJson) {
+        try {
+          sessionObj = JSON.parse(existing.dataJson) || {};
+        } catch (_e) {
+          sessionObj = {};
+        }
+      }
+    } else {
+      sid = crypto.randomBytes(20).toString('hex');
+      cameWithoutCookie = true;
+    }
+
+    // Clean internal _sid from req.body so generic CRUD forms never see it as a table field
+    if (req.body && typeof req.body === 'object' && '_sid' in req.body) {
+      delete req.body._sid;
+    }
+
+    let destroyed = false;
+    let lastPersistedSnapshot = null;
+
+    const persistSession = async () => {
+      if (destroyed) return;
+      const clone = {};
+      for (const [k, v] of Object.entries(req.session || {})) {
+        if (typeof v !== 'function') clone[k] = v;
+      }
+      const serialized = JSON.stringify(clone);
+      if (serialized === lastPersistedSnapshot) {
+        return;
+      }
+      const { actorType, actorId } = detectSessionActor(clone);
+      await upsertSession({
+        sid,
+        dataJson: serialized,
+        expiresAtMs: Date.now() + TTL_MS,
+        ipAddress: getClientIp(req),
+        actorType,
+        actorId,
+      });
+      lastPersistedSnapshot = serialized;
+    };
+
+    function attachSessionMethods(targetObj) {
+      Object.defineProperty(targetObj, 'save', {
+        enumerable: false,
+        configurable: true,
+        value(cb) {
+          return persistSession()
+            .then(() => {
+              if (typeof cb === 'function') cb(null);
+            })
+            .catch((err) => {
+              if (typeof cb === 'function') cb(err);
+              else throw err;
+            });
+        },
+      });
+
+      Object.defineProperty(targetObj, 'destroy', {
+        enumerable: false,
+        configurable: true,
+        value(cb) {
+          destroyed = true;
+          return deleteSession(sid)
+            .then(() => {
+              for (const k of Object.keys(req.session)) {
+                delete req.session[k];
+              }
+              if (typeof cb === 'function') cb(null);
+            })
+            .catch((err) => {
+              if (typeof cb === 'function') cb(err);
+              else throw err;
+            });
+        },
+      });
+
+      Object.defineProperty(targetObj, 'regenerate', {
+        enumerable: false,
+        configurable: true,
+        value(cb) {
+          const oldSid = sid;
+          sid = crypto.randomBytes(20).toString('hex');
+          req.sessionID = sid;
+          res.locals.sessionToken = sid;
+          lastPersistedSnapshot = null;
+          if (!res.headersSent) {
+            res.setHeader('Set-Cookie', buildCookieHeader(req, sid));
+          }
+          return deleteSession(oldSid)
+            .then(() => persistSession())
+            .then(() => {
+              if (typeof cb === 'function') cb(null);
+            })
+            .catch((err) => {
+              if (typeof cb === 'function') cb(err);
+              else throw err;
+            });
+        },
+      });
+    }
+
+    attachSessionMethods(sessionObj);
+    req.sessionID = sid;
+    req.session = sessionObj;
+
+    res.setHeader('Set-Cookie', buildCookieHeader(req, sid));
+    if (!env.isProduction) {
+      res.setHeader('X-PB-Sid', sid);
+    }
+
+    const origRedirect = res.redirect.bind(res);
+    res.redirect = function patchedRedirect(statusOrUrl, maybeUrl) {
+      persistSession()
+        .then(() => {
+          if (typeof statusOrUrl === 'number') {
+            const target =
+              !env.isProduction && cameWithoutCookie ? appendSidToUrl(maybeUrl, sid) : maybeUrl;
+            return origRedirect(statusOrUrl, target);
+          }
+          const target =
+            !env.isProduction && cameWithoutCookie
+              ? appendSidToUrl(statusOrUrl, sid)
+              : statusOrUrl;
+          return origRedirect(target);
+        })
+        .catch(next);
+    };
+
+    const origRender = res.render.bind(res);
+    res.render = function patchedRender(...args) {
+      persistSession()
+        .then(() => origRender(...args))
+        .catch(next);
+    };
+
+    const origJson = res.json.bind(res);
+    res.json = function patchedJson(body) {
+      persistSession()
+        .then(() => origJson(body))
+        .catch(next);
+    };
+
+    const origEnd = res.end.bind(res);
+    res.end = function patchedEnd(...args) {
+      persistSession().catch(() => {});
+      return origEnd(...args);
+    };
+
+    if (Math.random() < 0.01) {
+      purgeExpiredSessions(now).catch(() => {});
+    }
+
+    return next();
+  } catch (err) {
+    return next(err);
+  }
 }
 
 module.exports = sessionManager;
