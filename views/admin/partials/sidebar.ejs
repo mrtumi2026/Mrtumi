@@ -1,0 +1,486 @@
+      <!-- ========== Left Sidebar Start ========== -->
+      <div class="left-side-menu">
+        <div class="h-100 pt-2">
+          <!--- Sidemenu (Exact 1:1 Menu Structure from Dashboard - ফল বাজার.html) -->
+          <div id="sidebar-menu">
+            <ul id="side-menu">
+              <li>
+                <a href="/admin/dashboard">
+                  <i data-feather="airplay"></i>
+                  <span> Dashboard </span>
+                </a>
+              </li>
+
+              <li>
+                <a href="/admin/gemini-chat">
+                  <i data-feather="message-circle"></i>
+                  <span> Gemini Assistant </span>
+                </a>
+              </li>
+
+              <li>
+                <a href="/admin/order/create">
+                  <i data-feather="cpu"></i>
+                  <span>POS System</span>
+                </a>
+              </li>
+
+              <li>
+                <a href="#sidebar-orders" data-bs-toggle="collapse">
+                  <i data-feather="shopping-cart"></i>
+                  <span> Orders </span>
+                  <span class="menu-arrow"></span>
+                </a>
+                <div class="collapse" id="sidebar-orders">
+                  <ul class="nav-second-level">
+                    <li><a href="/admin/order/all"><i data-feather="file-plus"></i> All Order</a></li>
+                    <li><a href="/admin/reseller-orders"><i data-feather="users"></i> Reseller Orders</a></li>
+                    <li><a href="/admin/incomplete-orders"><i data-feather="file-plus"></i> Incomplete Orders</a></li>
+                    <li><a href="/admin/order/pending"><i data-feather="file-plus"></i> Pending (<%= pendingOrdersCount || 0 %>)</a></li>
+                    <li><a href="/admin/order/processing"><i data-feather="file-plus"></i> Processing</a></li>
+                    <li><a href="/admin/order/on-the-way"><i data-feather="file-plus"></i> On The Way</a></li>
+                    <li><a href="/admin/order/in-courier"><i data-feather="file-plus"></i> In Courier</a></li>
+                    <li><a href="/admin/order/completed"><i data-feather="file-plus"></i> Completed</a></li>
+                    <li><a href="/admin/order/unpaid"><i data-feather="file-plus"></i> Unpaid</a></li>
+                    <li><a href="/admin/order/cancelled"><i data-feather="file-plus"></i> Cancelled</a></li>
+                    <li><a href="/admin/orderstatus/manage"><i data-feather="file-plus"></i> Order Status</a></li>
+                    <li><a href="/admin/customer/ip-block"><i data-feather="shield"></i> IP Block</a></li>
+                  </ul>
+                </div>
+              </li>
+
+              <li>
+                <a href="#sidebar-refunds" data-bs-toggle="collapse">
+                  <i data-feather="rotate-ccw"></i>
+                  <span> Refunds </span>
+                  <span class="menu-arrow"></span>
+                </a>
+                <div class="collapse" id="sidebar-refunds">
+                  <ul class="nav-second-level">
+                    <li><a href="/admin/refunds"><i data-feather="list"></i> All Refunds</a></li>
+                    <li><a href="/admin/refunds?status=pending"><i data-feather="clock"></i> Pending Refunds</a></li>
+                    <li><a href="/admin/refunds?status=approved"><i data-feather="check-circle"></i> Approved Refunds</a></li>
+                    <li><a href="/admin/refunds?status=processed"><i data-feather="check"></i> Processed Refunds</a></li>
+                  </ul>
+                </div>
+              </li>
+
+              <li>
+                <a href="#siebar-product" data-bs-toggle="collapse">
+                  <i data-feather="database"></i>
+                  <span> Products </span>
+                  <span class="menu-arrow"></span>
+                </a>
+                <div class="collapse" id="siebar-product">
+                  <ul class="nav-second-level">
+                    <li><a href="/admin/inhouse-products/manage"><i data-feather="package"></i> All Inhouse Products</a></li>
+                    <li><a href="/admin/products/manage"><i data-feather="shopping-bag"></i> All Vendor Products</a></li>
+                    <li><a href="/admin/products/pending"><i data-feather="clock"></i> Pending Products</a></li>
+                    <li><a href="/admin/products/wholesale"><i data-feather="layers"></i> Wholesale Products</a></li>
+                    <li><a href="/admin/products/create"><i data-feather="plus-circle"></i> Add Product</a></li>
+                    <li><hr class="dropdown-divider my-1" /></li>
+                    <li><a href="/admin/categories/manage"><i data-feather="grid"></i> Categories</a></li>
+                    <li><a href="/admin/subcategories/manage"><i data-feather="file-plus"></i> Subcategories</a></li>
+                    <li><a href="/admin/childcategories/manage"><i data-feather="file-plus"></i> Childcategories</a></li>
+                    <li><a href="/admin/brands/manage"><i data-feather="award"></i> Brands</a></li>
+                    <li><a href="/admin/color/manage"><i data-feather="droplet"></i> Colors</a></li>
+                    <li><a href="/admin/size/manage"><i data-feather="maximize-2"></i> Sizes</a></li>
+                  </ul>
+                </div>
+              </li>
+
+              <li>
+                <a href="#sidebar-blog" data-bs-toggle="collapse">
+                  <i data-feather="edit"></i>
+                  <span> Blog </span>
+                  <span class="menu-arrow"></span>
+                </a>
+                <div class="collapse" id="sidebar-blog">
+                  <ul class="nav-second-level">
+                    <li><a href="/admin/blogs"><i data-feather="list"></i> All Blogs</a></li>
+                    <li><a href="/admin/blog/create"><i data-feather="plus-circle"></i> Add New Blog</a></li>
+                  </ul>
+                </div>
+              </li>
+
+              <li>
+                <a href="/admin/purchases/manage">
+                  <i data-feather="file-text"></i>
+                  <span>Purchases</span>
+                </a>
+              </li>
+
+              <li>
+                <a href="/admin/suppliers/manage">
+                  <i data-feather="truck"></i>
+                  <span>Suppliers</span>
+                </a>
+              </li>
+
+              <li>
+                <a href="#sidebar-crm" data-bs-toggle="collapse">
+                  <i data-feather="users"></i>
+                  <span> CRM / HR </span>
+                  <span class="menu-arrow"></span>
+                </a>
+                <div class="collapse" id="sidebar-crm">
+                  <ul class="nav-second-level">
+                    <li><a href="/admin/employees"><i data-feather="user"></i> Employees</a></li>
+                    <li><a href="/admin/attendances"><i data-feather="check-circle"></i> Attendance</a></li>
+                    <li><a href="/admin/leaves"><i data-feather="calendar"></i> Leaves</a></li>
+                    <li><a href="/admin/salaries"><i data-feather="dollar-sign"></i> Salaries</a></li>
+                    <li><a href="/admin/bonuses"><i data-feather="gift"></i> Bonuses</a></li>
+                    <li><a href="/admin/salary-payments"><i data-feather="credit-card"></i> Salary Payments</a></li>
+                  </ul>
+                </div>
+              </li>
+
+              <li>
+                <a href="#sidebar-coupon" data-bs-toggle="collapse">
+                  <i data-feather="gift"></i>
+                  <span> Coupons </span>
+                  <span class="menu-arrow"></span>
+                </a>
+                <div class="collapse" id="sidebar-coupon">
+                  <ul class="nav-second-level">
+                    <li><a href="/admin/coupon/manage"><i data-feather="list"></i> All Coupons</a></li>
+                    <li><a href="/admin/coupon/create"><i data-feather="plus-circle"></i> Add New</a></li>
+                  </ul>
+                </div>
+              </li>
+
+              <li>
+                <a href="#sidebar-product-review" data-bs-toggle="collapse">
+                  <i data-feather="star"></i>
+                  <span> Reviews </span>
+                  <span class="menu-arrow"></span>
+                </a>
+                <div class="collapse" id="sidebar-product-review">
+                  <ul class="nav-second-level">
+                    <li><a href="/admin/review/pending"><i data-feather="clock"></i> Pending Reviews (<%= pendingReviewsCount || 0 %>)</a></li>
+                    <li><a href="/admin/reviews"><i data-feather="list"></i> All Reviews</a></li>
+                  </ul>
+                </div>
+              </li>
+
+              <li>
+                <a href="#sidebar-landing-page" data-bs-toggle="collapse">
+                  <i data-feather="layout"></i>
+                  <span> Landing Page </span>
+                  <span class="menu-arrow"></span>
+                </a>
+                <div class="collapse" id="sidebar-landing-page">
+                  <ul class="nav-second-level">
+                    <li><a href="/admin/campaign/manage"><i data-feather="list"></i> Campaign</a></li>
+                    <li><a href="/admin/campaign/create"><i data-feather="plus-circle"></i> Create</a></li>
+                  </ul>
+                </div>
+              </li>
+
+              <li>
+                <a href="/admin/manual-fraud-check">
+                  <i data-feather="search"></i>
+                  <span>Manual Fraud Check</span>
+                </a>
+              </li>
+
+              <li>
+                <a href="/admin/sms/custom-send">
+                  <i data-feather="send"></i>
+                  <span>Send Custom SMS</span>
+                </a>
+              </li>
+
+              <li>
+                <a href="/admin/complaints">
+                  <i data-feather="alert-circle"></i>
+                  <span> Complaints </span>
+                </a>
+              </li>
+
+              <li>
+                <a href="/admin/contact-messages">
+                  <i data-feather="mail"></i>
+                  <span> Contact Messages </span>
+                </a>
+              </li>
+
+              <li>
+                <a href="/admin/newsletter-subscribers">
+                  <i data-feather="at-sign"></i>
+                  <span> Newsletter Subscribers </span>
+                </a>
+              </li>
+
+              <li>
+                <a href="/admin/fund">
+                  <i data-feather="briefcase"></i>
+                  <span> Fund / Account</span>
+                </a>
+              </li>
+
+              <li>
+                <a href="/admin/expenses">
+                  <i data-feather="credit-card"></i>
+                  <span>Expenses</span>
+                </a>
+              </li>
+
+              <li>
+                <a href="#sidebar-vendors" data-bs-toggle="collapse">
+                  <i data-feather="users"></i>
+                  <span> Vendors </span>
+                  <span class="menu-arrow"></span>
+                </a>
+                <div class="collapse" id="sidebar-vendors">
+                  <ul class="nav-second-level">
+                    <li><a href="/admin/vendors"><i data-feather="list"></i> All Vendors</a></li>
+                    <li><a href="/admin/vendor-verifications"><i data-feather="shield"></i> Vendor Verifications</a></li>
+                    <li><a href="/admin/vendor-withdrawals"><i data-feather="dollar-sign"></i> Vendor Withdrawals</a></li>
+                  </ul>
+                </div>
+              </li>
+
+              <li>
+                <a href="#sidebar-resellers" data-bs-toggle="collapse">
+                  <i data-feather="user-check"></i>
+                  <span> Resellers </span>
+                  <span class="menu-arrow"></span>
+                </a>
+                <div class="collapse" id="sidebar-resellers">
+                  <ul class="nav-second-level">
+                    <li><a href="/admin/resellers"><i data-feather="list"></i> All Resellers</a></li>
+                    <li><a href="/admin/reseller-deposits"><i data-feather="credit-card"></i> Reseller Deposits</a></li>
+                    <li><a href="/admin/reseller-verifications"><i data-feather="shield"></i> Verifications</a></li>
+                    <li><a href="/admin/reseller-withdrawals"><i data-feather="dollar-sign"></i> Withdrawals</a></li>
+                  </ul>
+                </div>
+              </li>
+
+              <li>
+                <a href="#sidebar-users" data-bs-toggle="collapse">
+                  <i data-feather="user"></i>
+                  <span> Users </span>
+                  <span class="menu-arrow"></span>
+                </a>
+                <div class="collapse" id="sidebar-users">
+                  <ul class="nav-second-level">
+                    <li><a href="/admin/users/manage"><i data-feather="user"></i> User</a></li>
+                    <li><a href="/admin/roles/manage"><i data-feather="lock"></i> Roles</a></li>
+                    <li><a href="/admin/permissions/manage"><i data-feather="key"></i> Permissions</a></li>
+                    <li><a href="/admin/customer"><i data-feather="users"></i> Customers</a></li>
+                  </ul>
+                </div>
+              </li>
+
+              <li>
+                <a href="#sidebar-delivery-module" data-bs-toggle="collapse">
+                  <i data-feather="truck"></i>
+                  <span>Delivery</span>
+                  <span class="menu-arrow"></span>
+                </a>
+                <div class="collapse" id="sidebar-delivery-module">
+                  <ul class="nav-second-level">
+                    <li><a href="/admin/delivery-boys"><i data-feather="users"></i> Delivery persons</a></li>
+                    <li><a href="/admin/delivery-withdrawals"><i data-feather="dollar-sign"></i> Rider withdrawals</a></li>
+                    <li><a href="/admin/delivery/divisions"><i data-feather="map-pin"></i> Delivery locations</a></li>
+                  </ul>
+                </div>
+              </li>
+
+              <li>
+                <a href="#siebar-sitesetting" data-bs-toggle="collapse">
+                  <i data-feather="settings"></i>
+                  <span> Site Setting </span>
+                  <span class="menu-arrow"></span>
+                </a>
+                <div class="collapse" id="siebar-sitesetting">
+                  <ul class="nav-second-level">
+                    <li><a href="/admin/settings/manage"><i data-feather="sliders"></i> General Setting</a></li>
+                    <li><a href="/admin/sale-notification"><i data-feather="bell"></i> Sales Notification Popup</a></li>
+                    <li><a href="/admin/social-media/manage"><i data-feather="share-2"></i> Social Media</a></li>
+                    <li><a href="/admin/features/manage"><i data-feather="grid"></i> Feature Bar</a></li>
+                    <li><a href="/admin/contact/manage"><i data-feather="phone"></i> Contact</a></li>
+                    <li><a href="/admin/page/manage"><i data-feather="file-text"></i> Create Page</a></li>
+                  </ul>
+                </div>
+              </li>
+
+              <li>
+                <a href="/admin/email-setting">
+                  <i data-feather="mail"></i>
+                  <span>Email Settings</span>
+                </a>
+              </li>
+
+              <li>
+                <a href="#sidebar-fraud" data-bs-toggle="collapse">
+                  <i data-feather="shield"></i>
+                  <span> Fraud API Settings </span>
+                  <span class="menu-arrow"></span>
+                </a>
+                <div class="collapse" id="sidebar-fraud">
+                  <ul class="nav-second-level">
+                    <li><a href="/admin/fraud-settings"><i data-feather="key"></i> Manage Fraud API</a></li>
+                  </ul>
+                </div>
+              </li>
+
+              <li>
+                <a href="/admin/order-restriction-settings">
+                  <i data-feather="clock"></i>
+                  <span> Order Restriction</span>
+                </a>
+              </li>
+
+              <li>
+                <a href="#sidebar-api-integration" data-bs-toggle="collapse">
+                  <i data-feather="save"></i>
+                  <span> API Integration </span>
+                  <span class="menu-arrow"></span>
+                </a>
+                <div class="collapse" id="sidebar-api-integration">
+                  <ul class="nav-second-level">
+                    <li><a href="/admin/paymentgeteway/manage"><i data-feather="credit-card"></i> Payment Gateway</a></li>
+                    <li><a href="/admin/paymentgeteway/manual-manage"><i data-feather="smartphone"></i> Manual Payment</a></li>
+                    <li><a href="/admin/smsgeteway/manage"><i data-feather="message-square"></i> SMS Gateway</a></li>
+                    <li><a href="/admin/courierapi/manage"><i data-feather="truck"></i> Courier API</a></li>
+                    <li><a href="/admin/facebook-capi/settings"><i data-feather="facebook"></i> Facebook CAPI</a></li>
+                    <li><a href="/admin/gemini-ai/settings"><i data-feather="cpu"></i> Gemini AI</a></li>
+                    <li><a href="/admin/social-login/settings"><i data-feather="users"></i> Social Login</a></li>
+                    <li><a href="/admin/gemini-chat"><i data-feather="message-circle"></i> Gemini Assistant</a></li>
+                  </ul>
+                </div>
+              </li>
+
+              <li>
+                <a href="/admin/cron-jobs">
+                  <i data-feather="clock"></i>
+                  <span> Cron Job </span>
+                </a>
+              </li>
+
+              <li>
+                <a href="#sidebar-pixel-gtm" data-bs-toggle="collapse">
+                  <i data-feather="code"></i>
+                  <span> G. Pixel and GTM </span>
+                  <span class="menu-arrow"></span>
+                </a>
+                <div class="collapse" id="sidebar-pixel-gtm">
+                  <ul class="nav-second-level">
+                    <li><a href="/admin/tag-manager/manage"><i data-feather="tag"></i> Tag Manager</a></li>
+                    <li><a href="/admin/pixels/manage"><i data-feather="activity"></i> Pixel Manage</a></li>
+                    <li><a href="/admin/tiktok-pixels/manage"><i data-feather="film"></i> TikTok Pixel</a></li>
+                  </ul>
+                </div>
+              </li>
+
+              <li>
+                <a href="#sidebar-ads-analytics" data-bs-toggle="collapse">
+                  <i data-feather="trending-up"></i>
+                  <span> Live Ads Result </span>
+                  <span class="menu-arrow"></span>
+                </a>
+                <div class="collapse" id="sidebar-ads-analytics">
+                  <ul class="nav-second-level">
+                    <li><a href="/admin/ads-analytics"><i data-feather="layout"></i> Overview</a></li>
+                    <li><a href="/admin/ads-analytics/facebook"><i data-feather="facebook"></i> Facebook Ads</a></li>
+                    <li><a href="/admin/ads-analytics/google"><i data-feather="globe"></i> Google Ads</a></li>
+                    <li><a href="/admin/ads-analytics/tiktok"><i data-feather="video"></i> TikTok Ads</a></li>
+                  </ul>
+                </div>
+              </li>
+
+              <li>
+                <a href="/admin/facebook-page/settings">
+                  <i data-feather="share-2"></i>
+                  <span> Facebook Page Post </span>
+                </a>
+              </li>
+
+              <li>
+                <a href="/admin/banner/manage">
+                  <i data-feather="image"></i>
+                  <span> Banner &amp; Sliders </span>
+                </a>
+              </li>
+
+              <li>
+                <a href="/admin/popup">
+                  <i data-feather="message-square"></i>
+                  <span> Popup Offer </span>
+                </a>
+              </li>
+
+              <li>
+                <a href="/admin/sale-notification">
+                  <i data-feather="bell"></i>
+                  <span> Sales Notification Popup </span>
+                </a>
+              </li>
+
+              <li>
+                <a href="#sidebar-report" data-bs-toggle="collapse">
+                  <i data-feather="pie-chart"></i>
+                  <span> Reports </span>
+                  <span class="menu-arrow"></span>
+                </a>
+                <div class="collapse" id="sidebar-report">
+                  <ul class="nav-second-level">
+                    <li><a href="/admin/reports/orders"><i data-feather="file-text"></i> Order Report</a></li>
+                    <li><a href="/admin/reports/purchases"><i data-feather="shopping-bag"></i> Purchase Report</a></li>
+                    <li><a href="/admin/reports/expenses"><i data-feather="trending-down"></i> Expense Report</a></li>
+                    <li><a href="/admin/reports/stock"><i data-feather="archive"></i> Stock Report</a></li>
+                    <li><a href="/admin/reports/profit-loss"><i data-feather="activity"></i> Profit &amp; Loss</a></li>
+                  </ul>
+                </div>
+              </li>
+
+              <li>
+                <a href="/admin/seo-settings">
+                  <i data-feather="globe"></i>
+                  <span>SEO Settings</span>
+                </a>
+              </li>
+
+              <li>
+                <a href="/admin/sitemap">
+                  <i data-feather="map"></i>
+                  <span> Sitemap Settings </span>
+                </a>
+              </li>
+
+              <li>
+                <a href="/admin/license-info">
+                  <i data-feather="key"></i>
+                  <span> License </span>
+                </a>
+              </li>
+
+              <li>
+                <a href="/admin/updates">
+                  <i data-feather="refresh-cw"></i>
+                  <span>System Updates</span>
+                </a>
+              </li>
+
+              <li>
+                <a href="/admin/clear-cache" onclick="return confirm('আপনি কি সিস্টেম ক্যাশ ক্লিয়ার করতে চান?')">
+                  <i data-feather="refresh-cw"></i>
+                  <span>Clear Cache</span>
+                </a>
+              </li>
+
+              <li>
+                <a href="/admin/error-log">
+                  <i data-feather="file-text"></i>
+                  <span>Error Log</span>
+                </a>
+              </li>
+            </ul>
+          </div>
+          <!-- End Sidebar -->
+          <div class="clearfix"></div>
+        </div>
+      </div>
+      <!-- Left Sidebar End -->

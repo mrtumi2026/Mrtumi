@@ -1,23 +1,40 @@
-# DEPLOYMENT & HOSTING GUIDE — Mr. Tumi Grocery & Gift
+# DEPLOYMENT & HOSTING FEASIBILITY PLAN — Mr. Tumi Grocery & Gift
 
-**Status:** `NOT STARTED` (Initial Governance Skeleton — Phase 01; Full Runbook Scheduled for Phase 02 & Phase 20)
+**Hosting Provider:** BestWebHostBD (`bestwebhostbd.com` / `my.bestwebhostbd.com`)  
+**Purchased Package Status:** `UNVERIFIED` (`OWNER APPROVAL REQUIRED` — see [`docs/CPANEL_COMPATIBILITY.md`](docs/CPANEL_COMPATIBILITY.md))  
+**Production Deployment Gate:** **DO NOT DEPLOY** until Phase 20 QA, backup/restore verification, and explicit owner sign-off.
 
 ---
 
-## 1. Deployment Governance Rules
-1. **Owner-Controlled Hosting Only:** All application code, database storage, uploaded assets, and environment secrets belong exclusively to the owner.
-2. **No Unauthorized Production Push or Deploy:** Production deployment will **never** run without explicit owner approval after Phase 20 QA and backup verification.
-3. **Zero Secrets in Git:** All production credentials (`SESSION_SECRET`, DB paths/URLs, `bKash`, `ShurjoPay`, `UddoktaPay`, `Steadfast`, `Pathao`, `RedX`, `BDCourier`, `BulkSMSBD`, `Meta CAPI`, `SMTP`) must reside only in server-side `.env` / hosting secret manager, documented via placeholder keys in `.env.example`.
+## 1. Deployment Feasibility Summary by BestWebHostBD Tier
 
-## 2. Hosting Questionnaire (Pending Owner Confirmation in `DECISIONS.md` — `ADR-001`)
-Before locking the runtime architecture in **Phase 02**, confirm your target hosting environment:
-- **Option A (Recommended for Existing Codebase):** VPS / Cloud VM (Ubuntu + Nginx + PM2/Docker) or cPanel with **Setup Node.js App** enabled.
-- **Option B:** Shared cPanel hosting with **PHP/MySQL only** (no Node.js runtime).
+1. **If Purchased Plan Supports Node.js (`Alfa Pro/Plus/Swift/Business`, `Turbo Lite/Power/Plus/Advance`, `USA Webhost`, or `BDIX Business` with `Setup Node.js App`):**
+   - Deploy the Express + EJS Modular Monolith via **cPanel → Setup Node.js App** using startup file `app.js` and **MySQL / MariaDB (`InnoDB`)** as the production database.
+2. **If Purchased Plan Is PHP-Only Shared Hosting (`Web Hosting Basic/Plus/Business` or lower `BDIX` without Node.js):**
+   - **Recommended:** Upgrade within BestWebHostBD (`my.bestwebhostbd.com`) to a Node-enabled plan (`Alfa Pro` / `BDIX Business` / `Turbo Lite`) OR a BestWebHostBD `VPS`.
+   - **Alternative:** Only if the owner explicitly chooses to stay on PHP-only shared hosting, approve a dedicated framework migration to PHP 8.2+/Laravel + MySQL before Phase 03 begins (`docs/ARCHITECTURE.md` §2).
 
-## 3. Sections to be Populated in Phases 02, 03 & 20
-- Server prerequisites & runtime versions
-- Environment variable reference (`.env.example`)
-- Database migration & rollback commands
-- Reverse proxy, HTTPS/TLS & static upload hardening
-- Cron / background worker configuration (SMS retry queue, incomplete checkout cleanup, courier sync)
-- Automated daily database & media backup + tested restore procedure
+---
+
+## 2. Planned BestWebHostBD cPanel Passenger Deployment Topology
+
+```text
+/home/<cpanel_user>/
+├── mrtumi_app/                    # Git checkout OUTSIDE public_html (protects .git, src/, views/)
+│   ├── app.js                     # Passenger / LiteSpeed lsnode startup file
+│   ├── server.js
+│   ├── package.json
+│   └── public/
+│       └── uploads/
+│           └── custom -> /home/<cpanel_user>/mrtumi_storage/uploads
+├── mrtumi_storage/                # Persistent directory surviving git releases
+│   ├── uploads/
+│   └── backups/
+└── nodevenv/mrtumi_app/<ver>/     # CloudLinux managed Node virtual environment
+```
+
+### Key Production Safeguards
+- **Never Clone Inside `public_html`:** Keeps `src/`, `views/`, `package.json`, and `.git` inaccessible from direct static HTTP requests; Passenger proxies public web traffic cleanly to `app.js`.
+- **Database Integrity:** Production writes go to cPanel **MySQL (`InnoDB`)** over `127.0.0.1:3306` rather than a local SQLite file, avoiding Passenger multi-worker file-lock contention and ensuring clean cPanel `mysqldump` backups.
+- **Stateless Cron Execution:** Because shared cPanel Passenger sleeps idle Node processes, scheduled jobs (SMS retries, OTP cleanup, courier sync) will run via **cPanel → Cron Jobs** (`*/5 * * * *`) invoking a dedicated CLI task script (`scripts/cron-runner.js`, added in Phase 03/10/13).
+- **Secrets Management:** Set `SESSION_SECRET`, `CSRF_SECRET`, `DB_*`, and provider API keys exclusively in cPanel's NodeJS environment variables or server-only `.env` (`chmod 600 .env`).

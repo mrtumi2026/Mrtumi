@@ -1,0 +1,68 @@
+<%- include('partials/layout-top', { title: 'My Products' }) %>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h4 class="fw-bold mb-0">📦 আমার সকল প্রোডাক্ট (<%= products.length %>)</h4>
+    <p class="text-muted small mb-0">আপনার শপের প্রোডাক্ট আপলোড, স্টক ও মূল্য পরিবর্তন করুন</p>
+  </div>
+  <a href="/vendor/products/create" class="btn btn-forest btn-sm">+ নতুন পণ্য যোগ করুন</a>
+</div>
+
+<div class="tbl-card">
+  <div class="tbl-card-body">
+    <table class="table clean mb-0 align-middle">
+      <thead>
+        <tr>
+          <th>পণ্য</th>
+          <th>ক্যাটাগরি</th>
+          <th>রেগুলার / বিক্রয় মূল্য</th>
+          <th>স্টক</th>
+          <th>বিক্রি</th>
+          <th>অ্যাপ্রুভাল</th>
+          <th class="text-end">অ্যাকশন</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% if (!products.length) { %>
+          <tr><td colspan="7" class="text-center py-4 text-muted">আপনি এখনো কোনো পণ্য যোগ করেননি।</td></tr>
+        <% } %>
+        <% products.forEach(function(p) { %>
+          <tr>
+            <td>
+              <div class="d-flex align-items-center gap-2">
+                <img src="<%= p.image %>" class="p-thumb" alt="" />
+                <div>
+                  <div class="fw-semibold"><%= p.name %></div>
+                  <small class="text-muted">Code: <%= p.code %></small>
+                </div>
+              </div>
+            </td>
+            <td><%= p.category_name || '—' %></td>
+            <td>
+              <% if (p.old_price > p.new_price) { %>
+                <span class="text-muted text-decoration-line-through small me-1">৳<%= p.old_price %></span>
+              <% } %>
+              <strong class="text-success">৳<%= p.new_price %></strong>
+            </td>
+            <td><span class="sb <%= p.stock > 10 ? 'sb-6' : 'sb-7' %>"><%= p.stock %></span></td>
+            <td><%= p.sold_count || 0 %></td>
+            <td>
+              <span class="sb <%= p.approval_status === 'approved' ? 'sb-6' : 'sb-1' %>">
+                <%= p.approval_status === 'approved' ? 'Approved (Live)' : 'Pending Approval' %>
+              </span>
+            </td>
+            <td class="text-end">
+              <a href="/product/<%= p.slug %>" target="_blank" class="btn btn-sm btn-outline-secondary py-1 px-2" title="View on Storefront"><i class="fas fa-external-link-alt"></i></a>
+              <a href="/vendor/products/edit/<%= p.id %>" class="btn btn-sm btn-outline-primary py-1 px-2"><i class="fas fa-edit"></i></a>
+              <form action="/vendor/products/delete/<%= p.id %>" method="POST" class="d-inline" onsubmit="return confirm('পণ্যটি ডিলিট করতে চান?');">
+                <button type="submit" class="btn btn-sm btn-outline-danger py-1 px-2"><i class="fas fa-trash"></i></button>
+              </form>
+            </td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<%- include('partials/layout-bottom') %>

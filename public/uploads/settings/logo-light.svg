@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 230 62" fill="none">
+  <g transform="translate(6, 4)">
+    <!-- Stylized Bengali Brand Mark: ফল বাজার -->
+    <text x="0" y="34" font-family="'Hind Siliguri', sans-serif" font-size="33" font-weight="800" fill="#ffffff" letter-spacing="0.5">ফল বাজার</text>
+    <!-- Shopping Bag Handle Accent -->
+    <path d="M138 6 C138 1, 152 1, 152 6" stroke="#fbbf24" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+    <!-- Tagline underneath -->
+    <text x="44" y="50" font-family="'Hind Siliguri', sans-serif" font-size="10.2" font-weight="600" fill="#cbd5e1">খাঁটি মানের খাবারের নিশ্চয়তা</text>
+  </g>
+</svg>

@@ -1,0 +1,115 @@
+<%- include('partials/head', { title: 'Manual Fraud Check' }) %>
+<%- include('partials/topbar') %>
+<%- include('partials/sidebar') %>
+
+<div class="content-page">
+  <div class="content">
+    <div class="db-heading">
+      <h1>🛡️ Manual Courier Fraud Check</h1>
+      <p>গ্রাহকের মোবাইল নম্বর দিয়ে Steadfast, Pathao ও RedX কুরিয়ারের ডেলিভারি সাকসেস রেশিও যাচাই করুন</p>
+    </div>
+
+    <div class="tbl-card p-4 mb-4">
+      <form action="/admin/manual-fraud-check" method="GET" class="row g-2 align-items-end">
+        <div class="col-md-8">
+          <label class="form-label fw-semibold small">কাস্টমারের ১১ সংখ্যার মোবাইল নম্বর লিখুন</label>
+          <input type="text" name="phone" value="<%= phone %>" class="form-control" placeholder="যেমন: 01711223301" required />
+        </div>
+        <div class="col-md-4">
+          <button type="submit" class="btn btn-forest w-100 py-2">🔍 Check Courier History</button>
+        </div>
+      </form>
+    </div>
+
+    <% if (result) { %>
+      <div class="row g-3 mb-4">
+        <div class="col-lg-4">
+          <div class="tbl-card p-4 text-center h-100">
+            <div class="text-muted small text-uppercase fw-bold mb-2">Delivery Success Score</div>
+            <div style="font-size: 46px; font-weight: 800;" class="<%= result.successRate >= 80 ? 'text-success' : 'text-danger' %>">
+              <%= result.successRate %>%
+            </div>
+            <span class="sb <%= result.successRate >= 80 ? 'sb-6' : 'sb-7' %> mb-3"><%= result.riskLevel %></span>
+            <div class="d-flex justify-content-around border-top pt-3 mt-2">
+              <div><div class="fw-bold"><%= result.totalParcels %></div><small class="text-muted">Total</small></div>
+              <div><div class="fw-bold text-success"><%= result.totalDelivered %></div><small class="text-muted">Delivered</small></div>
+              <div><div class="fw-bold text-danger"><%= result.totalReturned %></div><small class="text-muted">Returned</small></div>
+            </div>
+            <% if (!result.isBlocked) { %>
+              <form action="/admin/customer/ip-block/create" method="POST" class="mt-3">
+                <input type="hidden" name="ip_or_phone" value="<%= result.phone %>" />
+                <input type="hidden" name="reason" value="Flagged from Manual Fraud Check" />
+                <button type="submit" class="btn btn-outline-danger btn-sm w-100">🚫 Block This Phone Number</button>
+              </form>
+            <% } else { %>
+              <div class="alert alert-danger py-1 px-2 mt-3 mb-0 small">এই নম্বরটি ইতিমধ্যে ব্লক তালিকায় রয়েছে</div>
+            <% } %>
+          </div>
+        </div>
+
+        <div class="col-lg-8">
+          <div class="tbl-card h-100">
+            <div class="tbl-card-head">
+              <h4>Courier-wise Breakdown (<%= result.phone %>)</h4>
+            </div>
+            <div class="tbl-card-body">
+              <table class="table clean mb-0">
+                <thead>
+                  <tr>
+                    <th>Courier Partner</th>
+                    <th>Total Parcels</th>
+                    <th>Delivered</th>
+                    <th>Cancelled / Returned</th>
+                    <th>Success %</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% result.couriers.forEach(function(c) {
+                       const pct = c.total > 0 ? Math.round((c.delivered / c.total) * 100) : 100;
+                  %>
+                    <tr>
+                      <td class="fw-semibold"><%= c.name %></td>
+                      <td><%= c.total %></td>
+                      <td class="text-success fw-bold"><%= c.delivered %></td>
+                      <td class="text-danger fw-bold"><%= c.returned %></td>
+                      <td><span class="sb <%= pct >= 80 ? 'sb-6' : 'sb-1' %>"><%= pct %>%</span></td>
+                    </tr>
+                  <% }) %>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tbl-card">
+        <div class="tbl-card-head">
+          <h4>Internal Store Orders for <%= result.phone %> (<%= result.storeOrders.length %>)</h4>
+        </div>
+        <div class="tbl-card-body">
+          <table class="table clean mb-0">
+            <thead>
+              <tr><th>Invoice</th><th>Customer</th><th>Amount</th><th>Status</th><th>Date</th></tr>
+            </thead>
+            <tbody>
+              <% if (!result.storeOrders.length) { %>
+                <tr><td colspan="5" class="text-center py-3 text-muted">আমাদের স্টোরে এই নম্বরে পূর্বে কোনো অর্ডার পাওয়া যায়নি।</td></tr>
+              <% } %>
+              <% result.storeOrders.forEach(function(so) { %>
+                <tr>
+                  <td><a href="/admin/order/view/<%= so.id %>">#<%= so.invoice_id %></a></td>
+                  <td><%= so.customer_name %></td>
+                  <td>৳<%= so.amount %></td>
+                  <td><span class="sb sb-1"><%= so.status %></span></td>
+                  <td><%= so.created_at %></td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    <% } %>
+  </div>
+</div>
+
+<%- include('partials/footer') %>

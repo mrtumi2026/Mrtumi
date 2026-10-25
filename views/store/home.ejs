@@ -1,0 +1,145 @@
+<%- include('partials/header') %>
+
+<main class="container py-4">
+  <!-- Hero Banner Slider -->
+  <% if (heroBanners && heroBanners.length) { %>
+    <div id="heroCarousel" class="carousel slide mb-5" data-bs-ride="carousel">
+      <div class="carousel-inner">
+        <% heroBanners.forEach(function(b, idx) { %>
+          <div class="carousel-item <%= idx === 0 ? 'active' : '' %>">
+            <div class="hero-slide">
+              <img src="<%= b.image %>" alt="<%= b.title %>" />
+              <div class="hero-caption">
+                <span class="badge bg-warning text-dark align-self-start mb-2 px-3 py-1 rounded-pill">🍒 ১০০% অর্গানিক ও বাগান তাজা</span>
+                <h1 class="fw-bold display-6 mb-2" style="max-width: 580px;"><%= b.title %></h1>
+                <p class="mb-3 text-white-50 fs-6" style="max-width: 520px;"><%= b.subtitle %></p>
+                <div>
+                  <a href="<%= b.link || '/all-products' %>" class="btn btn-warning fw-bold px-4 py-2 rounded-pill shadow-sm">
+                    এখনই অর্ডার করুন →
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        <% }) %>
+      </div>
+      <% if (heroBanners.length > 1) { %>
+        <button class="carousel-control-prev" type="button" data-bs-target="#heroCarousel" data-bs-slide="prev">
+          <span class="carousel-control-prev-icon"></span>
+        </button>
+        <button class="carousel-control-next" type="button" data-bs-target="#heroCarousel" data-bs-slide="next">
+          <span class="carousel-control-next-icon"></span>
+        </button>
+      <% } %>
+    </div>
+  <% } %>
+
+  <!-- Flash Sale Section -->
+  <% if (flashProducts && flashProducts.length) { %>
+    <section class="mb-5">
+      <div class="sec-head bg-white p-3 rounded-4 border">
+        <div class="d-flex align-items-center gap-3 flex-wrap">
+          <div>
+            <h3 class="fw-bold mb-0 fs-4 text-danger">⚡ Flash Sale</h3>
+            <small class="text-muted">ঝলমলে ছাড় — দ্রুত কিনুন!</small>
+          </div>
+          <div class="cd-box" data-countdown="<%= siteSettings.flash_sale_end || '2027-06-30T23:59:59' %>">
+            <span class="small text-muted me-1">শেষ হতে বাকি:</span>
+            <div class="cd-pill"><strong class="cd-d">00</strong><span>দিন</span></div>
+            <div class="cd-pill"><strong class="cd-h">00</strong><span>ঘণ্টা</span></div>
+            <div class="cd-pill"><strong class="cd-m">00</strong><span>মিনিট</span></div>
+            <div class="cd-pill"><strong class="cd-s">00</strong><span>সেকেন্ড</span></div>
+          </div>
+        </div>
+        <a href="/flash-sales" class="btn btn-outline-success btn-sm rounded-pill px-3">সব দেখুন →</a>
+      </div>
+
+      <div class="row g-3">
+        <% flashProducts.forEach(function(p) { %>
+          <div class="col-6 col-md-4 col-lg-3">
+            <%- include('partials/product-card', { p: p, showStockMeta: true }) %>
+          </div>
+        <% }) %>
+      </div>
+    </section>
+  <% } %>
+
+  <!-- Mid Promo Banner -->
+  <% if (promoBanners && promoBanners.length) { %>
+    <section class="mb-5">
+      <a href="<%= promoBanners[0].link || '/flash-sales' %>" class="text-decoration-none">
+        <div class="hero-slide" style="min-height: 210px;">
+          <img src="<%= promoBanners[0].image %>" alt="Promo" style="height: 220px;" />
+          <div class="hero-caption">
+            <h3 class="fw-bold mb-1"><%= promoBanners[0].title %></h3>
+            <p class="mb-2 text-white-50"><%= promoBanners[0].subtitle %></p>
+            <span class="btn btn-light btn-sm fw-bold align-self-start rounded-pill px-3">অফার দেখুন →</span>
+          </div>
+        </div>
+      </a>
+    </section>
+  <% } %>
+
+  <!-- Hot Deal Section -->
+  <% if (hotProducts && hotProducts.length) { %>
+    <section class="mb-5">
+      <div class="sec-head bg-white p-3 rounded-4 border">
+        <div class="d-flex align-items-center gap-3 flex-wrap">
+          <div>
+            <h3 class="fw-bold mb-0 fs-4" style="color:#1b4332;">🔥 Hot Deal</h3>
+            <small class="text-muted">সীমিত সময়ের বিশেষ অফার</small>
+          </div>
+          <div class="cd-box" data-countdown="<%= siteSettings.hot_deal_end || '2027-07-15T23:59:59' %>">
+            <div class="cd-pill" style="background:#1b4332;"><strong class="cd-d">00</strong><span>দিন</span></div>
+            <div class="cd-pill" style="background:#1b4332;"><strong class="cd-h">00</strong><span>ঘণ্টা</span></div>
+            <div class="cd-pill" style="background:#1b4332;"><strong class="cd-m">00</strong><span>মিনিট</span></div>
+            <div class="cd-pill" style="background:#1b4332;"><strong class="cd-s">00</strong><span>সেকেন্ড</span></div>
+          </div>
+        </div>
+        <a href="/hot-deals" class="btn btn-outline-success btn-sm rounded-pill px-3">সব দেখুন →</a>
+      </div>
+
+      <div class="row g-3">
+        <% hotProducts.forEach(function(p) { %>
+          <div class="col-6 col-md-4 col-lg-3">
+            <%- include('partials/product-card', { p: p, showStockMeta: false }) %>
+          </div>
+        <% }) %>
+      </div>
+    </section>
+  <% } %>
+
+  <!-- Category Sections -->
+  <% categorySections.forEach(function(sec) { %>
+    <section class="mb-5">
+      <div class="sec-head">
+        <h3 class="fw-bold mb-0 fs-4"><%= sec.category.icon || '🍒' %> <%= sec.category.name %></h3>
+        <a href="/category/<%= sec.category.slug %>" class="btn btn-outline-success btn-sm rounded-pill px-3">সব দেখুন →</a>
+      </div>
+      <div class="row g-3">
+        <% sec.products.slice(0, 4).forEach(function(p) { %>
+          <div class="col-6 col-md-4 col-lg-3">
+            <%- include('partials/product-card', { p: p, showStockMeta: false }) %>
+          </div>
+        <% }) %>
+      </div>
+    </section>
+  <% }) %>
+
+  <!-- All Products -->
+  <section class="mb-4">
+    <div class="sec-head">
+      <h3 class="fw-bold mb-0 fs-4">🛒 সকল প্রোডাক্ট</h3>
+      <a href="/all-products" class="btn btn-outline-success btn-sm rounded-pill px-3">আরও দেখুন →</a>
+    </div>
+    <div class="row g-3">
+      <% allProducts.forEach(function(p) { %>
+        <div class="col-6 col-md-4 col-lg-3">
+          <%- include('partials/product-card', { p: p, showStockMeta: false }) %>
+        </div>
+      <% }) %>
+    </div>
+  </section>
+</main>
+
+<%- include('partials/footer') %>

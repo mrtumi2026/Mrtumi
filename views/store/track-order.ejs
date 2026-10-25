@@ -1,0 +1,94 @@
+<%- include('partials/header', { title: 'অর্ডার ট্র্যাক করুন' }) %>
+
+<main class="container py-5">
+  <div class="bg-white rounded-4 border p-4 p-md-5 mx-auto shadow-sm" style="max-width: 760px;">
+    <div class="text-center mb-4">
+      <h2 class="fw-bold fs-4 mb-1">📦 লাইভ অর্ডার ট্র্যাকিং</h2>
+      <p class="text-muted small">আপনার ৫ সংখ্যার ইনভয়েস নম্বর (যেমন: 32721) অথবা মোবাইল নম্বর দিয়ে অর্ডারের বর্তমান অবস্থান জানুন</p>
+    </div>
+
+    <form action="/track-order" method="GET" class="d-flex gap-2 mb-4 mx-auto" style="max-width: 520px;">
+      <input
+        type="text"
+        name="q"
+        value="<%= query || '' %>"
+        class="form-control form-control-lg"
+        placeholder="ইনভয়েস নম্বর বা মোবাইল নম্বর লিখুন..."
+        required
+      />
+      <button type="submit" class="btn btn-success px-4 fw-bold" style="background:#1b4332;white-space:nowrap;">খুঁজুন</button>
+    </form>
+
+    <% if (query && (!orders || !orders.length)) { %>
+      <div class="alert alert-warning text-center rounded-3">
+        <strong>"<%= query %>"</strong> দিয়ে কোনো অর্ডার খুঁজে পাওয়া যায়নি। সঠিক ইনভয়েস বা মোবাইল নম্বর দিয়ে আবার চেষ্টা করুন।
+      </div>
+    <% } %>
+
+    <% if (orders && orders.length) { %>
+      <% const steps = [
+        { key: 'pending', label: 'পেন্ডিং' },
+        { key: 'processing', label: 'প্রসেসিং' },
+        { key: 'in-courier', label: 'কুরিয়ারে প্রেরিত' },
+        { key: 'on-the-way', label: 'পথে আছে' },
+        { key: 'completed', label: 'ডেলিভারি সম্পন্ন' }
+      ]; %>
+
+      <% orders.forEach(function(ord) { %>
+        <% const curIdx = steps.findIndex(s => s.key === ord.status); %>
+        <div class="border rounded-4 p-4 mb-3 bg-light bg-opacity-50">
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+            <div>
+              <h5 class="fw-bold mb-0">ইনভয়েস #<%= ord.invoice_id %></h5>
+              <small class="text-muted">তারিখ: <%= ord.created_at %> • গ্রাহক: <%= ord.customer_name %></small>
+            </div>
+            <span class="badge px-3 py-2 rounded-pill" style="background:<%= ord.status_color %>;"><%= ord.status_label %></span>
+          </div>
+
+          <% if (ord.status !== 'cancelled') { %>
+            <div class="d-flex justify-content-between text-center my-4 position-relative">
+              <% steps.forEach(function(st, i) { %>
+                <% const done = curIdx >= i || ord.status === 'completed'; %>
+                <div class="flex-fill">
+                  <div
+                    class="mx-auto rounded-circle d-flex align-items-center justify-content-center fw-bold mb-1"
+                    style="width:34px;height:34px;background:<%= done ? '#16a34a' : '#e2e8f0' %>;color:<%= done ? '#fff' : '#64748b' %>;"
+                  >
+                    <%= done ? '✓' : (i + 1) %>
+                  </div>
+                  <div style="font-size: 11.5px;" class="<%= done ? 'fw-bold text-success' : 'text-muted' %>"><%= st.label %></div>
+                </div>
+              <% }) %>
+            </div>
+          <% } else { %>
+            <div class="alert alert-danger py-2 small">এই অর্ডারটি বাতিল (Cancelled) করা হয়েছে।</div>
+          <% } %>
+
+          <% if (ord.courier_name || ord.courier_tracking_id) { %>
+            <div class="p-2.5 rounded-3 bg-white border small mb-3" style="padding:10px 14px;">
+              🚚 <strong>কুরিয়ার পার্টনার:</strong> <%= ord.courier_name || 'Steadfast Courier' %>
+              <% if (ord.courier_tracking_id) { %>
+                • <strong>ট্র্যাকিং কোড:</strong> <span class="text-primary fw-bold"><%= ord.courier_tracking_id %></span>
+              <% } %>
+            </div>
+          <% } %>
+
+          <div class="small">
+            <% (ord.items || []).forEach(function(it) { %>
+              <div class="d-flex justify-content-between py-1 border-bottom">
+                <span><%= it.product_name %> (<%= it.size %> × <%= it.qty %>)</span>
+                <strong>৳<%= it.price * it.qty %></strong>
+              </div>
+            <% }) %>
+            <div class="d-flex justify-content-between pt-2 fw-bold text-success fs-6">
+              <span>সর্বমোট বিল (<%= ord.payment_method %>):</span>
+              <span>৳<%= Number(ord.amount).toLocaleString('en-IN') %></span>
+            </div>
+          </div>
+        </div>
+      <% }) %>
+    <% } %>
+  </div>
+</main>
+
+<%- include('partials/footer') %>

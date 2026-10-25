@@ -3,8 +3,6 @@
 **Allowed Status Values (Rule 25):**  
 `NOT STARTED` | `IN PROGRESS` | `IMPLEMENTED` | `TESTED AND PASSED` | `FAILED` | `BLOCKED` | `OWNER APPROVAL REQUIRED`
 
-> **Truthfulness Note (Rules 4, 19, 25, 27):** Although an initial prototype exists in the workspace from prior exploration, **no feature is marked `TESTED AND PASSED`** until it is rebranded to **Mr. Tumi Grocery & Gift**, backed by versioned migrations, validated server-side, permission-checked, and verified by automated tests in its designated phase.
-
 ---
 
 ## Phase & Feature Inventory
@@ -12,37 +10,38 @@
 ### PHASE 01 — Reference Audit & Requirements
 | ID | Feature / Deliverable | Status | Notes |
 |---|---|---|---|
-| P01-01 | Admin sidebar & menu inventory (screenshot vs DOM evidence) | `TESTED AND PASSED` | Documented in `docs/PHASE_01_REFERENCE_AUDIT.md` §2 |
-| P01-02 | Admin dashboard 9-band layout specification | `TESTED AND PASSED` | Documented in `docs/PHASE_01_REFERENCE_AUDIT.md` §3 |
-| P01-03 | Customer storefront audit checklist | `TESTED AND PASSED` | Documented in `docs/PHASE_01_REFERENCE_AUDIT.md` §4 |
-| P01-04 | Mandatory module functional requirements & dependency map | `TESTED AND PASSED` | Documented in `docs/PHASE_01_REFERENCE_AUDIT.md` §6–§7 |
-| P01-05 | Unverified items list, risk register & owner decision log | `TESTED AND PASSED` | Documented in `docs/PHASE_01_REFERENCE_AUDIT.md` §8–§10 & `DECISIONS.md` |
-| P01-06 | Initial `MASTER_CHECKLIST.md`, `PROJECT_STATUS.md`, `DECISIONS.md`, `INTEGRATION_STATUS.md`, `DEPLOYMENT.md` | `TESTED AND PASSED` | Verified by Phase 01 validation script |
-| P01-07 | Owner review & approval to proceed to Phase 02 | `OWNER APPROVAL REQUIRED` | Waiting on Q1–Q6 in `DECISIONS.md` |
+| P01-01 | Admin sidebar & menu inventory (screenshot vs DOM evidence) | `TESTED AND PASSED` | `docs/PHASE_01_REFERENCE_AUDIT.md` §2 |
+| P01-02 | Admin dashboard 9-band layout specification | `TESTED AND PASSED` | `docs/PHASE_01_REFERENCE_AUDIT.md` §3 |
+| P01-03 | Customer storefront audit checklist | `TESTED AND PASSED` | `docs/PHASE_01_REFERENCE_AUDIT.md` §4 |
+| P01-04 | Mandatory module functional requirements & dependency map | `TESTED AND PASSED` | `docs/PHASE_01_REFERENCE_AUDIT.md` §6–§7 |
+| P01-05 | Unverified items list, risk register & owner decision log | `TESTED AND PASSED` | `docs/PHASE_01_REFERENCE_AUDIT.md` §8–§10 |
+| P01-06 | Initial governance documents (`MASTER_CHECKLIST.md`, `PROJECT_STATUS.md`, `DECISIONS.md`, `INTEGRATION_STATUS.md`, `DEPLOYMENT.md`) | `TESTED AND PASSED` | Verified in commit `3611777` |
+| P01-07 | Owner review & core business-rule sign-off | `TESTED AND PASSED` | Approved in Phase 02 owner instruction |
 
 ### PHASE 02 — Architecture, GitHub & Development Foundation
 | ID | Feature / Deliverable | Status | Notes |
 |---|---|---|---|
-| P02-01 | Hosting-compatible stack confirmation with owner | `OWNER APPROVAL REQUIRED` | Confirm Node.js hosting support (Q1) |
-| P02-02 | Clean folder architecture, `.gitignore`, safe `.env.example` | `NOT STARTED` | Scheduled for Phase 02 |
-| P02-03 | Dev / test / prod config separation (`Asia/Dhaka`, BDT) | `NOT STARTED` | Scheduled for Phase 02 |
-| P02-04 | Linting, formatting & automated GitHub Actions CI | `NOT STARTED` | Scheduled for Phase 02 |
-| P02-05 | Setup guide, branch/commit conventions & lockfile audit | `NOT STARTED` | Scheduled for Phase 02 |
+| P02-01 | BestWebHostBD compatibility audit & `docs/CPANEL_COMPATIBILITY.md` | `TESTED AND PASSED` | All 9 account-specific items recorded as `UNVERIFIED` pending owner check |
+| P02-02 | Conditional architecture blueprint & DB evaluation (`docs/ARCHITECTURE.md`) | `TESTED AND PASSED` | Evaluates Express/EJS + MySQL vs Plan Upgrade vs VPS vs PHP/Laravel |
+| P02-03 | Clean folder conventions, Passenger `app.js`, `.gitignore`, safe `.env.example` & secret removal | `TESTED AND PASSED` | Zero hardcoded passwords or mock live keys in tracked files |
+| P02-04 | Dev / test / prod environment module (`src/config/env.js`: `Asia/Dhaka`, `BDT`, `bn`/`en`) | `TESTED AND PASSED` | Tested in `tests/phase02-foundation.test.js` |
+| P02-05 | Linting, EJS compilation, secret scanner (`scripts/check-foundation.js`) & GitHub Actions CI (`.github/workflows/ci.yml`) | `TESTED AND PASSED` | Verified via `npm run verify` |
+| P02-06 | Exact BestWebHostBD purchased package & Node.js/MySQL verification by owner | `OWNER APPROVAL REQUIRED` | Provisional architecture gate before Phase 03 (`ADR-001`) |
 
 ### PHASE 03 — Database, Backend & API Foundation
 | ID | Feature / Deliverable | Status | Notes |
 |---|---|---|---|
-| P03-01 | Versioned reversible database migrations & rollback CLI | `NOT STARTED` | Replace monolithic schema init |
+| P03-01 | Versioned reversible database migrations & rollback CLI | `NOT STARTED` | Starts after `P02-06` owner confirmation |
 | P03-02 | Foreign keys, indexes, constraints & minor-unit (`paisa`) money schema | `NOT STARTED` | Eliminate float money math |
-| P03-03 | Transaction wrapper (`BEGIN IMMEDIATE`) & idempotency middleware | `NOT STARTED` | Duplicate-request protection |
+| P03-03 | Transaction wrapper & idempotency middleware | `NOT STARTED` | Duplicate-request protection |
 | P03-04 | Auth, CSRF, rate limiting, validation & consistent API/error format | `NOT STARTED` | Security foundation |
 | P03-05 | Structured PII-redacting logger, `/health` endpoint & core DB tests | `NOT STARTED` | Scheduled for Phase 03 |
 
 ### PHASE 04 — Branding, Design System & Bilingual UI
 | ID | Feature / Deliverable | Status | Notes |
 |---|---|---|---|
-| P04-01 | Original **Mr. Tumi Grocery & Gift** brand identity & assets | `NOT STARTED` | Replace reference fruit-demo branding |
-| P04-02 | Bangla (`bn`) & English (`en`) language switching + dictionaries | `NOT STARTED` | Storefront + Admin support |
+| P04-01 | **Mr. Tumi Grocery & Gift** brand identity & assets (preserve owner assets if supplied) | `NOT STARTED` | Approved rule (`ADR-002`) |
+| P04-02 | Bangla (`bn` default) & English (`en`) language switching + dictionaries | `NOT STARTED` | Approved rule (`ADR-002`) |
 | P04-03 | Responsive component library (tables, modals, filters, pagination, empty/error states) | `NOT STARTED` | Desktop, tablet & mobile |
 | P04-04 | Bangladesh currency (`৳`) & `Asia/Dhaka` timestamp formatters | `NOT STARTED` | Scheduled for Phase 04 |
 
@@ -76,8 +75,8 @@
 | P08-01 | Order state machine, `order_status_history`, notes & authorized item edits | `NOT STARTED` | Scheduled for Phase 08 |
 | P08-02 | Cancellation, returns, refund initiation & stock restoration | `NOT STARTED` | Scheduled for Phase 08 |
 | P08-03 | Consent-aware incomplete checkout capture & duplicate order detection | `NOT STARTED` | Scheduled for Phase 08 |
-| P08-04 | Order OTP verification (expiry, attempt cap, cooldown, rate limit) | `NOT STARTED` | Scheduled for Phase 08 |
-| P08-05 | Configurable advance payment (fixed/%) + remaining COD balance & min/max order rules | `NOT STARTED` | Scheduled for Phase 08 |
+| P08-04 | Admin-configurable Order OTP verification (expiry, attempt cap, cooldown, rate limit) | `NOT STARTED` | Approved rule (`ADR-005`) |
+| P08-05 | Admin-configurable advance payment (fixed/%) + remaining COD balance & min/max order rules | `NOT STARTED` | Approved rule (`ADR-005`) |
 
 ### PHASE 09 — Admin Dashboard, Users & Permissions
 | ID | Feature / Deliverable | Status | Notes |
@@ -132,15 +131,15 @@
 | ID | Feature / Deliverable | Status | Notes |
 |---|---|---|---|
 | P16-01 | Wholesale buyer onboarding, approval, MOQ/pack rules & tiered pricing | `NOT STARTED` | Scheduled for Phase 16 |
-| P16-02 | Isolated Multivendor portal, product moderation, commission & settlement/reversal | `NOT STARTED` | Harden & test existing vendor portal |
-| P16-03 | Isolated Reseller portal, margin/commission attribution & return reversal | `NOT STARTED` | Harden & test existing reseller portal |
+| P16-02 | Isolated Multivendor portal, separate vendor stock, product moderation & commission ledger | `NOT STARTED` | Approved rule (`ADR-006`) |
+| P16-03 | Isolated Reseller portal using Mr. Tumi warehouse stock, margin attribution & return reversal | `NOT STARTED` | Approved rule (`ADR-006`) |
 
 ### PHASE 17 — POS, CRM & HRM
 | ID | Feature / Deliverable | Status | Notes |
 |---|---|---|---|
 | P17-01 | POS barcode/SKU search, cashier shift open/close reconciliation, receipts & POS returns | `NOT STARTED` | Scheduled for Phase 17 |
 | P17-02 | CRM customer profiles, order history, support notes & complaints | `NOT STARTED` | Scheduled for Phase 17 |
-| P17-03 | HRM employees, departments, attendance, shifts, leaves, documents & approved payroll | `OWNER APPROVAL REQUIRED` | Confirm payroll rules (Q6) |
+| P17-03 | HRM employees, departments, attendance, shifts, leaves, documents & approved SME payroll | `NOT STARTED` | Approved rule (`ADR-008`) |
 
 ### PHASE 18 — Reports, Finance & System Settings
 | ID | Feature / Deliverable | Status | Notes |

@@ -1,0 +1,204 @@
+<%- include('partials/head', { title: 'POS System' }) %>
+<%- include('partials/topbar') %>
+<%- include('partials/sidebar') %>
+
+<div class="content-page">
+  <div class="content">
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+      <div>
+        <h4 class="fw-bold mb-0">POS System (Point of Sale)</h4>
+        <p class="text-muted small mb-0">দ্রুত ফোন অর্ডার বা শোরুম সেলস ইনভয়েস তৈরি করুন</p>
+      </div>
+      <a href="/admin/order/all" class="btn btn-outline-secondary btn-sm">← All Orders</a>
+    </div>
+
+    <div class="row g-3">
+      <!-- Left: Product Picker -->
+      <div class="col-lg-7">
+        <div class="tbl-card p-3">
+          <div class="row g-2 mb-3">
+            <div class="col-sm-7">
+              <input type="text" id="posSearch" class="form-control" placeholder="প্রোডাক্টের নাম বা কোড লিখুন..." />
+            </div>
+            <div class="col-sm-5">
+              <select id="posCategory" class="form-select">
+                <option value="">সকল ক্যাটাগরি</option>
+                <% categories.forEach(function(c) { %>
+                  <option value="<%= c.name %>"><%= c.name %></option>
+                <% }) %>
+              </select>
+            </div>
+          </div>
+
+          <div class="row g-2" id="posProductGrid" style="max-height: 620px; overflow-y: auto;">
+            <% products.forEach(function(p) { %>
+              <div class="col-6 col-md-4 pos-prod-card" data-name="<%= p.name.toLowerCase() %> <%= p.code.toLowerCase() %>" data-cat="<%= p.category_name || '' %>">
+                <div
+                  class="border rounded-3 p-2 h-100 bg-white shadow-xs"
+                  style="cursor: pointer; transition: border-color 0.15s;"
+                  onclick='addToPosCart(<%- JSON.stringify({ id: p.id, name: p.name, price: p.new_price, image: p.image, stock: p.stock }) %>)'
+                >
+                  <img src="<%= p.image %>" alt="" class="w-100 rounded-2 mb-2" style="height: 105px; object-fit: cover;" />
+                  <div class="fw-semibold text-truncate" style="font-size: 12.5px;"><%= p.name %></div>
+                  <div class="d-flex justify-content-between align-items-center mt-1">
+                    <span class="fw-bold text-success">৳<%= p.new_price %></span>
+                    <span class="badge bg-light text-secondary border">Stock: <%= p.stock %></span>
+                  </div>
+                </div>
+              </div>
+            <% }) %>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: POS Cart & Customer Billing -->
+      <div class="col-lg-5">
+        <form action="/admin/order/create" method="POST" id="posForm" class="tbl-card p-3">
+          <input type="hidden" name="items_json" id="posItemsJson" value="[]" />
+
+          <h6 class="fw-bold border-bottom pb-2 mb-3">🛒 POS Cart Items</h6>
+          <div id="posCartBody" class="mb-3" style="min-height: 120px; max-height: 260px; overflow-y: auto;">
+            <div class="text-center text-muted py-4 small">বাম পাশ থেকে প্রোডাক্টে ক্লিক করে কার্টে যোগ করুন</div>
+          </div>
+
+          <h6 class="fw-bold border-bottom pb-2 mb-3">👤 Customer &amp; Delivery Details</h6>
+          <div class="mb-2">
+            <select id="existingCustSelect" class="form-select form-select-sm mb-2">
+              <option value="">-- পূর্ববর্তী কাস্টমার সিলেক্ট করুন (ঐচ্ছিক) --</option>
+              <% customers.forEach(function(c) { %>
+                <option value="<%= c.id %>" data-name="<%= c.name %>" data-phone="<%= c.phone %>" data-addr="<%= c.address %>">
+                  <%= c.name %> (<%= c.phone %>)
+                </option>
+              <% }) %>
+            </select>
+          </div>
+          <div class="row g-2">
+            <div class="col-sm-6">
+              <label class="form-label small mb-1">গ্রাহকের নাম *</label>
+              <input type="text" name="customer_name" id="posCustName" class="form-control form-control-sm" required />
+            </div>
+            <div class="col-sm-6">
+              <label class="form-label small mb-1">মোবাইল নম্বর *</label>
+              <input type="text" name="phone" id="posCustPhone" class="form-control form-control-sm" required />
+            </div>
+            <div class="col-12">
+              <label class="form-label small mb-1">ডেলিভারি ঠিকানা</label>
+              <input type="text" name="address" id="posCustAddr" class="form-control form-control-sm" placeholder="বাসা, রোড, থানা, জেলা" />
+            </div>
+            <div class="col-sm-6">
+              <label class="form-label small mb-1">শিপিং চার্জ (৳)</label>
+              <input type="number" name="shipping_charge" id="posShip" class="form-control form-control-sm" value="60" oninput="renderPosCart()" />
+            </div>
+            <div class="col-sm-6">
+              <label class="form-label small mb-1">ডিসকাউন্ট (৳)</label>
+              <input type="number" name="discount" id="posDisc" class="form-control form-control-sm" value="0" oninput="renderPosCart()" />
+            </div>
+            <div class="col-sm-6">
+              <label class="form-label small mb-1">পেমেন্ট মাধ্যম</label>
+              <select name="payment_method" class="form-select form-select-sm">
+                <option value="Cash On Delivery">Cash On Delivery</option>
+                <option value="Cash">Direct Cash (Paid)</option>
+                <option value="bKash">bKash</option>
+                <option value="Nagad">Nagad</option>
+              </select>
+            </div>
+            <div class="col-sm-6">
+              <label class="form-label small mb-1">কুরিয়ার (ঐচ্ছিক)</label>
+              <select name="courier_name" class="form-select form-select-sm">
+                <option value="">-- সিলেক্ট করুন --</option>
+                <% couriers.forEach(function(cr) { %>
+                  <option value="<%= cr.name %>"><%= cr.name %></option>
+                <% }) %>
+              </select>
+            </div>
+            <div class="col-12">
+              <input type="text" name="note" class="form-control form-control-sm" placeholder="অর্ডার নোট (ঐচ্ছিক)" />
+            </div>
+          </div>
+
+          <div class="bg-light rounded-3 p-3 mt-3 border">
+            <div class="d-flex justify-content-between small mb-1">
+              <span>Subtotal:</span><strong id="posSubtotalTxt">৳0</strong>
+            </div>
+            <div class="d-flex justify-content-between fs-6 fw-bold text-success border-top pt-2 mt-1">
+              <span>Grand Total:</span><span id="posGrandTxt">৳0</span>
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-forest w-100 mt-3 py-2">✓ অর্ডার কনফার্ম ও ইনভয়েস তৈরি করুন</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  var posCart = [];
+
+  function addToPosCart(prod) {
+    var found = posCart.find(function(i) { return i.id === prod.id; });
+    if (found) found.qty += 1;
+    else posCart.push({ id: prod.id, name: prod.name, price: Number(prod.price), image: prod.image, qty: 1 });
+    renderPosCart();
+  }
+
+  function updatePosQty(idx, delta) {
+    posCart[idx].qty += delta;
+    if (posCart[idx].qty <= 0) posCart.splice(idx, 1);
+    renderPosCart();
+  }
+
+  function renderPosCart() {
+    var container = document.getElementById('posCartBody');
+    var jsonInput = document.getElementById('posItemsJson');
+    jsonInput.value = JSON.stringify(posCart);
+
+    if (!posCart.length) {
+      container.innerHTML = '<div class="text-center text-muted py-4 small">বাম পাশ থেকে প্রোডাক্টে ক্লিক করে কার্টে যোগ করুন</div>';
+    } else {
+      container.innerHTML = posCart.map(function(it, idx) {
+        return '<div class="d-flex align-items-center justify-content-between border-bottom py-2 gap-2">' +
+          '<div class="d-flex align-items-center gap-2 text-truncate">' +
+          '<img src="' + it.image + '" style="width:34px;height:34px;border-radius:6px;object-fit:cover;" />' +
+          '<div class="text-truncate"><div class="fw-semibold small text-truncate">' + it.name + '</div><small class="text-muted">৳' + it.price + '</small></div></div>' +
+          '<div class="d-flex align-items-center gap-1">' +
+          '<button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" onclick="updatePosQty(' + idx + ',-1)">-</button>' +
+          '<span class="px-1 fw-bold">' + it.qty + '</span>' +
+          '<button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" onclick="updatePosQty(' + idx + ',1)">+</button>' +
+          '</div></div>';
+      }).join('');
+    }
+
+    var sub = posCart.reduce(function(s, i) { return s + i.price * i.qty; }, 0);
+    var ship = Number(document.getElementById('posShip').value || 0);
+    var disc = Number(document.getElementById('posDisc').value || 0);
+    var grand = Math.max(0, sub + ship - disc);
+
+    document.getElementById('posSubtotalTxt').textContent = '৳' + sub.toLocaleString('en-IN');
+    document.getElementById('posGrandTxt').textContent = '৳' + grand.toLocaleString('en-IN');
+  }
+
+  document.getElementById('posSearch').addEventListener('input', filterPosGrid);
+  document.getElementById('posCategory').addEventListener('change', filterPosGrid);
+
+  function filterPosGrid() {
+    var q = document.getElementById('posSearch').value.toLowerCase();
+    var c = document.getElementById('posCategory').value;
+    document.querySelectorAll('.pos-prod-card').forEach(function(el) {
+      var matchQ = !q || el.getAttribute('data-name').includes(q);
+      var matchC = !c || el.getAttribute('data-cat') === c;
+      el.style.display = (matchQ && matchC) ? '' : 'none';
+    });
+  }
+
+  document.getElementById('existingCustSelect').addEventListener('change', function() {
+    var opt = this.options[this.selectedIndex];
+    if (opt && opt.value) {
+      document.getElementById('posCustName').value = opt.getAttribute('data-name') || '';
+      document.getElementById('posCustPhone').value = opt.getAttribute('data-phone') || '';
+      document.getElementById('posCustAddr').value = opt.getAttribute('data-addr') || '';
+    }
+  });
+</script>
+
+<%- include('partials/footer') %>

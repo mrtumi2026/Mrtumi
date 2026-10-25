@@ -1,0 +1,200 @@
+<%- include('partials/head', { title: 'Order #' + order.invoice_id }) %>
+<%- include('partials/topbar') %>
+<%- include('partials/sidebar') %>
+
+<div class="content-page">
+  <div class="content">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+      <div>
+        <h4 class="fw-bold mb-0">Order #<%= order.invoice_id %> <span class="sb <%= order.badge_class %> ms-2"><%= order.status_label %></span></h4>
+        <p class="text-muted small mb-0">Placed on <%= order.created_at %> &bull; Source: <%= order.traffic_source || 'Direct' %> &bull; Type: <%= order.order_type || 'website' %></p>
+      </div>
+      <div class="d-flex flex-wrap gap-2">
+        <form action="/admin/order/<%= order.id %>/send-courier" method="POST" class="d-inline">
+          <input type="hidden" name="courier_name" value="Steadfast Courier" />
+          <button type="submit" class="btn btn-success btn-sm">🚚 Send to Steadfast</button>
+        </form>
+        <form action="/admin/order/<%= order.id %>/send-courier" method="POST" class="d-inline">
+          <input type="hidden" name="courier_name" value="Pathao Courier" />
+          <button type="submit" class="btn btn-outline-danger btn-sm">🛵 Send to Pathao</button>
+        </form>
+        <a href="/admin/manual-fraud-check?phone=<%= encodeURIComponent(order.phone) %>" class="btn btn-outline-info btn-sm">🛡️ Check Fraud Ratio</a>
+        <a href="/admin/order/invoice/<%= order.id %>" target="_blank" class="btn btn-outline-dark btn-sm"><i class="fas fa-print me-1"></i>Print Invoice</a>
+        <a href="/admin/order/all" class="btn btn-outline-secondary btn-sm">← Back</a>
+      </div>
+    </div>
+
+    <div class="row g-3">
+      <div class="col-lg-7">
+        <div class="tbl-card mb-3">
+          <div class="tbl-card-head">
+            <h4>Ordered Products (<%= items.length %>)</h4>
+          </div>
+          <div class="tbl-card-body">
+            <table class="table clean mb-0 align-middle">
+              <thead>
+                <tr>
+                  <th>Product</th>
+                  <th>Variant</th>
+                  <th>Unit Price</th>
+                  <th class="text-center">Qty</th>
+                  <th class="text-end">Line Total</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <% items.forEach(function(it) { %>
+                  <tr>
+                    <td>
+                      <div class="d-flex align-items-center gap-2">
+                        <img src="<%= it.product_image || '/uploads/product/lychee-fresh.jpg' %>" class="p-thumb" alt="" />
+                        <span class="fw-semibold"><%= it.product_name %></span>
+                      </div>
+                    </td>
+                    <td><%= it.size || '—' %> <%= it.color ? ('/ ' + it.color) : '' %></td>
+                    <td>৳<%= it.price %></td>
+                    <td class="text-center">
+                      <form action="/admin/order/<%= order.id %>/item-update/<%= it.id %>" method="POST" class="d-inline-flex align-items-center gap-1">
+                        <input type="number" name="qty" value="<%= it.qty %>" min="1" class="form-control form-control-sm text-center px-1" style="width: 58px;" />
+                        <button type="submit" class="btn btn-sm btn-outline-success py-0 px-2" title="Update Qty">✓</button>
+                      </form>
+                    </td>
+                    <td class="text-end fw-bold">৳<%= Number(it.price * it.qty).toLocaleString('en-IN') %></td>
+                    <td class="text-end">
+                      <form action="/admin/order/<%= order.id %>/item-update/<%= it.id %>" method="POST" class="d-inline">
+                        <input type="hidden" name="qty" value="0" />
+                        <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2" title="Remove Item">×</button>
+                      </form>
+                    </td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Add Another Product to Existing Order -->
+          <div class="p-3 border-top bg-white">
+            <form action="/admin/order/<%= order.id %>/item-add" method="POST" class="row g-2 align-items-center">
+              <div class="col-sm-7">
+                <select name="product_id" class="form-select form-select-sm" required>
+                  <option value="">+ এই অর্ডারে নতুন পণ্য যোগ করুন...</option>
+                  <% (allProducts || []).forEach(function(ap) { %>
+                    <option value="<%= ap.id %>"><%= ap.name %> — ৳<%= ap.new_price %></option>
+                  <% }) %>
+                </select>
+              </div>
+              <div class="col-sm-2">
+                <input type="number" name="qty" value="1" min="1" class="form-control form-control-sm text-center" />
+              </div>
+              <div class="col-sm-3">
+                <button type="submit" class="btn btn-sm btn-outline-success w-100">+ Add Item</button>
+              </div>
+            </form>
+          </div>
+
+          <div class="p-3 bg-light border-top">
+            <div class="d-flex justify-content-between small mb-1"><span>Subtotal:</span><strong>৳<%= order.subtotal %></strong></div>
+            <div class="d-flex justify-content-between small mb-1"><span>Shipping (<%= order.shipping_area %>):</span><strong>৳<%= order.shipping_charge %></strong></div>
+            <div class="d-flex justify-content-between small mb-1"><span>Discount <%= order.coupon_code ? '(' + order.coupon_code + ')' : '' %>:</span><strong class="text-danger">-৳<%= order.discount %></strong></div>
+            <div class="d-flex justify-content-between fs-6 fw-bold text-success border-top pt-2 mt-1"><span>Total Payable:</span><span>৳<%= Number(order.amount).toLocaleString('en-IN') %></span></div>
+          </div>
+        </div>
+
+        <div class="tbl-card p-3">
+          <h6 class="fw-bold mb-2">Payment &amp; Customer Note</h6>
+          <p class="small mb-1"><strong>Payment Method:</strong> <%= order.payment_method %> (<span class="badge bg-secondary"><%= order.payment_status %></span>)</p>
+          <% if (order.trx_id) { %>
+            <p class="small mb-1"><strong>Transaction ID:</strong> <code><%= order.trx_id %></code> | Sender: <%= order.sender_number || '—' %></p>
+          <% } %>
+          <% if (order.note) { %>
+            <p class="small mb-0"><strong>Customer Note:</strong> <%= order.note %></p>
+          <% } %>
+        </div>
+      </div>
+
+      <div class="col-lg-5">
+        <form action="/admin/order/update/<%= order.id %>" method="POST" class="tbl-card p-3">
+          <h6 class="fw-bold border-bottom pb-2 mb-3">Process &amp; Update Order</h6>
+
+          <div class="mb-2">
+            <label class="form-label small fw-semibold mb-1">Customer Name</label>
+            <input type="text" name="customer_name" value="<%= order.customer_name %>" class="form-control form-control-sm" required />
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold mb-1">Phone Number</label>
+            <input type="text" name="phone" value="<%= order.phone %>" class="form-control form-control-sm" required />
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold mb-1">Delivery Address</label>
+            <textarea name="address" rows="2" class="form-control form-control-sm"><%= order.address %></textarea>
+          </div>
+
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label small fw-semibold mb-1">Shipping (৳)</label>
+              <input type="number" name="shipping_charge" value="<%= order.shipping_charge %>" class="form-control form-control-sm" />
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-semibold mb-1">Discount (৳)</label>
+              <input type="number" name="discount" value="<%= order.discount %>" class="form-control form-control-sm" />
+            </div>
+          </div>
+
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label small fw-semibold mb-1">Order Status</label>
+              <select name="status" class="form-select form-select-sm">
+                <% statuses.forEach(function(st) { %>
+                  <option value="<%= st.slug %>" <%= order.status === st.slug ? 'selected' : '' %>><%= st.name %></option>
+                <% }) %>
+              </select>
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-semibold mb-1">Payment Status</label>
+              <select name="payment_status" class="form-select form-select-sm">
+                <option value="unpaid" <%= order.payment_status === 'unpaid' ? 'selected' : '' %>>Unpaid</option>
+                <option value="paid" <%= order.payment_status === 'paid' ? 'selected' : '' %>>Paid</option>
+                <option value="verification_pending" <%= order.payment_status === 'verification_pending' ? 'selected' : '' %>>Verification Pending</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label small fw-semibold mb-1">Assign Courier</label>
+              <select name="courier_name" class="form-select form-select-sm">
+                <option value="">-- Select Courier --</option>
+                <% couriers.forEach(function(cr) { %>
+                  <option value="<%= cr.name %>" <%= order.courier_name === cr.name ? 'selected' : '' %>><%= cr.name %></option>
+                <% }) %>
+              </select>
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-semibold mb-1">Consignment / Tracking ID</label>
+              <input type="text" name="courier_tracking_id" value="<%= order.courier_tracking_id %>" class="form-control form-control-sm" placeholder="Auto-generated if blank" />
+            </div>
+          </div>
+
+          <div class="mb-2">
+            <label class="form-label small fw-semibold mb-1">Assign Delivery Boy (Optional)</label>
+            <select name="delivery_boy_id" class="form-select form-select-sm">
+              <option value="">-- Select Delivery Rider --</option>
+              <% (deliveryBoys || []).forEach(function(dbRider) { %>
+                <option value="<%= dbRider.id %>" <%= Number(order.delivery_boy_id) === Number(dbRider.id) ? 'selected' : '' %>><%= dbRider.name %> (<%= dbRider.phone %>)</option>
+              <% }) %>
+            </select>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label small fw-semibold mb-1">Admin Internal Note</label>
+            <textarea name="admin_note" rows="2" class="form-control form-control-sm" placeholder="প্যাকিং বা কুরিয়ার নোট..."><%= order.admin_note %></textarea>
+          </div>
+
+          <button type="submit" class="btn btn-forest w-100">Save &amp; Update Order</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<%- include('partials/footer') %>

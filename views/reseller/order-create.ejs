@@ -1,0 +1,146 @@
+<%- include('partials/layout-top', { title: 'Place Reseller Order' }) %>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h4 class="fw-bold mb-0">🚀 নতুন ড্রপশিপ / রিসেলার অর্ডার তৈরি করুন</h4>
+    <p class="text-muted small mb-0">আপনার নির্ধারিত বিক্রয়মূল্যে কাস্টমারের কাছে পণ্য যাবে এবং অতিরিক্ত টাকা আপনার লাভ হিসেবে ওয়ালেটে জমা হবে</p>
+  </div>
+  <a href="/reseller/orders" class="btn btn-outline-secondary btn-sm">← আমার সকল অর্ডার</a>
+</div>
+
+<form action="/reseller/orders/create" method="POST" class="row g-4">
+  <div class="col-lg-7">
+    <div class="tbl-card p-4">
+      <h6 class="fw-bold border-bottom pb-2 mb-3">১. পণ্য ও আপনার বিক্রয়মূল্য নির্ধারণ</h6>
+      <div class="row g-3 mb-4">
+        <div class="col-12">
+          <label class="form-label small fw-semibold">পণ্য নির্বাচন করুন *</label>
+          <select name="product_id" id="rsProdSelect" class="form-select" onchange="onResellerProdChange()">
+            <% products.forEach(function(p) { %>
+              <option
+                value="<%= p.id %>"
+                data-cost="<%= p.reseller_cost %>"
+                data-retail="<%= p.new_price %>"
+                data-sizes="<%= p.sizes || '১ কেজি' %>"
+                <%= p.id === selectedId ? 'selected' : '' %>
+              >
+                <%= p.name %> — রিসেলার পাইকারি মূল্য: ৳<%= p.reseller_cost %> (খুচরা: ৳<%= p.new_price %>)
+              </option>
+            <% }) %>
+          </select>
+        </div>
+
+        <div class="col-sm-4">
+          <label class="form-label small fw-semibold">সাইজ / প্যাক</label>
+          <select name="size" id="rsSizeSelect" class="form-select"></select>
+        </div>
+        <div class="col-sm-4">
+          <label class="form-label small fw-semibold">পরিমাণ (Qty) *</label>
+          <input type="number" name="qty" id="rsQty" value="1" min="1" class="form-control fw-bold" oninput="recalcResellerProfit()" required />
+        </div>
+        <div class="col-sm-4">
+          <label class="form-label small fw-semibold text-primary">কাস্টমারের কাছে প্রতি পিস বিক্রয়মূল্য (৳) *</label>
+          <input type="number" name="selling_unit_price" id="rsSellPrice" value="0" min="1" class="form-control fw-bold border-primary" oninput="recalcResellerProfit()" required />
+        </div>
+      </div>
+
+      <h6 class="fw-bold border-bottom pb-2 mb-3">২. আপনার কাস্টমারের ডেলিভারি তথ্য</h6>
+      <div class="row g-3">
+        <div class="col-sm-6">
+          <label class="form-label small fw-semibold">কাস্টমারের নাম *</label>
+          <input type="text" name="customer_name" class="form-control" placeholder="গ্রাহকের পূর্ণ নাম" required />
+        </div>
+        <div class="col-sm-6">
+          <label class="form-label small fw-semibold">কাস্টমারের মোবাইল নম্বর *</label>
+          <input type="tel" name="phone" class="form-control" placeholder="017XXXXXXXX" required />
+        </div>
+        <div class="col-12">
+          <label class="form-label small fw-semibold">সম্পূর্ণ ডেলিভারি ঠিকানা *</label>
+          <textarea name="address" rows="2" class="form-control" placeholder="বাসা, রোড, থানা ও জেলা" required></textarea>
+        </div>
+        <div class="col-sm-6">
+          <label class="form-label small fw-semibold">ডেলিভারি এরিয়া *</label>
+          <select name="shipping_area" id="rsShipArea" class="form-select" onchange="recalcResellerProfit()">
+            <option value="ঢাকার ভিতরে" data-ship="<%= insideCharge %>">ঢাকার ভিতরে (৳<%= insideCharge %>)</option>
+            <option value="ঢাকার বাইরে" data-ship="<%= outsideCharge %>">ঢাকার বাইরে (৳<%= outsideCharge %>)</option>
+          </select>
+        </div>
+        <div class="col-sm-6">
+          <label class="form-label small fw-semibold">বিশেষ নির্দেশনা / নোট</label>
+          <input type="text" name="note" class="form-control" placeholder="প্যাকেজিং বা ডেলিভারি নোট..." />
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Live Profit & COD Breakdown -->
+  <div class="col-lg-5">
+    <div class="tbl-card p-4 sticky-top" style="top: 84px;">
+      <h6 class="fw-bold border-bottom pb-2 mb-3">💰 লাইভ প্রফিট ও কাস্টমার বিল ক্যালকুলেটর</h6>
+
+      <div class="d-flex justify-content-between py-2 border-bottom small">
+        <span>পাইকারি ক্রয়মূল্য (অ্যাডমিন মূল্য):</span>
+        <strong>৳<span id="lblWholesaleTotal">0</span></strong>
+      </div>
+      <div class="d-flex justify-content-between py-2 border-bottom small">
+        <span>কাস্টমার পণ্যের মূল্য:</span>
+        <strong>৳<span id="lblCustomerSub">0</span></strong>
+      </div>
+      <div class="d-flex justify-content-between py-2 border-bottom small">
+        <span>ডেলিভারি চার্জ:</span>
+        <strong>৳<span id="lblShipCharge"><%= insideCharge %></span></strong>
+      </div>
+      <div class="d-flex justify-content-between py-2 border-bottom fw-bold fs-6">
+        <span>কাস্টমার ডেলিভারি ম্যানকে দিবে (COD):</span>
+        <span class="text-dark">৳<span id="lblCodTotal">0</span></span>
+      </div>
+
+      <div class="p-3 rounded-3 bg-success bg-opacity-10 border border-success my-3 text-center">
+        <div class="small fw-semibold text-success">🎉 এই অর্ডারে আপনার নিট লাভ (Reseller Profit)</div>
+        <div class="display-6 fw-bold text-success">৳<span id="lblNetProfit">0</span></div>
+        <div class="small text-muted mt-1">ডেলিভারি সম্পন্ন হলেই স্বয়ংক্রিয়ভাবে আপনার ওয়ালেটে যোগ হবে</div>
+      </div>
+
+      <button type="submit" class="btn btn-primary w-100 py-3 fw-bold rounded-3" style="background:#3730a3;border-color:#3730a3;">
+        ✓ রিসেলার অর্ডার সাবমিট করুন
+      </button>
+    </div>
+  </div>
+</form>
+
+<script>
+  function onResellerProdChange() {
+    var sel = document.getElementById('rsProdSelect');
+    var opt = sel.options[sel.selectedIndex];
+    var retail = Number(opt.getAttribute('data-retail') || 0);
+    var sizes = (opt.getAttribute('data-sizes') || '১ কেজি').split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+    document.getElementById('rsSellPrice').value = retail;
+    var szSel = document.getElementById('rsSizeSelect');
+    szSel.innerHTML = sizes.map(function(s) { return '<option value="' + s + '">' + s + '</option>'; }).join('');
+    recalcResellerProfit();
+  }
+
+  function recalcResellerProfit() {
+    var sel = document.getElementById('rsProdSelect');
+    var opt = sel.options[sel.selectedIndex];
+    var unitCost = Number(opt.getAttribute('data-cost') || 0);
+    var qty = Math.max(1, parseInt(document.getElementById('rsQty').value || '1', 10));
+    var sellUnit = Number(document.getElementById('rsSellPrice').value || 0);
+    var shipSel = document.getElementById('rsShipArea');
+    var ship = Number(shipSel.options[shipSel.selectedIndex].getAttribute('data-ship') || 60);
+
+    var wholesaleTotal = unitCost * qty;
+    var custSub = sellUnit * qty;
+    var profit = Math.max(0, custSub - wholesaleTotal);
+
+    document.getElementById('lblWholesaleTotal').textContent = wholesaleTotal.toLocaleString('en-IN');
+    document.getElementById('lblCustomerSub').textContent = custSub.toLocaleString('en-IN');
+    document.getElementById('lblShipCharge').textContent = ship;
+    document.getElementById('lblCodTotal').textContent = (custSub + ship).toLocaleString('en-IN');
+    document.getElementById('lblNetProfit').textContent = profit.toLocaleString('en-IN');
+  }
+
+  document.addEventListener('DOMContentLoaded', onResellerProdChange);
+</script>
+
+<%- include('partials/layout-bottom') %>

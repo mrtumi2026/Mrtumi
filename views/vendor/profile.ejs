@@ -1,0 +1,36 @@
+<%- include('partials/layout-top', { title: 'Shop Profile' }) %>
+
+<div class="tbl-card p-4" style="max-width: 680px;">
+  <h5 class="fw-bold border-bottom pb-2 mb-3">🏪 ভেন্ডর শপ প্রোফাইল ও পাসওয়ার্ড পরিবর্তন</h5>
+  <form action="/vendor/profile" method="POST" class="row g-3">
+    <div class="col-md-6">
+      <label class="form-label small fw-semibold">শপ / বাগানের নাম *</label>
+      <input type="text" name="shop_name" value="<%= vendor.shop_name %>" class="form-control" required />
+    </div>
+    <div class="col-md-6">
+      <label class="form-label small fw-semibold">মালিকের নাম *</label>
+      <input type="text" name="owner_name" value="<%= vendor.owner_name %>" class="form-control" required />
+    </div>
+    <div class="col-md-6">
+      <label class="form-label small fw-semibold">মোবাইল নম্বর *</label>
+      <input type="text" name="phone" value="<%= vendor.phone %>" class="form-control" required />
+    </div>
+    <div class="col-md-6">
+      <label class="form-label small fw-semibold">ইমেইল</label>
+      <input type="email" name="email" value="<%= vendor.email %>" class="form-control" />
+    </div>
+    <div class="col-12">
+      <label class="form-label small fw-semibold">শপ / বাগানের ঠিকানা</label>
+      <input type="text" name="address" value="<%= vendor.address %>" class="form-control" />
+    </div>
+    <div class="col-12">
+      <label class="form-label small fw-semibold">নতুন পাসওয়ার্ড (পরিবর্তন করতে চাইলে লিখুন, নতুবা খালি রাখুন)</label>
+      <input type="password" name="new_password" class="form-control" placeholder="কমপক্ষে ৬ অক্ষর" />
+    </div>
+    <div class="col-12">
+      <button type="submit" class="btn btn-forest px-4 py-2 fw-bold">প্রোফাইল আপডেট করুন</button>
+    </div>
+  </form>
+</div>
+
+<%- include('partials/layout-bottom') %>

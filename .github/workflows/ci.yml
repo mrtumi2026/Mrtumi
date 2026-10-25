@@ -1,0 +1,37 @@
+name: CI — Lint, Security Scan & Tests
+
+on:
+  push:
+    branches:
+      - main
+      - "arena/**"
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify Foundation & Tests (Node 22)
+    runs-on: ubuntu-latest
+    env:
+      TZ: Asia/Dhaka
+      NODE_ENV: test
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install clean dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Run foundation lint, EJS compile & secret scan
+        run: npm run lint
+
+      - name: Run automated test suite
+        run: npm test

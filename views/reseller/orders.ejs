@@ -1,0 +1,55 @@
+<%- include('partials/layout-top', { title: 'My Reseller Orders' }) %>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h4 class="fw-bold mb-0">📋 আমার সকল রিসেলার অর্ডার (<%= orders.length %>)</h4>
+    <p class="text-muted small mb-0">কাস্টমারের অর্ডার স্ট্যাটাস, কুরিয়ার ট্র্যাকিং এবং আপনার অর্জিত লাভ দেখুন</p>
+  </div>
+  <a href="/reseller/orders/create" class="btn btn-primary btn-sm fw-bold" style="background:#3730a3;border-color:#3730a3;">+ নতুন অর্ডার</a>
+</div>
+
+<div class="tbl-card">
+  <div class="tbl-card-body">
+    <table class="table clean mb-0 align-middle">
+      <thead>
+        <tr>
+          <th>ইনভয়েস</th>
+          <th>কাস্টমার ও ঠিকানা</th>
+          <th>কাস্টমার COD বিল</th>
+          <th>আপনার লাভ</th>
+          <th>কুরিয়ার ট্র্যাকিং</th>
+          <th>স্ট্যাটাস</th>
+          <th>তারিখ</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% if (!orders.length) { %>
+          <tr><td colspan="7" class="text-center py-4 text-muted">আপনি এখনো কোনো রিসেলার অর্ডার প্লেস করেননি।</td></tr>
+        <% } %>
+        <% orders.forEach(function(o) { %>
+          <tr>
+            <td class="fw-bold">#<%= o.invoice_id %></td>
+            <td>
+              <div class="fw-semibold"><%= o.customer_name %> (<%= o.phone %>)</div>
+              <small class="text-muted"><%= o.address %></small>
+            </td>
+            <td class="fw-semibold">৳<%= Number(o.amount).toLocaleString('en-IN') %></td>
+            <td class="fw-bold text-success">+৳<%= Number(o.reseller_profit || 0).toLocaleString('en-IN') %></td>
+            <td>
+              <% if (o.courier_name || o.courier_tracking_id) { %>
+                <span class="badge bg-light text-dark border"><%= o.courier_name %></span>
+                <div class="small text-primary"><%= o.courier_tracking_id %></div>
+              <% } else { %>
+                <span class="text-muted small">—</span>
+              <% } %>
+            </td>
+            <td><span class="sb <%= o.badge_class %>"><%= o.status_label %></span></td>
+            <td class="small text-muted"><%= String(o.created_at).slice(0, 10) %></td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<%- include('partials/layout-bottom') %>

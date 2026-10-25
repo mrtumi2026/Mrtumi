@@ -1,18 +1,25 @@
 # ARCHITECTURAL & BUSINESS DECISIONS LOG — Mr. Tumi Grocery & Gift
 
-Every ambiguous technical or business rule is recorded here with its current status (`OWNER APPROVAL REQUIRED` or `IMPLEMENTED`) and proposed safe default per **Fundamental Rule 23**.
+**Last Updated:** 2026-10-25 (`Asia/Dhaka`)
 
 ---
 
-## Open Decisions Requiring Owner Review (End of Phase 01)
+## 1. Provisional Architecture Gate (`OWNER APPROVAL REQUIRED`)
 
-| ID | Topic | Proposed Safe Default | Status |
+| ID | Topic | Provisional Recommendation & Unverified Dependencies | Status |
 |---|---|---|---|
-| **ADR-001** | **Target Hosting & Backend Stack** | Modular Monolith in **Node.js 22 + Express + SQLite (WAL) / PostgreSQL-compatible SQL layer + EJS + Bootstrap 5** (preserving & hardening the existing `/home/user/Mrtumi` codebase). *If owner's hosting is cPanel PHP/MySQL-only without Node.js support, owner will notify before Phase 02.* | `OWNER APPROVAL REQUIRED` |
-| **ADR-002** | **Mr. Tumi Branding & Default Language** | Original **Mr. Tumi Grocery & Gift** branding (emerald-green `#1b4332` + warm gift-gold `#d97706`), default language **Bangla (`bn`)** with header/admin toggle to **English (`en`)**, currency `BDT` (`৳`), display timezone `Asia/Dhaka`. | `OWNER APPROVAL REQUIRED` |
-| **ADR-003** | **GitHub Push Policy** | Local git commits after verified phase checks; `git push origin arena/8689c974-mrtumi` executed **only** after explicit owner authorization. | `OWNER APPROVAL REQUIRED` |
-| **ADR-004** | **Money Representation** | Store all monetary values as integer minor units (`paisa`, where `৳1.00 = 100 paisa`) or exact integer BDT + paisa columns; perform 100% of subtotal, discount, tax, shipping, advance-payment, and COD-balance math server-side inside transactions. | `OWNER APPROVAL REQUIRED` |
-| **ADR-005** | **Order OTP & Advance Payment Rules** | Both **Order OTP** and **Advance Payment** are admin-configurable in DB settings: OTP supports `OFF`, `ALL_COD`, or `OUTSIDE_DHAKA_OR_HIGH_VALUE`; Advance Payment supports `OFF`, `SHIPPING_FEE_ONLY`, `FIXED_AMOUNT`, or `PERCENTAGE`. | `OWNER APPROVAL REQUIRED` |
-| **ADR-006** | **Vendor / Reseller / Wholesale Inventory & Refund Rules** | **Inhouse & Reseller** orders reserve/deduct Mr. Tumi warehouse stock (`stock_ledger`); Reseller profit credits on `Completed` and reverses automatically on `Returned`/`Refunded`. **Vendor** products require Admin moderation, track vendor stock separately, and credit `(Subtotal − Commission)` on `Completed` with automatic clawback/dispute state on return. | `OWNER APPROVAL REQUIRED` |
-| **ADR-007** | **CGNAT-Safe Fraud & IP Restriction Policy** | Because Bangladesh mobile networks share public IPv4 addresses across many users (CGNAT), IP rate limits default to **temporary TTL cooldowns or OTP step-up verification** rather than permanent silent auto-rejection; permanent IP blocks require explicit Admin action with audit reason. | `OWNER APPROVAL REQUIRED` |
-| **ADR-008** | **HRM Payroll Calculation Scope** | Configurable Bangladesh SME monthly salary sheet (`Basic + Allowance/Bonus − Leave/Advance Deduction = Net Payable`) requiring Admin approval before recording an expense payout. | `OWNER APPROVAL REQUIRED` |
+| **ADR-001** | **Target Hosting (`BestWebHostBD`), Runtime & Production Database** | **Provisional Recommendation:** Harden the existing **Express + EJS Modular Monolith** with **MySQL / MariaDB (`InnoDB` via pure-JS `mysql2`)** for production on BestWebHostBD and **SQLite (`WAL`)** for local/CI tests (`docs/ARCHITECTURE.md`).<br>**Why Provisional (`UNVERIFIED`):** BestWebHostBD disables Node.js on `Web Hosting Basic/Plus/Business` and lists `NO` on lower `BDIX` spec tables while enabling Node.js on `Alfa`, `Turbo`, `USA`, `BDIX Business`, and `VPS` (`docs/CPANEL_COMPATIBILITY.md`). Furthermore, current prototype uses `node:sqlite` (`Node >= 22.5`), whereas cPanel CloudLinux may offer Node `18` or `20`.<br>**Owner Decision Needed:** Confirm exact BestWebHostBD package + whether `Setup Node.js App` (and which Node versions) + `MySQL Databases` exist, OR choose between BestWebHostBD plan upgrade / VPS / separately approved PHP+Laravel migration. | `OWNER APPROVAL REQUIRED` |
+
+---
+
+## 2. Owner-Approved Business & Engineering Decisions
+
+| ID | Topic | Approved Decision | Status |
+|---|---|---|---|
+| **ADR-002** | **Branding & Default Language** | Default language is **Bangla (`bn`)** with **English (`en`)** toggle (`src/config/env.js` implemented). Preserve and use owner's existing **Mr. Tumi** brand assets when provided (note: no Mr. Tumi logo files were present in `/home/user/Mrtumi` or `/tmp/arena-coding-uploads/` during Phase 02 audit; owner may upload existing brand assets before/during Phase 04, otherwise clean original Mr. Tumi vector branding will be created). | `IMPLEMENTED` |
+| **ADR-003** | **GitHub Push Policy** | Authorized to commit and push verified, secret-scanned project changes on active branch `arena/8689c974-mrtumi` (`origin`: `https://github.com/mrtumi2026/Mrtumi.git`). Never force-push, never commit secrets/dumps, and never deploy to production without explicit owner sign-off. | `IMPLEMENTED` |
+| **ADR-004** | **Money Representation & Server-Side Math** | Store monetary values in integer minor units (`paisa`, `৳1.00 = 100 paisa`) from Phase 03 onward; calculate 100% of subtotals, discounts, shipping, advance payments, and COD balances server-side inside ACID transactions. | `IMPLEMENTED` |
+| **ADR-005** | **Order OTP & Advance Payment Rules** | Both **Order OTP** and **Advance Payment** are configurable through Admin Settings (`OFF`, `ALL_COD`, `OUTSIDE_DHAKA_OR_HIGH_VALUE` for OTP; `OFF`, `SHIPPING_FEE_ONLY`, `FIXED_AMOUNT`, `PERCENTAGE` for Advance Payment; scheduled for Phase 08). | `IMPLEMENTED` |
+| **ADR-006** | **Inventory Ownership Across Warehouse, Reseller & Multivendor** | **In-house & Reseller orders** draw from Mr. Tumi warehouse stock (`stock_ledger`), crediting reseller margin on `Completed` and reversing on return/cancel. **Vendor products** maintain separately tracked vendor stock, subject to Admin product approval and commission rules (scheduled for Phase 06 & Phase 16). | `IMPLEMENTED` |
+| **ADR-007** | **CGNAT-Safe Fraud & IP Restriction Policy** | Combine phone/account velocity, TTL cooldowns, OTP step-up, and manual review queue so shared Bangladesh mobile carrier CGNAT IPs are never blindly auto-rejected; require Admin audit reason for permanent blocks (scheduled for Phase 12). | `IMPLEMENTED` |
+| **ADR-008** | **HRM Payroll Scope** | Configurable SME monthly salary calculation (`Basic + Allowance/Bonus − Leave/Advance Deduction = Net Payable`) requiring explicit Admin approval before recording payout (scheduled for Phase 17). | `IMPLEMENTED` |

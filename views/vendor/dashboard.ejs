@@ -1,0 +1,133 @@
+<%- include('partials/layout-top', { title: 'Vendor Dashboard' }) %>
+
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+  <div>
+    <h4 class="fw-bold mb-0">
+      🏪 <%= vendor.shop_name %>
+      <% if (vendor.verified) { %>
+        <span class="badge bg-success ms-1" style="font-size:11px;">✓ Verified Seller</span>
+      <% } else { %>
+        <span class="badge bg-warning text-dark ms-1" style="font-size:11px;">⏳ Verification Pending</span>
+      <% } %>
+    </h4>
+    <p class="text-muted small mb-0">মালিক: <%= vendor.owner_name %> &bull; মোবাইল: <%= vendor.phone %> &bull; অ্যাডমিন কমিশন রেট: <%= vendor.commission_rate %>%</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="/vendor/products/create" class="btn btn-forest btn-sm">+ নতুন পণ্য যোগ করুন</a>
+    <a href="/vendor/withdrawals" class="btn btn-outline-success btn-sm">💰 টাকা উত্তোলন (Withdraw)</a>
+  </div>
+</div>
+
+<div class="stat-grid mb-4">
+  <div class="sc">
+    <div class="sc-ico" style="background:#f0fdf4;"><i class="fas fa-wallet text-success"></i></div>
+    <div>
+      <div class="sc-label">ওয়ালেট ব্যালেন্স</div>
+      <div class="sc-val">৳<%= Number(vendor.balance || 0).toLocaleString('en-IN') %></div>
+      <div class="sc-note">উত্তোলনযোগ্য নিট আয়</div>
+    </div>
+  </div>
+  <div class="sc">
+    <div class="sc-ico" style="background:#eff6ff;"><i class="fas fa-box-open text-primary"></i></div>
+    <div>
+      <div class="sc-label">মোট প্রোডাক্ট</div>
+      <div class="sc-val"><%= totalProducts %></div>
+      <div class="sc-note"><%= approvedProducts %> অনুমোদিত • <%= pendingProducts %> পেন্ডিং</div>
+    </div>
+  </div>
+  <div class="sc">
+    <div class="sc-ico" style="background:#fffbeb;"><i class="fas fa-shopping-basket text-warning"></i></div>
+    <div>
+      <div class="sc-label">মোট অর্ডার আইটেম</div>
+      <div class="sc-val"><%= totalOrders %></div>
+      <div class="sc-note">গ্রস সেলস: ৳<%= Number(grossSales).toLocaleString('en-IN') %></div>
+    </div>
+  </div>
+  <div class="sc">
+    <div class="sc-ico" style="background:#faf5ff;"><i class="fas fa-hand-holding-dollar text-info"></i></div>
+    <div>
+      <div class="sc-label">পেন্ডিং উইথড্রয়াল</div>
+      <div class="sc-val">৳<%= Number(pendingWithdrawals).toLocaleString('en-IN') %></div>
+      <div class="sc-note">নিট এস্টিমেটেড আয়: ৳<%= Number(netEstimated).toLocaleString('en-IN') %></div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-7">
+    <div class="tbl-card">
+      <div class="tbl-card-head">
+        <h4>আমার পণ্যের সাম্প্রতিক অর্ডারসমূহ</h4>
+        <a href="/vendor/orders" class="link-green">সব দেখুন →</a>
+      </div>
+      <div class="tbl-card-body">
+        <table class="table clean mb-0">
+          <thead>
+            <tr>
+              <th>ইনভয়েস</th>
+              <th>পণ্য</th>
+              <th>পরিমাণ</th>
+              <th>মোট</th>
+              <th>স্ট্যাটাস</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% if (!recentOrderLines.length) { %>
+              <tr><td colspan="5" class="text-center py-4 text-muted">এখনো কোনো অর্ডার আসেনি।</td></tr>
+            <% } %>
+            <% recentOrderLines.forEach(function(ol) { %>
+              <tr>
+                <td class="fw-bold">#<%= ol.invoice_id %></td>
+                <td><%= ol.product_name %></td>
+                <td><%= ol.qty %></td>
+                <td class="fw-semibold">৳<%= Number(ol.price * ol.qty).toLocaleString('en-IN') %></td>
+                <td><span class="sb <%= ol.order_status === 'completed' ? 'sb-6' : 'sb-1' %>"><%= ol.order_status %></span></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="tbl-card">
+      <div class="tbl-card-head">
+        <h4>আমার প্রোডাক্টস (<%= totalProducts %>)</h4>
+        <a href="/vendor/products" class="link-green">ম্যানেজ করুন →</a>
+      </div>
+      <div class="tbl-card-body">
+        <table class="table clean mb-0">
+          <thead>
+            <tr>
+              <th>পণ্য</th>
+              <th>মূল্য</th>
+              <th>স্টক</th>
+              <th>স্ট্যাটাস</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% if (!myProducts.length) { %>
+              <tr><td colspan="4" class="text-center py-4 text-muted">কোনো প্রোডাক্ট নেই।</td></tr>
+            <% } %>
+            <% myProducts.forEach(function(p) { %>
+              <tr>
+                <td>
+                  <div class="d-flex align-items-center gap-2">
+                    <img src="<%= p.image %>" class="p-thumb" alt="" />
+                    <span class="fw-semibold text-truncate" style="max-width:130px;"><%= p.name %></span>
+                  </div>
+                </td>
+                <td>৳<%= p.new_price %></td>
+                <td><%= p.stock %></td>
+                <td><span class="sb <%= p.approval_status === 'approved' ? 'sb-6' : 'sb-1' %>"><%= p.approval_status %></span></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<%- include('partials/layout-bottom') %>

@@ -1,22 +1,24 @@
 # INTEGRATION STATUS — Mr. Tumi Grocery & Gift
 
-Per **Fundamental Rules 5, 10, 11, 12, and 25**, no external provider integration is ever marked live until verified against the real provider with owner-supplied credentials and outbound network access.
+**Last Updated:** 2026-10-25 (`Asia/Dhaka`)
 
-**Sandbox Network Note:** The current Arena development sandbox restricts outbound internet to `github.com`, `npmjs.org`, and `pypi.org`. Therefore, all external Bangladesh courier, payment, fraud, and SMS adapters will be built cleanly against official provider request/response contracts with configuration UI, webhook signature validation, and mocked contract tests in Phases 10–14, and verified live on staging/owner hosting once credentials are supplied.
+Per **Fundamental Rules 5, 10, 11, 12, and 25**, no external provider integration is marked live until verified against the real provider with owner-supplied credentials and outbound network connectivity.
 
-| Integration | Category | Target Phase | Adapter Code Status | Credentials Provided? | Live / Sandbox Verification | Current Overall Status |
+**Phase 02 Hygiene Update:** All mock/placeholder token strings (`BSMS-LIVE-...`, `BDC-PRO-...`, `SF-LIVE-KEY-...`, `PTH-CLIENT-...`, `REDX-TOKEN-...`, `EAAGm...`) and fake live balances from the pre-Phase-01 prototype were purged in Phase 02. Unconfigured integrations now initialize cleanly with blank keys (`''`), zero balance (`0`), and inactive status (`0` / `Not Configured`).
+
+| Integration | Category | Target Phase | Adapter Code Status | Credentials Provided? | Outbound Connectivity (`BestWebHostBD`) | Current Overall Status |
 |---|---|---|---|---|---|---|
-| **Steadfast Courier** | Courier | Phase 10 | `NOT STARTED` (Prototype stub only) | No | Not Tested | `BLOCKED` |
-| **Pathao Courier** | Courier | Phase 10 | `NOT STARTED` (Prototype stub only) | No | Not Tested | `BLOCKED` |
-| **RedX Courier** | Courier | Phase 10 | `NOT STARTED` | No | Not Tested | `BLOCKED` |
-| **bKash Checkout** | Payment Gateway | Phase 11 | `NOT STARTED` | No | Not Tested | `BLOCKED` |
-| **ShurjoPay** | Payment Gateway | Phase 11 | `NOT STARTED` | No | Not Tested | `BLOCKED` |
-| **UddoktaPay** | Payment Gateway | Phase 11 | `NOT STARTED` | No | Not Tested | `BLOCKED` |
-| **Cash on Delivery (COD)** | Internal Payment | Phase 11 | `NOT STARTED` (Hardening in P08/P11) | N/A (Internal) | Scheduled P11 | `NOT STARTED` |
-| **Manual Mobile Banking (bKash/Nagad/Rocket TrxID)** | Manual Payment | Phase 11 | `NOT STARTED` (Hardening in P11) | N/A (Admin-verified) | Scheduled P11 | `NOT STARTED` |
-| **BD Courier Fraud Checker** | Fraud / Risk API | Phase 12 | `NOT STARTED` (Prototype stub only) | No | Not Tested | `BLOCKED` |
-| **BulkSMSBD** | SMS Gateway | Phase 13 | `NOT STARTED` (Prototype stub only) | No | Not Tested | `BLOCKED` |
-| **Meta Pixel & Facebook CAPI** | Attribution / Ads | Phase 14 | `NOT STARTED` | No | Not Tested | `NOT STARTED` |
-| **Google Tag Manager (GTM)** | Attribution / Ads | Phase 14 | `NOT STARTED` | No | Not Tested | `NOT STARTED` |
-| **TikTok Pixel** | Attribution / Ads | Phase 14 | `NOT STARTED` | No | Not Tested | `NOT STARTED` |
-| **SMTP Transactional Email** | Email | Phase 18 | `NOT STARTED` | No | Not Tested | `BLOCKED` |
+| **Steadfast Courier** | Courier | Phase 10 | `NOT STARTED` | No | `UNVERIFIED` on BestWebHostBD | `BLOCKED` |
+| **Pathao Courier** | Courier | Phase 10 | `NOT STARTED` | No | `UNVERIFIED` on BestWebHostBD | `BLOCKED` |
+| **RedX Courier** | Courier | Phase 10 | `NOT STARTED` | No | `UNVERIFIED` on BestWebHostBD | `BLOCKED` |
+| **bKash Checkout** | Payment Gateway | Phase 11 | `NOT STARTED` | No | `UNVERIFIED` on BestWebHostBD | `BLOCKED` |
+| **ShurjoPay** | Payment Gateway | Phase 11 | `NOT STARTED` | No | `UNVERIFIED` on BestWebHostBD | `BLOCKED` |
+| **UddoktaPay** | Payment Gateway | Phase 11 | `NOT STARTED` | No | `UNVERIFIED` on BestWebHostBD | `BLOCKED` |
+| **Cash on Delivery (COD)** | Internal Payment | Phase 11 | `NOT STARTED` (Hardening in P08/P11) | N/A | Internal | `NOT STARTED` |
+| **Manual Mobile Banking (`TrxID`)** | Manual Payment | Phase 11 | `NOT STARTED` (Hardening in P11) | N/A | Internal | `NOT STARTED` |
+| **BD Courier Fraud Checker** | Fraud / Risk API | Phase 12 | `NOT STARTED` | No | `UNVERIFIED` on BestWebHostBD | `BLOCKED` |
+| **BulkSMSBD** | SMS Gateway | Phase 13 | `NOT STARTED` | No | `UNVERIFIED` on BestWebHostBD | `BLOCKED` |
+| **Meta Pixel & Facebook CAPI** | Attribution / Ads | Phase 14 | `NOT STARTED` | No | `UNVERIFIED` on BestWebHostBD | `NOT STARTED` |
+| **Google Tag Manager (GTM)** | Attribution / Ads | Phase 14 | `NOT STARTED` | No | Browser-side | `NOT STARTED` |
+| **TikTok Pixel** | Attribution / Ads | Phase 14 | `NOT STARTED` | No | Browser-side | `NOT STARTED` |
+| **SMTP Transactional Email** | Email | Phase 18 | `NOT STARTED` | No | `UNVERIFIED` (ports `465`/`587`) | `BLOCKED` |
