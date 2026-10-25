@@ -1,4 +1,4 @@
-<%- include('partials/head', { title: 'Dashboard' }) %>
+<%- include('partials/head', { title: t('admin.menu.dashboard') }) %>
 <%- include('partials/topbar') %>
 <%- include('partials/sidebar') %>
 
@@ -6,10 +6,51 @@
   <div class="content">
     <div class="db-wrap">
       <!-- Heading -->
-      <div class="db-heading">
-        <h1>Dashboard</h1>
-        <p><%= formattedDate %></p>
+      <div class="db-heading d-flex justify-content-between align-items-start flex-wrap gap-2">
+        <div>
+          <h1><%= t('admin.dashboardHeading') %></h1>
+          <p class="text-muted mb-0"><%= t('admin.dashboardSub') %> &bull; <%= fmt.date(new Date()) %></p>
+        </div>
+        <span class="badge bg-warning-subtle text-dark border border-warning-subtle px-2.5 py-1.5">
+          <%= brand && brand.isPlaceholderLogo ? brand.placeholderBadge : siteSettings.site_name %>
+        </span>
       </div>
+
+      <!-- Quick Operational Action Cards -->
+      <section aria-label="<%= t('admin.quickActionsTitle') %>" class="mb-3">
+        <div class="row g-2">
+          <div class="col-6 col-md-4 col-xl-2">
+            <a href="/admin/order/create" class="mt-quick-action-tile">
+              <span aria-hidden="true">🧾</span><span><%= t('admin.posBtn') %></span>
+            </a>
+          </div>
+          <div class="col-6 col-md-4 col-xl-2">
+            <a href="/admin/order/pending" class="mt-quick-action-tile">
+              <span aria-hidden="true">⏳</span><span><%= t('admin.menu.pending') %> (<%= fmt.number(pendingOrders) %>)</span>
+            </a>
+          </div>
+          <div class="col-6 col-md-4 col-xl-2">
+            <a href="/admin/products/create" class="mt-quick-action-tile">
+              <span aria-hidden="true">➕</span><span><%= t('admin.menu.productCreate') %></span>
+            </a>
+          </div>
+          <div class="col-6 col-md-4 col-xl-2">
+            <a href="/admin/inhouse-products/manage" class="mt-quick-action-tile">
+              <span aria-hidden="true">📦</span><span><%= t('admin.menu.products') %> (<%= fmt.number(totalProducts) %>)</span>
+            </a>
+          </div>
+          <div class="col-6 col-md-4 col-xl-2">
+            <a href="/admin/settings/manage" class="mt-quick-action-tile">
+              <span aria-hidden="true">⚙️</span><span><%= t('admin.menu.generalSettings') %></span>
+            </a>
+          </div>
+          <div class="col-6 col-md-4 col-xl-2">
+            <a href="/" target="_blank" rel="noopener" class="mt-quick-action-tile">
+              <span aria-hidden="true">🌐</span><span><%= t('admin.viewStore') %></span>
+            </a>
+          </div>
+        </div>
+      </section>
 
       <!-- Top Row: BulkSMSBD + BD Courier + Steadfast -->
       <div class="dash-top-row">

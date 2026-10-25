@@ -21,7 +21,8 @@
     <div class="tbl-card">
       <div class="tbl-card-head">
         <h4>Records List</h4>
-        <input type="text" id="crudQuickFilter" class="form-control form-control-sm" style="max-width: 240px;" placeholder="Filter table..." />
+        <label for="crudQuickFilter" class="visually-hidden"><%= t('a11y.filterRecords') %></label>
+        <input type="search" id="crudQuickFilter" class="form-control form-control-sm" style="max-width: 240px;" placeholder="<%= t('a11y.filterRecords') %>..." />
       </div>
 
       <div class="tbl-card-body">

@@ -8,10 +8,12 @@ const { logger } = require('./src/utils/logger');
 const { sendError } = require('./src/utils/apiResponse');
 const sessionManager = require('./src/middleware/sessionManager');
 const { attachCsrfToken } = require('./src/middleware/csrf');
+const { i18nMiddleware } = require('./src/middleware/i18n');
 const { attachRequestId, wantsJsonResponse, createErrorHandler } = require('./src/middleware/errorHandler');
 const { attachGlobals } = require('./src/middleware/auth');
 const { recordErrorLog } = require('./src/repositories/auditLogRepository');
 
+const localeRoutes = require('./src/routes/locale');
 const apiFoundationRoutes = require('./src/routes/apiFoundation');
 const adminAuthRoutes = require('./src/routes/adminAuth');
 const adminDashboardRoutes = require('./src/routes/adminDashboard');
@@ -49,11 +51,13 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Database-backed sessions + CSRF token binding
+// Database-backed sessions + CSRF token binding + Bilingual i18n (`bn` default, `en` switch)
 app.use(sessionManager);
 app.use(attachCsrfToken);
+app.use(i18nMiddleware);
 
-// Health, readiness & API foundation endpoints (mounted before full portal nav load)
+// Locale switcher (`/locale/:lang`) & Health/API foundation endpoints
+app.use(localeRoutes);
 app.use(apiFoundationRoutes);
 
 // Portal template globals (settings, categories, actors, RBAC helpers)
@@ -86,8 +90,11 @@ app.use((req, res) => {
     mode: 'cms',
     blogs: [],
     page: {
-      title: '৪০৪ - পেজটি খুঁজে পাওয়া যায়নি',
-      content: 'দুঃখিত, আপনি যে পেজটি খুঁজছেন তা পাওয়া যায়নি। হোম পেজে ফিরে আমাদের পণ্যগুলো দেখুন।',
+      title: req.locale === 'en' ? '404 — Page Not Found' : '৪০৪ - পেজটি খুঁজে পাওয়া যায়নি',
+      content:
+        req.locale === 'en'
+          ? 'Sorry, the page you requested could not be found. Return to the home page to browse our grocery and gift catalog.'
+          : 'দুঃখিত, আপনি যে পেজটি খুঁজছেন তা পাওয়া যায়নি। হোম পেজে ফিরে আমাদের গ্রোসারি ও গিফট পণ্যগুলো দেখুন।',
     },
   });
 });

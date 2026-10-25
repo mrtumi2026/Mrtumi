@@ -1,0 +1,17 @@
+<%
+  const stateIcon = typeof icon !== 'undefined' && icon ? icon : '🛒';
+  const stateTitle = typeof title !== 'undefined' && title ? title : (typeof t === 'function' ? t('common.noRecords') : 'No records found');
+  const stateDesc = typeof description !== 'undefined' ? description : '';
+  const ctaUrl = typeof actionUrl !== 'undefined' ? actionUrl : '';
+  const ctaLabel = typeof actionLabel !== 'undefined' ? actionLabel : '';
+%>
+<div class="mt-empty-state" role="status">
+  <div class="mt-empty-state__icon" aria-hidden="true"><%= stateIcon %></div>
+  <h5 class="fw-bold mb-1 text-dark"><%= stateTitle %></h5>
+  <% if (stateDesc) { %>
+    <p class="text-muted small mb-3 mx-auto" style="max-width: 440px;"><%= stateDesc %></p>
+  <% } %>
+  <% if (ctaUrl && ctaLabel) { %>
+    <a href="<%= ctaUrl %>" class="mt-btn mt-btn-primary rounded-pill px-4"><%= ctaLabel %></a>
+  <% } %>
+</div>

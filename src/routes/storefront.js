@@ -874,7 +874,9 @@ router.post('/api/store-assistant', (req, res) => {
   res.json({
     success: true,
     reply:
-      'স্বাগতম ফল বাজার-এ! 😊\nআপনি নিচের যেকোনো বিষয়ে জানতে পারেন:\n• প্রোডাক্ট ও দাম জানতে "লিচুর দাম" লিখুন\n• অর্ডার ট্র্যাক করতে আপনার ইনভয়েস বা মোবাইল নম্বর লিখুন\n• অভিযোগ জানাতে উপরের "📝 কমপ্লেইন" বাটনে ক্লিক করুন।',
+      req.locale === 'en'
+        ? 'Welcome to Mr. Tumi Grocery & Gift! 😊\nHow can we help you today?\n• Search product prices & stock\n• Enter your Invoice ID or phone number to track an order\n• Click Feedback/Complaint in the footer for support.'
+        : 'স্বাগতম মি. তুমি গ্রোসারি অ্যান্ড গিফট-এ! 😊\nআপনি নিচের যেকোনো বিষয়ে জানতে পারেন:\n• পণ্যের দাম ও স্টক তথ্য জানতে নাম লিখুন\n• অর্ডার ট্র্যাক করতে ইনভয়েস বা মোবাইল নম্বর লিখুন\n• অভিযোগ বা পরামর্শ জানাতে ফুটারের সহায়তা বাটনে ক্লিক করুন।',
   });
 });
 

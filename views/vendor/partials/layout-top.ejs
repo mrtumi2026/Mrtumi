@@ -1,40 +1,46 @@
 <!DOCTYPE html>
-<html lang="bn">
+<html lang="<%= typeof htmlLang !== 'undefined' ? htmlLang : 'bn' %>">
   <head>
     <meta charset="utf-8" />
     <meta name="pb-sid" content="<%= typeof sessionToken !== 'undefined' ? sessionToken : '' %>" />
-    <title><%= typeof title !== 'undefined' ? title : 'Vendor Panel' %> - <%= siteSettings.site_name || 'ফল বাজার' %></title>
+    <title><%= typeof title !== 'undefined' ? title : t('vendor.portalName') %> — <%= siteSettings.site_name %></title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="shortcut icon" href="/uploads/settings/logo.svg" />
+    <link rel="shortcut icon" href="<%= siteSettings.favicon || '/uploads/brand/mrtumi-placeholder-favicon.svg' %>" />
     <script src="/frontEnd/js/pb-session.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet" />
     <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet" />
     <link href="/backEnd/css/ubold-admin.css" rel="stylesheet" />
+    <link href="/shared/css/mrtumi-design-system.css" rel="stylesheet" />
   </head>
   <body data-theme="light" data-topbar-color="dark" data-leftbar-color="dark">
+    <a href="#mainContent" class="mt-skip-link"><%= t('a11y.skipToContent') %></a>
     <div id="wrapper">
       <!-- Vendor Topbar -->
-      <div class="navbar-custom" style="background: #14291f;">
+      <header class="navbar-custom" style="background: #0d3b26;" role="banner">
         <div class="container-fluid">
-          <ul class="list-unstyled topnav-menu float-end mb-0">
+          <ul class="list-unstyled topnav-menu float-end mb-0 d-flex align-items-center">
+            <li class="d-flex align-items-center px-1 me-1">
+              <%- include('../../partials/lang-switch', { variant: 'dark' }) %>
+            </li>
             <li class="d-none d-sm-flex align-items-center px-2">
               <a href="/vendor/withdrawals" class="badge bg-warning text-dark text-decoration-none px-3 py-2 rounded-pill fw-bold">
-                💰 ওয়ালেট: ৳<%= Number((vendorUser && vendorUser.balance) || 0).toLocaleString('en-IN') %>
+                💰 <%= fmt.bdt((vendorUser && vendorUser.balance) || 0) %>
               </a>
             </li>
             <li class="dropdown notification-list topbar-dropdown">
-              <a class="nav-link dropdown-toggle nav-user me-0" data-bs-toggle="dropdown" href="#">
-                <img src="/uploads/default/user.svg" alt="vendor" class="rounded-circle" />
+              <a class="nav-link dropdown-toggle nav-user me-0" data-bs-toggle="dropdown" href="#" role="button" aria-expanded="false">
+                <img src="/uploads/default/user.svg" alt="<%= (vendorUser && vendorUser.shop_name) || 'Vendor' %>" class="rounded-circle" />
                 <span class="pro-user-name ms-1"><%= (vendorUser && vendorUser.shop_name) || 'Vendor' %> <i class="fas fa-chevron-down ms-1" style="font-size:10px;"></i></span>
               </a>
               <div class="dropdown-menu dropdown-menu-end profile-dropdown">
-                <a href="/vendor/profile" class="dropdown-item notify-item"><i class="fas fa-store me-2"></i>শপ প্রোফাইল</a>
-                <a href="/vendor/withdrawals" class="dropdown-item notify-item"><i class="fas fa-wallet me-2"></i>উইথড্রয়াল</a>
+                <a href="/vendor/profile" class="dropdown-item notify-item"><i class="fas fa-store me-2"></i><%= locale === 'bn' ? 'শপ প্রোফাইল' : 'Shop Profile' %></a>
+                <a href="/vendor/withdrawals" class="dropdown-item notify-item"><i class="fas fa-wallet me-2"></i><%= t('vendor.payouts') %></a>
                 <div class="dropdown-divider"></div>
                 <form action="/vendor/logout" method="POST">
                   <button type="submit" class="dropdown-item notify-item text-danger border-0 bg-transparent w-100 text-start">
-                    <i class="fas fa-sign-out-alt me-2"></i>লগআউট
+                    <i class="fas fa-sign-out-alt me-2"></i><%= t('admin.logout') %>
                   </button>
                 </form>
               </div>
@@ -42,46 +48,51 @@
           </ul>
 
           <div class="logo-box" style="background: rgba(0,0,0,0.2);">
-            <a href="/vendor/dashboard" class="logo logo-light text-center">
-              <span class="logo-lg"><img src="/uploads/settings/logo-light.svg" alt="Logo" height="44" /></span>
+            <a
+              href="/vendor/dashboard"
+              class="logo logo-light text-center"
+              data-brand-asset-status="<%= (typeof brand !== 'undefined' && brand && brand.isPlaceholderLogo) ? 'temporary-placeholder' : 'custom' %>"
+            >
+              <span class="logo-lg"><img src="<%= siteSettings.logo_light %>" alt="<%= siteSettings.site_name %>" height="42" /></span>
             </a>
           </div>
 
           <ul class="list-unstyled topnav-menu topnav-menu-left m-0">
             <li>
-              <button class="button-menu-mobile" type="button"><i data-feather="menu"></i></button>
+              <button class="button-menu-mobile" type="button" aria-label="<%= t('a11y.toggleSidebar') %>" aria-expanded="false"><i data-feather="menu"></i></button>
             </li>
-            <li>
-              <span class="badge bg-success-subtle text-success ms-2 px-2.5 py-1 fw-bold">🏪 Seller / Vendor Panel</span>
+            <li class="d-none d-sm-flex align-items-center">
+              <span class="badge bg-success-subtle text-success ms-2 px-2.5 py-1 fw-bold">🏪 <%= t('vendor.portalName') %></span>
             </li>
             <li class="d-none d-md-flex">
-              <a class="nav-link" href="/" target="_blank"><i data-feather="globe" style="width:15px;height:15px;"></i><span>Storefront</span></a>
+              <a class="nav-link" href="/" target="_blank" rel="noopener"><i data-feather="globe" style="width:15px;height:15px;"></i><span><%= t('admin.viewStore') %></span></a>
             </li>
             <li class="d-none d-lg-flex">
-              <a class="nav-link" href="/admin/dashboard" target="_blank"><i data-feather="shield" style="width:15px;height:15px;"></i><span>Admin Panel</span></a>
+              <a class="nav-link" href="/admin/dashboard" target="_blank" rel="noopener"><i data-feather="shield" style="width:15px;height:15px;"></i><span>Admin</span></a>
             </li>
             <li class="d-none d-lg-flex">
-              <a class="nav-link" href="/reseller/dashboard" target="_blank"><i data-feather="users" style="width:15px;height:15px;"></i><span>Reseller Panel</span></a>
+              <a class="nav-link" href="/reseller/dashboard" target="_blank" rel="noopener"><i data-feather="users" style="width:15px;height:15px;"></i><span><%= t('admin.resellerPortal') %></span></a>
             </li>
           </ul>
         </div>
-      </div>
+      </header>
 
       <!-- Vendor Left Sidebar -->
-      <div class="left-side-menu" style="background: #183024;">
+      <aside class="left-side-menu" style="background: #143625;" aria-label="<%= t('a11y.mainNavigation') %>">
         <div class="h-100 pt-2">
-          <div id="sidebar-menu">
+          <nav id="sidebar-menu" aria-label="<%= t('a11y.mainNavigation') %>">
             <ul id="side-menu">
-              <li><a href="/vendor/dashboard"><i data-feather="airplay"></i><span>Dashboard</span></a></li>
-              <li><a href="/vendor/products"><i data-feather="package"></i><span>My Products</span></a></li>
-              <li><a href="/vendor/products/create"><i data-feather="plus-circle"></i><span>Add New Product</span></a></li>
-              <li><a href="/vendor/orders"><i data-feather="shopping-cart"></i><span>Vendor Orders</span></a></li>
-              <li><a href="/vendor/withdrawals"><i data-feather="dollar-sign"></i><span>Wallet &amp; Withdrawals</span></a></li>
-              <li><a href="/vendor/profile"><i data-feather="settings"></i><span>Shop Profile</span></a></li>
+              <li><a href="/vendor/dashboard"><i data-feather="airplay"></i><span><%= t('vendor.dashboard') %></span></a></li>
+              <li><a href="/vendor/products"><i data-feather="package"></i><span><%= t('vendor.myProducts') %></span></a></li>
+              <li><a href="/vendor/products/create"><i data-feather="plus-circle"></i><span><%= t('vendor.addProduct') %></span></a></li>
+              <li><a href="/vendor/orders"><i data-feather="shopping-cart"></i><span><%= t('vendor.orders') %></span></a></li>
+              <li><a href="/vendor/withdrawals"><i data-feather="dollar-sign"></i><span><%= t('vendor.payouts') %></span></a></li>
+              <li><a href="/vendor/profile"><i data-feather="settings"></i><span><%= locale === 'bn' ? 'শপ প্রোফাইল' : 'Shop Profile' %></span></a></li>
             </ul>
-          </div>
+          </nav>
         </div>
-      </div>
+      </aside>
+      <div class="mt-sidebar-backdrop" id="mtSidebarBackdrop" aria-hidden="true"></div>
 
-      <div class="content-page">
+      <main id="mainContent" class="content-page">
         <div class="content">

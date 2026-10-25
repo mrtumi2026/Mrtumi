@@ -735,25 +735,25 @@ function seedIfEmpty() {
     run('INSERT INTO permissions (name, module) VALUES (?, ?)', name, mod);
   }
 
-  // Default Settings
+  // Default Settings (Mr. Tumi Grocery & Gift — Temporary Logo Placeholders active)
   const defaultSettings = {
-    site_name: 'ফল বাজার',
-    site_tagline: 'সরাসরি বাগান থেকে তাজা ও ফরমালিনমুক্ত ফল',
+    site_name: 'মি. তুমি গ্রোসারি অ্যান্ড গিফট',
+    site_tagline: 'নিত্যপ্রয়োজনীয় গ্রোসারি ও প্রিয়জনের উপহার — বিশ্বস্ত ডেলিভারিতে ঘরে বসেই',
     site_phone: '01711-009988',
     site_whatsapp: '8801711009988',
-    site_email: 'support@pholbazar.com',
-    site_address: 'দিনাজপুর সদর ও উত্তরা সেক্টর-৭, ঢাকা-১২৩০',
+    site_email: 'support@mrtumi.com',
+    site_address: 'ঢাকা, বাংলাদেশ',
     currency_symbol: '৳',
     inside_dhaka_charge: '60',
     outside_dhaka_charge: '120',
     free_shipping_min: '2500',
     special_notice:
-      'বিশেষ অফারঃ দিনাজপুর ও রাজশাহীর বাগান থেকে সরাসরি সংগৃহীত শতভাগ কেমিক্যালমুক্ত তাজা লিচু ও আম সারা বাংলাদেশে দ্রুত হোম ডেলিভারি চলছে! হটলাইনঃ ০১৭১১-০০৯৯৮৮',
+      '🛒 মি. তুমি গ্রোসারি অ্যান্ড গিফট-এ স্বাগতম! তাজা গ্রোসারি, উপহার সামগ্রী ও কম্বো প্যাকে দ্রুত হোম ডেলিভারি সারা বাংলাদেশে।',
     flash_sale_end: '2027-06-30T23:59:59',
     hot_deal_end: '2027-07-15T23:59:59',
-    logo_dark: '/uploads/settings/logo.svg',
-    logo_light: '/uploads/settings/logo-light.svg',
-    favicon: '/uploads/settings/logo.svg',
+    logo_dark: '/uploads/brand/mrtumi-placeholder-logo.svg',
+    logo_light: '/uploads/brand/mrtumi-placeholder-logo-light.svg',
+    favicon: '/uploads/brand/mrtumi-placeholder-favicon.svg',
     bulksms_api_key: '',
     bulksms_sender_id: '',
     bulksms_balance: '0.00',
@@ -776,13 +776,13 @@ function seedIfEmpty() {
     tiktok_pixel_id: '',
     gemini_enabled: '1',
     gemini_model: 'gemini-2.5-flash',
-    seo_meta_title: 'ফল বাজার | বাগান থেকে তাজা লিচু ও অর্গানিক ফল হোম ডেলিভারি',
-    seo_meta_description: 'দিনাজপুর ও রাজশাহীর বাগান থেকে সরাসরি সংগৃহীত ১০০% ফরমালিনমুক্ত দেশি লিচু, বোম্বাই লিচু, বেদানা লিচু ও হিমসাগর আম অর্ডার করুন।',
-    seo_keywords: 'ফল বাজার, দিনাজপুর লিচু, প্রিমিয়াম লিচু, অর্গানিক ফল, রাজশাহী আম, ফরমালিনমুক্ত ফল',
+    seo_meta_title: 'Mr. Tumi Grocery & Gift | মি. তুমি গ্রোসারি অ্যান্ড গিফট',
+    seo_meta_description: 'নিত্যপ্রয়োজনীয় গ্রোসারি, প্রিমিয়াম গিফট হ্যাম্পার ও কম্বো প্যাক অর্ডার করুন সারা বাংলাদেশে হোম ডেলিভারিতে।',
+    seo_keywords: 'Mr. Tumi Grocery & Gift, মি. তুমি, গ্রোসারি, গিফট বক্স, অনলাইন শপ বাংলাদেশ',
     smtp_host: 'smtp.gmail.com',
     smtp_port: '587',
-    smtp_user: 'orders@pholbazar.com',
-    smtp_from_name: 'ফল বাজার',
+    smtp_user: 'orders@mrtumi.com',
+    smtp_from_name: 'Mr. Tumi Grocery & Gift',
     fb_ads_spend: '14500',
     fb_ads_roas: '4.6',
     google_ads_spend: '6200',
@@ -839,7 +839,7 @@ function seedIfEmpty() {
   run('INSERT INTO subcategories (category_id, name, slug) VALUES (?, ?, ?)', 2, 'গিফট বক্স স্পেশাল', 'gift-box-special');
   run('INSERT INTO childcategories (subcategory_id, name, slug) VALUES (?, ?, ?)', 1, 'এক্সপোর্ট কোয়ালিটি', 'export-quality');
 
-  run('INSERT INTO brands (name, slug) VALUES (?, ?)', 'ফল বাজার অর্গানিক', 'phol-bazar-organic');
+  run('INSERT INTO brands (name, slug) VALUES (?, ?)', 'মি. তুমি সিলেক্ট', 'mr-tumi-select');
   run('INSERT INTO brands (name, slug) VALUES (?, ?)', 'দিনাজপুর ফার্মস', 'dinajpur-farms');
 
   run('INSERT INTO colors (name, hex_code) VALUES (?, ?)', 'টুকটুকে লাল', '#dc2626');
@@ -1341,12 +1341,12 @@ function seedIfEmpty() {
     run('INSERT INTO features (title, subtitle, icon) VALUES (?, ?, ?)', t, s, ic);
   }
 
-  // CMS Pages
+  // CMS Pages (Draft copy — flagged in UI as pending owner legal/editorial review)
   const pages = [
-    ['আমাদের সম্পর্কে', 'about-us', 'ফল বাজার বাংলাদেশের বিশ্বস্ত অনলাইন অর্গানিক ফলের মার্কেটপ্লেস। আমরা দিনাজপুর ও রাজশাহীর বাগান থেকে সরাসরি কেমিক্যালমুক্ত তাজা ফল গ্রাহকের দোরগোড়ায় পৌঁছে দেই।'],
-    ['রিটার্ন ও রিফান্ড পলিসি', 'return-policy', 'ডেলিভারি ম্যানের সামনে পণ্য চেক করে নিন। কোনো ফল নষ্ট বা ক্ষতিগ্রস্ত থাকলে তাৎক্ষণিক রিটার্ন অথবা ২৪ ঘণ্টার মধ্যে ছবি সহ জানালে ১০০% রিফান্ড/রিপ্লেসমেন্ট দেওয়া হয়।'],
-    ['গোপনীয়তা নীতি', 'privacy-policy', 'আপনার নাম, মোবাইল নম্বর ও ঠিকানা শুধুমাত্র অর্ডার ডেলিভারি ও কাস্টমার সাপোর্টের কাজে ব্যবহৃত হয়।'],
-    ['শর্তাবলী', 'terms-conditions', 'ফল বাজার থেকে অর্ডার করার মাধ্যমে আপনি আমাদের ডেলিভারি ও পেমেন্ট নীতিমালার সাথে সম্মতি প্রদান করছেন।'],
+    ['আমাদের সম্পর্কে', 'about-us', 'মি. তুমি গ্রোসারি অ্যান্ড গিফট বাংলাদেশের পরিবারের জন্য একটি বিশ্বস্ত অনলাইন গ্রোসারি ও উপহার শপ। বাছাইকৃত নিত্যপণ্য ও উপহার সামগ্রী যত্নসহকারে গ্রাহকের ঠিকানায় পৌঁছে দেওয়াই আমাদের লক্ষ্য।'],
+    ['রিটার্ন ও রিফান্ড পলিসি', 'return-policy', 'ডেলিভারি গ্রহণের সময় পণ্য যাচাই করে নিন। কোনো পণ্য ক্ষতিগ্রস্ত বা ত্রুটিপূর্ণ থাকলে আমাদের সাপোর্ট টিমে জানালে নীতিমালা অনুযায়ী সমাধান প্রদান করা হয়।'],
+    ['গোপনীয়তা নীতি', 'privacy-policy', 'আপনার নাম, মোবাইল নম্বর ও ঠিকানা শুধুমাত্র অর্ডার প্রক্রিয়াকরণ, ডেলিভারি ও গ্রাহক সহায়তার কাজে ব্যবহৃত হয়।'],
+    ['শর্তাবলী', 'terms-conditions', 'মি. তুমি গ্রোসারি অ্যান্ড গিফট থেকে অর্ডার করার মাধ্যমে আপনি আমাদের ডেলিভারি ও পেমেন্ট নীতিমালার সাথে সম্মতি প্রদান করছেন।'],
   ];
   for (const [t, slug, c] of pages) {
     run('INSERT INTO cms_pages (title, slug, content) VALUES (?, ?, ?)', t, slug, c);

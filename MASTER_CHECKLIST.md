@@ -37,15 +37,16 @@
 | P03-03 | MySQL transaction wrapper (`FOR UPDATE`) & idempotency middleware | `TESTED AND PASSED` | `withTransaction`, `lockRowsById`, `idempotencyRepository.js`, `inventoryFoundationRepository.js` |
 | P03-04 | Auth, RBAC, CSRF, rate limiting, validation & consistent API/error format | `TESTED AND PASSED` | `src/middleware/{csrf,rateLimit,rbac,errorHandler}.js` + Phase 03 async repos |
 | P03-05 | Structured PII-redacting logger, `/health` endpoint & MySQL 8.0 CI test suite | `TESTED AND PASSED` | `src/utils/logger.js`, `src/routes/apiFoundation.js`, `.github/workflows/ci.yml` |
-| P03-06 | Explicit owner approval gate to begin Phase 04 implementation | `OWNER APPROVAL REQUIRED` | Stop after Phase 03 and wait for owner sign-off |
+| P03-06 | Explicit owner approval gate to begin Phase 04 implementation | `TESTED AND PASSED` | Approved by owner to execute Phase 04 |
 
 ### PHASE 04 — Branding, Design System & Bilingual UI
 | ID | Feature / Deliverable | Status | Notes |
 |---|---|---|---|
-| P04-01 | **Mr. Tumi Grocery & Gift** brand identity & assets (preserve owner assets where available) | `NOT STARTED` | Approved (`ADR-002`) |
-| P04-02 | Bangla (`bn` default) & English (`en`) language switching + dictionaries | `NOT STARTED` | Approved (`ADR-002`) |
-| P04-03 | Responsive component library (tables, modals, filters, pagination, empty/error states) | `NOT STARTED` | Desktop, tablet & mobile |
-| P04-04 | Bangladesh currency (`৳`) & `Asia/Dhaka` timestamp formatters | `NOT STARTED` | Scheduled for Phase 04 |
+| P04-01 | **Mr. Tumi Grocery & Gift** brand identity & temporary placeholder assets (`public/uploads/brand/`, `src/i18n/brand.js`) | `TESTED AND PASSED` | Zero reference `"ফল বাজার"` identity in UI; temporary placeholder SVGs active awaiting official owner logo files |
+| P04-02 | Bangla (`bn` default) & English (`en`) language switching + 1:1 parity dictionaries (`src/i18n/`, `/locale/:lang`) | `TESTED AND PASSED` | Persisted in session + `mrtumi_lang` cookie; legal/policy copy flagged for owner review (`copy-review-notice.ejs`) |
+| P04-03 | Responsive design system, WCAG AA tokens, accessible sidebar/mobile nav & reusable EJS components | `TESTED AND PASSED` | `mrtumi-design-system.css`, `mrtumi-ui.js`, `views/partials/*.ejs`, 43-item dark Admin sidebar & mobile offcanvas |
+| P04-04 | Bangladesh currency (`৳`), South Asian grouping, Bangla numerals & `Asia/Dhaka` timestamp formatters | `TESTED AND PASSED` | `src/utils/formatters.js`, verified in `tests/phase04-ui-i18n.test.js` |
+| P04-05 | Explicit owner approval gate to begin Phase 05 implementation | `OWNER APPROVAL REQUIRED` | Stop after Phase 04 and wait for owner sign-off + official logo/legal copy inputs |
 
 ### PHASE 05 — Customer Storefront
 | ID | Feature / Deliverable | Status | Notes |

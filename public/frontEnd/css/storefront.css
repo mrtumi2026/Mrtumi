@@ -1,19 +1,20 @@
 @import url('https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
 
 :root {
-  --pb-green-dark: #1b4332;
+  --pb-green-dark: #0d3b26;
   --pb-green: #15803d;
   --pb-green-light: #f0fdf4;
-  --pb-red: #e11d48;
+  --pb-red: #dc2626;
   --pb-amber: #f59e0b;
-  --pb-bg: #f8faf9;
+  --pb-bg: #f8fafc;
 }
 
 body {
-  font-family: 'Hind Siliguri', 'Inter', sans-serif;
+  font-family: 'Hind Siliguri', 'Noto Sans Bengali', 'Inter', sans-serif;
   background-color: var(--pb-bg);
-  color: #1f2937;
+  color: #1e293b;
   margin: 0;
+  overflow-x: clip;
 }
 
 /* ─── Special Notice Marquee ─── */
@@ -209,18 +210,18 @@ body {
 .pb-card-title {
   font-size: 15px;
   font-weight: 700;
-  color: #111827;
+  color: #0f172a;
   text-decoration: none;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  min-height: 40px;
-  line-height: 1.35;
+  min-height: 43px;
+  line-height: 1.45;
 }
 .pb-card-title:hover { color: var(--pb-green); }
 .pb-price-new { font-size: 18px; font-weight: 800; color: var(--pb-green); }
-.pb-price-old { font-size: 13px; color: #9ca3af; text-decoration: line-through; margin-right: 6px; }
+.pb-price-old { font-size: 13px; color: #64748b; text-decoration: line-through; margin-right: 6px; }
 
 .btn-order-now {
   background: var(--pb-green-dark);

@@ -1,70 +1,101 @@
     <!-- Trust Feature Strip -->
-    <section class="container my-5">
-      <div class="row g-3">
-        <% storeFeatures.forEach(function(ft) { %>
-          <div class="col-6 col-lg-3">
-            <div class="feat-card">
-              <div class="feat-ico"><i class="fas fa-check-circle"></i></div>
-              <div>
-                <h6 class="fw-bold mb-1" style="font-size: 15px;"><%= ft.title %></h6>
-                <p class="text-muted small mb-0"><%= ft.subtitle %></p>
-              </div>
-            </div>
+    <section class="container my-5" aria-label="Store Highlights">
+      <div class="mt-trust-strip">
+        <div class="mt-trust-card">
+          <div class="mt-trust-card__icon" aria-hidden="true"><i class="fas fa-certificate"></i></div>
+          <div>
+            <h6 class="fw-bold mb-0" style="font-size: 14.5px;"><%= t('store.trustGenuineTitle') %></h6>
+            <p class="text-muted small mb-0"><%= t('store.trustGenuineSub') %></p>
           </div>
-        <% }) %>
+        </div>
+        <div class="mt-trust-card">
+          <div class="mt-trust-card__icon" aria-hidden="true"><i class="fas fa-truck-fast"></i></div>
+          <div>
+            <h6 class="fw-bold mb-0" style="font-size: 14.5px;"><%= t('store.trustDeliveryTitle') %></h6>
+            <p class="text-muted small mb-0"><%= t('store.trustDeliverySub') %></p>
+          </div>
+        </div>
+        <div class="mt-trust-card">
+          <div class="mt-trust-card__icon" aria-hidden="true" style="background:#fef3c7;color:#92400e;"><i class="fas fa-gift"></i></div>
+          <div>
+            <h6 class="fw-bold mb-0" style="font-size: 14.5px;"><%= t('store.trustGiftTitle') %></h6>
+            <p class="text-muted small mb-0"><%= t('store.trustGiftSub') %></p>
+          </div>
+        </div>
+        <div class="mt-trust-card">
+          <div class="mt-trust-card__icon" aria-hidden="true"><i class="fas fa-shield-halved"></i></div>
+          <div>
+            <h6 class="fw-bold mb-0" style="font-size: 14.5px;"><%= t('store.trustPaymentTitle') %></h6>
+            <p class="text-muted small mb-0"><%= t('store.trustPaymentSub') %></p>
+          </div>
+        </div>
       </div>
     </section>
 
     <!-- Main Footer -->
-    <footer style="background: #11291e; color: #dcfce7;" class="pt-5 pb-4">
+    <footer style="background: #072618; color: #e2e8f0;" class="pb-footer pt-5 pb-4" role="contentinfo">
       <div class="container">
         <div class="row g-4">
           <div class="col-lg-4">
-            <img src="<%= siteSettings.logo_light || '/uploads/settings/logo-light.svg' %>" alt="ফল বাজার" height="46" class="mb-3" />
-            <p class="small text-white-50 mb-3">
-              <%= siteSettings.site_tagline || 'দিনাজপুর ও রাজশাহীর বাগান থেকে সরাসরি সংগৃহীত শতভাগ কেমিক্যালমুক্ত তাজা ফল।' %>
+            <img
+              src="<%= siteSettings.logo_light %>"
+              alt="<%= siteSettings.site_name %>"
+              height="44"
+              class="mb-2"
+              data-brand-asset-status="<%= (typeof brand !== 'undefined' && brand && brand.isPlaceholderLogo) ? 'temporary-placeholder' : 'custom' %>"
+            />
+            <% if (typeof brand !== 'undefined' && brand && brand.isPlaceholderLogo) { %>
+              <div class="mb-2">
+                <span class="badge rounded-pill" style="background:#451a03;color:#fde68a;border:1px dashed #f59e0b;font-size:10.5px;">
+                  <%= brand.placeholderBadge %>
+                </span>
+              </div>
+            <% } %>
+            <p class="small mb-3" style="color: #cbd5e1;">
+              <%= t('store.footerTagline') %>
             </p>
             <div class="small mb-1">📍 <%= siteSettings.site_address %></div>
-            <div class="small mb-1">📞 হটলাইন: <strong><%= siteSettings.site_phone %></strong></div>
-            <div class="small">✉️ ইমেইল: <%= siteSettings.site_email %></div>
+            <div class="small mb-1">📞 <%= t('common.hotline') %>: <strong><%= siteSettings.site_phone %></strong></div>
+            <div class="small">✉️ <%= siteSettings.site_email %></div>
           </div>
 
           <div class="col-6 col-lg-2">
-            <h6 class="fw-bold text-white mb-3">ক্যাটাগরি</h6>
+            <h6 class="fw-bold text-white mb-3"><%= t('store.footerCategories') %></h6>
             <ul class="list-unstyled small">
               <% navCategories.slice(0, 5).forEach(function(c) { %>
-                <li class="mb-2"><a href="/category/<%= c.slug %>" class="text-white-50 text-decoration-none"><%= c.name %></a></li>
+                <li class="mb-2"><a href="/category/<%= c.slug %>" style="color: #cbd5e1;" class="text-decoration-none"><%= c.name %></a></li>
               <% }) %>
             </ul>
           </div>
 
           <div class="col-6 col-lg-3">
-            <h6 class="fw-bold text-white mb-3">গ্রাহক সেবা</h6>
+            <h6 class="fw-bold text-white mb-3"><%= t('store.footerPolicies') %></h6>
             <ul class="list-unstyled small">
-              <li class="mb-2"><a href="/cart" class="text-white-50 text-decoration-none">শপিং কার্ট দেখুন</a></li>
-              <li class="mb-2"><a href="/track-order" class="text-white-50 text-decoration-none">অর্ডার ট্র্যাক করুন</a></li>
+              <li class="mb-2"><a href="/cart" style="color: #cbd5e1;" class="text-decoration-none"><%= t('common.cart') %></a></li>
+              <li class="mb-2"><a href="/track-order" style="color: #cbd5e1;" class="text-decoration-none"><%= t('common.trackOrder') %></a></li>
               <% footerPages.forEach(function(fp) { %>
-                <li class="mb-2"><a href="/page/<%= fp.slug %>" class="text-white-50 text-decoration-none"><%= fp.title %></a></li>
+                <li class="mb-2"><a href="/page/<%= fp.slug %>" style="color: #cbd5e1;" class="text-decoration-none"><%= fp.title %></a></li>
               <% }) %>
-              <li class="mb-2"><a href="/admin/dashboard" class="text-warning text-decoration-none">🔐 অ্যাডমিন প্যানেল লগইন</a></li>
-              <li class="mb-2"><a href="/vendor/dashboard" class="text-warning text-decoration-none">🏪 ভেন্ডর / সেলার প্যানেল</a></li>
-              <li class="mb-2"><a href="/reseller/dashboard" class="text-warning text-decoration-none">🤝 রিসেলার ও ড্রপশিপ প্যানেল</a></li>
+              <li class="mb-2"><a href="/admin/dashboard" class="text-warning text-decoration-none">🔐 <%= t('admin.controlPanel') %></a></li>
+              <li class="mb-2"><a href="/vendor/dashboard" class="text-warning text-decoration-none">🏪 <%= t('vendor.portalName') %></a></li>
+              <li class="mb-2"><a href="/reseller/dashboard" class="text-warning text-decoration-none">🤝 <%= t('reseller.portalName') %></a></li>
             </ul>
           </div>
 
           <div class="col-lg-3">
-            <h6 class="fw-bold text-white mb-3">অফার আপডেট পান</h6>
-            <p class="small text-white-50">নতুন মৌসুমি ফলের ডিসকাউন্ট পেতে মোবাইল বা ইমেইল দিন:</p>
+            <h6 class="fw-bold text-white mb-3"><%= t('store.subscribe') %></h6>
+            <p class="small" style="color: #cbd5e1;"><%= locale === 'bn' ? 'নতুন গ্রোসারি ও গিফট অফারের আপডেট পান:' : 'Get updates on grocery & gift deals:' %></p>
             <form action="/api/newsletter" method="POST" class="d-flex gap-2">
-              <input type="text" name="email_or_phone" class="form-control form-control-sm" placeholder="মোবাইল বা ইমেইল..." required />
-              <button type="submit" class="btn btn-success btn-sm px-3">যুক্ত হোন</button>
+              <label for="footerNewsletterInput" class="visually-hidden"><%= t('store.newsletterPlaceholder') %></label>
+              <input type="text" id="footerNewsletterInput" name="email_or_phone" class="form-control form-control-sm" placeholder="<%= t('store.newsletterPlaceholder') %>" required />
+              <button type="submit" class="btn btn-warning btn-sm fw-bold px-3"><%= t('store.subscribe') %></button>
             </form>
           </div>
         </div>
 
-        <div class="border-top border-secondary border-opacity-25 mt-4 pt-3 d-flex justify-content-between flex-wrap small text-white-50">
-          <span>© <%= new Date().getFullYear() %> <%= siteSettings.site_name || 'ফল বাজার' %> — সর্বস্বত্ব সংরক্ষিত।</span>
-          <span>SSL Secured &bull; Cash On Delivery &bull; Fast Courier</span>
+        <div class="border-top border-secondary border-opacity-25 mt-4 pt-3 d-flex justify-content-between flex-wrap gap-2 small" style="color: #cbd5e1;">
+          <span>© <%= new Date().getFullYear() %> <%= siteSettings.site_name %> — <%= t('store.copyrightRights') %></span>
+          <span>BDT (৳) &bull; Cash On Delivery &bull; Nationwide Delivery</span>
         </div>
       </div>
     </footer>
@@ -73,26 +104,24 @@
     <div class="offcanvas offcanvas-end" tabindex="-1" id="miniCartDrawer" aria-labelledby="miniCartDrawerLabel" style="width: 390px; max-width: 94vw;">
       <div class="offcanvas-header border-bottom" style="background: #f0fdf4;">
         <h6 class="offcanvas-title fw-bold text-success mb-0" id="miniCartDrawerLabel">
-          🛒 আপনার শপিং কার্ট (<span class="js-cart-count"><%= cartCount || 0 %></span>)
+          🛒 <%= t('common.cart') %> (<span class="js-cart-count"><%= cartCount || 0 %></span>)
         </h6>
-        <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="<%= t('a11y.closeModal') %>"></button>
       </div>
       <div class="offcanvas-body d-flex flex-column p-0">
-        <div id="miniCartItemsWrap" class="flex-grow-1 p-3" style="overflow-y: auto;">
-          <!-- Rendered dynamically and initialized from server cart -->
-        </div>
+        <div id="miniCartItemsWrap" class="flex-grow-1 p-3" style="overflow-y: auto;"></div>
         <div class="border-top p-3 bg-light">
           <div class="d-flex justify-content-between align-items-center mb-3">
-            <span class="fw-semibold text-secondary">সাবটোটাল:</span>
+            <span class="fw-semibold text-secondary"><%= t('common.subtotal') %>:</span>
             <span class="fs-5 fw-bold text-success">৳<span class="js-cart-subtotal"><%= Number(cartSubtotal || 0).toLocaleString('en-IN') %></span></span>
           </div>
           <div class="d-grid gap-2">
-            <a href="/customer/checkout" class="btn btn-success fw-bold py-2 rounded-3" style="background:#1b4332;border-color:#1b4332;">
-              ⚡ অর্ডার সম্পন্ন করুন (চেকআউট) →
+            <a href="/customer/checkout" class="btn btn-success fw-bold py-2 rounded-3" style="background:#0d3b26;border-color:#0d3b26;">
+              ⚡ <%= t('store.proceedToCheckout') %> →
             </a>
             <div class="d-flex gap-2">
-              <a href="/cart" class="btn btn-outline-success btn-sm flex-grow-1">কার্ট পেজ দেখুন</a>
-              <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="offcanvas">আরও কিনুন</button>
+              <a href="/cart" class="btn btn-outline-success btn-sm flex-grow-1"><%= t('common.cart') %></a>
+              <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="offcanvas"><%= t('common.continueShopping') %></button>
             </div>
           </div>
         </div>
@@ -100,12 +129,12 @@
     </div>
 
     <!-- Quick Product Option & Direct Instant Order Modal -->
-    <div class="modal fade" id="quickOptionModal" tabindex="-1" aria-hidden="true">
+    <div class="modal fade" id="quickOptionModal" tabindex="-1" aria-labelledby="qoModalLabel" aria-hidden="true">
       <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content rounded-4 border-0 shadow-lg">
           <div class="modal-header border-bottom pb-2" style="background:#f0fdf4;">
-            <h6 class="modal-title fw-bold text-success">🍒 পণ্য অপশন ও দ্রুত অর্ডার</h6>
-            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            <h6 class="modal-title fw-bold text-success" id="qoModalLabel">🛒 <%= t('store.quickViewTitle') %></h6>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<%= t('a11y.closeModal') %>"></button>
           </div>
           <div class="modal-body">
             <input type="hidden" id="qoProdId" />
@@ -124,57 +153,60 @@
 
             <div class="row g-2 mb-3">
               <div class="col-sm-7">
-                <label class="form-label small fw-semibold d-block mb-1">সাইজ / প্যাক নির্বাচন করুন:</label>
+                <span class="form-label small fw-semibold d-block mb-1"><%= t('store.selectSizeVariant') %></span>
                 <div id="qoSizesWrap"></div>
               </div>
               <div class="col-sm-5">
-                <label class="form-label small fw-semibold d-block mb-1">পরিমাণ (Quantity):</label>
+                <label for="qoQty" class="form-label small fw-semibold d-block mb-1"><%= t('common.quantity') %>:</label>
                 <div class="input-group input-group-sm" style="max-width: 130px;">
-                  <button class="btn btn-outline-secondary" type="button" onclick="changeQoQty(-1)">−</button>
+                  <button class="btn btn-outline-secondary" type="button" aria-label="<%= t('a11y.decreaseQty') %>" onclick="changeQoQty(-1)">−</button>
                   <input type="number" id="qoQty" value="1" min="1" class="form-control text-center fw-bold" onchange="recalcQoTotal()" />
-                  <button class="btn btn-outline-secondary" type="button" onclick="changeQoQty(1)">+</button>
+                  <button class="btn btn-outline-secondary" type="button" aria-label="<%= t('a11y.increaseQty') %>" onclick="changeQoQty(1)">+</button>
                 </div>
               </div>
             </div>
 
             <div id="qoColorsGroup" class="mb-3" style="display:none;">
-              <label class="form-label small fw-semibold d-block mb-1">গ্রেড / ভ্যারিয়েন্ট:</label>
+              <span class="form-label small fw-semibold d-block mb-1"><%= t('store.selectColorGrade') %></span>
               <div id="qoColorsWrap"></div>
             </div>
 
-            <!-- Action Tabs: Cart vs Direct 1-Click COD Order -->
             <div class="d-flex gap-2 mb-3">
               <button type="button" id="qoAddToCartBtn" class="btn btn-outline-success fw-bold flex-grow-1">
-                🛒 কার্টে যোগ করুন
+                🛒 <%= t('store.addToCart') %>
               </button>
-              <button type="button" id="qoBuyNowCheckoutBtn" class="btn btn-success fw-bold flex-grow-1" style="background:#1b4332;">
-                ⚡ চেকআউট পেজে যান
+              <button type="button" id="qoBuyNowCheckoutBtn" class="btn btn-success fw-bold flex-grow-1" style="background:#0d3b26;">
+                ⚡ <%= t('common.checkout') %>
               </button>
             </div>
 
-            <!-- Embedded Direct 1-Click Cash On Delivery Box -->
+            <!-- Embedded Direct Cash On Delivery Box -->
             <div class="border rounded-3 p-3 bg-light">
-              <div class="fw-bold small text-success mb-2">🚀 অথবা এখানেই সরাসরি ক্যাশ অন ডেলিভারি অর্ডার করুন:</div>
+              <div class="fw-bold small text-success mb-2">🚀 <%= t('store.confirmOrderNow') %> (COD):</div>
               <form id="qoDirectOrderForm">
                 <div class="row g-2">
                   <div class="col-sm-6">
-                    <input type="text" name="customer_name" class="form-control form-control-sm" placeholder="আপনার পূর্ণ নাম *" required />
+                    <label for="qoCustName" class="visually-hidden"><%= t('store.fullName') %></label>
+                    <input type="text" id="qoCustName" name="customer_name" class="form-control form-control-sm" placeholder="<%= t('store.fullName') %> *" required />
                   </div>
                   <div class="col-sm-6">
-                    <input type="tel" name="phone" class="form-control form-control-sm" placeholder="মোবাইল নম্বর (01XXXXXXXXX) *" required />
+                    <label for="qoCustPhone" class="visually-hidden"><%= t('store.mobileNumber') %></label>
+                    <input type="tel" id="qoCustPhone" name="phone" class="form-control form-control-sm" placeholder="<%= t('store.mobilePlaceholder') %> *" required />
                   </div>
                   <div class="col-sm-7">
-                    <input type="text" name="address" class="form-control form-control-sm" placeholder="সম্পূর্ণ ঠিকানা (বাসা, থানা, জেলা) *" required />
+                    <label for="qoCustAddress" class="visually-hidden"><%= t('store.fullAddress') %></label>
+                    <input type="text" id="qoCustAddress" name="address" class="form-control form-control-sm" placeholder="<%= t('store.fullAddress') %> *" required />
                   </div>
                   <div class="col-sm-5">
+                    <label for="qoShipArea" class="visually-hidden"><%= t('store.shippingArea') %></label>
                     <select name="shipping_area" id="qoShipArea" class="form-select form-select-sm" onchange="recalcQoTotal()">
-                      <option value="ঢাকার ভিতরে" data-ship="<%= siteSettings.inside_dhaka_charge || 60 %>">ঢাকার ভিতরে (৳<%= siteSettings.inside_dhaka_charge || 60 %>)</option>
-                      <option value="ঢাকার বাইরে" data-ship="<%= siteSettings.outside_dhaka_charge || 120 %>">ঢাকার বাইরে (৳<%= siteSettings.outside_dhaka_charge || 120 %>)</option>
+                      <option value="ঢাকার ভিতরে" data-ship="<%= siteSettings.inside_dhaka_charge || 60 %>"><%= t('common.insideDhaka') %> (৳<%= siteSettings.inside_dhaka_charge || 60 %>)</option>
+                      <option value="ঢাকার বাইরে" data-ship="<%= siteSettings.outside_dhaka_charge || 120 %>"><%= t('common.outsideDhaka') %> (৳<%= siteSettings.outside_dhaka_charge || 120 %>)</option>
                     </select>
                   </div>
                   <div class="col-12 mt-2">
                     <button type="submit" id="qoDirectSubmitBtn" class="btn btn-warning w-100 fw-bold py-2">
-                      ✓ সরাসরি অর্ডার নিশ্চিত করুন — মোট ৳<span id="qoTotalPayable">0</span>
+                      ✓ <%= t('store.confirmOrderNow') %> — ৳<span id="qoTotalPayable">0</span>
                     </button>
                   </div>
                 </div>
@@ -192,80 +224,82 @@
     </script>
 
     <!-- Verified Order Social Proof Popup -->
-    <div id="verifiedOrderToast" class="vo-toast">
+    <div id="verifiedOrderToast" class="vo-toast" role="status" aria-live="polite">
       <img id="voImg" src="/uploads/product/lychee-fresh.jpg" style="width:52px;height:52px;border-radius:10px;object-fit:cover;" alt="" />
       <div class="small">
-        <div class="text-muted" style="font-size:11px;"><span id="voCust" class="fw-bold text-dark"></span> এই মাত্র কিনেছেন</div>
+        <div class="text-muted" style="font-size:11px;"><span id="voCust" class="fw-bold text-dark"></span></div>
         <a id="voLink" href="/all-products" class="fw-bold text-success text-decoration-none d-block text-truncate" style="max-width:195px;">
           <span id="voProd"></span>
         </a>
         <span class="badge bg-success-subtle text-success mt-1" style="font-size:10px;">🛡️ Verified Order</span>
       </div>
-      <button type="button" class="btn-close ms-auto" style="font-size:10px;" onclick="document.getElementById('verifiedOrderToast').classList.remove('show')"></button>
+      <button type="button" class="btn-close ms-auto" style="font-size:10px;" aria-label="<%= t('a11y.closeModal') %>" onclick="document.getElementById('verifiedOrderToast').classList.remove('show')"></button>
     </div>
 
-    <!-- Live Support Floating Chat ("লাইভ সহায়তা") -->
-    <button type="button" id="lsFabBtn" class="ls-fab">
-      <i class="fas fa-comments"></i> লাইভ সহায়তা
+    <!-- Live Support Floating Chat -->
+    <button type="button" id="lsFabBtn" class="ls-fab" aria-label="<%= t('store.liveSupport') %>">
+      <i class="fas fa-comments" aria-hidden="true"></i> <%= t('store.liveSupport') %>
     </button>
 
-    <div id="lsChatBox" class="ls-box">
-      <div class="p-3 text-white d-flex justify-content-between align-items-center" style="background: linear-gradient(135deg, #1b4332, #15803d);">
+    <div id="lsChatBox" class="ls-box" role="dialog" aria-label="<%= t('store.aiAssistantTitle') %>">
+      <div class="p-3 text-white d-flex justify-content-between align-items-center" style="background: linear-gradient(135deg, #0d3b26, #15803d);">
         <div>
-          <div class="fw-bold">ফল বাজার লাইভ সহায়তা</div>
-          <div style="font-size:11px;opacity:0.85;">অনলাইন শপিং সহকারী</div>
+          <div class="fw-bold"><%= t('store.aiAssistantTitle') %></div>
+          <div style="font-size:11px;opacity:0.9;"><%= siteSettings.site_name %></div>
         </div>
-        <button type="button" id="lsCloseBtn" class="btn-close btn-close-white"></button>
+        <button type="button" id="lsCloseBtn" class="btn-close btn-close-white" aria-label="<%= t('a11y.closeModal') %>"></button>
       </div>
 
       <div class="px-2 py-2 bg-light border-bottom d-flex flex-wrap gap-1">
-        <button type="button" class="btn btn-sm btn-white border rounded-pill py-0 px-2 ls-quick-btn" data-q="প্রোডাক্ট খুঁজুন" style="font-size:11px;">🔍 প্রোডাক্ট খুঁজুন</button>
-        <button type="button" class="btn btn-sm btn-white border rounded-pill py-0 px-2 ls-quick-btn" data-q="অর্ডার ট্র্যাক" style="font-size:11px;">📦 অর্ডার ট্র্যাক</button>
-        <button type="button" class="btn btn-sm btn-white border rounded-pill py-0 px-2 ls-quick-btn" data-action="complaint" style="font-size:11px;">📝 কমপ্লেইন</button>
-        <button type="button" class="btn btn-sm btn-white border rounded-pill py-0 px-2 ls-quick-btn" data-q="রিফান্ড পলিসি" style="font-size:11px;">💰 রিফান্ড</button>
+        <button type="button" class="btn btn-sm btn-white border rounded-pill py-0 px-2 ls-quick-btn" data-q="প্রোডাক্ট খুঁজুন" style="font-size:11px;">🔍 <%= t('common.search') %></button>
+        <button type="button" class="btn btn-sm btn-white border rounded-pill py-0 px-2 ls-quick-btn" data-q="অর্ডার ট্র্যাক" style="font-size:11px;">📦 <%= t('common.trackOrder') %></button>
+        <button type="button" class="btn btn-sm btn-white border rounded-pill py-0 px-2 ls-quick-btn" data-action="complaint" style="font-size:11px;">📝 <%= t('store.complaintBox') %></button>
       </div>
 
       <div id="lsChatMsgs" class="p-3 flex-grow-1" style="overflow-y:auto;">
         <div class="p-2.5 rounded-3 bg-light small text-dark" style="padding:10px;">
-          স্বাগতম ফল বাজার-এ! 😊 প্রোডাক্ট খুঁজতে, অর্ডার ট্র্যাক করতে (ইনভয়েস বা মোবাইল নম্বর দিন), অথবা রিফান্ড/কমপ্লেইন জানাতে মেসেজ করুন।
+          <%= locale === 'bn'
+            ? ('স্বাগতম ' + siteSettings.site_name + '-এ! প্রোডাক্ট খুঁজতে, অর্ডার ট্র্যাক করতে অথবা সহায়তা পেতে মেসেজ করুন।')
+            : ('Welcome to ' + siteSettings.site_name + '! Ask about products, order tracking, or customer support.') %>
         </div>
       </div>
 
       <form id="lsChatForm" class="p-2 border-top d-flex gap-1 bg-white">
-        <input type="text" id="lsChatInput" class="form-control form-control-sm" placeholder="বার্তা বা ইনভয়েস নম্বর লিখুন..." />
-        <button type="submit" class="btn btn-success btn-sm px-3">➤</button>
+        <label for="lsChatInput" class="visually-hidden"><%= t('store.aiAssistantTitle') %></label>
+        <input type="text" id="lsChatInput" class="form-control form-control-sm" placeholder="<%= t('store.trackInputPlaceholder') %>" />
+        <button type="submit" class="btn btn-success btn-sm px-3" aria-label="Send">➤</button>
       </form>
     </div>
 
-    <!-- Complaint Modal ("কমপ্লেইন / সমস্যা জানান") -->
-    <div class="modal fade" id="complaintModal" tabindex="-1" aria-hidden="true">
+    <!-- Complaint Modal -->
+    <div class="modal fade" id="complaintModal" tabindex="-1" aria-labelledby="complaintModalTitle" aria-hidden="true">
       <div class="modal-dialog modal-dialog-centered">
         <form id="complaintForm" class="modal-content rounded-4">
           <div class="modal-header">
-            <h6 class="modal-title fw-bold">📝 কমপ্লেইন / সমস্যা জানান</h6>
-            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            <h6 class="modal-title fw-bold" id="complaintModalTitle">📝 <%= t('store.complaintBox') %></h6>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<%= t('a11y.closeModal') %>"></button>
           </div>
           <div class="modal-body">
             <div class="mb-2">
-              <label class="form-label small fw-semibold">নাম *</label>
-              <input type="text" name="name" class="form-control form-control-sm" required />
+              <label for="compName" class="form-label small fw-semibold"><%= t('store.yourName') %> *</label>
+              <input type="text" id="compName" name="name" class="form-control form-control-sm" required />
             </div>
             <div class="mb-2">
-              <label class="form-label small fw-semibold">মোবাইল *</label>
-              <input type="text" name="phone" class="form-control form-control-sm" required />
+              <label for="compPhone" class="form-label small fw-semibold"><%= t('store.mobileNumber') %> *</label>
+              <input type="tel" id="compPhone" name="phone" class="form-control form-control-sm" required />
             </div>
             <div class="mb-2">
-              <label class="form-label small fw-semibold">অর্ডার / ইনভয়েস নম্বর (ঐচ্ছিক)</label>
-              <input type="text" name="invoice_id" class="form-control form-control-sm" />
+              <label for="compInvoice" class="form-label small fw-semibold">Invoice ID</label>
+              <input type="text" id="compInvoice" name="invoice_id" class="form-control form-control-sm" />
             </div>
             <div class="mb-2">
-              <label class="form-label small fw-semibold">বিস্তারিত বিবরণ *</label>
-              <textarea name="details" rows="3" class="form-control form-control-sm" required></textarea>
+              <label for="compDetails" class="form-label small fw-semibold"><%= t('store.yourMessage') %> *</label>
+              <textarea id="compDetails" name="details" rows="3" class="form-control form-control-sm" required></textarea>
             </div>
           </div>
           <div class="modal-footer">
-            <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">বাতিল</button>
-            <button type="submit" class="btn btn-success btn-sm">জমা দিন</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal"><%= t('common.cancel') %></button>
+            <button type="submit" class="btn btn-success btn-sm"><%= t('store.sendMessage') %></button>
           </div>
         </form>
       </div>
@@ -275,6 +309,7 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
     <script src="/frontEnd/js/storefront.js"></script>
+    <script src="/shared/js/mrtumi-ui.js"></script>
     <% if (flash && flash.message) { %>
       <script>
         toastr.options = { positionClass: 'toast-top-right', timeOut: 3500 };

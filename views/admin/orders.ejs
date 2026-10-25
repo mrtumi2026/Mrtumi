@@ -30,7 +30,8 @@
       <!-- Search & Bulk Action Header -->
       <div class="tbl-card-head">
         <form action="/admin/order/bulk-action" method="POST" id="bulkOrderForm" class="d-flex flex-wrap gap-2 align-items-center">
-          <select name="bulk_action" class="form-select form-select-sm" style="width: 220px;">
+          <label for="bulkActionSelect" class="visually-hidden">Bulk Action</label>
+          <select id="bulkActionSelect" name="bulk_action" class="form-select form-select-sm" style="width: 220px;">
             <option value="">-- Bulk Action / Courier --</option>
             <option value="processing">Mark Processing</option>
             <option value="on-the-way">Mark On The Way</option>
@@ -44,9 +45,10 @@
           <button type="submit" class="btn btn-sm btn-forest">Apply</button>
         </form>
 
-        <form action="" method="GET" class="d-flex gap-2">
-          <input type="text" name="q" value="<%= searchQuery %>" class="form-control form-control-sm" placeholder="Search Invoice, Name, Phone..." />
-          <button type="submit" class="btn btn-sm btn-outline-dark">Search</button>
+        <form action="" method="GET" class="d-flex gap-2" role="search">
+          <label for="adminOrderSearchInput" class="visually-hidden"><%= t('common.search') %></label>
+          <input type="search" id="adminOrderSearchInput" name="q" value="<%= searchQuery %>" class="form-control form-control-sm" placeholder="Search Invoice, Name, Phone..." />
+          <button type="submit" class="btn btn-sm btn-outline-dark"><%= t('common.search') %></button>
         </form>
       </div>
 
@@ -54,7 +56,7 @@
         <table class="table clean mb-0">
           <thead>
             <tr>
-              <th><input type="checkbox" id="checkAllOrders" /></th>
+              <th><input type="checkbox" id="checkAllOrders" aria-label="<%= t('a11y.selectAll') %>" /></th>
               <th>Invoice</th>
               <th>Customer</th>
               <th>Address</th>
@@ -112,14 +114,14 @@
                 </td>
                 <td class="text-muted small" style="white-space:nowrap;"><%= String(o.created_at).slice(0, 10) %></td>
                 <td class="text-end" style="white-space:nowrap;">
-                  <a href="/admin/order/view/<%= o.id %>" class="btn btn-sm btn-outline-primary py-1 px-2" title="View / Edit">
+                  <a href="/admin/order/view/<%= o.id %>" class="btn btn-sm btn-outline-primary py-1 px-2" aria-label="<%= t('common.view') %> #<%= o.invoice_id %>" title="<%= t('common.view') %>">
                     <i class="fas fa-eye"></i>
                   </a>
-                  <a href="/admin/order/invoice/<%= o.id %>" target="_blank" class="btn btn-sm btn-outline-dark py-1 px-2" title="Print Invoice">
+                  <a href="/admin/order/invoice/<%= o.id %>" target="_blank" class="btn btn-sm btn-outline-dark py-1 px-2" aria-label="<%= t('common.print') %> #<%= o.invoice_id %>" title="<%= t('common.print') %>">
                     <i class="fas fa-print"></i>
                   </a>
                   <form action="/admin/order/delete/<%= o.id %>" method="POST" class="d-inline">
-                    <button type="button" class="btn btn-sm btn-outline-danger py-1 px-2 delete-confirm" title="Delete">
+                    <button type="button" class="btn btn-sm btn-outline-danger py-1 px-2 delete-confirm" aria-label="<%= t('common.delete') %> #<%= o.invoice_id %>" title="<%= t('common.delete') %>">
                       <i class="fas fa-trash"></i>
                     </button>
                   </form>

@@ -1,0 +1,525 @@
+/* ==========================================================================
+   MR. TUMI GROCERY & GIFT — REUSABLE DESIGN SYSTEM (PHASE 04)
+   Bilingual (`bn` + `en`), WCAG AA Contrast-Verified, Mobile-First Foundation
+   ========================================================================== */
+
+:root {
+  /* Brand Primary — Grocery Market Emerald */
+  --mt-primary-950: #072618;
+  --mt-primary-900: #0d3b26;
+  --mt-primary-800: #14532d;
+  --mt-primary-700: #15803d;
+  --mt-primary-600: #16a34a;
+  --mt-primary-100: #dcfce7;
+  --mt-primary-50: #f0fdf4;
+
+  /* Brand Secondary — Gift Warm Amber & Terracotta */
+  --mt-gift-900: #78350f;
+  --mt-gift-800: #92400e;
+  --mt-gift-700: #b45309;
+  --mt-gift-500: #f59e0b;
+  --mt-gift-300: #fcd34d;
+  --mt-gift-100: #fef3c7;
+  --mt-gift-50: #fffbeb;
+
+  /* Admin Dark Shell Tokens (Guided by Reference Structure) */
+  --mt-admin-topbar: #151e2c;
+  --mt-admin-sidebar: #1a2433;
+  --mt-admin-sidebar-border: rgba(255, 255, 255, 0.08);
+  --mt-admin-sidebar-text: #cbd5e1;
+  --mt-admin-sidebar-active-bg: rgba(34, 197, 94, 0.16);
+  --mt-admin-sidebar-active-fg: #86efac;
+
+  /* Neutral Surfaces & WCAG AA Text Scale (>= 4.5:1 on white) */
+  --mt-bg: #f8fafc;
+  --mt-surface: #ffffff;
+  --mt-surface-subtle: #f1f5f9;
+  --mt-border: #e2e8f0;
+  --mt-border-strong: #cbd5e1;
+  --mt-text-strong: #0f172a;
+  --mt-text-body: #1e293b;
+  --mt-text-muted: #475569;
+
+  /* Semantic Status Tokens */
+  --mt-success-fg: #14532d;
+  --mt-success-bg: #dcfce7;
+  --mt-warning-fg: #92400e;
+  --mt-warning-bg: #fef3c7;
+  --mt-danger-fg: #991b1b;
+  --mt-danger-bg: #fee2e2;
+  --mt-info-fg: #075985;
+  --mt-info-bg: #e0f2fe;
+
+  /* Focus Ring */
+  --mt-focus-ring: #15803d;
+  --mt-focus-ring-contrast: #fbbf24;
+
+  /* Typography */
+  --mt-font-sans: 'Hind Siliguri', 'Noto Sans Bengali', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --mt-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* Spacing & Radii */
+  --mt-space-1: 0.25rem;
+  --mt-space-2: 0.5rem;
+  --mt-space-3: 0.75rem;
+  --mt-space-4: 1rem;
+  --mt-space-5: 1.25rem;
+  --mt-space-6: 1.5rem;
+  --mt-space-8: 2rem;
+
+  --mt-radius-sm: 0.5rem;
+  --mt-radius-md: 0.75rem;
+  --mt-radius-lg: 1rem;
+  --mt-radius-pill: 9999px;
+
+  --mt-shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.05);
+  --mt-shadow-sm: 0 4px 12px rgba(15, 23, 42, 0.06);
+  --mt-shadow-md: 0 10px 25px rgba(15, 23, 42, 0.09);
+}
+
+/* --------------------------------------------------------------------------
+   1. Base Typography, Bangla Vowel Diacritic Safety & Overflow Prevention
+   -------------------------------------------------------------------------- */
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: var(--mt-font-sans);
+  color: var(--mt-text-body);
+  overflow-x: clip;
+}
+
+:lang(bn) body {
+  line-height: 1.62;
+}
+
+:lang(bn) h1,
+:lang(bn) h2,
+:lang(bn) h3,
+:lang(bn) h4,
+:lang(bn) h5,
+:lang(bn) h6,
+:lang(bn) .btn,
+:lang(bn) .badge {
+  line-height: 1.42;
+}
+
+p, h1, h2, h3, h4, h5, h6, td, th, label, span, a {
+  overflow-wrap: break-word;
+}
+
+/* Upgrade Bootstrap's default muted color for stronger contrast on light cards */
+.text-muted {
+  color: var(--mt-text-muted) !important;
+}
+
+/* --------------------------------------------------------------------------
+   2. Skip-to-Content & Keyboard Focus Accessibility
+   -------------------------------------------------------------------------- */
+.mt-skip-link {
+  position: fixed;
+  top: -120px;
+  left: 16px;
+  z-index: 2500;
+  background: var(--mt-primary-900);
+  color: #ffffff !important;
+  font-weight: 700;
+  font-size: 0.9rem;
+  padding: 0.65rem 1.15rem;
+  border-radius: var(--mt-radius-md);
+  border: 2px solid var(--mt-focus-ring-contrast);
+  box-shadow: var(--mt-shadow-md);
+  text-decoration: none;
+  transition: top 0.15s ease;
+}
+
+.mt-skip-link:focus,
+.mt-skip-link:focus-visible {
+  top: 12px;
+  outline: 3px solid var(--mt-focus-ring-contrast);
+  outline-offset: 2px;
+}
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role="button"]:focus-visible,
+.btn:focus-visible,
+.form-control:focus-visible,
+.form-select:focus-visible,
+.form-check-input:focus-visible {
+  outline: 2.5px solid var(--mt-focus-ring) !important;
+  outline-offset: 2px !important;
+}
+
+.navbar-custom a:focus-visible,
+.navbar-custom button:focus-visible,
+.left-side-menu a:focus-visible,
+.pb-footer a:focus-visible {
+  outline: 2.5px solid var(--mt-focus-ring-contrast) !important;
+  outline-offset: 2px !important;
+}
+
+/* --------------------------------------------------------------------------
+   3. Language Switcher (`বাংলা | EN`)
+   -------------------------------------------------------------------------- */
+.mt-lang-switch {
+  display: inline-flex;
+  align-items: center;
+  background: var(--mt-surface-subtle);
+  border: 1px solid var(--mt-border-strong);
+  border-radius: var(--mt-radius-pill);
+  padding: 2px;
+  gap: 2px;
+}
+
+.mt-lang-switch__item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 2px 10px;
+  border-radius: var(--mt-radius-pill);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--mt-text-muted);
+  text-decoration: none;
+  transition: background-color 0.15s ease, color 0.15s ease;
+  white-space: nowrap;
+}
+
+.mt-lang-switch__item:hover {
+  color: var(--mt-text-strong);
+}
+
+.mt-lang-switch__item.is-active {
+  background: var(--mt-primary-900);
+  color: #ffffff;
+  box-shadow: var(--mt-shadow-xs);
+}
+
+.mt-lang-switch--dark {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.mt-lang-switch--dark .mt-lang-switch__item {
+  color: #cbd5e1;
+}
+
+.mt-lang-switch--dark .mt-lang-switch__item:hover {
+  color: #ffffff;
+}
+
+.mt-lang-switch--dark .mt-lang-switch__item.is-active {
+  background: var(--mt-primary-600);
+  color: #ffffff;
+}
+
+/* --------------------------------------------------------------------------
+   4. Honest Temporary Logo Placeholder Marker & Legal Copy Review Banner
+   -------------------------------------------------------------------------- */
+.mt-brand-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  text-decoration: none;
+}
+
+.mt-placeholder-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--mt-radius-pill);
+  font-size: 10.5px;
+  font-weight: 700;
+  background: var(--mt-gift-100);
+  color: var(--mt-gift-900);
+  border: 1px dashed var(--mt-gift-700);
+  letter-spacing: 0.02em;
+}
+
+.mt-copy-review-banner {
+  background: var(--mt-gift-50);
+  border: 1px solid #f59e0b;
+  border-left: 5px solid var(--mt-gift-700);
+  border-radius: var(--mt-radius-md);
+  padding: 0.9rem 1.1rem;
+  color: var(--mt-text-body);
+}
+
+.mt-copy-review-banner__badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: var(--mt-gift-100);
+  color: var(--mt-gift-900);
+  padding: 2px 8px;
+  border-radius: var(--mt-radius-pill);
+  margin-bottom: 4px;
+}
+
+/* --------------------------------------------------------------------------
+   5. Buttons, Forms, Validation, Cards, Badges & Empty/Alert States
+   -------------------------------------------------------------------------- */
+.mt-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 40px;
+  padding: 0.5rem 1.1rem;
+  font-weight: 700;
+  font-size: 0.9rem;
+  border-radius: var(--mt-radius-md);
+  border: 1px solid transparent;
+  cursor: pointer;
+  text-decoration: none;
+  transition: transform 0.14s ease, background-color 0.14s ease, border-color 0.14s ease;
+}
+
+.mt-btn-primary {
+  background: var(--mt-primary-900);
+  color: #ffffff;
+}
+.mt-btn-primary:hover {
+  background: var(--mt-primary-800);
+  color: #ffffff;
+}
+
+.mt-btn-gift {
+  background: var(--mt-gift-500);
+  color: #111827;
+}
+.mt-btn-gift:hover {
+  background: #eab308;
+  color: #111827;
+}
+
+.mt-btn-outline {
+  background: var(--mt-surface);
+  border-color: var(--mt-border-strong);
+  color: var(--mt-text-strong);
+}
+.mt-btn-outline:hover {
+  background: var(--mt-surface-subtle);
+  border-color: var(--mt-primary-700);
+  color: var(--mt-primary-900);
+}
+
+.mt-btn[aria-busy="true"],
+.btn[aria-busy="true"] {
+  opacity: 0.78;
+  pointer-events: none;
+}
+
+.mt-field-error,
+.form-control[aria-invalid="true"],
+.form-select[aria-invalid="true"] {
+  border-color: #dc2626 !important;
+  background-color: #fef2f2;
+}
+
+.mt-error-text {
+  color: var(--mt-danger-fg);
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-top: 0.25rem;
+}
+
+.mt-card {
+  background: var(--mt-surface);
+  border: 1px solid var(--mt-border);
+  border-radius: var(--mt-radius-lg);
+  box-shadow: var(--mt-shadow-xs);
+}
+
+.mt-empty-state {
+  background: var(--mt-surface);
+  border: 1px dashed var(--mt-border-strong);
+  border-radius: var(--mt-radius-lg);
+  padding: 2.5rem 1.5rem;
+  text-align: center;
+}
+
+.mt-empty-state__icon {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: var(--mt-primary-50);
+  color: var(--mt-primary-800);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.6rem;
+  margin-bottom: 0.75rem;
+}
+
+.mt-alert-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--mt-radius-md);
+  border: 1px solid transparent;
+  font-size: 0.9rem;
+}
+.mt-alert-banner--success { background: var(--mt-success-bg); color: var(--mt-success-fg); border-color: #86efac; }
+.mt-alert-banner--error   { background: var(--mt-danger-bg);  color: var(--mt-danger-fg);  border-color: #fca5a5; }
+.mt-alert-banner--warning { background: var(--mt-warning-bg); color: var(--mt-warning-fg); border-color: #fcd34d; }
+.mt-alert-banner--info    { background: var(--mt-info-bg);    color: var(--mt-info-fg);    border-color: #7dd3fc; }
+
+.mt-filter-bar {
+  background: var(--mt-surface);
+  border: 1px solid var(--mt-border);
+  border-radius: var(--mt-radius-lg);
+  padding: 0.9rem 1.15rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+/* Loading Skeleton Utility */
+@keyframes mtShimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.mt-skeleton {
+  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+  background-size: 200% 100%;
+  animation: mtShimmer 1.4s infinite linear;
+  border-radius: var(--mt-radius-sm);
+}
+
+/* --------------------------------------------------------------------------
+   6. Storefront Hero, Trust Cards & Mobile Navigation Enhancements
+   -------------------------------------------------------------------------- */
+.mt-hero-banner {
+  background: linear-gradient(125deg, #072618 0%, #0d3b26 55%, #14532d 100%);
+  border-radius: var(--mt-radius-lg);
+  color: #ffffff;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.mt-hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(245, 158, 11, 0.2);
+  border: 1px solid rgba(252, 211, 77, 0.45);
+  color: #fef08a;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0.25rem 0.75rem;
+  border-radius: var(--mt-radius-pill);
+}
+
+.mt-trust-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.mt-trust-card {
+  background: var(--mt-surface);
+  border: 1px solid var(--mt-border);
+  border-radius: var(--mt-radius-md);
+  padding: 0.9rem 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  box-shadow: var(--mt-shadow-xs);
+}
+
+.mt-trust-card__icon {
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  background: var(--mt-primary-50);
+  color: var(--mt-primary-800);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.15rem;
+}
+
+/* --------------------------------------------------------------------------
+   7. Admin / Vendor / Reseller Responsive Dark Sidebar & Backdrop
+   -------------------------------------------------------------------------- */
+.mt-sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  z-index: 1001;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s ease, visibility 0.2s ease;
+}
+
+body.sidebar-mobile-open .mt-sidebar-backdrop {
+  opacity: 1;
+  visibility: visible;
+}
+
+.mt-quick-action-tile {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.8rem 0.95rem;
+  border-radius: var(--mt-radius-md);
+  background: var(--mt-surface);
+  border: 1px solid var(--mt-border);
+  color: var(--mt-text-strong);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.875rem;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.mt-quick-action-tile:hover {
+  border-color: var(--mt-primary-700);
+  color: var(--mt-primary-900);
+  box-shadow: var(--mt-shadow-sm);
+  transform: translateY(-1px);
+}
+
+/* --------------------------------------------------------------------------
+   8. Responsive Breakpoints (Mobile 360px+, Tablet 768px+, Desktop 992px+)
+   -------------------------------------------------------------------------- */
+@media (max-width: 991.98px) {
+  .mt-trust-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 575.98px) {
+  .mt-trust-strip {
+    grid-template-columns: 1fr;
+  }
+  .mt-filter-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .pb-card-body {
+    padding: 9px 10px 11px;
+  }
+  .pb-card-title {
+    font-size: 13px;
+  }
+  .pb-btn-order {
+    font-size: 12.5px;
+    padding: 7px 8px;
+  }
+}

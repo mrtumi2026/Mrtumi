@@ -21,7 +21,7 @@
             </div>
             <div class="mb-3">
               <label class="form-label small fw-semibold">SMS Message *</label>
-              <textarea name="message" rows="4" class="form-control" required placeholder="প্রিয় গ্রাহক, ফল বাজার-এ দিনাজপুরের তাজা লিচুর উপর চলছে বিশেষ ছাড়!"></textarea>
+              <textarea name="message" rows="4" class="form-control" required placeholder="প্রিয় গ্রাহক, মি. তুমি গ্রোসারি অ্যান্ড গিফট-এ চলছে বিশেষ অফার!"></textarea>
             </div>
             <button type="submit" class="btn btn-forest w-100">📨 Send SMS Now</button>
 
@@ -85,11 +85,17 @@
 
     <% } else if (section === 'license' || section === 'updates') { %>
       <div class="tbl-card p-4">
-        <span class="badge bg-success mb-2">Full Unlocked Source Code Edition</span>
-        <h5 class="fw-bold">ফল বাজার Full-Stack Platform v2.0 (Node.js + Express + SQLite)</h5>
-        <p class="text-muted small mb-0">
-          সকল ডেমো মোড সীমাবদ্ধতা সম্পূর্ণভাবে সরানো হয়েছে। আপনি সম্পূর্ণ সোর্স কোডের মালিক এবং যেকোনো পরিবর্তন, প্রোডাক্ট, অর্ডার ও সেটিংস পূর্ণ নিয়ন্ত্রণে ব্যবহার করতে পারবেন।
+        <span class="badge bg-success mb-2">Mr. Tumi Grocery &amp; Gift Platform</span>
+        <h5 class="fw-bold"><%= siteSettings.site_name %> — Node.js + Express + MySQL Ready</h5>
+        <p class="text-muted small mb-2">
+          সকল মডিউল, অর্ডার, ইনভেন্টরি ও সেটিংস পূর্ণ নিয়ন্ত্রণে রয়েছে।
         </p>
+        <% if (typeof brand !== 'undefined' && brand && brand.isPlaceholderLogo) { %>
+          <div class="mt-copy-review-banner mt-3">
+            <span class="mt-copy-review-banner__badge"><%= brand.placeholderBadge %></span>
+            <div class="small"><%= brand.placeholderNotice %></div>
+          </div>
+        <% } %>
       </div>
 
     <% } else { %>

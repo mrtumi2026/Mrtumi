@@ -17,7 +17,7 @@
         <% if (!chatHistory.length) { %>
           <div class="text-center py-5" id="fullChatEmpty">
             <div style="font-size: 48px;">🤖</div>
-            <h5 class="fw-bold mt-2">ফল বাজার এআই অ্যাসিস্ট্যান্ট</h5>
+            <h5 class="fw-bold mt-2"><%= siteSettings.site_name %> — <%= t('admin.menu.geminiAi') %></h5>
             <p class="text-muted small">যেকোনো প্রশ্ন বাংলা বা ইংরেজিতে লিখুন অথবা নিচের কুইক প্রম্পটে ক্লিক করুন:</p>
             <div class="d-flex flex-wrap gap-2 justify-content-center mt-3">
               <button type="button" class="btn btn-outline-dark btn-sm rounded-pill quick-p" data-q="আজ কতটি অর্ডার হয়েছে?">📊 আজকের অর্ডার রিপোর্ট</button>

@@ -1,104 +1,107 @@
-      <!-- ========== Left Sidebar Start ========== -->
-      <div class="left-side-menu">
+      <!-- ========== Left Sidebar Start (Mr. Tumi Responsive Dark Admin Shell) ========== -->
+      <aside class="left-side-menu" aria-label="<%= t('a11y.mainNavigation') %>">
         <div class="h-100 pt-2">
-          <!--- Sidemenu (Exact 1:1 Menu Structure from Dashboard - ফল বাজার.html) -->
-          <div id="sidebar-menu">
+          <nav id="sidebar-menu" aria-label="<%= t('a11y.mainNavigation') %>">
             <ul id="side-menu">
+              <li class="menu-title px-3 py-1 text-uppercase" style="font-size:10.5px;letter-spacing:0.06em;">
+                <%= t('admin.navigationHeader') %>
+              </li>
+
               <li>
                 <a href="/admin/dashboard">
                   <i data-feather="airplay"></i>
-                  <span> Dashboard </span>
+                  <span><%= t('admin.menu.dashboard') %></span>
                 </a>
               </li>
 
               <li>
                 <a href="/admin/gemini-chat">
                   <i data-feather="message-circle"></i>
-                  <span> Gemini Assistant </span>
+                  <span><%= t('admin.menu.geminiAi') %></span>
                 </a>
               </li>
 
               <li>
                 <a href="/admin/order/create">
                   <i data-feather="cpu"></i>
-                  <span>POS System</span>
+                  <span><%= t('admin.menu.posCreate') %></span>
                 </a>
               </li>
 
               <li>
-                <a href="#sidebar-orders" data-bs-toggle="collapse">
+                <a href="#sidebar-orders" data-bs-toggle="collapse" aria-expanded="false" aria-controls="sidebar-orders">
                   <i data-feather="shopping-cart"></i>
-                  <span> Orders </span>
+                  <span><%= t('admin.menu.orders') %></span>
                   <span class="menu-arrow"></span>
                 </a>
                 <div class="collapse" id="sidebar-orders">
                   <ul class="nav-second-level">
-                    <li><a href="/admin/order/all"><i data-feather="file-plus"></i> All Order</a></li>
-                    <li><a href="/admin/reseller-orders"><i data-feather="users"></i> Reseller Orders</a></li>
-                    <li><a href="/admin/incomplete-orders"><i data-feather="file-plus"></i> Incomplete Orders</a></li>
-                    <li><a href="/admin/order/pending"><i data-feather="file-plus"></i> Pending (<%= pendingOrdersCount || 0 %>)</a></li>
-                    <li><a href="/admin/order/processing"><i data-feather="file-plus"></i> Processing</a></li>
-                    <li><a href="/admin/order/on-the-way"><i data-feather="file-plus"></i> On The Way</a></li>
-                    <li><a href="/admin/order/in-courier"><i data-feather="file-plus"></i> In Courier</a></li>
-                    <li><a href="/admin/order/completed"><i data-feather="file-plus"></i> Completed</a></li>
-                    <li><a href="/admin/order/unpaid"><i data-feather="file-plus"></i> Unpaid</a></li>
-                    <li><a href="/admin/order/cancelled"><i data-feather="file-plus"></i> Cancelled</a></li>
-                    <li><a href="/admin/orderstatus/manage"><i data-feather="file-plus"></i> Order Status</a></li>
-                    <li><a href="/admin/customer/ip-block"><i data-feather="shield"></i> IP Block</a></li>
+                    <li><a href="/admin/order/all"><i data-feather="file-plus"></i> <%= t('admin.menu.allOrders') %></a></li>
+                    <li><a href="/admin/reseller-orders"><i data-feather="users"></i> <%= t('admin.menu.resellerOrders') %></a></li>
+                    <li><a href="/admin/incomplete-orders"><i data-feather="file-plus"></i> <%= locale === 'bn' ? 'অসম্পূর্ণ অর্ডার' : 'Incomplete Orders' %></a></li>
+                    <li><a href="/admin/order/pending"><i data-feather="file-plus"></i> <%= t('admin.menu.pending') %> (<%= fmt.number(pendingOrdersCount || 0) %>)</a></li>
+                    <li><a href="/admin/order/processing"><i data-feather="file-plus"></i> <%= t('admin.menu.processing') %></a></li>
+                    <li><a href="/admin/order/on-the-way"><i data-feather="file-plus"></i> <%= t('admin.menu.onTheWay') %></a></li>
+                    <li><a href="/admin/order/in-courier"><i data-feather="file-plus"></i> <%= t('admin.menu.inCourier') %></a></li>
+                    <li><a href="/admin/order/completed"><i data-feather="file-plus"></i> <%= t('admin.menu.completed') %></a></li>
+                    <li><a href="/admin/order/unpaid"><i data-feather="file-plus"></i> <%= t('admin.menu.unpaid') %></a></li>
+                    <li><a href="/admin/order/cancelled"><i data-feather="file-plus"></i> <%= t('admin.menu.cancelled') %></a></li>
+                    <li><a href="/admin/orderstatus/manage"><i data-feather="file-plus"></i> <%= t('admin.menu.orderStatusMaster') %></a></li>
+                    <li><a href="/admin/customer/ip-block"><i data-feather="shield"></i> <%= t('admin.menu.ipBlock') %></a></li>
                   </ul>
                 </div>
               </li>
 
               <li>
-                <a href="#sidebar-refunds" data-bs-toggle="collapse">
+                <a href="#sidebar-refunds" data-bs-toggle="collapse" aria-expanded="false" aria-controls="sidebar-refunds">
                   <i data-feather="rotate-ccw"></i>
-                  <span> Refunds </span>
+                  <span><%= locale === 'bn' ? 'রিফান্ড ব্যবস্থাপনা' : 'Refunds' %></span>
                   <span class="menu-arrow"></span>
                 </a>
                 <div class="collapse" id="sidebar-refunds">
                   <ul class="nav-second-level">
-                    <li><a href="/admin/refunds"><i data-feather="list"></i> All Refunds</a></li>
-                    <li><a href="/admin/refunds?status=pending"><i data-feather="clock"></i> Pending Refunds</a></li>
-                    <li><a href="/admin/refunds?status=approved"><i data-feather="check-circle"></i> Approved Refunds</a></li>
-                    <li><a href="/admin/refunds?status=processed"><i data-feather="check"></i> Processed Refunds</a></li>
+                    <li><a href="/admin/refunds"><i data-feather="list"></i> <%= locale === 'bn' ? 'সকল রিফান্ড' : 'All Refunds' %></a></li>
+                    <li><a href="/admin/refunds?status=pending"><i data-feather="clock"></i> <%= locale === 'bn' ? 'পেন্ডিং রিফান্ড' : 'Pending Refunds' %></a></li>
+                    <li><a href="/admin/refunds?status=approved"><i data-feather="check-circle"></i> <%= locale === 'bn' ? 'অনুমোদিত রিফান্ড' : 'Approved Refunds' %></a></li>
+                    <li><a href="/admin/refunds?status=processed"><i data-feather="check"></i> <%= locale === 'bn' ? 'সম্পন্ন রিফান্ড' : 'Processed Refunds' %></a></li>
                   </ul>
                 </div>
               </li>
 
               <li>
-                <a href="#siebar-product" data-bs-toggle="collapse">
+                <a href="#siebar-product" data-bs-toggle="collapse" aria-expanded="false" aria-controls="siebar-product">
                   <i data-feather="database"></i>
-                  <span> Products </span>
+                  <span><%= t('admin.menu.products') %></span>
                   <span class="menu-arrow"></span>
                 </a>
                 <div class="collapse" id="siebar-product">
                   <ul class="nav-second-level">
-                    <li><a href="/admin/inhouse-products/manage"><i data-feather="package"></i> All Inhouse Products</a></li>
-                    <li><a href="/admin/products/manage"><i data-feather="shopping-bag"></i> All Vendor Products</a></li>
-                    <li><a href="/admin/products/pending"><i data-feather="clock"></i> Pending Products</a></li>
-                    <li><a href="/admin/products/wholesale"><i data-feather="layers"></i> Wholesale Products</a></li>
-                    <li><a href="/admin/products/create"><i data-feather="plus-circle"></i> Add Product</a></li>
+                    <li><a href="/admin/inhouse-products/manage"><i data-feather="package"></i> <%= locale === 'bn' ? 'ইন-হাউস পণ্য তালিকা' : 'All Inhouse Products' %></a></li>
+                    <li><a href="/admin/products/manage"><i data-feather="shopping-bag"></i> <%= locale === 'bn' ? 'ভেন্ডর পণ্য তালিকা' : 'All Vendor Products' %></a></li>
+                    <li><a href="/admin/products/pending"><i data-feather="clock"></i> <%= t('admin.menu.vendorProducts') %></a></li>
+                    <li><a href="/admin/products/wholesale"><i data-feather="layers"></i> <%= locale === 'bn' ? 'পাইকারি পণ্য' : 'Wholesale Products' %></a></li>
+                    <li><a href="/admin/products/create"><i data-feather="plus-circle"></i> <%= t('admin.menu.productCreate') %></a></li>
                     <li><hr class="dropdown-divider my-1" /></li>
-                    <li><a href="/admin/categories/manage"><i data-feather="grid"></i> Categories</a></li>
-                    <li><a href="/admin/subcategories/manage"><i data-feather="file-plus"></i> Subcategories</a></li>
-                    <li><a href="/admin/childcategories/manage"><i data-feather="file-plus"></i> Childcategories</a></li>
-                    <li><a href="/admin/brands/manage"><i data-feather="award"></i> Brands</a></li>
-                    <li><a href="/admin/color/manage"><i data-feather="droplet"></i> Colors</a></li>
-                    <li><a href="/admin/size/manage"><i data-feather="maximize-2"></i> Sizes</a></li>
+                    <li><a href="/admin/categories/manage"><i data-feather="grid"></i> <%= t('admin.menu.categories') %></a></li>
+                    <li><a href="/admin/subcategories/manage"><i data-feather="file-plus"></i> <%= t('admin.menu.subcategories') %></a></li>
+                    <li><a href="/admin/childcategories/manage"><i data-feather="file-plus"></i> <%= t('admin.menu.childcategories') %></a></li>
+                    <li><a href="/admin/brands/manage"><i data-feather="award"></i> <%= t('admin.menu.brands') %></a></li>
+                    <li><a href="/admin/color/manage"><i data-feather="droplet"></i> <%= t('admin.menu.colors') %></a></li>
+                    <li><a href="/admin/size/manage"><i data-feather="maximize-2"></i> <%= t('admin.menu.sizes') %></a></li>
                   </ul>
                 </div>
               </li>
 
               <li>
-                <a href="#sidebar-blog" data-bs-toggle="collapse">
+                <a href="#sidebar-blog" data-bs-toggle="collapse" aria-expanded="false" aria-controls="sidebar-blog">
                   <i data-feather="edit"></i>
-                  <span> Blog </span>
+                  <span><%= t('admin.menu.blogs') %></span>
                   <span class="menu-arrow"></span>
                 </a>
                 <div class="collapse" id="sidebar-blog">
                   <ul class="nav-second-level">
-                    <li><a href="/admin/blogs"><i data-feather="list"></i> All Blogs</a></li>
-                    <li><a href="/admin/blog/create"><i data-feather="plus-circle"></i> Add New Blog</a></li>
+                    <li><a href="/admin/blogs"><i data-feather="list"></i> <%= locale === 'bn' ? 'সকল ব্লগ' : 'All Blogs' %></a></li>
+                    <li><a href="/admin/blog/create"><i data-feather="plus-circle"></i> <%= locale === 'bn' ? 'নতুন ব্লগ লিখুন' : 'Add New Blog' %></a></li>
                   </ul>
                 </div>
               </li>
@@ -106,73 +109,73 @@
               <li>
                 <a href="/admin/purchases/manage">
                   <i data-feather="file-text"></i>
-                  <span>Purchases</span>
+                  <span><%= locale === 'bn' ? 'ক্রয় ও স্টক ইন (Purchases)' : 'Purchases' %></span>
                 </a>
               </li>
 
               <li>
                 <a href="/admin/suppliers/manage">
                   <i data-feather="truck"></i>
-                  <span>Suppliers</span>
+                  <span><%= locale === 'bn' ? 'সরবরাহকারী (Suppliers)' : 'Suppliers' %></span>
                 </a>
               </li>
 
               <li>
-                <a href="#sidebar-crm" data-bs-toggle="collapse">
+                <a href="#sidebar-crm" data-bs-toggle="collapse" aria-expanded="false" aria-controls="sidebar-crm">
                   <i data-feather="users"></i>
-                  <span> CRM / HR </span>
+                  <span><%= t('admin.menu.hrm') %></span>
                   <span class="menu-arrow"></span>
                 </a>
                 <div class="collapse" id="sidebar-crm">
                   <ul class="nav-second-level">
-                    <li><a href="/admin/employees"><i data-feather="user"></i> Employees</a></li>
-                    <li><a href="/admin/attendances"><i data-feather="check-circle"></i> Attendance</a></li>
-                    <li><a href="/admin/leaves"><i data-feather="calendar"></i> Leaves</a></li>
-                    <li><a href="/admin/salaries"><i data-feather="dollar-sign"></i> Salaries</a></li>
-                    <li><a href="/admin/bonuses"><i data-feather="gift"></i> Bonuses</a></li>
-                    <li><a href="/admin/salary-payments"><i data-feather="credit-card"></i> Salary Payments</a></li>
+                    <li><a href="/admin/employees"><i data-feather="user"></i> <%= t('admin.menu.employees') %></a></li>
+                    <li><a href="/admin/attendances"><i data-feather="check-circle"></i> <%= locale === 'bn' ? 'হাজিরা (Attendance)' : 'Attendance' %></a></li>
+                    <li><a href="/admin/leaves"><i data-feather="calendar"></i> <%= locale === 'bn' ? 'ছুটি (Leaves)' : 'Leaves' %></a></li>
+                    <li><a href="/admin/salaries"><i data-feather="dollar-sign"></i> <%= t('admin.menu.payroll') %></a></li>
+                    <li><a href="/admin/bonuses"><i data-feather="gift"></i> <%= locale === 'bn' ? 'বোনাস ও ভাতা' : 'Bonuses' %></a></li>
+                    <li><a href="/admin/salary-payments"><i data-feather="credit-card"></i> <%= locale === 'bn' ? 'বেতন পরিশোধ' : 'Salary Payments' %></a></li>
                   </ul>
                 </div>
               </li>
 
               <li>
-                <a href="#sidebar-coupon" data-bs-toggle="collapse">
+                <a href="#sidebar-coupon" data-bs-toggle="collapse" aria-expanded="false" aria-controls="sidebar-coupon">
                   <i data-feather="gift"></i>
-                  <span> Coupons </span>
+                  <span><%= t('admin.menu.coupons') %></span>
                   <span class="menu-arrow"></span>
                 </a>
                 <div class="collapse" id="sidebar-coupon">
                   <ul class="nav-second-level">
-                    <li><a href="/admin/coupon/manage"><i data-feather="list"></i> All Coupons</a></li>
-                    <li><a href="/admin/coupon/create"><i data-feather="plus-circle"></i> Add New</a></li>
+                    <li><a href="/admin/coupon/manage"><i data-feather="list"></i> <%= locale === 'bn' ? 'সকল কুপন' : 'All Coupons' %></a></li>
+                    <li><a href="/admin/coupon/create"><i data-feather="plus-circle"></i> <%= t('common.addNew') %></a></li>
                   </ul>
                 </div>
               </li>
 
               <li>
-                <a href="#sidebar-product-review" data-bs-toggle="collapse">
+                <a href="#sidebar-product-review" data-bs-toggle="collapse" aria-expanded="false" aria-controls="sidebar-product-review">
                   <i data-feather="star"></i>
-                  <span> Reviews </span>
+                  <span><%= t('admin.menu.reviews') %></span>
                   <span class="menu-arrow"></span>
                 </a>
                 <div class="collapse" id="sidebar-product-review">
                   <ul class="nav-second-level">
-                    <li><a href="/admin/review/pending"><i data-feather="clock"></i> Pending Reviews (<%= pendingReviewsCount || 0 %>)</a></li>
-                    <li><a href="/admin/reviews"><i data-feather="list"></i> All Reviews</a></li>
+                    <li><a href="/admin/review/pending"><i data-feather="clock"></i> <%= locale === 'bn' ? 'অপেক্ষমাণ রিভিউ' : 'Pending Reviews' %> (<%= fmt.number(pendingReviewsCount || 0) %>)</a></li>
+                    <li><a href="/admin/reviews"><i data-feather="list"></i> <%= locale === 'bn' ? 'সকল রিভিউ' : 'All Reviews' %></a></li>
                   </ul>
                 </div>
               </li>
 
               <li>
-                <a href="#sidebar-landing-page" data-bs-toggle="collapse">
+                <a href="#sidebar-landing-page" data-bs-toggle="collapse" aria-expanded="false" aria-controls="sidebar-landing-page">
                   <i data-feather="layout"></i>
-                  <span> Landing Page </span>
+                  <span><%= t('admin.menu.landingPages') %></span>
                   <span class="menu-arrow"></span>
                 </a>
                 <div class="collapse" id="sidebar-landing-page">
                   <ul class="nav-second-level">
-                    <li><a href="/admin/campaign/manage"><i data-feather="list"></i> Campaign</a></li>
-                    <li><a href="/admin/campaign/create"><i data-feather="plus-circle"></i> Create</a></li>
+                    <li><a href="/admin/campaign/manage"><i data-feather="list"></i> <%= locale === 'bn' ? 'ক্যাম্পেইন তালিকা' : 'Campaign' %></a></li>
+                    <li><a href="/admin/campaign/create"><i data-feather="plus-circle"></i> <%= t('common.addNew') %></a></li>
                   </ul>
                 </div>
               </li>
@@ -180,128 +183,128 @@
               <li>
                 <a href="/admin/manual-fraud-check">
                   <i data-feather="search"></i>
-                  <span>Manual Fraud Check</span>
+                  <span><%= t('admin.menu.fraudCheck') %></span>
                 </a>
               </li>
 
               <li>
                 <a href="/admin/sms/custom-send">
                   <i data-feather="send"></i>
-                  <span>Send Custom SMS</span>
+                  <span><%= t('admin.menu.smsMarketing') %></span>
                 </a>
               </li>
 
               <li>
                 <a href="/admin/complaints">
                   <i data-feather="alert-circle"></i>
-                  <span> Complaints </span>
+                  <span><%= t('admin.menu.complaints') %></span>
                 </a>
               </li>
 
               <li>
                 <a href="/admin/contact-messages">
                   <i data-feather="mail"></i>
-                  <span> Contact Messages </span>
+                  <span><%= t('admin.menu.contacts') %></span>
                 </a>
               </li>
 
               <li>
                 <a href="/admin/newsletter-subscribers">
                   <i data-feather="at-sign"></i>
-                  <span> Newsletter Subscribers </span>
+                  <span><%= locale === 'bn' ? 'নিউজলেটার গ্রাহক' : 'Newsletter Subscribers' %></span>
                 </a>
               </li>
 
               <li>
                 <a href="/admin/fund">
                   <i data-feather="briefcase"></i>
-                  <span> Fund / Account</span>
+                  <span><%= t('admin.menu.accounting') %></span>
                 </a>
               </li>
 
               <li>
                 <a href="/admin/expenses">
                   <i data-feather="credit-card"></i>
-                  <span>Expenses</span>
+                  <span><%= t('admin.menu.expenses') %></span>
                 </a>
               </li>
 
               <li>
-                <a href="#sidebar-vendors" data-bs-toggle="collapse">
+                <a href="#sidebar-vendors" data-bs-toggle="collapse" aria-expanded="false" aria-controls="sidebar-vendors">
                   <i data-feather="users"></i>
-                  <span> Vendors </span>
+                  <span><%= t('admin.menu.vendors') %></span>
                   <span class="menu-arrow"></span>
                 </a>
                 <div class="collapse" id="sidebar-vendors">
                   <ul class="nav-second-level">
-                    <li><a href="/admin/vendors"><i data-feather="list"></i> All Vendors</a></li>
-                    <li><a href="/admin/vendor-verifications"><i data-feather="shield"></i> Vendor Verifications</a></li>
-                    <li><a href="/admin/vendor-withdrawals"><i data-feather="dollar-sign"></i> Vendor Withdrawals</a></li>
+                    <li><a href="/admin/vendors"><i data-feather="list"></i> <%= t('admin.menu.allVendors') %></a></li>
+                    <li><a href="/admin/vendor-verifications"><i data-feather="shield"></i> <%= t('admin.menu.pendingVendors') %></a></li>
+                    <li><a href="/admin/vendor-withdrawals"><i data-feather="dollar-sign"></i> <%= t('admin.menu.vendorWithdrawals') %></a></li>
                   </ul>
                 </div>
               </li>
 
               <li>
-                <a href="#sidebar-resellers" data-bs-toggle="collapse">
+                <a href="#sidebar-resellers" data-bs-toggle="collapse" aria-expanded="false" aria-controls="sidebar-resellers">
                   <i data-feather="user-check"></i>
-                  <span> Resellers </span>
+                  <span><%= t('admin.menu.resellers') %></span>
                   <span class="menu-arrow"></span>
                 </a>
                 <div class="collapse" id="sidebar-resellers">
                   <ul class="nav-second-level">
-                    <li><a href="/admin/resellers"><i data-feather="list"></i> All Resellers</a></li>
-                    <li><a href="/admin/reseller-deposits"><i data-feather="credit-card"></i> Reseller Deposits</a></li>
-                    <li><a href="/admin/reseller-verifications"><i data-feather="shield"></i> Verifications</a></li>
-                    <li><a href="/admin/reseller-withdrawals"><i data-feather="dollar-sign"></i> Withdrawals</a></li>
+                    <li><a href="/admin/resellers"><i data-feather="list"></i> <%= t('admin.menu.allResellers') %></a></li>
+                    <li><a href="/admin/reseller-deposits"><i data-feather="credit-card"></i> <%= locale === 'bn' ? 'রিসেলার ডিপোজিট' : 'Reseller Deposits' %></a></li>
+                    <li><a href="/admin/reseller-verifications"><i data-feather="shield"></i> <%= t('admin.menu.pendingResellers') %></a></li>
+                    <li><a href="/admin/reseller-withdrawals"><i data-feather="dollar-sign"></i> <%= t('admin.menu.resellerWithdrawals') %></a></li>
                   </ul>
                 </div>
               </li>
 
               <li>
-                <a href="#sidebar-users" data-bs-toggle="collapse">
+                <a href="#sidebar-users" data-bs-toggle="collapse" aria-expanded="false" aria-controls="sidebar-users">
                   <i data-feather="user"></i>
-                  <span> Users </span>
+                  <span><%= t('admin.menu.usersRoles') %></span>
                   <span class="menu-arrow"></span>
                 </a>
                 <div class="collapse" id="sidebar-users">
                   <ul class="nav-second-level">
-                    <li><a href="/admin/users/manage"><i data-feather="user"></i> User</a></li>
-                    <li><a href="/admin/roles/manage"><i data-feather="lock"></i> Roles</a></li>
-                    <li><a href="/admin/permissions/manage"><i data-feather="key"></i> Permissions</a></li>
-                    <li><a href="/admin/customer"><i data-feather="users"></i> Customers</a></li>
+                    <li><a href="/admin/users/manage"><i data-feather="user"></i> <%= t('admin.menu.admins') %></a></li>
+                    <li><a href="/admin/roles/manage"><i data-feather="lock"></i> <%= locale === 'bn' ? 'রোলসমূহ (Roles)' : 'Roles' %></a></li>
+                    <li><a href="/admin/permissions/manage"><i data-feather="key"></i> <%= locale === 'bn' ? 'পারমিশনসমূহ' : 'Permissions' %></a></li>
+                    <li><a href="/admin/customer"><i data-feather="users"></i> <%= t('admin.menu.customers') %></a></li>
                   </ul>
                 </div>
               </li>
 
               <li>
-                <a href="#sidebar-delivery-module" data-bs-toggle="collapse">
+                <a href="#sidebar-delivery-module" data-bs-toggle="collapse" aria-expanded="false" aria-controls="sidebar-delivery-module">
                   <i data-feather="truck"></i>
-                  <span>Delivery</span>
+                  <span><%= locale === 'bn' ? 'ডেলিভারি টিম ও এরিয়া' : 'Delivery' %></span>
                   <span class="menu-arrow"></span>
                 </a>
                 <div class="collapse" id="sidebar-delivery-module">
                   <ul class="nav-second-level">
-                    <li><a href="/admin/delivery-boys"><i data-feather="users"></i> Delivery persons</a></li>
-                    <li><a href="/admin/delivery-withdrawals"><i data-feather="dollar-sign"></i> Rider withdrawals</a></li>
-                    <li><a href="/admin/delivery/divisions"><i data-feather="map-pin"></i> Delivery locations</a></li>
+                    <li><a href="/admin/delivery-boys"><i data-feather="users"></i> <%= locale === 'bn' ? 'ডেলিভারি রাইডার' : 'Delivery Persons' %></a></li>
+                    <li><a href="/admin/delivery-withdrawals"><i data-feather="dollar-sign"></i> <%= locale === 'bn' ? 'রাইডার উত্তোলন' : 'Rider Withdrawals' %></a></li>
+                    <li><a href="/admin/delivery/divisions"><i data-feather="map-pin"></i> <%= locale === 'bn' ? 'ডেলিভারি জোন' : 'Delivery Locations' %></a></li>
                   </ul>
                 </div>
               </li>
 
               <li>
-                <a href="#siebar-sitesetting" data-bs-toggle="collapse">
+                <a href="#siebar-sitesetting" data-bs-toggle="collapse" aria-expanded="false" aria-controls="siebar-sitesetting">
                   <i data-feather="settings"></i>
-                  <span> Site Setting </span>
+                  <span><%= t('admin.menu.siteSettings') %></span>
                   <span class="menu-arrow"></span>
                 </a>
                 <div class="collapse" id="siebar-sitesetting">
                   <ul class="nav-second-level">
-                    <li><a href="/admin/settings/manage"><i data-feather="sliders"></i> General Setting</a></li>
-                    <li><a href="/admin/sale-notification"><i data-feather="bell"></i> Sales Notification Popup</a></li>
-                    <li><a href="/admin/social-media/manage"><i data-feather="share-2"></i> Social Media</a></li>
-                    <li><a href="/admin/features/manage"><i data-feather="grid"></i> Feature Bar</a></li>
-                    <li><a href="/admin/contact/manage"><i data-feather="phone"></i> Contact</a></li>
-                    <li><a href="/admin/page/manage"><i data-feather="file-text"></i> Create Page</a></li>
+                    <li><a href="/admin/settings/manage"><i data-feather="sliders"></i> <%= t('admin.menu.generalSettings') %></a></li>
+                    <li><a href="/admin/sale-notification"><i data-feather="bell"></i> <%= locale === 'bn' ? 'সেলস পপআপ নোটিফিকেশন' : 'Sales Notification Popup' %></a></li>
+                    <li><a href="/admin/social-media/manage"><i data-feather="share-2"></i> <%= t('admin.menu.socialMedia') %></a></li>
+                    <li><a href="/admin/features/manage"><i data-feather="grid"></i> <%= locale === 'bn' ? 'ফিচার বার' : 'Feature Bar' %></a></li>
+                    <li><a href="/admin/contact/manage"><i data-feather="phone"></i> <%= locale === 'bn' ? 'যোগাযোগ তথ্য' : 'Contact' %></a></li>
+                    <li><a href="/admin/page/manage"><i data-feather="file-text"></i> <%= t('admin.menu.cmsPages') %></a></li>
                   </ul>
                 </div>
               </li>
@@ -309,19 +312,19 @@
               <li>
                 <a href="/admin/email-setting">
                   <i data-feather="mail"></i>
-                  <span>Email Settings</span>
+                  <span><%= locale === 'bn' ? 'ইমেইল (SMTP) সেটিংস' : 'Email Settings' %></span>
                 </a>
               </li>
 
               <li>
-                <a href="#sidebar-fraud" data-bs-toggle="collapse">
+                <a href="#sidebar-fraud" data-bs-toggle="collapse" aria-expanded="false" aria-controls="sidebar-fraud">
                   <i data-feather="shield"></i>
-                  <span> Fraud API Settings </span>
+                  <span><%= locale === 'bn' ? 'ফ্রড API সেটিংস' : 'Fraud API Settings' %></span>
                   <span class="menu-arrow"></span>
                 </a>
                 <div class="collapse" id="sidebar-fraud">
                   <ul class="nav-second-level">
-                    <li><a href="/admin/fraud-settings"><i data-feather="key"></i> Manage Fraud API</a></li>
+                    <li><a href="/admin/fraud-settings"><i data-feather="key"></i> <%= locale === 'bn' ? 'ফ্রড API কনফিগ' : 'Manage Fraud API' %></a></li>
                   </ul>
                 </div>
               </li>
@@ -329,26 +332,26 @@
               <li>
                 <a href="/admin/order-restriction-settings">
                   <i data-feather="clock"></i>
-                  <span> Order Restriction</span>
+                  <span><%= locale === 'bn' ? 'অর্ডার সীমা নিয়ন্ত্রণ' : 'Order Restriction' %></span>
                 </a>
               </li>
 
               <li>
-                <a href="#sidebar-api-integration" data-bs-toggle="collapse">
+                <a href="#sidebar-api-integration" data-bs-toggle="collapse" aria-expanded="false" aria-controls="sidebar-api-integration">
                   <i data-feather="save"></i>
-                  <span> API Integration </span>
+                  <span><%= t('admin.menu.apiIntegration') %></span>
                   <span class="menu-arrow"></span>
                 </a>
                 <div class="collapse" id="sidebar-api-integration">
                   <ul class="nav-second-level">
-                    <li><a href="/admin/paymentgeteway/manage"><i data-feather="credit-card"></i> Payment Gateway</a></li>
-                    <li><a href="/admin/paymentgeteway/manual-manage"><i data-feather="smartphone"></i> Manual Payment</a></li>
-                    <li><a href="/admin/smsgeteway/manage"><i data-feather="message-square"></i> SMS Gateway</a></li>
-                    <li><a href="/admin/courierapi/manage"><i data-feather="truck"></i> Courier API</a></li>
+                    <li><a href="/admin/paymentgeteway/manage"><i data-feather="credit-card"></i> <%= t('admin.menu.paymentGateways') %></a></li>
+                    <li><a href="/admin/paymentgeteway/manual-manage"><i data-feather="smartphone"></i> <%= locale === 'bn' ? 'ম্যানুয়াল পেমেন্ট' : 'Manual Payment' %></a></li>
+                    <li><a href="/admin/smsgeteway/manage"><i data-feather="message-square"></i> <%= t('admin.menu.smsGateways') %></a></li>
+                    <li><a href="/admin/courierapi/manage"><i data-feather="truck"></i> <%= t('admin.menu.courierConfig') %></a></li>
                     <li><a href="/admin/facebook-capi/settings"><i data-feather="facebook"></i> Facebook CAPI</a></li>
                     <li><a href="/admin/gemini-ai/settings"><i data-feather="cpu"></i> Gemini AI</a></li>
                     <li><a href="/admin/social-login/settings"><i data-feather="users"></i> Social Login</a></li>
-                    <li><a href="/admin/gemini-chat"><i data-feather="message-circle"></i> Gemini Assistant</a></li>
+                    <li><a href="/admin/gemini-chat"><i data-feather="message-circle"></i> <%= t('admin.menu.geminiAi') %></a></li>
                   </ul>
                 </div>
               </li>
@@ -356,14 +359,14 @@
               <li>
                 <a href="/admin/cron-jobs">
                   <i data-feather="clock"></i>
-                  <span> Cron Job </span>
+                  <span><%= t('admin.menu.cronJobs') %></span>
                 </a>
               </li>
 
               <li>
-                <a href="#sidebar-pixel-gtm" data-bs-toggle="collapse">
+                <a href="#sidebar-pixel-gtm" data-bs-toggle="collapse" aria-expanded="false" aria-controls="sidebar-pixel-gtm">
                   <i data-feather="code"></i>
-                  <span> G. Pixel and GTM </span>
+                  <span><%= t('admin.menu.marketingTools') %></span>
                   <span class="menu-arrow"></span>
                 </a>
                 <div class="collapse" id="sidebar-pixel-gtm">
@@ -376,9 +379,9 @@
               </li>
 
               <li>
-                <a href="#sidebar-ads-analytics" data-bs-toggle="collapse">
+                <a href="#sidebar-ads-analytics" data-bs-toggle="collapse" aria-expanded="false" aria-controls="sidebar-ads-analytics">
                   <i data-feather="trending-up"></i>
-                  <span> Live Ads Result </span>
+                  <span><%= locale === 'bn' ? 'অ্যাড অ্যানালিটিক্স' : 'Live Ads Result' %></span>
                   <span class="menu-arrow"></span>
                 </a>
                 <div class="collapse" id="sidebar-ads-analytics">
@@ -394,44 +397,44 @@
               <li>
                 <a href="/admin/facebook-page/settings">
                   <i data-feather="share-2"></i>
-                  <span> Facebook Page Post </span>
+                  <span><%= locale === 'bn' ? 'ফেসবুক পেজ পোস্ট' : 'Facebook Page Post' %></span>
                 </a>
               </li>
 
               <li>
                 <a href="/admin/banner/manage">
                   <i data-feather="image"></i>
-                  <span> Banner &amp; Sliders </span>
+                  <span><%= t('admin.menu.banners') %></span>
                 </a>
               </li>
 
               <li>
                 <a href="/admin/popup">
                   <i data-feather="message-square"></i>
-                  <span> Popup Offer </span>
+                  <span><%= locale === 'bn' ? 'পপআপ অফার' : 'Popup Offer' %></span>
                 </a>
               </li>
 
               <li>
                 <a href="/admin/sale-notification">
                   <i data-feather="bell"></i>
-                  <span> Sales Notification Popup </span>
+                  <span><%= locale === 'bn' ? 'সেলস পপআপ নোটিফিকেশন' : 'Sales Notification Popup' %></span>
                 </a>
               </li>
 
               <li>
-                <a href="#sidebar-report" data-bs-toggle="collapse">
+                <a href="#sidebar-report" data-bs-toggle="collapse" aria-expanded="false" aria-controls="sidebar-report">
                   <i data-feather="pie-chart"></i>
-                  <span> Reports </span>
+                  <span><%= t('admin.menu.reports') %></span>
                   <span class="menu-arrow"></span>
                 </a>
                 <div class="collapse" id="sidebar-report">
                   <ul class="nav-second-level">
-                    <li><a href="/admin/reports/orders"><i data-feather="file-text"></i> Order Report</a></li>
-                    <li><a href="/admin/reports/purchases"><i data-feather="shopping-bag"></i> Purchase Report</a></li>
-                    <li><a href="/admin/reports/expenses"><i data-feather="trending-down"></i> Expense Report</a></li>
-                    <li><a href="/admin/reports/stock"><i data-feather="archive"></i> Stock Report</a></li>
-                    <li><a href="/admin/reports/profit-loss"><i data-feather="activity"></i> Profit &amp; Loss</a></li>
+                    <li><a href="/admin/reports/orders"><i data-feather="file-text"></i> <%= locale === 'bn' ? 'অর্ডার রিপোর্ট' : 'Order Report' %></a></li>
+                    <li><a href="/admin/reports/purchases"><i data-feather="shopping-bag"></i> <%= locale === 'bn' ? 'ক্রয় রিপোর্ট' : 'Purchase Report' %></a></li>
+                    <li><a href="/admin/reports/expenses"><i data-feather="trending-down"></i> <%= locale === 'bn' ? 'ব্যয় রিপোর্ট' : 'Expense Report' %></a></li>
+                    <li><a href="/admin/reports/stock"><i data-feather="archive"></i> <%= locale === 'bn' ? 'স্টক রিপোর্ট' : 'Stock Report' %></a></li>
+                    <li><a href="/admin/reports/profit-loss"><i data-feather="activity"></i> <%= locale === 'bn' ? 'লাভ-ক্ষতি বিবরণী' : 'Profit & Loss' %></a></li>
                   </ul>
                 </div>
               </li>
@@ -439,48 +442,51 @@
               <li>
                 <a href="/admin/seo-settings">
                   <i data-feather="globe"></i>
-                  <span>SEO Settings</span>
+                  <span><%= locale === 'bn' ? 'SEO সেটিংস' : 'SEO Settings' %></span>
                 </a>
               </li>
 
               <li>
                 <a href="/admin/sitemap">
                   <i data-feather="map"></i>
-                  <span> Sitemap Settings </span>
+                  <span><%= t('admin.menu.sitemap') %></span>
                 </a>
               </li>
 
               <li>
                 <a href="/admin/license-info">
                   <i data-feather="key"></i>
-                  <span> License </span>
+                  <span><%= locale === 'bn' ? 'প্ল্যাটফর্ম তথ্য' : 'Platform Info' %></span>
                 </a>
               </li>
 
               <li>
                 <a href="/admin/updates">
                   <i data-feather="refresh-cw"></i>
-                  <span>System Updates</span>
+                  <span><%= locale === 'bn' ? 'সিস্টেম আপডেট' : 'System Updates' %></span>
                 </a>
               </li>
 
               <li>
-                <a href="/admin/clear-cache" onclick="return confirm('আপনি কি সিস্টেম ক্যাশ ক্লিয়ার করতে চান?')">
+                <a href="/admin/clear-cache" onclick="return confirm('<%= locale === 'bn' ? 'আপনি কি সিস্টেম ক্যাশ ক্লিয়ার করতে চান?' : 'Clear application cache now?' %>')">
                   <i data-feather="refresh-cw"></i>
-                  <span>Clear Cache</span>
+                  <span><%= locale === 'bn' ? 'ক্যাশ ক্লিয়ার' : 'Clear Cache' %></span>
                 </a>
               </li>
 
               <li>
                 <a href="/admin/error-log">
                   <i data-feather="file-text"></i>
-                  <span>Error Log</span>
+                  <span><%= locale === 'bn' ? 'এরর লগ (Error Log)' : 'Error Log' %></span>
                 </a>
               </li>
             </ul>
-          </div>
+          </nav>
           <!-- End Sidebar -->
           <div class="clearfix"></div>
         </div>
-      </div>
+      </aside>
+      <!-- Mobile Sidebar Backdrop + Main Content Landmark Anchor -->
+      <div class="mt-sidebar-backdrop" id="mtSidebarBackdrop" aria-hidden="true"></div>
+      <div id="mainContent" tabindex="-1" class="visually-hidden"></div>
       <!-- Left Sidebar End -->

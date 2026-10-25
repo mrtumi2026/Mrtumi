@@ -8,6 +8,12 @@ const {
   loadLayoutNavigationContext,
 } = require('../repositories/authRepository');
 const { hasPermission } = require('./rbac');
+const { createI18nContext } = require('../i18n');
+const {
+  resolveBrandContext,
+  requiresOwnerCopyReview,
+  replaceLegacyBrandTokens,
+} = require('../i18n/brand');
 
 /**
  * Attaches global template variables (`siteSettings`, `navCategories`, `footerPages`,
@@ -18,13 +24,30 @@ async function attachGlobals(req, res, next) {
   try {
     const isAdminPath = Boolean(req.path && req.path.startsWith('/admin'));
 
-    const [settings, navContext] = await Promise.all([
+    const [rawSettings, navContext] = await Promise.all([
       getAllSettings(),
       loadLayoutNavigationContext(isAdminPath),
     ]);
 
-    res.locals.siteSettings = settings;
-    res.locals.settings = settings;
+    // Ensure bound i18n context is always available even if called directly in unit tests
+    if (!res.locals.t || !res.locals.fmt) {
+      const fallbackI18n = createI18nContext(req.locale || 'bn');
+      res.locals.locale = fallbackI18n.locale;
+      res.locals.htmlLang = fallbackI18n.htmlLang;
+      res.locals.isBangla = fallbackI18n.isBangla;
+      res.locals.isEnglish = fallbackI18n.isEnglish;
+      res.locals.t = fallbackI18n.t;
+      res.locals.fmt = fallbackI18n.fmt;
+    }
+
+    const activeLocale = res.locals.locale || 'bn';
+    const { siteSettings, brand } = resolveBrandContext(rawSettings, activeLocale);
+
+    res.locals.siteSettings = siteSettings;
+    res.locals.settings = siteSettings;
+    res.locals.brand = brand;
+    res.locals.requiresOwnerCopyReview = requiresOwnerCopyReview;
+    res.locals.replaceLegacyBrandTokens = (val) => replaceLegacyBrandTokens(val, activeLocale);
     res.locals.sessionToken = req.sessionID || '';
     res.locals.currentPath = req.path;
     res.locals.currentUrl = req.originalUrl;

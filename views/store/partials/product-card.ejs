@@ -3,13 +3,13 @@
   const discPct = hasDiscount ? Math.round(((Number(p.old_price) - Number(p.new_price)) / Number(p.old_price)) * 100) : 0;
   const outOfStock = Number(p.stock || 0) <= 0;
 %>
-<div class="pb-card">
+<article class="pb-card">
   <a href="/product/<%= p.slug %>" class="pb-card-img-wrap d-block">
     <% if (discPct > 0) { %>
-      <span class="pb-disc-badge"><%= discPct %>% ছাড়</span>
+      <span class="pb-disc-badge">-<%= fmt.number(discPct) %>%</span>
     <% } %>
     <% if (outOfStock) { %>
-      <span class="badge bg-dark position-absolute top-0 end-0 m-2 z-2">স্টক আউট</span>
+      <span class="badge bg-dark position-absolute top-0 end-0 m-2 z-2"><%= t('common.outOfStock') %></span>
     <% } %>
     <img src="<%= p.image %>" alt="<%= p.name %>" loading="lazy" />
   </a>
@@ -20,14 +20,14 @@
     <div class="mt-auto pt-1">
       <div class="mb-1">
         <% if (hasDiscount) { %>
-          <span class="pb-price-old">৳<%= Number(p.old_price).toLocaleString('en-IN') %></span>
+          <span class="pb-price-old"><%= fmt.bdt(p.old_price) %></span>
         <% } %>
-        <span class="pb-price-new">৳<%= Number(p.new_price).toLocaleString('en-IN') %></span>
+        <span class="pb-price-new"><%= fmt.bdt(p.new_price) %></span>
       </div>
 
       <% if (typeof showStockMeta !== 'undefined' && showStockMeta) { %>
         <div class="text-muted mb-2" style="font-size: 11.5px;">
-          বিক্রি <%= p.sold_count || 0 %> &bull; বাকি <%= p.stock %>
+          <%= locale === 'bn' ? 'স্টক:' : 'Stock:' %> <%= fmt.number(p.stock || 0) %>
         </div>
       <% } %>
 
@@ -36,11 +36,12 @@
           type="button"
           class="btn-add-cart-card js-add-to-cart"
           data-id="<%= p.id %>"
-          data-size="<%= (p.sizes || '১ কেজি').split(',')[0].trim() %>"
-          title="কার্টে যোগ করুন"
+          data-size="<%= (p.sizes || 'Standard').split(',')[0].trim() %>"
+          aria-label="<%= t('store.addToCart') %>: <%= p.name %>"
+          title="<%= t('store.addToCart') %>"
           <%= outOfStock ? 'disabled' : '' %>
         >
-          <i class="fas fa-cart-plus"></i>
+          <i class="fas fa-cart-plus" aria-hidden="true"></i>
         </button>
 
         <button
@@ -51,14 +52,14 @@
           data-price="<%= p.new_price %>"
           data-old-price="<%= p.old_price || 0 %>"
           data-image="<%= p.image %>"
-          data-sizes="<%= p.sizes || '১ কেজি' %>"
+          data-sizes="<%= p.sizes || 'Standard' %>"
           data-colors="<%= p.colors || '' %>"
           data-stock="<%= p.stock %>"
           <%= outOfStock ? 'disabled' : '' %>
         >
-          ⚡ অর্ডার করুন
+          ⚡ <%= t('store.orderNow') %>
         </button>
       </div>
     </div>
   </div>
-</div>
+</article>

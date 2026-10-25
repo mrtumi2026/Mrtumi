@@ -90,10 +90,31 @@ const requiredDocs = [
   'docs/CPANEL_COMPATIBILITY.md',
   'docs/MYSQL_MIGRATION_PLAN.md',
   'docs/PHASE_03_DB_TRANSITION.md',
+  'docs/PHASE_04_UI_DESIGN_SYSTEM.md',
+  'public/shared/css/mrtumi-design-system.css',
+  'public/shared/js/mrtumi-ui.js',
+  'public/uploads/brand/mrtumi-placeholder-logo.svg',
+  'public/uploads/brand/mrtumi-placeholder-logo-light.svg',
+  'public/uploads/brand/mrtumi-placeholder-favicon.svg',
 ];
 for (const rel of requiredDocs) {
   const full = path.join(ROOT, rel);
   check(fs.existsSync(full) && fs.statSync(full).size > 100, `Required file present: ${rel}`);
+}
+
+console.log('3a. Validating Phase 04 i18n dictionary parity & brand hygiene across views/public...');
+const { DICTIONARIES, flattenDictionaryKeys } = require('../src/i18n');
+const bnKeys = flattenDictionaryKeys(DICTIONARIES.bn);
+const enKeys = flattenDictionaryKeys(DICTIONARIES.en);
+check(bnKeys.length >= 120, `Expected >= 120 i18n keys in bn dictionary, found ${bnKeys.length}`);
+check(
+  JSON.stringify(bnKeys) === JSON.stringify(enKeys),
+  `1:1 i18n key parity between bn (${bnKeys.length}) and en (${enKeys.length})`
+);
+for (const uiFile of [...walkFiles(path.join(ROOT, 'views')), ...walkFiles(path.join(ROOT, 'public'), '.svg'), ...walkFiles(path.join(ROOT, 'public'), '.css')]) {
+  const relUi = path.relative(ROOT, uiFile);
+  const txt = fs.readFileSync(uiFile, 'utf8');
+  check(!/ফল\s*বাজার/.test(txt), `No legacy reference brand ("ফল বাজার") in ${relUi}`);
 }
 
 console.log('3b. Validating MySQL migration SQL pairs (InnoDB, utf8mb4, no FLOAT/DOUBLE money)...');

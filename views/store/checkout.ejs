@@ -1,22 +1,23 @@
-<%- include('partials/header', { title: 'চেকআউট' }) %>
+<%- include('partials/header', { title: t('common.checkout') }) %>
 
-<main class="container py-4">
+<main id="mainContent" class="container py-4">
   <!-- Checkout Progress Bar -->
-  <div class="d-flex justify-content-center align-items-center gap-3 mb-4 small fw-bold">
-    <a href="/cart" class="badge bg-success rounded-pill px-3 py-2 text-decoration-none">১. কার্ট</a>
-    <span>→</span>
-    <span class="badge bg-dark rounded-pill px-3 py-2">২. চেকআউট</span>
-    <span>→</span>
-    <span class="badge bg-secondary bg-opacity-25 text-dark rounded-pill px-3 py-2">৩. কনফার্মেশন</span>
-  </div>
+  <nav aria-label="Checkout Steps" class="d-flex justify-content-center align-items-center gap-3 mb-4 small fw-bold flex-wrap">
+    <a href="/cart" class="badge bg-success rounded-pill px-3 py-2 text-decoration-none"><%= t('store.cartStep1') %></a>
+    <span aria-hidden="true">→</span>
+    <span class="badge bg-dark rounded-pill px-3 py-2"><%= t('store.cartStep2') %></span>
+    <span aria-hidden="true">→</span>
+    <span class="badge bg-secondary bg-opacity-25 text-dark rounded-pill px-3 py-2"><%= t('store.cartStep3') %></span>
+  </nav>
 
   <% if (!cart || !cart.length) { %>
-    <div class="bg-white rounded-4 border p-5 text-center shadow-sm">
-      <div style="font-size: 52px;">🛒</div>
-      <h4 class="fw-bold mt-2">আপনার শপিং কার্ট বর্তমানে খালি!</h4>
-      <p class="text-muted">পছন্দের তাজা ফল কার্টে যোগ করে অর্ডার সম্পন্ন করুন।</p>
-      <a href="/all-products" class="btn btn-success px-4 py-2 rounded-pill mt-2 fw-bold" style="background:#1b4332;">প্রোডাক্ট দেখুন →</a>
-    </div>
+    <%- include('../partials/empty-state', {
+      icon: '🛒',
+      title: t('store.emptyCartTitle'),
+      description: t('store.emptyCartSub'),
+      actionUrl: '/all-products',
+      actionLabel: t('common.allProducts') + ' →'
+    }) %>
   <% } else { %>
     <form action="/customer/checkout" method="POST" id="mainCheckoutForm">
       <input type="hidden" name="cart_backup_json" id="ckCartBackupJson" value='<%- JSON.stringify(cart) %>' />
@@ -25,40 +26,40 @@
         <!-- Left Column: Delivery Info & Payment Gateways -->
         <div class="col-lg-7">
           <div class="bg-white rounded-4 border p-4 mb-4 shadow-sm">
-            <h5 class="fw-bold mb-1">১. ডেলিভারি তথ্য</h5>
-            <p class="text-muted small mb-3">আপনার নাম, ফোন নম্বর ও সম্পূর্ণ ঠিকানা দিন</p>
+            <h1 class="h5 fw-bold mb-1"><%= t('store.deliveryInfoTitle') %></h1>
+            <p class="text-muted small mb-3"><%= t('store.deliveryInfoSub') %></p>
 
             <div class="row g-3">
               <div class="col-md-6">
-                <label class="form-label small fw-semibold">পূর্ণ নাম *</label>
-                <input type="text" name="customer_name" id="ckName" class="form-control" placeholder="আপনার পূর্ণ নাম লিখুন" required />
+                <label for="ckName" class="form-label small fw-semibold"><%= t('store.fullName') %> *</label>
+                <input type="text" name="customer_name" id="ckName" class="form-control" placeholder="<%= t('store.fullNamePlaceholder') %>" required />
               </div>
               <div class="col-md-6">
-                <label class="form-label small fw-semibold">মোবাইল নম্বর *</label>
-                <input type="tel" name="phone" id="ckPhone" class="form-control" placeholder="017XXXXXXXX" minlength="11" required />
+                <label for="ckPhone" class="form-label small fw-semibold"><%= t('store.mobileNumber') %> *</label>
+                <input type="tel" name="phone" id="ckPhone" class="form-control" placeholder="<%= t('store.mobilePlaceholder') %>" minlength="11" required />
               </div>
               <div class="col-12">
-                <label class="form-label small fw-semibold">সম্পূর্ণ ঠিকানা *</label>
-                <textarea name="address" id="ckAddress" rows="2" class="form-control" placeholder="বাসা নং, রোড, এলাকা, থানা ও জেলা" required></textarea>
+                <label for="ckAddress" class="form-label small fw-semibold"><%= t('store.fullAddress') %> *</label>
+                <textarea name="address" id="ckAddress" rows="2" class="form-control" placeholder="<%= t('store.addressPlaceholder') %>" required></textarea>
               </div>
               <div class="col-md-6">
-                <label class="form-label small fw-semibold">শিপিং এলাকা *</label>
+                <label for="ckShipping" class="form-label small fw-semibold"><%= t('store.shippingArea') %> *</label>
                 <select name="shipping_area" id="ckShipping" class="form-select" onchange="recalcCheckout()">
-                  <option value="ঢাকার ভিতরে" data-charge="<%= siteSettings.inside_dhaka_charge || 60 %>">ঢাকার ভিতরে (৳<%= siteSettings.inside_dhaka_charge || 60 %>)</option>
-                  <option value="ঢাকার বাইরে" data-charge="<%= siteSettings.outside_dhaka_charge || 120 %>">ঢাকার বাইরে সারা দেশ (৳<%= siteSettings.outside_dhaka_charge || 120 %>)</option>
+                  <option value="ঢাকার ভিতরে" data-charge="<%= siteSettings.inside_dhaka_charge || 60 %>"><%= t('common.insideDhaka') %> (৳<%= siteSettings.inside_dhaka_charge || 60 %>)</option>
+                  <option value="ঢাকার বাইরে" data-charge="<%= siteSettings.outside_dhaka_charge || 120 %>"><%= t('common.outsideDhaka') %> (৳<%= siteSettings.outside_dhaka_charge || 120 %>)</option>
                 </select>
               </div>
               <div class="col-md-6">
-                <label class="form-label small fw-semibold">অর্ডার নোট (ঐচ্ছিক)</label>
-                <input type="text" name="note" class="form-control" placeholder="বিশেষ কোনো নির্দেশনা থাকলে লিখুন..." />
+                <label for="ckNote" class="form-label small fw-semibold"><%= t('store.orderNote') %></label>
+                <input type="text" id="ckNote" name="note" class="form-control" placeholder="<%= t('store.orderNotePlaceholder') %>" />
               </div>
             </div>
           </div>
 
           <!-- Step 2: Payment Methods -->
           <div class="bg-white rounded-4 border p-4 shadow-sm">
-            <h5 class="fw-bold mb-1">২. পেমেন্ট পদ্ধতি</h5>
-            <p class="text-muted small mb-3">আপনার পছন্দের পেমেন্ট মাধ্যম বেছে নিন</p>
+            <h2 class="h5 fw-bold mb-1"><%= t('store.paymentMethodTitle') %></h2>
+            <p class="text-muted small mb-3"><%= t('store.paymentMethodSub') %></p>
 
             <div class="row g-2">
               <% gateways.forEach(function(gw, idx) { %>

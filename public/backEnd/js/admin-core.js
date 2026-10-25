@@ -131,20 +131,24 @@
       e.preventDefault();
       var form = btn.closest('form');
       if (!form) return;
+      var titleTxt = document.body.getAttribute('data-confirm-title') || 'আপনি কি নিশ্চিত?';
+      var bodyTxt = document.body.getAttribute('data-confirm-text') || 'এই ডাটা স্থায়ীভাবে মুছে ফেলা হবে!';
+      var yesTxt = document.body.getAttribute('data-confirm-yes') || 'হ্যাঁ, মুছে ফেলুন';
+      var cancelTxt = document.body.getAttribute('data-confirm-cancel') || 'বাতিল';
       if (typeof Swal !== 'undefined') {
         Swal.fire({
-          title: 'আপনি কি নিশ্চিত?',
-          text: 'এই ডাটা স্থায়ীভাবে মুছে ফেলা হবে!',
+          title: titleTxt,
+          text: bodyTxt,
           icon: 'warning',
           showCancelButton: true,
-          confirmButtonColor: '#dc2626',
-          cancelButtonColor: '#64748b',
-          confirmButtonText: 'হ্যাঁ, ডিলিট করুন',
-          cancelButtonText: 'বাতিল',
+          confirmButtonColor: '#b91c1c',
+          cancelButtonColor: '#475569',
+          confirmButtonText: yesTxt,
+          cancelButtonText: cancelTxt,
         }).then(function (result) {
           if (result.isConfirmed) form.submit();
         });
-      } else if (confirm('Are you sure you want to delete this record?')) {
+      } else if (confirm(bodyTxt)) {
         form.submit();
       }
     });

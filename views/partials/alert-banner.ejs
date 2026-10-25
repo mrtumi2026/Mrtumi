@@ -1,0 +1,11 @@
+<%
+  const bannerType = typeof type !== 'undefined' && ['success', 'error', 'warning', 'info'].includes(type) ? type : 'info';
+  const bannerIcon = bannerType === 'success' ? '✓' : bannerType === 'error' ? '⚠' : bannerType === 'warning' ? '!' : 'ℹ';
+  const roleAttr = bannerType === 'error' || bannerType === 'warning' ? 'alert' : 'status';
+%>
+<% if (typeof message !== 'undefined' && message) { %>
+  <div class="mt-alert-banner mt-alert-banner--<%= bannerType %> mb-3" role="<%= roleAttr %>">
+    <span class="fw-bold" aria-hidden="true"><%= bannerIcon %></span>
+    <div><%= message %></div>
+  </div>
+<% } %>

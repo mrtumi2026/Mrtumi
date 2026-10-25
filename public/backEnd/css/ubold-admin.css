@@ -1,26 +1,26 @@
 /* ==========================================================================
-   UBold / ফল বাজার Admin Panel Stylesheet (1:1 Match + Responsive + Dark/Theme)
+   Mr. Tumi Grocery & Gift — Admin, Vendor & Reseller Control Panel Stylesheet
    ========================================================================== */
 @import url('https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap');
 
 :root {
   --ub-topbar-bg: #151e2c;
   --ub-sidebar-bg: #ffffff;
-  --ub-sidebar-text: #4b5563;
-  --ub-sidebar-hover: #243b22;
+  --ub-sidebar-text: #334155;
+  --ub-sidebar-hover: #0d3b26;
   --ub-sidebar-active-bg: #f0fdf4;
-  --ub-body-bg: #f4f6f9;
-  --ub-brand: #243b22;
-  --ub-brand-accent: #16a34a;
-  --ub-sidebar-width: 248px;
+  --ub-body-bg: #f8fafc;
+  --ub-brand: #0d3b26;
+  --ub-brand-accent: #15803d;
+  --ub-sidebar-width: 252px;
   --ub-topbar-height: 64px;
 }
 
 body[data-leftbar-color="dark"] {
   --ub-sidebar-bg: #1a2433;
-  --ub-sidebar-text: #c2ccd9;
+  --ub-sidebar-text: #cbd5e1;
   --ub-sidebar-hover: #ffffff;
-  --ub-sidebar-active-bg: rgba(255, 255, 255, 0.09);
+  --ub-sidebar-active-bg: rgba(34, 197, 94, 0.16);
 }
 
 body[data-leftbar-color="brand"] {
@@ -42,12 +42,12 @@ body[data-theme="dark"] {
 }
 
 body {
-  font-family: 'Inter', 'Hind Siliguri', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: 'Hind Siliguri', 'Noto Sans Bengali', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   background-color: var(--ub-body-bg);
-  color: #374151;
+  color: #1e293b;
   margin: 0;
-  overflow-x: hidden;
-  font-size: 13.5px;
+  overflow-x: clip;
+  font-size: 13.75px;
 }
 
 #wrapper {
@@ -398,11 +398,11 @@ body.sidebar-collapsed .content-page {
   }
 }
 
-/* ─── Dashboard Exact Classes (from Dashboard - ফল বাজার.html) ─── */
+/* ─── Admin Operations Dashboard Layout & Cards ─── */
 .db-wrap { padding: 4px 0 32px; }
 .db-heading { margin-bottom: 22px; }
-.db-heading h1 { font-size: 20px; font-weight: 700; color: #111827; margin: 0 0 2px; letter-spacing: -.3px; }
-.db-heading p  { font-size: 13px; color: #9ca3af; margin: 0; }
+.db-heading h1 { font-size: 20px; font-weight: 700; color: #0f172a; margin: 0 0 2px; letter-spacing: -.3px; }
+.db-heading p  { font-size: 13px; color: #475569; margin: 0; }
 
 .dash-top-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-bottom: 16px; }
 

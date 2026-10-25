@@ -20,7 +20,7 @@
         <div class="d-flex gap-3 mb-3">
           <img src="<%= p.image %>" style="width:90px;height:90px;border-radius:12px;object-fit:cover;flex-shrink:0;" alt="" />
           <div>
-            <span class="badge bg-light text-secondary border mb-1"><%= p.category_name || 'ফল বাজার' %></span>
+            <span class="badge bg-light text-secondary border mb-1"><%= p.category_name || brand.defaultProductBrand %></span>
             <h6 class="fw-bold mb-1"><%= p.name %></h6>
             <div class="small text-muted">স্টক: <strong><%= p.stock %></strong> • কোড: <%= p.code %></div>
           </div>

@@ -1,72 +1,113 @@
 <!DOCTYPE html>
-<html lang="bn">
+<html lang="<%= typeof htmlLang !== 'undefined' ? htmlLang : 'bn' %>">
   <head>
     <meta charset="utf-8" />
     <meta name="pb-sid" content="<%= typeof sessionToken !== 'undefined' ? sessionToken : '' %>" />
-    <title><%= typeof title !== 'undefined' ? (title + ' | ') : '' %><%= siteSettings.seo_meta_title || siteSettings.site_name || 'ফল বাজার' %></title>
+    <title><%= typeof title !== 'undefined' ? (title + ' | ') : '' %><%= siteSettings.seo_meta_title || siteSettings.site_name %></title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="<%= siteSettings.seo_meta_description || '' %>" />
     <meta name="keywords" content="<%= siteSettings.seo_keywords || '' %>" />
-    <link rel="shortcut icon" href="<%= siteSettings.favicon || '/uploads/settings/logo.svg' %>" />
+    <link rel="shortcut icon" href="<%= siteSettings.favicon || '/uploads/brand/mrtumi-placeholder-favicon.svg' %>" />
 
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet" />
     <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet" />
     <link href="/frontEnd/css/storefront.css" rel="stylesheet" />
+    <link href="/shared/css/mrtumi-design-system.css" rel="stylesheet" />
     <script src="/frontEnd/js/pb-session.js"></script>
   </head>
   <body>
-    <!-- Top Special Notice Marquee -->
+    <a href="#mainContent" class="mt-skip-link"><%= t('a11y.skipToContent') %></a>
+
+    <!-- Top Special Notice Bar -->
     <% if (siteSettings.special_notice) { %>
-      <div class="notice-bar">
+      <div class="notice-bar" role="region" aria-label="<%= t('store.specialNotice') %>">
         <div class="notice-track">
-          <span class="badge bg-warning text-dark me-2">SPECIAL NOTICE</span>
+          <span class="badge bg-warning text-dark me-2"><%= t('store.specialNotice') %></span>
           <%= siteSettings.special_notice %>
         </div>
       </div>
     <% } %>
 
     <!-- Sticky Main Header -->
-    <header class="pb-header">
+    <header class="pb-header" role="banner">
       <div class="container py-2">
-        <div class="d-flex align-items-center justify-content-between gap-3 flex-wrap">
-          <a href="/" class="text-decoration-none d-flex align-items-center">
-            <img src="<%= siteSettings.logo_dark || '/uploads/settings/logo.svg' %>" alt="ফল বাজার" height="46" />
-          </a>
+        <div class="d-flex align-items-center justify-content-between gap-2 gap-md-3 flex-wrap">
+          <div class="d-flex align-items-center gap-2">
+            <!-- Mobile Offcanvas Menu Trigger (<992px) -->
+            <button
+              type="button"
+              class="btn btn-outline-dark btn-sm rounded-3 d-lg-none px-2.5 py-1.5"
+              data-bs-toggle="offcanvas"
+              data-bs-target="#mobileStoreNavDrawer"
+              aria-controls="mobileStoreNavDrawer"
+              aria-label="<%= t('a11y.mobileMenuOpen') %>"
+            >
+              <i class="fas fa-bars" aria-hidden="true"></i>
+            </button>
 
-          <form action="/all-products" method="GET" class="pb-search-box order-3 order-lg-2 flex-grow-1 mx-lg-4">
-            <input type="text" name="q" class="form-control" placeholder="লিচু, আম বা আপনার পছন্দের ফল খুঁজুন..." value="<%= typeof searchQuery !== 'undefined' ? searchQuery : '' %>" />
-            <button type="submit" aria-label="Search"><i class="fas fa-search"></i></button>
+            <a
+              href="/"
+              class="mt-brand-lockup"
+              data-brand-asset-status="<%= (typeof brand !== 'undefined' && brand && brand.isPlaceholderLogo) ? 'temporary-placeholder' : 'custom' %>"
+            >
+              <img src="<%= siteSettings.logo_dark %>" alt="<%= siteSettings.site_name %>" height="44" />
+            </a>
+          </div>
+
+          <!-- Search Box -->
+          <form action="/all-products" method="GET" class="pb-search-box order-3 order-lg-2 flex-grow-1 mx-lg-3" role="search">
+            <label for="storeMainSearch" class="visually-hidden"><%= t('a11y.searchProducts') %></label>
+            <input
+              type="search"
+              id="storeMainSearch"
+              name="q"
+              class="form-control"
+              placeholder="<%= t('store.searchPlaceholder') %>"
+              value="<%= typeof searchQuery !== 'undefined' ? searchQuery : '' %>"
+            />
+            <button type="submit" aria-label="<%= t('common.search') %>"><i class="fas fa-search" aria-hidden="true"></i></button>
           </form>
 
-          <div class="d-flex align-items-center gap-2 order-2 order-lg-3">
-            <a href="/track-order" class="btn btn-outline-success btn-sm rounded-pill px-3 d-none d-md-inline-flex align-items-center gap-1">
-              <i class="fas fa-truck-fast"></i> অর্ডার ট্র্যাক
+          <!-- Language Switcher + Cart + Checkout + Portals -->
+          <div class="d-flex align-items-center gap-1 gap-sm-2 order-2 order-lg-3">
+            <%- include('../../partials/lang-switch', { variant: 'light' }) %>
+
+            <a href="/track-order" class="btn btn-outline-success btn-sm rounded-pill px-3 d-none d-xl-inline-flex align-items-center gap-1">
+              <i class="fas fa-truck-fast" aria-hidden="true"></i> <%= t('common.trackOrder') %>
             </a>
+
             <button
               type="button"
               class="btn btn-success btn-sm rounded-pill px-3 position-relative d-inline-flex align-items-center gap-2"
-              style="background:#1b4332;border-color:#1b4332;"
+              style="background:#0d3b26;border-color:#0d3b26;"
               data-bs-toggle="offcanvas"
               data-bs-target="#miniCartDrawer"
+              aria-controls="miniCartDrawer"
+              aria-label="<%= t('a11y.openCart') %>"
             >
-              <i class="fas fa-shopping-basket"></i>
-              <span>কার্ট</span>
+              <i class="fas fa-shopping-basket" aria-hidden="true"></i>
+              <span class="d-none d-sm-inline"><%= t('common.cart') %></span>
               <span class="badge bg-warning text-dark rounded-pill js-cart-count" id="headerCartBadge"><%= cartCount || 0 %></span>
             </button>
-            <a href="/customer/checkout" class="btn btn-warning btn-sm rounded-pill px-3 fw-bold d-none d-sm-inline-flex align-items-center gap-1">
-              চেকআউট →
+
+            <a href="/customer/checkout" class="btn btn-warning btn-sm rounded-pill px-3 fw-bold d-none d-md-inline-flex align-items-center gap-1">
+              <%= t('common.checkout') %> →
             </a>
-            <div class="dropdown">
-              <button class="btn btn-outline-dark btn-sm rounded-pill px-3 dropdown-toggle" type="button" data-bs-toggle="dropdown">
-                <i class="fas fa-th-large me-1"></i>প্যানেল সমূহ
+
+            <div class="dropdown d-none d-lg-block">
+              <button class="btn btn-outline-dark btn-sm rounded-pill px-3 dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                <i class="fas fa-th-large me-1" aria-hidden="true"></i><%= locale === 'bn' ? 'প্যানেল' : 'Portals' %>
               </button>
-              <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0 rounded-3">
-                <li><a class="dropdown-item fw-semibold" href="/admin/dashboard"><i class="fas fa-user-shield text-dark me-2"></i>🔐 অ্যাডমিন প্যানেল</a></li>
-                <li><a class="dropdown-item fw-semibold" href="/vendor/dashboard"><i class="fas fa-store text-success me-2"></i>🏪 ভেন্ডর / সেলার প্যানেল</a></li>
-                <li><a class="dropdown-item fw-semibold" href="/reseller/dashboard"><i class="fas fa-handshake text-primary me-2"></i>🤝 রিসেলার প্যানেল</a></li>
+              <ul class="dropdown-menu dropdown-menu-end shadow-sm border rounded-3">
+                <li><a class="dropdown-item fw-semibold" href="/admin/dashboard"><i class="fas fa-user-shield text-dark me-2"></i>🔐 <%= t('admin.controlPanel') %></a></li>
+                <li><a class="dropdown-item fw-semibold" href="/vendor/dashboard"><i class="fas fa-store text-success me-2"></i>🏪 <%= t('vendor.portalName') %></a></li>
+                <li><a class="dropdown-item fw-semibold" href="/reseller/dashboard"><i class="fas fa-handshake text-primary me-2"></i>🤝 <%= t('reseller.portalName') %></a></li>
                 <li><hr class="dropdown-divider" /></li>
-                <li><a class="dropdown-item small" href="/track-order"><i class="fas fa-truck-fast text-secondary me-2"></i>অর্ডার ট্র্যাক করুন</a></li>
+                <li><a class="dropdown-item small" href="/track-order"><i class="fas fa-truck-fast text-secondary me-2"></i><%= t('common.trackOrder') %></a></li>
               </ul>
             </div>
           </div>
@@ -74,29 +115,81 @@
       </div>
 
       <!-- Category Navigation Strip -->
-      <nav class="pb-cat-nav">
+      <nav class="pb-cat-nav" aria-label="<%= t('a11y.categoryNavigation') %>">
         <div class="container d-flex align-items-center">
-          <a href="/" class="pb-cat-link <%= currentPath === '/' ? 'active' : '' %>">🏠 হোম</a>
-          <a href="/flash-sales" class="pb-cat-link <%= currentPath === '/flash-sales' ? 'active' : '' %> text-danger">⚡ Flash Sale</a>
-          <a href="/hot-deals" class="pb-cat-link <%= currentPath === '/hot-deals' ? 'active' : '' %>">🔥 Hot Deal</a>
+          <a href="/" class="pb-cat-link <%= currentPath === '/' ? 'active' : '' %>">🏠 <%= t('common.home') %></a>
+          <a href="/flash-sales" class="pb-cat-link <%= currentPath === '/flash-sales' ? 'active' : '' %> text-danger">⚡ <%= t('common.flashSale') %></a>
+          <a href="/hot-deals" class="pb-cat-link <%= currentPath === '/hot-deals' ? 'active' : '' %>">🔥 <%= t('common.hotDeal') %></a>
           <% navCategories.forEach(function(cat) { %>
             <a href="/category/<%= cat.slug %>" class="pb-cat-link <%= currentPath === ('/category/' + cat.slug) ? 'active' : '' %>">
-              <span><%= cat.icon || '🍒' %></span> <%= cat.name %>
+              <span aria-hidden="true"><%= cat.icon || '🛒' %></span> <%= cat.name %>
             </a>
           <% }) %>
-          <a href="/all-products" class="pb-cat-link <%= currentPath === '/all-products' ? 'active' : '' %>">সকল প্রোডাক্ট</a>
-          <a href="/blogs" class="pb-cat-link <%= currentPath === '/blogs' ? 'active' : '' %>">ব্লগ</a>
+          <a href="/all-products" class="pb-cat-link <%= currentPath === '/all-products' ? 'active' : '' %>"><%= t('common.allProducts') %></a>
+          <a href="/blogs" class="pb-cat-link <%= currentPath === '/blogs' ? 'active' : '' %>"><%= t('common.blogs') %></a>
         </div>
       </nav>
     </header>
 
+    <!-- Mobile Navigation Offcanvas Drawer (<992px) -->
+    <div class="offcanvas offcanvas-start" tabindex="-1" id="mobileStoreNavDrawer" aria-labelledby="mobileStoreNavLabel" style="width: 300px; max-width: 88vw;">
+      <div class="offcanvas-header border-bottom" style="background: #f0fdf4;">
+        <h6 class="offcanvas-title fw-bold mb-0 text-dark" id="mobileStoreNavLabel"><%= siteSettings.site_name %></h6>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="<%= t('a11y.mobileMenuClose') %>"></button>
+      </div>
+      <div class="offcanvas-body d-flex flex-column justify-content-between">
+        <div>
+          <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
+            <span class="small fw-semibold text-muted"><%= t('lang.switcherAria') %></span>
+            <%- include('../../partials/lang-switch', { variant: 'light' }) %>
+          </div>
+
+          <ul class="list-unstyled mb-3">
+            <li class="mb-1"><a href="/" class="d-block py-2 px-2 rounded-2 text-decoration-none text-dark fw-semibold">🏠 <%= t('common.home') %></a></li>
+            <li class="mb-1"><a href="/all-products" class="d-block py-2 px-2 rounded-2 text-decoration-none text-dark fw-semibold">🛒 <%= t('common.allProducts') %></a></li>
+            <li class="mb-1"><a href="/flash-sales" class="d-block py-2 px-2 rounded-2 text-decoration-none text-danger fw-semibold">⚡ <%= t('common.flashSale') %></a></li>
+            <li class="mb-1"><a href="/hot-deals" class="d-block py-2 px-2 rounded-2 text-decoration-none text-dark fw-semibold">🔥 <%= t('common.hotDeal') %></a></li>
+            <li class="mb-1"><a href="/track-order" class="d-block py-2 px-2 rounded-2 text-decoration-none text-dark fw-semibold">📦 <%= t('common.trackOrder') %></a></li>
+            <li class="mb-1"><a href="/blogs" class="d-block py-2 px-2 rounded-2 text-decoration-none text-dark fw-semibold">📰 <%= t('common.blogs') %></a></li>
+          </ul>
+
+          <div class="small fw-bold text-uppercase text-muted mb-2"><%= t('store.categoriesTitle') %></div>
+          <ul class="list-unstyled mb-3">
+            <% navCategories.forEach(function(cat) { %>
+              <li class="mb-1">
+                <a href="/category/<%= cat.slug %>" class="d-block py-1.5 px-2 rounded-2 text-decoration-none text-secondary small fw-semibold">
+                  <%= cat.icon || '🛒' %> <%= cat.name %>
+                </a>
+              </li>
+            <% }) %>
+          </ul>
+        </div>
+
+        <div class="border-top pt-3 small">
+          <div class="fw-bold text-muted mb-2"><%= t('store.footerPortals') %></div>
+          <div class="d-grid gap-2">
+            <a href="/admin/dashboard" class="btn btn-outline-dark btn-sm text-start">🔐 <%= t('admin.controlPanel') %></a>
+            <a href="/vendor/dashboard" class="btn btn-outline-success btn-sm text-start">🏪 <%= t('vendor.portalName') %></a>
+            <a href="/reseller/dashboard" class="btn btn-outline-primary btn-sm text-start">🤝 <%= t('reseller.portalName') %></a>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Floating Right-Edge Sticky Mini Cart Pill -->
-    <div class="pb-floating-cart" data-bs-toggle="offcanvas" data-bs-target="#miniCartDrawer" title="আপনার শপিং কার্ট দেখুন">
+    <button
+      type="button"
+      class="pb-floating-cart border-0 p-0"
+      data-bs-toggle="offcanvas"
+      data-bs-target="#miniCartDrawer"
+      aria-label="<%= t('a11y.openCart') %>"
+      title="<%= t('a11y.openCart') %>"
+    >
       <div class="pb-fc-top">
-        <div style="font-size: 18px;">🛒</div>
-        <div><span class="js-cart-count"><%= cartCount || 0 %></span> পণ্য</div>
+        <div style="font-size: 18px;" aria-hidden="true">🛒</div>
+        <div><span class="js-cart-count"><%= cartCount || 0 %></span> <%= locale === 'bn' ? 'পণ্য' : 'items' %></div>
       </div>
       <div class="pb-fc-bottom">
         ৳<span class="js-cart-subtotal"><%= Number(cartSubtotal || 0).toLocaleString('en-IN') %></span>
       </div>
-    </div>
+    </button>

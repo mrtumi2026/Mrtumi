@@ -1,65 +1,73 @@
-<%- include('partials/header', { title: mode === 'blogs' ? 'ব্লগ ও স্বাস্থ্য টিপস' : (page ? page.title : 'তথ্য পাতা') }) %>
+<%- include('partials/header', { title: mode === 'blogs' ? t('common.blogs') : (page ? page.title : t('common.home')) }) %>
 
-<main class="container py-5">
+<main id="mainContent" class="container py-5">
   <% if (mode === 'blogs') { %>
     <div class="mb-4">
-      <h2 class="fw-bold fs-3 mb-1">📰 ফল বাজার ব্লগ ও পুষ্টি টিপস</h2>
-      <p class="text-muted">মৌসুমি ফল চেনার উপায়, সংরক্ষণ পদ্ধতি ও স্বাস্থ্যগুণ জানুন</p>
+      <h1 class="fw-bold fs-3 mb-1">📰 <%= t('store.blogHeading') %></h1>
+      <p class="text-muted"><%= t('store.blogSub') %></p>
     </div>
 
     <div class="row g-4">
       <% blogs.forEach(function(b) { %>
         <div class="col-md-6">
-          <div class="bg-white rounded-4 border overflow-hidden h-100 shadow-sm">
+          <article class="bg-white rounded-4 border overflow-hidden h-100 shadow-sm">
             <img src="<%= b.image || '/uploads/banner/banner-1.jpg' %>" class="w-100" style="height: 220px; object-fit: cover;" alt="<%= b.title %>" />
             <div class="p-4">
-              <div class="small text-muted mb-2">✍️ <%= b.author %> • <%= b.created_at %></div>
-              <h5 class="fw-bold mb-2"><%= b.title %></h5>
-              <p class="text-secondary small mb-3"><%= b.summary %></p>
-              <a href="/blog/<%= b.slug %>" class="btn btn-outline-success btn-sm rounded-pill px-3">বিস্তারিত পড়ুন →</a>
+              <div class="small text-muted mb-2">✍️ <%= b.author %> • <%= fmt.date(b.created_at) %></div>
+              <h2 class="h5 fw-bold mb-2"><%= replaceLegacyBrandTokens(b.title) %></h2>
+              <p class="text-secondary small mb-3"><%= replaceLegacyBrandTokens(b.summary) %></p>
+              <a href="/blog/<%= b.slug %>" class="btn btn-outline-success btn-sm rounded-pill px-3"><%= t('store.readMore') %> →</a>
             </div>
-          </div>
+          </article>
         </div>
       <% }) %>
     </div>
 
   <% } else if (mode === 'blog_detail' && page) { %>
-    <div class="bg-white rounded-4 border p-4 p-md-5 mx-auto shadow-sm" style="max-width: 820px;">
-      <a href="/blogs" class="text-success small text-decoration-none fw-semibold">← সকল ব্লগে ফিরে যান</a>
-      <h1 class="fw-bold fs-3 mt-2 mb-2"><%= page.title %></h1>
-      <div class="small text-muted mb-4">✍️ <%= page.author %> • <%= page.created_at %></div>
+    <article class="bg-white rounded-4 border p-4 p-md-5 mx-auto shadow-sm" style="max-width: 820px;">
+      <a href="/blogs" class="text-success small text-decoration-none fw-semibold">← <%= t('store.backToBlogs') %></a>
+      <h1 class="fw-bold fs-3 mt-2 mb-2"><%= replaceLegacyBrandTokens(page.title) %></h1>
+      <div class="small text-muted mb-4">✍️ <%= page.author %> • <%= fmt.date(page.created_at) %></div>
       <% if (page.image) { %>
         <img src="<%= page.image %>" class="w-100 rounded-4 mb-4" style="max-height: 360px; object-fit: cover;" alt="<%= page.title %>" />
       <% } %>
-      <div style="white-space: pre-line; line-height: 1.9; font-size: 16px;"><%= page.content || page.summary %></div>
-    </div>
+      <div style="white-space: pre-line; line-height: 1.9; font-size: 16px;"><%= replaceLegacyBrandTokens(page.content || page.summary) %></div>
+    </article>
 
   <% } else if (page) { %>
-    <div class="bg-white rounded-4 border p-4 p-md-5 mx-auto shadow-sm" style="max-width: 820px;">
-      <h1 class="fw-bold fs-3 border-bottom pb-3 mb-4"><%= page.title %></h1>
-      <div style="white-space: pre-line; line-height: 1.9; font-size: 15.5px;" class="mb-4"><%= page.content %></div>
+    <article class="bg-white rounded-4 border p-4 p-md-5 mx-auto shadow-sm" style="max-width: 820px;">
+      <% if (typeof requiresOwnerCopyReview === 'function' && requiresOwnerCopyReview(page.slug, page.content)) { %>
+        <%- include('../partials/copy-review-notice') %>
+      <% } %>
+
+      <h1 class="fw-bold fs-3 border-bottom pb-3 mb-4"><%= replaceLegacyBrandTokens(page.title) %></h1>
+      <div style="white-space: pre-line; line-height: 1.9; font-size: 15.5px;" class="mb-4"><%= replaceLegacyBrandTokens(page.content) %></div>
 
       <div class="bg-light rounded-4 p-4 border mt-4">
-        <h5 class="fw-bold mb-3">📩 সরাসরি আমাদের বার্তা পাঠান</h5>
+        <h2 class="h5 fw-bold mb-3">📩 <%= t('store.contactFormHeading') %></h2>
         <form action="/api/contact" method="POST" class="row g-3">
           <div class="col-md-6">
-            <input type="text" name="name" class="form-control" placeholder="আপনার নাম *" required />
+            <label for="pageContactName" class="form-label small fw-semibold"><%= t('store.yourName') %> *</label>
+            <input type="text" id="pageContactName" name="name" class="form-control" placeholder="<%= t('store.yourName') %> *" required />
           </div>
           <div class="col-md-6">
-            <input type="text" name="phone" class="form-control" placeholder="মোবাইল নম্বর *" required />
+            <label for="pageContactPhone" class="form-label small fw-semibold"><%= t('store.mobileNumber') %> *</label>
+            <input type="tel" id="pageContactPhone" name="phone" class="form-control" placeholder="<%= t('store.mobilePlaceholder') %> *" required />
           </div>
           <div class="col-12">
-            <input type="text" name="subject" class="form-control" placeholder="বিষয়" />
+            <label for="pageContactSubject" class="form-label small fw-semibold"><%= t('store.subject') %></label>
+            <input type="text" id="pageContactSubject" name="subject" class="form-control" placeholder="<%= t('store.subject') %>" />
           </div>
           <div class="col-12">
-            <textarea name="message" rows="3" class="form-control" placeholder="আপনার জিজ্ঞাসা বা মতামত লিখুন..." required></textarea>
+            <label for="pageContactMsg" class="form-label small fw-semibold"><%= t('store.yourMessage') %> *</label>
+            <textarea id="pageContactMsg" name="message" rows="3" class="form-control" placeholder="<%= t('store.yourMessage') %>" required></textarea>
           </div>
           <div class="col-12">
-            <button type="submit" class="btn btn-success px-4" style="background:#1b4332;">বার্তা পাঠান</button>
+            <button type="submit" class="mt-btn mt-btn-primary px-4"><%= t('store.sendMessage') %></button>
           </div>
         </form>
       </div>
-    </div>
+    </article>
   <% } %>
 </main>
 
