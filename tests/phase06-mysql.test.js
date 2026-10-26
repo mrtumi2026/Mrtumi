@@ -185,8 +185,8 @@ describe('Phase 06 — Live MySQL 8.0 schema, product, stock ledger & purchase r
     ]);
     const product = await db.queryOne('SELECT stock_on_hand FROM products WHERE id=?',[productId]);
     const ledger = await db.queryOne("SELECT balance_after FROM stock_ledger WHERE product_id=? AND stock_pool='warehouse' ORDER BY id DESC LIMIT 1",[productId]);
-    assert.equal(Number(product.stock_on_hand),10);
-    assert.equal(Number(ledger.balance_after),10);
+    assert.equal(Number(product.stock_on_hand),9,'blocked return finalization leaves one shipped unit consumed before the two inventory adjustments');
+    assert.equal(Number(ledger.balance_after),9);
     assert.ok(supplierId && purchaseId);
   });
 });
