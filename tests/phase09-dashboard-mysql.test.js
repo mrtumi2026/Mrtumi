@@ -155,8 +155,8 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     const updateRoute=await request(`/admin/audit-logs/${auditRow.id}`,{method:'PUT',body:{action:'tampered'}});
     const deleteRoute=await request(`/admin/audit-logs/${auditRow.id}`,{method:'DELETE'});
     assert.equal(updateRoute.status,404);assert.equal(deleteRoute.status,404);
-    await assert.rejects(db.execute("UPDATE audit_logs SET action='tampered' WHERE id=?",[auditRow.id]),err=>err.code==='ER_SIGNAL_EXCEPTION'||Number(err.errno)===1644);
-    await assert.rejects(db.execute('DELETE FROM audit_logs WHERE id=?',[auditRow.id]),err=>err.code==='ER_SIGNAL_EXCEPTION'||Number(err.errno)===1644);
+    await assert.rejects(db.execute("UPDATE audit_logs SET action='tampered' WHERE id=?",[auditRow.id]),err=>err.mysqlCode==='ER_SIGNAL_EXCEPTION'||err.code==='ER_SIGNAL_EXCEPTION'||Number(err.errno)===1644);
+    await assert.rejects(db.execute('DELETE FROM audit_logs WHERE id=?',[auditRow.id]),err=>err.mysqlCode==='ER_SIGNAL_EXCEPTION'||err.code==='ER_SIGNAL_EXCEPTION'||Number(err.errno)===1644);
     assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM audit_logs WHERE id=?',[auditRow.id])).n),1,'UPDATE and DELETE triggers preserve historical events');
     const triggerCount=await db.queryOne("SELECT COUNT(*) AS n FROM information_schema.triggers WHERE TRIGGER_SCHEMA=DATABASE() AND TRIGGER_NAME IN ('trg_audit_logs_no_update','trg_audit_logs_no_delete')");
     assert.equal(Number(triggerCount.n),2);
