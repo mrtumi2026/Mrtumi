@@ -271,9 +271,11 @@ async function requestRefund(orderId, amountPaisa, reason, requestKey, actor = {
         return { id:Number(existing.id), replayed:true, status:existing.status };
       }
       if (!['cancelled','delivered','returned'].includes(order.order_status)) throw new ConflictError('Refund requests are permitted only for cancelled, delivered or returned orders.');
-      const totals = await tx.queryOne(`SELECT COALESCE(SUM(amount_paisa),0) AS reserved FROM refunds WHERE order_id=? AND status IN (${RESERVED_REFUND_STATES.map(()=>'?').join(',')})`, [id,...RESERVED_REFUND_STATES]);
+      const reservedRows=await tx.queryAll(`SELECT id,amount_paisa FROM refunds WHERE order_id=? AND status IN (${RESERVED_REFUND_STATES.map(()=>'?').join(',')}) ORDER BY id FOR UPDATE`,[id,...RESERVED_REFUND_STATES]);
       const paid = Number(order.paid_paisa || 0);
-      if (!Number.isSafeInteger(paid) || amount < 1 || amount > paid - Number(totals?.reserved || 0)) throw new ValidationError('Refund amount exceeds the remaining recorded paid balance.');
+      if (!Number.isSafeInteger(paid) || paid<0 || amount < 1) throw new ValidationError('Recorded paid balance is invalid.');
+      const reserved=reservedRows.reduce((sum,row)=>sum+BigInt(row.amount_paisa),0n);
+      if(BigInt(amount)>BigInt(paid)-reserved)throw new ValidationError('Refund amount exceeds the remaining recorded paid balance.');
       const inserted = await tx.execute('INSERT INTO refunds (order_id,invoice_no,amount_paisa,reason,request_key,method,status,processed_by_user_id) VALUES (?,?,?,?,?,?,?,?)', [id,order.invoice_no,amount,note,key,'manual','requested',actor.id||null]);
       await tx.execute('INSERT INTO refund_status_history (refund_id,from_status,to_status,reason,request_key,actor_user_id) VALUES (?,\'\',\'requested\',?,?,?)', [inserted.insertId,note,`req:${crypto.createHash('sha256').update(key).digest('hex')}`,actor.id||null]);
       await insertAudit(tx, actor, 'refund.requested', 'refund', inserted.insertId, null, { orderId:id, amountPaisa:amount, status:'requested', requestKey:key });
@@ -296,11 +298,14 @@ async function transitionRefund(refundId, targetStatus, reason, actor = {}, requ
   if (!['approved','rejected'].includes(target)) throw new ValidationError('Admins may approve or reject requests; provider processing is not available here.');
   try {
     return await mysql.withTransaction(async (tx) => {
-    const replay = await tx.queryOne('SELECT refund_id,to_status FROM refund_status_history WHERE request_key=? FOR UPDATE', [key]);
+    const replay = await tx.queryOne('SELECT refund_id,to_status FROM refund_status_history WHERE request_key=?', [key]);
     if (replay) {
       if (Number(replay.refund_id)!==id || replay.to_status!==target) throw new ConflictError('Refund decision key was used for a different request.');
       return { id, status:target, replayed:true };
     }
+    const candidate=await tx.queryOne('SELECT id,order_id FROM refunds WHERE id=?',[id]);
+    if(!candidate)throw new NotFoundError('Refund request not found.');
+    const order=await tx.queryOne('SELECT id,paid_paisa FROM orders WHERE id=? FOR UPDATE',[candidate.order_id]);
     const refund = await tx.queryOne('SELECT id,order_id,amount_paisa,status FROM refunds WHERE id=? FOR UPDATE', [id]);
     if (!refund) throw new NotFoundError('Refund request not found.');
     const concurrentReplay=await tx.queryOne('SELECT refund_id,to_status FROM refund_status_history WHERE request_key=? FOR UPDATE',[key]);
@@ -308,9 +313,9 @@ async function transitionRefund(refundId, targetStatus, reason, actor = {}, requ
     const allowedFrom=refund.status==='pending'?'requested':refund.status;
     if (!['requested','pending'].includes(refund.status) || !REFUND_STATES[allowedFrom]?.includes(target)) throw new ConflictError(`Refund cannot transition from ${refund.status} to ${target}.`);
     if (target === 'approved') {
-      const order = await tx.queryOne('SELECT paid_paisa FROM orders WHERE id=? FOR UPDATE', [refund.order_id]);
-      const total = await tx.queryOne(`SELECT COALESCE(SUM(amount_paisa),0) AS reserved FROM refunds WHERE order_id=? AND status IN (${RESERVED_REFUND_STATES.map(()=>'?').join(',')})`, [refund.order_id,...RESERVED_REFUND_STATES]);
-      if (Number(total?.reserved || 0) > Number(order?.paid_paisa || 0)) throw new ConflictError('Approved refund requests exceed recorded payments.');
+      const reservedRows=await tx.queryAll(`SELECT id,amount_paisa FROM refunds WHERE order_id=? AND status IN (${RESERVED_REFUND_STATES.map(()=>'?').join(',')}) ORDER BY id FOR UPDATE`,[refund.order_id,...RESERVED_REFUND_STATES]);
+      const reserved=reservedRows.reduce((sum,row)=>sum+BigInt(row.amount_paisa),0n);
+      if(!order || reserved>BigInt(order.paid_paisa||0))throw new ConflictError('Approved refund requests exceed recorded payments.');
     }
     await tx.execute('UPDATE refunds SET status=?,processed_by_user_id=? WHERE id=?', [target,actor.id||null,id]);
     await tx.execute('INSERT INTO refund_status_history (refund_id,from_status,to_status,reason,request_key,actor_user_id) VALUES (?,?,?,?,?,?)', [id,refund.status,target,note,key,actor.id||null]);

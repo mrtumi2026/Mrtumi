@@ -129,7 +129,7 @@ describe('Phase 03 — Real MySQL 8.0 Schema, Migrations, Constraints, Transacti
        WHERE TABLE_SCHEMA = ? AND TABLE_NAME <> 'schema_migrations'`,
       [testDbConfig.name]
     );
-    assert.equal(tableMeta.length, 73, 'All 71 foundation tables plus Phase 06 receipt and Phase 07 cart tables must be created');
+    assert.equal(tableMeta.length, 75, 'All 71 foundation tables plus Phase 06, Phase 07 and Phase 08 tables must be created');
     for (const tbl of tableMeta) {
       assert.equal(tbl.engine, 'InnoDB', `Table ${tbl.name} must use InnoDB`);
       assert.equal(

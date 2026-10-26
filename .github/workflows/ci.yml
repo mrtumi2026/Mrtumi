@@ -90,7 +90,7 @@ jobs:
         run: |
           set -o pipefail
           npm test 2>&1 | tee /tmp/test-output.log || {
-            grep -E "(not ok|error:|expected:|actual:)" /tmp/test-output.log | head -n 20 | while IFS= read -r line; do
+            grep -E "(not ok|error:|expected:|actual:|tests/[^ ]+:[0-9]+:)" /tmp/test-output.log | head -n 20 | while IFS= read -r line; do
               echo "::error::$line"
             done
             exit 1
