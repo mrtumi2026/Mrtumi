@@ -12,8 +12,8 @@ ALTER TABLE `order_otps`
   DROP FOREIGN KEY `fk_order_otps_order`,
   DROP INDEX `idx_order_otps_binding`,
   DROP COLUMN `customer_id`,
-  DROP COLUMN `session_hash`,
-  ADD KEY `idx_order_otps_order` (`order_id`),
+  DROP COLUMN `session_hash`;
+ALTER TABLE `order_otps`
   ADD CONSTRAINT `fk_order_otps_order` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE CASCADE;
 ALTER TABLE `stock_reservations` DROP COLUMN `request_hash`;
 ALTER TABLE `order_status_history`
