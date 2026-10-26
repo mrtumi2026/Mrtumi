@@ -85,7 +85,8 @@ async function validateCoupon(code,cart,{locale='bn'}={}){
   const quote=await quoteCart(cart,{locale});const row=await client().queryOne('SELECT code,discount_type,discount_value,min_purchase_paisa,max_discount_paisa,usage_limit,used_count,expires_at,status FROM coupons WHERE UPPER(code)=? LIMIT 1',[clean]);
   return{...couponAmount(row,quote.subtotalPaisa),subtotalPaisa:quote.subtotalPaisa};
 }
-async function createOrder(input,{locale='bn',sessionCustomer=null,ip='',requestKey,cart,incompleteOrderId=null,sessionSid=''}={}){
+async function createOrder(input,options={}){
+  const {locale='bn',sessionCustomer=null,ip='',requestKey,cart,incompleteOrderId=null,sessionSid='',deadlockRetry=0}=options;
   assertMysql();const name=requireString(input.customer_name,'customer name',{min:2,max:191});const phone=normalizeBdPhone(input.phone);const address=requireString(input.address,'shipping address',{min:5,max:2000});const zoneId=requirePositiveInt(input.delivery_location_id,'delivery location');const note=String(input.note||'').trim().slice(0,1000);
   const paymentMethod=String(input.payment_method||'cod').trim().toLowerCase();if(paymentMethod!=='cod')throw new ConflictError('Only cash on delivery is currently available; online/manual payment is not configured for canonical checkout.');
   const recoveryId=incompleteOrderId?requirePositiveInt(incompleteOrderId,'incomplete order ID'):null;
@@ -93,7 +94,7 @@ async function createOrder(input,{locale='bn',sessionCustomer=null,ip='',request
   const payloadHash=crypto.createHash('sha256').update(JSON.stringify({name,phone,address,zoneId,note,paymentMethod,lines:lines.map(lineCanonical),coupon:String(input.coupon_code||'').trim().toUpperCase(),recoveryId})).digest('hex');
   try {
   return await mysql.withTransaction(async tx=>{
-    const replay=await tx.queryOne('SELECT id,invoice_no,checkout_request_hash FROM orders WHERE idempotency_key=? FOR UPDATE',[key]);
+    const replay=await tx.queryOne('SELECT id,invoice_no,checkout_request_hash FROM orders WHERE idempotency_key=?',[key]);
     if(replay){if(replay.checkout_request_hash!==payloadHash)throw new ConflictError('This checkout request key was already used with different order details.');return{id:Number(replay.id),invoiceNo:replay.invoice_no,replayed:true};}
     const cod=await tx.queryOne("SELECT code FROM payment_gateways WHERE code='cod' AND status=1 FOR UPDATE");
     if(!cod)throw new ConflictError('Cash-on-delivery is not enabled in the configured payment methods.');
@@ -140,6 +141,7 @@ async function createOrder(input,{locale='bn',sessionCustomer=null,ip='',request
     if(err.code==='DB_DUPLICATE_ENTRY'||err.mysqlCode==='ER_LOCK_DEADLOCK'){
       const replay=await client().queryOne('SELECT id,invoice_no,checkout_request_hash FROM orders WHERE idempotency_key=?',[key]);
       if(replay){if(replay.checkout_request_hash!==payloadHash)throw new ConflictError('This checkout request key was already used with different order details.');return{id:Number(replay.id),invoiceNo:replay.invoice_no,replayed:true};}
+      if(err.mysqlCode==='ER_LOCK_DEADLOCK'&&deadlockRetry<1)return createOrder(input,{...options,deadlockRetry:deadlockRetry+1});
     }
     throw err;
   }
