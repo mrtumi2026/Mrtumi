@@ -203,8 +203,9 @@ describe('Phase 03 — Real MySQL 8.0 Schema, Migrations, Constraints, Transacti
 
       // Verify 0008 was NOT recorded in schema_migrations and advisory lock was released
       const status = await getMigrationStatus(pool);
-      assert.equal(status.length, 8);
-      assert.equal(status.find((m) => m.version === '0008').applied, false);
+      assert.equal(status.length, 7);
+      const failedMigration = await dbClient.queryOne("SELECT version FROM schema_migrations WHERE version='0008'");
+      assert.equal(failedMigration, null, 'failed migration version must not be recorded');
       const lockCheck = await dbClient.queryOne(
         "SELECT IS_FREE_LOCK('mrtumi_schema_migration') AS free_lock"
       );

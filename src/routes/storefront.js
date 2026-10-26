@@ -905,7 +905,7 @@ router.get('/customer/checkout', asyncHandler(async (req, res) => {
       cart, cartCount: quote.count, cartSubtotal: quote.subtotalPaisa / 100, discount,
       appliedCoupon: req.session.appliedCoupon || null, gateways: methods,
       deliveryLocations: locations, checkoutAvailable: Boolean(locations.length && methods.length), canonicalMysqlCheckout: true, checkoutRequestKey: req.session.checkoutRequestKey,
-      csrfToken: req.csrfToken(), siteSettings: { free_shipping_min: 0 },
+      csrfToken: req.csrfToken(), siteSettings: { free_shipping_min: 0 }, isEn: req.locale === 'en',
     });
   }
   const state = computeCartTotals(req);
