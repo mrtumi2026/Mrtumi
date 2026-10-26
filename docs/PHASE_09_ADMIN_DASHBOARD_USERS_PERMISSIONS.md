@@ -14,9 +14,9 @@
 ## Verification plan in the current branch
 
 - `tests/phase09-dashboard-mysql.test.js` now uses the full application HTTP stack with real MySQL role/grant rows and real password login. It covers dashboard, polling, popup, CSRF dismissal, assistant reporting, permitted/denied admin access, staff create/deactivate/session revocation, role creation/grant changes, malformed role input, permission catalog, audit access/integrity surface and unavailable provider responses.
-- Dashboard repository and prior summary HTTP behavior passed MySQL CI `40303959168` at the previous commit; that run predates migration `0008`, new guards, access-management routes and the expanded full-app tests. It is **not** verification of this sprint.
-- Local checks after the current edits: `npm run lint` — 676 checks passed; `npm test` — 53 tests, 45 passed, 0 failed, 8 local MySQL skips. These skips are not MySQL evidence.
-- The updated CI workflow and migration tests now expect eight migrations. A new live MySQL 8.0 CI run is required for the current commit before reporting this work as verified.
+- Full-stack MySQL 8.0 CI run [`40308315393`](https://github.com/mrtumi2026/Mrtumi/actions/runs/40308315393) passed on code commit `448d2e6a1c60b36422ba825f486a78eea872d58e`. It ran the updated migration up/status/down cycle and `npm test` with `MYSQL_TEST_REQUIRED=true` against the MySQL 8.0 service, including this sprint’s HTTP/RBAC/staff lifecycle tests. Earlier runs `40307130263`, `40307361892`, `40307569714`, `40307775782`, and `40308035675` failed during iterative test fixes; they were superseded by the passing run.
+- Local checks: `npm run lint` — 681 checks passed; `npm test` — 53 tests, 45 passed, 0 failed, 8 skipped because local MySQL is absent. Those local skips are not counted as runtime passes. The CI UI confirms the full MySQL test step passed but does not expose its TAP count in the retrieved run summary; no CI test/skip count is fabricated here.
+- CI’s MySQL service was live and the Phase 03, 05, 06, 08, and 09 MySQL-gated suites were enabled by the workflow environment. This verifies the implemented current code at the cited SHA; remaining Phase 09 owner/policy items still prevent phase completion.
 
 ## Explicitly unresolved / owner decision needed
 
