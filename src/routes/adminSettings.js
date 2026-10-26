@@ -2,6 +2,9 @@ const express = require('express');
 const db = require('../db/database');
 const { requireAdmin } = require('../middleware/auth');
 const upload = require('../middleware/upload');
+const { env } = require('../config/env');
+const settingsRepository = require('../repositories/settingsRepository');
+const { asyncHandler } = require('../utils/asyncHandler');
 
 const router = express.Router();
 router.use('/admin', requireAdmin);
@@ -170,20 +173,26 @@ router.post('/admin/sms/custom-send', (req, res) => {
 });
 
 // ─── Universal Key-Value Settings Save Endpoint ───
-router.post('/admin/settings/save', upload.single('logo_file'), (req, res) => {
+router.post('/admin/settings/save', upload.single('logo_file'), asyncHandler(async (req, res) => {
   const redirectTo = req.body._redirect || req.get('Referrer') || '/admin/settings/manage';
-  for (const [k, v] of Object.entries(req.body)) {
-    if (k.startsWith('_')) continue;
-    db.setSetting(k, v);
-  }
+  const changes = Object.fromEntries(Object.entries(req.body).filter(([key]) => !key.startsWith('_')));
   if (req.file) {
     const uploadedPath = `/uploads/custom/${req.file.filename}`;
-    db.setSetting('logo_dark', uploadedPath);
-    db.setSetting('logo_light', uploadedPath);
+    changes.logo_dark = uploadedPath;
+    changes.logo_light = uploadedPath;
   }
-  req.flash('success', 'সেটিংস সফলভাবে সংরক্ষিত হয়েছে!');
+  if (Object.keys(changes).length && env.db.client === 'mysql') {
+    await settingsRepository.saveSettings(changes, {
+      id: req.adminUser?.id || req.session?.adminUser?.id || null,
+      ip: req.ip || '',
+      userAgent: req.get('user-agent') || '',
+    });
+  } else if (Object.keys(changes).length) {
+    for (const [key, value] of Object.entries(changes)) db.setSetting(key, value);
+  }
+  req.flash('success', 'সেটিংস সফলভাবে সংরক্ষণ করা হয়েছে!');
   res.redirect(redirectTo);
-});
+}));
 
 // ─── Site Settings & API Integrations Pages ───
 const settingsPageMap = {

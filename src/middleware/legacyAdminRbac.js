@@ -64,6 +64,7 @@ function policyForAdminRoute(method, pathname) {
   if (has(path,'/admin/reports')) return { key:'reports.view', audit:false, auditRead:true };
   if (has(path,'/admin/error-log')) return { key:write?'error_logs.manage':'error_logs.view', audit:write };
   if (has(path,'/admin/clear-cache')) return { key:'settings.manage', audit:write };
+  if (path==='/admin/settings/save' && write) return { key:'settings.manage', audit:false };
   if (has(path,'/admin/campaign')) return { key:'content.manage', audit:write };
   if (has(path,'/admin/settings') || has(path,'/admin/sale-notification') || has(path,'/admin/contact/manage') || has(path,'/admin/email-setting') || has(path,'/admin/fraud-settings') || has(path,'/admin/order-restriction-settings') || has(path,'/admin/facebook-capi') || has(path,'/admin/gemini-ai') || has(path,'/admin/social-login') || has(path,'/admin/cron-jobs') || has(path,'/admin/tag-manager') || has(path,'/admin/pixels') || has(path,'/admin/tiktok-pixels') || has(path,'/admin/facebook-page') || has(path,'/admin/popup') || has(path,'/admin/seo-settings') || has(path,'/admin/sitemap') || has(path,'/admin/license-info') || has(path,'/admin/updates')) return { key:'settings.manage', audit:write };
 

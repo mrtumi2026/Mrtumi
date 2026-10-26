@@ -75,7 +75,7 @@ CI uses a disposable-service setting for the demonstrated MySQL binlog trigger-c
 
 ## Next-sprint legacy handler test and MySQL migration order
 
-Source of truth: [`PHASE_09_LEGACY_ADMIN_ROUTE_INVENTORY.md`](PHASE_09_LEGACY_ADMIN_ROUTE_INVENTORY.md), currently 252 unique active endpoints from 261 registrations. This priority order is for engineering work only; it does not approve operational grants. Existing Phase 06/08/09 MySQL repositories/tests should be preserved. Many older route handlers still use the synchronous SQLite facade and are not ready for successful MySQL-mode business tests.
+Source of truth: [`PHASE_09_LEGACY_ADMIN_ROUTE_INVENTORY.md`](PHASE_09_LEGACY_ADMIN_ROUTE_INVENTORY.md), currently 252 unique active endpoints from 261 registrations. This priority order is for engineering work only; it does not approve operational grants. Existing Phase 06/08/09 MySQL repositories/tests should be preserved. Many older route handlers still use the synchronous SQLite facade and are not ready for successful MySQL-mode business tests. On 2026-10-26, `POST /admin/settings/save` was selected as a bounded P4 migration; its transactional settings persistence and authenticated success/denial tests are implemented, with exact-SHA MySQL CI still pending. Other P0–P5 operations remain unverified or unimplemented.
 
 | Priority | Scope / route families | Why first | Acceptance evidence for each operation family |
 |---|---|---|---|
@@ -96,7 +96,7 @@ For each endpoint in a priority family, track one row in a sprint issue/test map
 - Retention/archive/deletion/legal-hold: **BLOCKED — owner policy pending; no purge configured**.
 - Vendor/reseller scope: **BLOCKED — owner confirmation pending; current admin surface is platform-wide**.
 - Production DB privilege/account split: **UNVERIFIED — approved read-only evidence collection plan only**.
-- Remaining legacy authorized success paths/MySQL migration: **IN PROGRESS — prioritize P0→P5**.
+- Remaining legacy authorized success paths/MySQL migration: **IN PROGRESS — only `POST /admin/settings/save` has been selected in this incremental slice; its MySQL CI is pending; prioritize the remaining P0→P5 families.**
 - Phase 09: **IN PROGRESS / NOT COMPLETE**. Phase 07 and Phase 08 remain **IN PROGRESS / NOT COMPLETE**.
 
 ## Incomplete request item

@@ -162,6 +162,27 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     assert.equal(Number(triggerCount.n),2);
   });
 
+  test('legacy general settings save uses transactional MySQL persistence and value-free audit',async(t)=>{
+    if(!MYSQL_HOST)return t.skip(SKIP);
+    const key=`p09_route_setting_${Date.now()}`;
+    const secret='phase09-sensitive-test-value';
+    assert.equal((await request('/admin/settings/save',{method:'POST',cookie:dashboardCookie,token:'',body:{[key]:secret,_redirect:'/admin/settings/manage'}})).status,403,'settings writes require CSRF');
+    const noGrantCookie=await login(noGrantEmail); const noGrantCsrf=await fetchCsrf(noGrantCookie);
+    assert.equal((await request('/admin/settings/save',{method:'POST',cookie:noGrantCookie,token:noGrantCsrf,body:{[key]:secret}})).status,403,'settings writes require settings.manage');
+    try {
+      const response=await request('/admin/settings/save',{method:'POST',body:{[key]:secret,_redirect:'/admin/settings/manage'}});
+      assert.equal(response.status,302); assert.equal(response.headers.get('location'),'/admin/settings/manage');
+      const stored=await db.queryOne('SELECT setting_value FROM settings WHERE setting_key=?',[key]);
+      assert.equal(stored.setting_value,secret);
+      const audit=await db.queryOne("SELECT action,entity_type,after_json FROM audit_logs WHERE actor_id=? AND action='admin.settings.updated' AND entity_id='legacy_form' ORDER BY id DESC LIMIT 1",[dashboardUserId]);
+      assert.ok(audit); assert.equal(audit.entity_type,'settings');
+      assert.deepEqual(JSON.parse(audit.after_json).keys,[key]);
+      assert.doesNotMatch(audit.after_json, new RegExp(secret));
+    } finally {
+      await db.execute('DELETE FROM settings WHERE setting_key=?',[key]);
+    }
+  });
+
   test('all unique non-exempt legacy admin method/path pairs deny a logged-in zero-grant staff account',async(t)=>{
     if(!MYSQL_HOST)return t.skip(SKIP);
     const deniedCookie=await login(noGrantEmail);

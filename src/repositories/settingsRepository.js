@@ -1,7 +1,7 @@
 'use strict';
 
 const { env } = require('../config/env');
-const { getPool, createQueryClient } = require('../db/mysqlPool');
+const { getPool, createQueryClient, withTransaction } = require('../db/mysqlPool');
 const sqliteDb = require('../db/database');
 
 const DEFAULT_SETTINGS = Object.freeze({
@@ -81,9 +81,53 @@ async function setSetting(key, value, poolOverride = null, config = env) {
   return { key: cleanKey, value: strVal };
 }
 
+/** Atomically persists a legacy settings form and an audit event on MySQL. Values are
+ * intentionally excluded from audit metadata because settings may contain credentials. */
+async function saveSettings(values, actor = {}, poolOverride = null, config = env) {
+  if (!isMysqlMode(config) && !poolOverride) {
+    for (const [key, value] of Object.entries(values || {})) {
+      await setSetting(key, value);
+    }
+    return { keys: Object.keys(values || {}) };
+  }
+
+  if (!values || typeof values !== 'object' || Array.isArray(values)) {
+    throw new TypeError('Settings must be provided as an object.');
+  }
+  const entries = Object.entries(values);
+  if (!entries.length || entries.length > 100) throw new TypeError('Settings form must contain between 1 and 100 values.');
+  let totalBytes = 0;
+  const normalized = entries.map(([rawKey, rawValue]) => {
+    const key = String(rawKey);
+    if (!/^[A-Za-z0-9_.-]{1,128}$/.test(key) || key.startsWith('_')) throw new TypeError('Settings form contains an invalid key.');
+    if (rawValue !== null && !['string', 'number', 'boolean'].includes(typeof rawValue)) throw new TypeError('Settings values must be scalar form values.');
+    const value = String(rawValue ?? '');
+    totalBytes += Buffer.byteLength(key) + Buffer.byteLength(value);
+    return [key, value];
+  }).sort(([a], [b]) => a.localeCompare(b));
+  if (totalBytes > 262144) throw new TypeError('Settings form exceeds the allowed size.');
+
+  const activePool = poolOverride || getPool();
+  await withTransaction(async (tx) => {
+    for (const [key, value] of normalized) {
+      await tx.execute(
+        'INSERT INTO `settings` (`setting_key`, `setting_value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `setting_value` = VALUES(`setting_value`)',
+        [key, value]
+      );
+    }
+    await tx.execute(
+      `INSERT INTO \`audit_logs\` (\`actor_type\`, \`actor_id\`, \`action\`, \`entity_type\`, \`entity_id\`, \`after_json\`, \`ip_address\`, \`user_agent\`)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ['admin', actor.id || null, 'admin.settings.updated', 'settings', 'legacy_form', JSON.stringify({ keys: normalized.map(([key]) => key) }), actor.ip || '', actor.userAgent || '']
+    );
+  }, { pool: activePool });
+  return { keys: normalized.map(([key]) => key) };
+}
+
 module.exports = {
   DEFAULT_SETTINGS,
   getAllSettings,
   getSetting,
   setSetting,
+  saveSettings,
 };

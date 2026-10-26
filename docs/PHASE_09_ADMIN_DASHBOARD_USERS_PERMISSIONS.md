@@ -1,6 +1,6 @@
 # Phase 09 — Admin Dashboard, RBAC & Audit
 
-**Status: `IN PROGRESS / NOT COMPLETE`.** The technical route-policy, audit-trigger and MySQL 8.0 migration/test work passes the latest recorded CI run; owner decisions and remaining legacy-handler acceptance work still block closure. Operations must remain blocked until grants and retention decisions are approved. No role grants are assigned automatically.
+**Status: `IN PROGRESS / NOT COMPLETE`.** Route-policy, audit-trigger, MySQL 8.0 migration/test baselines pass their recorded CI runs. An incremental migration of `POST /admin/settings/save` to the transactional MySQL settings repository has been implemented on the active sprint branch; its exact-SHA MySQL CI result is pending. Owner decisions and the broad remaining legacy-handler acceptance work still block closure. Operations must remain blocked until grants and retention decisions are approved. No role grants are assigned automatically.
 
 ## Route inventory and authorization
 
@@ -10,6 +10,7 @@
 - The automated policy matrix checks allow/deny for every inventory endpoint. The MySQL HTTP suite sends each non-exempt endpoint as an authenticated zero-grant staff account and expects 403; login, root redirect and self-logout are intentionally exempt. It also covers representative authorized routes, absent grants, inactive staff/session revocation, CSRF rejection, and separate `staff.assign_role` / `roles.grants.manage` controls. This is not a claim that every legacy handler has an authorized business-success test.
 - Existing vendor/reseller admin records are intentionally platform-wide views, not tenant-scoped admin APIs. Vendor/reseller self-service routes use separate portal auth and are outside the `/admin` inventory. Tenant-scoped behavior is not claimed; the owner must confirm whether platform-wide admin scope is intended.
 - **Persistence limitation:** many older route handlers still call the prohibited synchronous SQLite facade. A permission-approved request to such a handler may reach the handler and return the existing sanitized MySQL-mode 503 rather than complete the business operation. Route-policy coverage does not claim that all legacy handlers are MySQL-migrated or operationally ready.
+- **Incremental acceptance work (2026-10-26):** `POST /admin/settings/save` now uses a MySQL InnoDB transaction to upsert scalar setting values and append `admin.settings.updated` in the same transaction. Audit metadata records changed key names only (never values); the response remains a redirect to the submitted/referrer destination. MySQL path rejects malformed/oversized input. SQLite path remains the existing non-production compatibility path. Authenticated success, CSRF denial, missing-grant denial, persistence, redirect and value-free audit are added to the MySQL 8.0 HTTP test; CI verification for this branch revision is pending. This does not migrate other `/admin/settings/*` handlers, integrations, or the remaining admin routes.
 
 ## Audit-log integrity
 
