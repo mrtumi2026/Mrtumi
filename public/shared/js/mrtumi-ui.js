@@ -1,8 +1,70 @@
 /* ==========================================================================
-   MR. TUMI GROCERY & GIFT — SHARED ACCESSIBILITY, SIDEBAR & FORM UI HELPERS
+   MR. TUMI GROCERY & GIFT — SHARED ACCESSIBILITY, CSRF, SIDEBAR & FORM HELPERS
    ========================================================================== */
 (function () {
   'use strict';
+
+  function getCsrfToken() {
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? (meta.getAttribute('content') || '') : '';
+  }
+
+  function injectCsrfIntoForms(root) {
+    var token = getCsrfToken();
+    if (!token) return;
+    var scope = root || document;
+    var forms = scope.querySelectorAll ? scope.querySelectorAll('form') : [];
+    forms.forEach(function (form) {
+      var method = (form.getAttribute('method') || 'get').toLowerCase();
+      if (method === 'get') return;
+      var existing = form.querySelector('input[name="_csrf"]');
+      if (!existing) {
+        var inp = document.createElement('input');
+        inp.type = 'hidden';
+        inp.name = '_csrf';
+        inp.value = token;
+        form.appendChild(inp);
+      } else if (!existing.value) {
+        existing.value = token;
+      }
+
+      // For multipart forms, also append _csrf query fallback if not present
+      var enc = (form.getAttribute('enctype') || '').toLowerCase();
+      if (enc === 'multipart/form-data') {
+        var act = form.getAttribute('action') || '';
+        if (act.indexOf('_csrf=') === -1) {
+          var sep = act.indexOf('?') === -1 ? '?' : '&';
+          form.setAttribute('action', act + sep + '_csrf=' + encodeURIComponent(token));
+        }
+      }
+    });
+  }
+
+  // Wrap same-origin non-GET fetch calls so X-CSRF-Token is always sent
+  if (typeof window.fetch === 'function' && !window.__mrtumiCsrfWrapped) {
+    window.__mrtumiCsrfWrapped = true;
+    var origFetch = window.fetch.bind(window);
+    window.fetch = function (input, init) {
+      var token = getCsrfToken();
+      if (token) {
+        var urlStr = typeof input === 'string' ? input : (input && input.url) || '';
+        var isSameOrigin =
+          !urlStr ||
+          urlStr.charAt(0) === '/' ||
+          urlStr.indexOf(window.location.origin) === 0;
+        var method = ((init && init.method) || (input && input.method) || 'GET').toUpperCase();
+        if (isSameOrigin && method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+          init = Object.assign({}, init || {});
+          var headers = new Headers(init.headers || {});
+          if (!headers.has('X-CSRF-Token')) {
+            headers.set('X-CSRF-Token', token);
+          }
+          init.headers = headers;
+        }
+      }
+      return origFetch(input, init);
+    };
+  }
 
   function closeMobilePanels() {
     document.body.classList.remove('sidebar-mobile-open');
@@ -14,6 +76,19 @@
   }
 
   document.addEventListener('DOMContentLoaded', function () {
+    injectCsrfIntoForms(document);
+
+    // Ensure dynamically constructed forms also carry _csrf before submission
+    document.addEventListener(
+      'submit',
+      function (e) {
+        if (e.target && e.target.tagName === 'FORM') {
+          injectCsrfIntoForms(e.target.parentNode || document);
+        }
+      },
+      true
+    );
+
     // 1. Mobile sidebar backdrop tap-to-close (Admin, Vendor, Reseller portals)
     var backdrop = document.getElementById('mtSidebarBackdrop');
     if (backdrop) {

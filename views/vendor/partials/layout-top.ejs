@@ -3,6 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="pb-sid" content="<%= typeof sessionToken !== 'undefined' ? sessionToken : '' %>" />
+    <meta name="csrf-token" content="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>" />
     <title><%= typeof title !== 'undefined' ? title : t('vendor.portalName') %> — <%= siteSettings.site_name %></title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="shortcut icon" href="<%= siteSettings.favicon || '/uploads/brand/mrtumi-placeholder-favicon.svg' %>" />

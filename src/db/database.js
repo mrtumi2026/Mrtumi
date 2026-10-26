@@ -638,6 +638,131 @@ function initializeDatabase() {
     exec("ALTER TABLE resellers ADD COLUMN password_hash TEXT DEFAULT '';");
   } catch (_e) {}
 
+  // Safe additive non-production SQLite parity columns & tables for Phases 06–18
+  const additiveAlterStatements = [
+    "ALTER TABLE products ADD COLUMN barcode TEXT DEFAULT NULL;",
+    "ALTER TABLE products ADD COLUMN childcategory_id INTEGER DEFAULT NULL;",
+    "ALTER TABLE products ADD COLUMN product_type TEXT DEFAULT 'grocery';",
+    "ALTER TABLE products ADD COLUMN name_en TEXT DEFAULT '';",
+    "ALTER TABLE products ADD COLUMN short_desc_en TEXT DEFAULT '';",
+    "ALTER TABLE products ADD COLUMN description_en TEXT DEFAULT '';",
+    "ALTER TABLE products ADD COLUMN stock_reserved INTEGER DEFAULT 0;",
+    "ALTER TABLE products ADD COLUMN vendor_stock_on_hand INTEGER DEFAULT 0;",
+    "ALTER TABLE products ADD COLUMN vendor_stock_reserved INTEGER DEFAULT 0;",
+    "ALTER TABLE products ADD COLUMN low_stock_threshold INTEGER DEFAULT 10;",
+    "ALTER TABLE products ADD COLUMN is_gift_eligible INTEGER DEFAULT 0;",
+    "ALTER TABLE products ADD COLUMN is_archived INTEGER DEFAULT 0;",
+    "ALTER TABLE suppliers ADD COLUMN supplier_code TEXT DEFAULT NULL;",
+    "ALTER TABLE suppliers ADD COLUMN contact_person TEXT DEFAULT '';",
+    "ALTER TABLE suppliers ADD COLUMN email TEXT DEFAULT '';",
+    "ALTER TABLE suppliers ADD COLUMN tax_or_trade_id TEXT DEFAULT '';",
+    "ALTER TABLE suppliers ADD COLUMN notes TEXT DEFAULT '';",
+    "ALTER TABLE purchases ADD COLUMN subtotal REAL DEFAULT 0;",
+    "ALTER TABLE purchases ADD COLUMN discount REAL DEFAULT 0;",
+    "ALTER TABLE purchases ADD COLUMN shipping_charge REAL DEFAULT 0;",
+    "ALTER TABLE purchases ADD COLUMN note TEXT DEFAULT '';",
+    "ALTER TABLE purchases ADD COLUMN cancelled_reason TEXT DEFAULT '';",
+    "ALTER TABLE purchases ADD COLUMN created_by_user_id INTEGER DEFAULT NULL;",
+    "ALTER TABLE categories ADD COLUMN name_en TEXT DEFAULT '';",
+    "ALTER TABLE subcategories ADD COLUMN name_en TEXT DEFAULT '';",
+    "ALTER TABLE childcategories ADD COLUMN name_en TEXT DEFAULT '';",
+    "ALTER TABLE brands ADD COLUMN name_en TEXT DEFAULT '';",
+    "ALTER TABLE coupons ADD COLUMN max_discount REAL DEFAULT NULL;",
+    "ALTER TABLE coupons ADD COLUMN usage_limit INTEGER DEFAULT NULL;",
+  ];
+  for (const stmt of additiveAlterStatements) {
+    try {
+      exec(stmt);
+    } catch (_e) {
+      // Column already exists
+    }
+  }
+
+  exec(`
+    CREATE TABLE IF NOT EXISTS product_variants (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_id INTEGER NOT NULL,
+      variant_sku TEXT NOT NULL UNIQUE,
+      size_label TEXT DEFAULT '',
+      color_label TEXT DEFAULT '',
+      price REAL NOT NULL DEFAULT 0,
+      stock_on_hand INTEGER NOT NULL DEFAULT 0,
+      stock_reserved INTEGER NOT NULL DEFAULT 0,
+      status INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now', 'localtime'))
+    );
+
+    CREATE TABLE IF NOT EXISTS purchase_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      purchase_id INTEGER NOT NULL,
+      product_id INTEGER NOT NULL,
+      variant_id INTEGER DEFAULT NULL,
+      ordered_qty INTEGER NOT NULL,
+      received_qty INTEGER NOT NULL DEFAULT 0,
+      returned_qty INTEGER NOT NULL DEFAULT 0,
+      unit_cost REAL NOT NULL DEFAULT 0,
+      line_total REAL NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS purchase_receipts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      purchase_id INTEGER NOT NULL,
+      receipt_no TEXT NOT NULL UNIQUE,
+      idempotency_key TEXT NOT NULL UNIQUE,
+      request_hash TEXT NOT NULL DEFAULT '',
+      event_type TEXT NOT NULL DEFAULT 'receipt',
+      total_qty INTEGER NOT NULL DEFAULT 0,
+      total_value REAL NOT NULL DEFAULT 0,
+      note TEXT NOT NULL DEFAULT '',
+      received_by_user_id INTEGER DEFAULT NULL,
+      created_at TEXT DEFAULT (datetime('now', 'localtime'))
+    );
+
+    CREATE TABLE IF NOT EXISTS stock_ledger (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_id INTEGER NOT NULL,
+      variant_id INTEGER DEFAULT NULL,
+      stock_pool TEXT NOT NULL DEFAULT 'warehouse',
+      vendor_id INTEGER DEFAULT NULL,
+      movement_type TEXT NOT NULL,
+      qty_delta INTEGER NOT NULL,
+      balance_after INTEGER NOT NULL,
+      unit_cost REAL DEFAULT NULL,
+      reference_type TEXT DEFAULT NULL,
+      reference_id INTEGER DEFAULT NULL,
+      reason TEXT NOT NULL DEFAULT '',
+      actor_user_id INTEGER DEFAULT NULL,
+      created_at TEXT DEFAULT (datetime('now', 'localtime'))
+    );
+
+    CREATE TABLE IF NOT EXISTS stock_reservations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_id INTEGER NOT NULL,
+      variant_id INTEGER DEFAULT NULL,
+      stock_pool TEXT NOT NULL DEFAULT 'warehouse',
+      qty INTEGER NOT NULL,
+      reservation_key TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      expires_at TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now', 'localtime')),
+      UNIQUE(reservation_key, product_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      actor_type TEXT NOT NULL DEFAULT 'system',
+      actor_id INTEGER DEFAULT NULL,
+      action TEXT NOT NULL,
+      entity_type TEXT NOT NULL DEFAULT '',
+      entity_id TEXT DEFAULT NULL,
+      before_json TEXT DEFAULT NULL,
+      after_json TEXT DEFAULT NULL,
+      ip_address TEXT DEFAULT '',
+      user_agent TEXT DEFAULT '',
+      created_at TEXT DEFAULT (datetime('now', 'localtime'))
+    );
+  `);
+
   if (env.seedDemoData) {
     seedIfEmpty();
   }

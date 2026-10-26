@@ -47,6 +47,10 @@ async function adjustProductStockAtomically(
       throw new NotFoundError(`Product #${productId} not found.`);
     }
 
+    if (stockPool === 'vendor' && !product.vendor_id) {
+      throw new ValidationError(`Product #${productId} is not assigned to a vendor stock pool.`);
+    }
+
     const col = stockPool === 'warehouse' ? 'stock_on_hand' : 'vendor_stock_on_hand';
     const currentBalance = Number(product[col]);
     const nextBalance = currentBalance + qtyDelta;

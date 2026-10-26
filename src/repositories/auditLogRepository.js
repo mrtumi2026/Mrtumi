@@ -29,14 +29,33 @@ async function recordAuditLog(
   poolOverride = null,
   config = env
 ) {
+  const safeBefore = beforeState ? JSON.stringify(logger.redactValue(beforeState)) : null;
+  const effectiveAfter = afterState ?? metadata;
+  const safeAfter = effectiveAfter ? JSON.stringify(logger.redactValue(effectiveAfter)) : null;
+
   if (!isMysqlMode(config) && !poolOverride) {
+    try {
+      sqliteDb.run(
+        `INSERT INTO audit_logs
+          (actor_type, actor_id, action, entity_type, entity_id, before_json, after_json, ip_address, user_agent)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        String(actorType).slice(0, 32),
+        actorId ?? null,
+        String(action).slice(0, 120),
+        String(entityType || '').slice(0, 80),
+        entityId !== null && entityId !== undefined ? String(entityId).slice(0, 64) : null,
+        safeBefore,
+        safeAfter,
+        String(ipAddress || '').slice(0, 64),
+        String(userAgent || '').slice(0, 255)
+      );
+    } catch (_e) {
+      // Never throw on audit log fallback
+    }
     return;
   }
 
   const client = getClient(poolOverride);
-  const safeBefore = beforeState ? JSON.stringify(logger.redactValue(beforeState)) : null;
-  const effectiveAfter = afterState ?? metadata;
-  const safeAfter = effectiveAfter ? JSON.stringify(logger.redactValue(effectiveAfter)) : null;
 
   await client.execute(
     `INSERT INTO \`audit_logs\`

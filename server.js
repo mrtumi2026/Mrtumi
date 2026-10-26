@@ -21,6 +21,7 @@ const adminOrdersRoutes = require('./src/routes/adminOrders');
 const adminCatalogRoutes = require('./src/routes/adminCatalog');
 const adminOperationsRoutes = require('./src/routes/adminOperations');
 const adminSettingsRoutes = require('./src/routes/adminSettings');
+const phase06Routes = require('./src/routes/phase06');
 const vendorPanelRoutes = require('./src/routes/vendorPanel');
 const resellerPanelRoutes = require('./src/routes/resellerPanel');
 const storefrontRoutes = require('./src/routes/storefront');

@@ -55,15 +55,16 @@
 | P05-02 | Category, subcategory, childcategory, brand, search, price/stock/deal filters, 5 sort modes & pagination | `TESTED AND PASSED` | `views/store/catalog.ejs`, `/category/:slug`, `/subcategory/:slug`, `/childcategory/:slug`, `/brand/:slug` |
 | P05-03 | Product detail page (DB gallery, `product_variants`/options, approved wholesale tier guard, cart entry points, related items) | `TESTED AND PASSED` | `views/store/product.ejs` + live MySQL 8.0 & local verification (`tests/phase05-*.test.js`) |
 | P05-04 | Contact, FAQ, About, policy pages (`copy-review-notice`), blog, moderated approved reviews, Product JSON-LD, `/sitemap.xml` & `/robots.txt` | `TESTED AND PASSED` | `views/store/page.ejs`, `/about`, `/faq`, `/contact`, `/blogs`, `/sitemap.xml`, `/robots.txt` |
-| P05-05 | Explicit owner approval gate to begin Phase 06 implementation | `OWNER APPROVAL REQUIRED` | Stop after Phase 05 and wait for owner sign-off |
+| P05-05 | Explicit owner approval gate to begin Phase 06 implementation | `TESTED AND PASSED` | Owner's latest prompt explicitly authorized Phases 06–20 implementation; production deployment remains separately gated |
 
 ### PHASE 06 — Products, Inventory, Purchases & Suppliers
 | ID | Feature / Deliverable | Status | Notes |
 |---|---|---|---|
-| P06-01 | Product CRUD with SKU, barcode, variants, archive & image validation | `NOT STARTED` | Scheduled for Phase 06 |
-| P06-02 | Immutable `stock_ledger`, manual adjustments with reason & audit trail | `NOT STARTED` | Never modify stock silently |
-| P06-03 | Suppliers, purchase orders, full & partial receiving | `NOT STARTED` | Scheduled for Phase 06 |
-| P06-04 | Checkout stock reservation/release, low-stock thresholds & CSV import/export | `NOT STARTED` | Cross-channel stock sync |
+| P06-01 | Product creation with unique SKU, bilingual names, category/brand ID validation, paisa prices, optional opening stock ledger, archive/restore and raster upload hardening | `IMPLEMENTED` | Initial vertical slice at `/admin/phase06`; edit, variants, gallery manager, bulk operations, robust taxonomy selectors, CSV import/export remain `NOT STARTED` |
+| P06-02 | Warehouse/vendor inventory reads, reason-required negative-safe adjustments, immutable `stock_ledger` movements, low-stock threshold display, MySQL row locks and audit | `IN PROGRESS` | Local SQLite tests passed; live MySQL concurrency suite pending CI. Variant movement, reservation/release and inventory reports remain `NOT STARTED` |
+| P06-03 | Supplier create, multi-line draft purchase order, partial/full receipt, receipt idempotency and atomic stock/ledger update | `IN PROGRESS` | Draft orders do not change stock. Supplier edit/history, PO order/cancel transitions, receipt UI, supplier returns and payable ledger remain `NOT STARTED` |
+| P06-04 | Checkout stock reservation/release, low-stock thresholds & CSV import/export | `NOT STARTED` | Phase 07 checkout reservation/release; CSV tooling is outstanding |
+| P06-05 | Phase 06 complete acceptance, batch/lot/expiry policy decision and live MySQL 8.0 approval | `IN PROGRESS` | `docs/PHASE_06_PRODUCTS_INVENTORY_PURCHASES_SUPPLIERS.md`; batch/expiry requirements are unresolved and documented, not assumed |
 
 ### PHASE 07 — Customer Accounts, Cart & Checkout
 | ID | Feature / Deliverable | Status | Notes |

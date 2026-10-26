@@ -3,6 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="pb-sid" content="<%= typeof sessionToken !== 'undefined' ? sessionToken : '' %>" />
+    <meta name="csrf-token" content="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>" />
     <title><%= typeof title !== 'undefined' ? title : (typeof t === 'function' ? t('admin.menu.dashboard') : 'Dashboard') %> — <%= siteSettings.site_name %></title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />

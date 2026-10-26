@@ -22,6 +22,7 @@ Bilingual (**Bangla `bn` + English `en`**) e-commerce, wholesale, multivendor, r
 | [`docs/PHASE_03_DB_TRANSITION.md`](docs/PHASE_03_DB_TRANSITION.md) | Staged SQLite-to-MySQL caller inventory (`411` remaining route calls across Phases 06–18) |
 | [`docs/PHASE_04_UI_DESIGN_SYSTEM.md`](docs/PHASE_04_UI_DESIGN_SYSTEM.md) | Phase 04 frontend audit baseline, WCAG AA design tokens, temporary logo placeholders & `bn`/`en` i18n architecture |
 | [`docs/PHASE_05_CUSTOMER_STOREFRONT.md`](docs/PHASE_05_CUSTOMER_STOREFRONT.md) | Phase 05 storefront audit, MySQL-first `storefrontRepository.js`, deferred SQLite route map & SEO/catalogue spec |
+| [`docs/PHASE_06_PRODUCTS_INVENTORY_PURCHASES_SUPPLIERS.md`](docs/PHASE_06_PRODUCTS_INVENTORY_PURCHASES_SUPPLIERS.md) | Phase 06 implementation status, migration, tested vertical slice, gaps and lot/expiry decision tracking |
 
 ---
 
