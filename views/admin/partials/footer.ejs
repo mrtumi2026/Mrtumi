@@ -162,6 +162,30 @@
     </script>
     <% } %>
 
+    <!-- Global legacy-admin CSRF token binding; server-side checks remain authoritative. -->
+    <script>
+      (function() {
+        var node=document.querySelector('meta[name="csrf-token"]'); var token=node?node.content:'';
+        var unsafe=function(method){return /^(POST|PUT|PATCH|DELETE)$/i.test(method||'GET');};
+        document.addEventListener('submit',function(event){
+          var form=event.target;
+          if(!form||!unsafe(form.method)||!token||form.querySelector('input[name="_csrf"]'))return;
+          var hidden=document.createElement('input');hidden.type='hidden';hidden.name='_csrf';hidden.value=token;form.appendChild(hidden);
+        },true);
+        var nativeFetch=window.fetch.bind(window);
+        window.fetch=function(input,init){
+          init=init||{};var method=init.method||(input&&input.method)||'GET';
+          var url=typeof input==='string'?input:(input&&input.url)||'';
+          if(unsafe(method)&&token&&(!url||url.indexOf('://')<0||url.indexOf(location.origin)===0)){
+            var headers=new Headers(init.headers||(input&&input.headers)||{});
+            if(!headers.has('X-CSRF-Token'))headers.set('X-CSRF-Token',token);
+            init.headers=headers;
+          }
+          return nativeFetch(input,init);
+        };
+      })();
+    </script>
+
     <!-- Slide-Over & Real-Time New Order Polling -->
     <script>
       (function() {

@@ -332,10 +332,12 @@ router.post('/admin/gemini-chat/send', requirePermission('assistant.report'), re
   return res.json({ success: true, reply });
 }));
 
-router.post('/admin/gemini-chat/clear', requirePermission('assistant.report'), requireCsrf, (req, res) => {
+router.post('/admin/gemini-chat/clear', requirePermission('assistant.report'), requireCsrf, asyncHandler(async (req, res) => {
+  const clearedCount=Array.isArray(req.session.geminiHistory)?req.session.geminiHistory.length:0;
+  await recordAuditLog({actorType:'admin',actorId:req.adminUser?.id,action:'admin.assistant.context.cleared',entityType:'admin_session',entityId:req.sessionID,metadata:{clearedCount},ipAddress:req.ip,userAgent:req.get('user-agent')||''});
   req.session.geminiHistory = [];
-  res.json({ success: true });
-});
+  return res.json({ success: true });
+}));
 
 router.post('/admin/gemini-chat/refresh-context', requirePermission('assistant.report'), requireCsrf, (_req, res) => {
   res.json({ success: true, message: 'ডাটাবেস কনটেক্সট রিফ্রেশ হয়েছে।' });

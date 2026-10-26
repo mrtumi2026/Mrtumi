@@ -579,7 +579,8 @@ router.get('/admin/reports/:type', (req, res) => {
 });
 
 // ─── Clear Cache & Error Log ───
-router.get('/admin/clear-cache', (req, res) => {
+router.get('/admin/clear-cache', (_req,res) => res.status(405).send('Use the CSRF-protected POST form.'));
+router.post('/admin/clear-cache', (req, res) => {
   db.run('INSERT INTO error_logs (level, message, context) VALUES (?, ?, ?)', 'INFO', 'Application & template cache cleared by Admin', 'cache');
   req.flash('success', 'সিস্টেম ক্যাশ সফলভাবে ক্লিয়ার করা হয়েছে!');
   res.redirect(req.get('Referrer') || '/admin/dashboard');

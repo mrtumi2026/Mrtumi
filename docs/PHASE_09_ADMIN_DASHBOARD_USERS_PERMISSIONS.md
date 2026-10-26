@@ -1,34 +1,61 @@
-# Phase 09 — Admin Dashboard, Users & Permissions
+# Phase 09 — Admin Dashboard, RBAC & Audit
 
-**Status: `IN PROGRESS`.** This sprint adds an additive permission catalog migration and protected MySQL-backed access-management routes. No role grants are assigned automatically. Current changes require a fresh live MySQL 8.0 CI run before their HTTP/migration acceptance can be called verified.
+**Status: `IN PROGRESS / NOT COMPLETE`.** The technical route-policy and append-only-DML work is implemented in this branch and awaits final live MySQL 8.0 CI on its resulting commit. Operations must remain blocked until grant and retention decisions are approved. No role grants are assigned automatically.
 
-## Implemented in the current sprint — verification pending
+## Route inventory and authorization
 
-- Migration `0008_phase09_admin_access` adds permission definitions for dashboard, order notifications, assistant reports, staff administration, staff-role assignment (`staff.assign_role`), role administration, separate permission-grant administration (`roles.grants.manage`), and audit-log reading. It does **not** assign grants. Separating role administration from role-grant administration prevents a role manager from automatically gaining privilege-assignment power. Its down migration removes only these definitions that are not referenced by a role, preserving in-use permission keys/grants.
-- Dashboard, provider widgets, order polling, popup visibility/dismissal, and assistant report routes use explicit server-side permission keys. Sensitive writes require CSRF. Assistant report use and popup dismissal are audited without storing the submitted prompt or order/customer data in the audit event.
-- Added `src/repositories/adminAccessRepository.js` and protected routes for staff listing/create/update/status, role listing/create/status/grant replacement, permission catalog read, and paginated audit-log read. Staff deactivation and profile/role changes revoke that user’s persisted web sessions. Passwords are bcrypt-hashed; responses omit hashes. Role grants are allow-listed against permission rows; Super Admin role grants cannot be edited by this workflow.
-- Legacy `/admin/users/manage`, `/admin/roles/manage`, and `/admin/permissions/manage` views now read from MySQL-backed repositories when the Phase 09 routes match first. Legacy user/role delete URLs perform safe deactivation, not hard deletion. Permission definitions are migration-managed rather than freely created/deleted through the old CRUD interface.
-- Sidebar entries for dashboard, assistant, staff, roles/permission catalog and audit-log access are filtered by effective grants. Other legacy admin navigation/routes still lack consistent granular coverage.
-- Audit logs have a permission-protected read path and no application edit/delete endpoints. The system does not yet enforce database-level append-only integrity against privileged direct SQL; Phase 09 is therefore not complete.
+- See [`PHASE_09_LEGACY_ADMIN_ROUTE_INVENTORY.md`](PHASE_09_LEGACY_ADMIN_ROUTE_INVENTORY.md): generated inventory of **259 registered admin method/path pairs**, including reads, writes, CSV reports, finance, staff, role, order, inventory, configuration, audit, and the settings route map. It records the server-side permission, risk, audit behavior, tests, and route status per entry. The 144 state-changing route declarations are enumerated separately by method.
+- `legacyAdminRbac` runs after session refresh and before route dispatch. Every authenticated `/admin` path except the login/root flow must resolve to a named policy; currently unmapped paths fail closed (even if a role has unrelated permission keys). Existing router-local `requireAdmin` and explicit dashboard/access/Phase 06/08 permission checks remain in place.
+- All authenticated admin POST/PUT/PATCH/DELETE requests require session-bound CSRF. The admin shell adds tokens to existing forms and same-origin `fetch`; login has an explicit CSRF guard; logout is POST + CSRF. The former state-changing `GET /admin/clear-cache` now returns 405, and the action is POST + CSRF.
+- The automated policy matrix checks allow/deny for every inventory route. The MySQL HTTP suite sends every inventoried method/path as an authenticated zero-grant staff account and expects 403. It also covers representative authorized routes, absent grants, inactive staff/session revocation, CSRF rejection, and the separated `staff.assign_role` / `roles.grants.manage` controls. This is not a claim that the business handler of every legacy endpoint has an end-to-end success test.
+- Existing vendor/reseller admin records are intentionally platform-wide views, not tenant-scoped admin APIs. Vendor/reseller self-service routes use separate portal auth and are outside the `/admin` inventory. Tenant-scoped behavior is not claimed; the owner must confirm whether platform-wide admin scope is intended.
+- **Persistence limitation:** many older route handlers still call the prohibited synchronous SQLite facade. A permission-approved request to such a handler may reach the handler and return the existing sanitized MySQL-mode 503 rather than complete the business operation. Route-policy coverage does not claim that all legacy handlers are MySQL-migrated or operationally ready.
 
-## Verification plan in the current branch
+## Audit-log integrity
 
-- `tests/phase09-dashboard-mysql.test.js` now uses the full application HTTP stack with real MySQL role/grant rows and real password login. It covers dashboard, polling, popup, CSRF dismissal, assistant reporting, permitted/denied admin access, staff create/deactivate/session revocation, role creation/grant changes, malformed role input, permission catalog, audit access/integrity surface and unavailable provider responses.
-- Full-stack MySQL 8.0 CI run [`40308315393`](https://github.com/mrtumi2026/Mrtumi/actions/runs/40308315393) passed on code commit `448d2e6a1c60b36422ba825f486a78eea872d58e`. It ran the updated migration up/status/down cycle and `npm test` with `MYSQL_TEST_REQUIRED=true` against the MySQL 8.0 service, including this sprint’s HTTP/RBAC/staff lifecycle tests. Earlier runs `40307130263`, `40307361892`, `40307569714`, `40307775782`, and `40308035675` failed during iterative test fixes; they were superseded by the passing run.
-- Local checks: `npm run lint` — 681 checks passed; `npm test` — 53 tests, 45 passed, 0 failed, 8 skipped because local MySQL is absent. Those local skips are not counted as runtime passes. The CI UI confirms the full MySQL test step passed but does not expose its TAP count in the retrieved run summary; no CI test/skip count is fabricated here.
-- CI’s MySQL service was live and the Phase 03, 05, 06, 08, and 09 MySQL-gated suites were enabled by the workflow environment. This verifies the implemented current code at the cited SHA; remaining Phase 09 owner/policy items still prevent phase completion.
+- Migration `0009_phase09_legacy_admin_audit` inserts permission definitions without role grants, and installs MySQL `BEFORE UPDATE` and `BEFORE DELETE` triggers on `audit_logs`. Ordinary UPDATE/DELETE DML is rejected with SQLSTATE `45000`; there are no application endpoints to edit/delete audit events. Direct-DML rejection and application 404/denial behavior are tested against MySQL 8.0.
+- Existing Phase 06/08/09 and dashboard audit writers remain (transactional coupling varies by route: Phase 08 and Phase 09 access-management writes are transactional; some Phase 06 writers run after the domain mutation). Other successful legacy admin mutations receive a minimized request event (method, path, permission, result; no request body). CSV report exports receive a minimized export event. Generic legacy auditing is not transactionally coupled to old callback-based writes; if its insert fails, the response is 503 and explicitly says the action may already have applied. Transactional access-management audit failure rolls back the staff/role change. Login success audit failure destroys the newly created session; failed logins remain denied if their audit insert fails.
+- **Limits:** triggers protect ordinary DML, not a privileged database operator with DDL/TRIGGER privileges. Such a principal can drop the triggers/table, truncate/restore data, or otherwise alter history. Production runtime `SHOW GRANTS` and migration/runtime account separation have not been inspected; least-privilege production database grants are therefore unverified and must be approved/verified operationally. No cryptographic hash chain or independent tamper-evident export was approved or added.
+- No retention, archive, deletion, or legal-hold behavior is implemented. Triggers deliberately prevent ordinary deletion; the down migration removes the triggers but does not delete historical rows.
 
-## Explicitly unresolved / owner decision needed
+## Safe provisioning and owner grant decision
 
-- **Permission assignment:** which existing staff roles/users should receive each new key (particularly `dashboard.view`, `staff.manage`, `roles.manage`, and `audit_logs.view`). No grant is seeded or assumed; owner or authorized Super Admin must assign least-privilege grants.
-- `P09-01` remains `IN PROGRESS` until the new full-stack MySQL HTTP suite passes and polling/popup/assistant behavior is evidenced on this commit.
-- `P09-02` remains `IN PROGRESS`: editing roles beyond grants, password reset workflow, broader user-management UX, all admin-route permission coverage, and owner-approved grants remain open.
-- `P09-03` remains `IN PROGRESS`: sidebar filtering covers only selected Phase 09 links; map and enforce every legacy admin navigation/route. Application-level audit immutability is not protection from direct privileged SQL; database-level protection and approved retention policy remain unresolved.
-- Tenant/vendor isolation is not applicable to the store-wide admin dashboard as currently designed; no vendor-specific dashboard is exposed by these routes.
-- Provider SMS/courier metrics remain explicit `503 unavailable`; no provider adapter, authorized credentials, or verified live account data exists.
+Migration `0008` and `0009` add definitions only. They assign **zero** permission grants. The code validates every requested permission key, records role-grant changes, prohibits changing Super Admin grants through staff routes, and requires both the role-management and separate grant-management permissions to replace role grants.
 
-## Phase 07 and Phase 08
+Minimum candidate grants by operational function (these are permission keys, **not assumptions about existing role names**):
 
-Phase 08 remains `IN PROGRESS` / **NOT COMPLETE**. Its checkout/reservation and admin HTTP slice passed CI `40301701753`, but provider delivery/settlement remains blocked, return/refund/restock policy awaits the owner, reservation-expiry/OTP/advance work remains open, and production configuration is unverified. Phase 07 remains in progress: persistent cart sync, approved legal copy/retention policy, production configuration and remaining end-to-end acceptance criteria remain outstanding.
+| Operational function | Minimum candidate keys | Owner decision needed |
+|---|---|---|
+| Dashboard viewer | `dashboard.view` | Identify which existing user/role may see store-wide dashboard data |
+| Order operator | `orders.manage`; optionally `orders.poll`, `orders.popup.view`, `orders.popup.dismiss` | Approve who may view/change orders and who receives real-time order alerts |
+| Refund reviewer | `refunds.review` | Approve who may see customer/refund data and decide refund requests |
+| Catalog editor | `catalog.view`, `catalog.manage` | Approve distinct read/edit scope for products, reviews, coupons and categories |
+| Inventory operator | `inventory.manage` | Approve stock, supplier and purchase-receiving access |
+| Customer/support operator | `customers.manage`; separately `checkout.recovery.view` / `checkout.recovery.manage`; `security.manage` only when needed | Approve access to customer identity/contact data, consented recovery, and IP/security controls |
+| Finance reader/operator | `finance.view`; separately `finance.manage` | Approve read vs create/change access to funds, expenses, salaries and withdrawals |
+| People/HR operator | `hr.manage` | Approve access to employee, attendance, leave, salary and bonus records; decide whether finance keys are also required |
+| Vendor / reseller / delivery operations | `vendors.manage`, `resellers.manage`, `delivery.manage` | Confirm these remain global platform-wide operations or need future tenant separation |
+| Content editor | `content.manage` | Approve publishing access to blogs, pages, banners and storefront content |
+| Settings/integration operator | `settings.manage`; separately `integrations.manage`; `communications.send` only if expressly authorized | Approve configuration and provider credential/send boundaries; no provider operation is performed by this sprint |
+| Reports reader | `reports.view` | Approve access to financial and customer CSV exports; exports are audited |
+| Error-log reader/operator | `error_logs.view`; separately `error_logs.manage` | Approve exposure of operational diagnostic data and any log management |
+| Staff operator | `staff.manage`; `staff.assign_role` separately | Approve staff lifecycle and who may assign an existing active role |
+| Role/grant operator | `roles.manage`; `roles.grants.manage` separately | Approve who may create/deactivate roles vs assign permission keys |
+| Audit reader | `audit_logs.view` | Approve who may inspect staff/financial/security audit history |
+
+**Required owner approval:** map these functions to actual existing users/roles, approve exact keys for each, and approve a named provisioning operator. Until then, all grant-dependent operational access is **BLOCKED** for non-Super-Admin users; no grants have been seeded.
+
+## Verification and status
+
+- Previous baseline CI: `40308648157` passed on `dddd7a3878ff0be63dbc783bc2f632844e8d79a5`; this is the starting baseline, not verification of closure-sprint changes.
+- Current local checks during the closure sprint are being rerun as code changes land. Local MySQL is unavailable; local skips are not treated as passes. Final MySQL 8.0 CI run ID and final SHA must be recorded here after the closure commit. If its TAP count is not exposed, report that explicitly rather than infer it.
+- `P09-01` — `IN PROGRESS`: dashboard/poll/popup/assistant implementation exists; provider data remains unavailable, and not every legacy data handler is MySQL-migrated.
+- `P09-02` — `IN PROGRESS`: route-policy inventory and blanket unauthorized HTTP coverage are implemented; exhaustive authorized business success for every legacy handler and owner-approved grant mapping are not complete.
+- `P09-03` — `IN PROGRESS`: ordinary DML and UI mutation are blocked and tested; privileged DDL bypass remains possible; runtime DB grants and retention/archival policy are unresolved.
+- Owner grant approval, vendor/reseller scope approval, production least-privilege grants, and audit retention decision remain **BLOCKED**. Phase 09 must not be marked complete while they remain open.
+
+## Separate phase status
+
+Phase 08 remains **IN PROGRESS / NOT COMPLETE**: provider delivery/settlement remains blocked, return/refund/restock policy awaits owner approval, reservation expiry/OTP/advance work remains open, and production configuration is unverified. Phase 07 remains **IN PROGRESS / NOT COMPLETE**: persistent cart synchronization, approved legal copy/retention, production configuration and remaining acceptance criteria are outstanding.
 
 No production migration/deployment, payment/refund, SMS or external-provider operation occurred.

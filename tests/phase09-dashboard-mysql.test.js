@@ -18,13 +18,15 @@ if (MYSQL_HOST) {
 const { getPool, createQueryClient, closePool } = require('../src/db/mysqlPool');
 const { migrateUp, migrateDown } = require('../src/db/migrator');
 const dashboardRepo = require('../src/repositories/adminDashboardRepository');
+const { policyForAdminRoute } = require('../src/middleware/legacyAdminRbac');
+const { collectAdminRoutes,concretePath } = require('./helpers/adminRouteInventory');
 const { startServer } = require('../server');
 
 describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audit HTTP', { skip: !MYSQL_HOST && !REQUIRED ? SKIP : false }, () => {
-  let pool, db, server, baseUrl, dashboardCookie, csrfToken, productId, dashboardUserId, limitedUserId, managerUserId, fullEmail='', limitedEmail='', managerEmail='';
+  let pool, db, server, baseUrl, dashboardCookie, csrfToken, productId, dashboardUserId, limitedUserId, managerUserId, noGrantUserId, fullEmail='', limitedEmail='', managerEmail='', noGrantEmail='';
   const password = 'Phase09IntegrationPassword!2026';
   const roleIds = {};
-  const permissionNames = ['dashboard.view','orders.poll','orders.popup.view','orders.popup.dismiss','assistant.report','staff.manage','staff.assign_role','roles.manage','roles.grants.manage','audit_logs.view'];
+  const permissionNames = ['dashboard.view','orders.poll','orders.popup.view','orders.popup.dismiss','assistant.report','staff.manage','staff.assign_role','roles.manage','roles.grants.manage','audit_logs.view','orders.manage','refunds.review','checkout.recovery.view','checkout.recovery.manage','catalog.view','catalog.manage','inventory.manage','content.manage','customers.manage','security.manage','hr.manage','finance.view','finance.manage','vendors.manage','resellers.manage','delivery.manage','settings.manage','integrations.manage','communications.send','analytics.view','reports.view','error_logs.view','error_logs.manage'];
   const day = new Date();
   const today = new Intl.DateTimeFormat('en-CA', { timeZone:'Asia/Dhaka',year:'numeric',month:'2-digit',day:'2-digit' }).format(day);
 
@@ -36,8 +38,8 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     assert.equal(permissions.length,permissionNames.length,'0008 permission catalog is applied');
     const preexistingGrants=await db.queryOne(`SELECT COUNT(*) AS n FROM role_permissions rp JOIN permissions p ON p.id=rp.permission_id WHERE p.name IN (${permissionNames.map(()=>'?').join(',')})`,permissionNames);
     assert.equal(Number(preexistingGrants.n),0,'migration does not assign permission grants to any pre-existing role');
-    const grantSet = new Set(['dashboard.view','orders.poll','orders.popup.view','orders.popup.dismiss','assistant.report','staff.manage','staff.assign_role','roles.manage','roles.grants.manage','audit_logs.view']);
-    for (const [slug,grants] of [['p09_full', [...grantSet]],['p09_limited',['dashboard.view']],['p09_manager',['dashboard.view','staff.manage','roles.manage']]]) {
+    const grantSet = new Set(permissionNames);
+    for (const [slug,grants] of [['p09_full', [...grantSet]],['p09_limited',['dashboard.view']],['p09_manager',['dashboard.view','staff.manage','roles.manage']],['p09_no_grants',[]]]) {
       const role=(await db.execute('INSERT INTO roles(name,slug,status) VALUES(?,?,1)',[`P09 ${slug} ${Date.now()}`,`${slug}_${Date.now()}`])).insertId;
       roleIds[slug]=Number(role);
       for (const key of grants) {
@@ -47,15 +49,17 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     }
     const fullRole=await db.queryOne('SELECT slug FROM roles WHERE id=?',[roleIds.p09_full]);
     const limitedRole=await db.queryOne('SELECT slug FROM roles WHERE id=?',[roleIds.p09_limited]);
-    fullEmail=`p09-dashboard-${Date.now()}@example.invalid`; limitedEmail=`p09-limited-${Date.now()}@example.invalid`; managerEmail=`p09-manager-${Date.now()}@example.invalid`;
+    fullEmail=`p09-dashboard-${Date.now()}@example.invalid`; limitedEmail=`p09-limited-${Date.now()}@example.invalid`; managerEmail=`p09-manager-${Date.now()}@example.invalid`; noGrantEmail=`p09-deny-${Date.now()}@example.invalid`;
     dashboardUserId=Number((await db.execute('INSERT INTO users(role_id,name,email,phone,password_hash,role_label,status) VALUES(?,?,?,?,?,?,1)',[roleIds.p09_full,'P09 dashboard admin',fullEmail,'01711112222',bcrypt.hashSync(password,8),'Staff'])).insertId);
     limitedUserId=Number((await db.execute('INSERT INTO users(role_id,name,email,phone,password_hash,role_label,status) VALUES(?,?,?,?,?,?,1)',[roleIds.p09_limited,'P09 limited admin',limitedEmail,'01711113333',bcrypt.hashSync(password,8),'Staff'])).insertId);
     managerUserId=Number((await db.execute('INSERT INTO users(role_id,name,email,phone,password_hash,role_label,status) VALUES(?,?,?,?,?,?,1)',[roleIds.p09_manager,'P09 access manager',managerEmail,'01711114444',bcrypt.hashSync(password,8),'Staff'])).insertId);
+    noGrantUserId=Number((await db.execute('INSERT INTO users(role_id,name,email,phone,password_hash,role_label,status) VALUES(?,?,?,?,?,?,1)',[roleIds.p09_no_grants,'P09 no-grant staff',noGrantEmail,'01711115555',bcrypt.hashSync(password,8),'Staff'])).insertId);
     // Verify the authentication repository's real grant resolution, not a fabricated session permission array.
     const {findActiveAdminById}=require('../src/repositories/authRepository');
     const fullActor=await findActiveAdminById(dashboardUserId);
     assert.equal(fullActor.role_slug,fullRole.slug); assert.ok(permissionNames.every((key)=>fullActor.permissions.includes(key)));
     assert.equal((await findActiveAdminById(limitedUserId)).role_slug,limitedRole.slug);
+    assert.deepEqual((await findActiveAdminById(noGrantUserId)).permissions,[]);
 
     const suffix=Date.now();
     const cat=await db.execute("INSERT INTO categories(name_bn,name_en,slug,status) VALUES('ড্যাশবোর্ড','Dashboard',?,1)",[`p09-dash-${suffix}`]);
@@ -83,7 +87,11 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     return {status:response.status,headers:response.headers,text,json};
   }
   async function login(email,passwordValue=password){
-    const response=await fetch(`${baseUrl}/admin/login`,{method:'POST',headers:{accept:'text/html','content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({email,password:passwordValue}).toString(),redirect:'manual'});
+    const loginPage=await fetch(`${baseUrl}/admin/login`,{headers:{accept:'text/html'},redirect:'manual'});
+    const loginCookie=(loginPage.headers.get('set-cookie')||'').split(';')[0];
+    const csrfResponse=await fetch(`${baseUrl}/api/v1/csrf-token`,{headers:{cookie:loginCookie,accept:'application/json'}});
+    const csrfJson=await csrfResponse.json();
+    const response=await fetch(`${baseUrl}/admin/login`,{method:'POST',headers:{accept:'text/html','content-type':'application/x-www-form-urlencoded',cookie:loginCookie,'x-csrf-token':csrfJson.data.csrfToken},body:new URLSearchParams({email,password:passwordValue}).toString(),redirect:'manual'});
     const body=await response.text();
     assert.equal(response.status,302,`real admin password login should redirect (received ${response.status}: ${body.slice(0,240)})`);
     const cookie=(response.headers.get('set-cookie')||'').split(';')[0]; assert.ok(cookie); return cookie;
@@ -119,6 +127,8 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     const dashboard=await request('/admin/dashboard'); assert.equal(dashboard.status,200);
     assert.match(dashboard.text,/পরীক্ষা/); assert.match(dashboard.text,/Order Status/);
     assert.match(dashboard.text,/\/admin\/users\/manage/); assert.match(dashboard.text,/\/admin\/audit-logs/);
+    assert.equal((await request('/admin/products/create',{method:'POST',token:'',body:{}})).status,403,'global legacy-admin CSRF gate rejects a direct URL write');
+    assert.equal((await request('/admin/clear-cache',{method:'GET'})).status,405,'legacy state-changing GET has been removed');
     const poll=await request('/admin/orders/poll-new?init=1'); assert.equal(poll.status,200); assert.equal(poll.json.init,true);
     const popup=await request('/admin/dashboard/new-orders-popup'); assert.equal(popup.status,200); assert.ok(Array.isArray(popup.json.orders));
     assert.equal((await request('/admin/dashboard/dismiss-new-orders-popup',{method:'POST',token:'',body:{}})).status,403);
@@ -126,17 +136,44 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     assert.equal((await request('/admin/gemini-chat/send',{method:'POST',token:'',body:{message:'today orders'}})).status,403);
     assert.equal((await request('/admin/gemini-chat/send',{method:'POST',body:{message:'  '}})).status,400);
     const assistant=await request('/admin/gemini-chat/send',{method:'POST',body:{message:'today orders'}}); assert.equal(assistant.status,200); assert.equal(assistant.json.success,true);
+    const assistantClear=await request('/admin/gemini-chat/clear',{method:'POST',body:{}});assert.equal(assistantClear.status,200);
     for(const path of ['/admin/smsgeteway/balance','/admin/bdcourier/my-plan','/admin/steadfast/dashboard-widget']){
       const response=await request(path); assert.equal(response.status,503); assert.equal(response.json.status,'unavailable'); assert.equal(response.json.success,false);
     }
-    const audit=await db.queryAll("SELECT action,after_json FROM audit_logs WHERE actor_id=? AND action IN ('admin.dashboard.popup.dismissed','admin.assistant.report') ORDER BY id",[dashboardUserId]);
+    const audit=await db.queryAll("SELECT action,after_json FROM audit_logs WHERE actor_id=? AND action IN ('admin.dashboard.popup.dismissed','admin.assistant.report','admin.assistant.context.cleared') ORDER BY id",[dashboardUserId]);
     assert.ok(audit.some(r=>r.action==='admin.dashboard.popup.dismissed'));
     assert.ok(audit.some(r=>r.action==='admin.assistant.report'));
+    assert.ok(audit.some(r=>r.action==='admin.assistant.context.cleared'));
     const promptLeak=await db.queryOne("SELECT COUNT(*) AS n FROM audit_logs WHERE actor_id=? AND action='admin.assistant.report' AND JSON_SEARCH(after_json,'one','%today orders%') IS NOT NULL",[dashboardUserId]);
     assert.equal(Number(promptLeak.n),0,'assistant audit stores intent only, not customer/user prompt text');
+    assert.equal((await request('/admin/audit-logs',{cookie:''})).status,401);
     assert.equal((await request('/admin/audit-logs',{cookie:limited})).status,403);
     assert.equal((await request('/admin/audit-logs')).status,200);
     assert.equal((await request('/admin/audit-logs',{method:'DELETE'})).status,404);
+    const auditRow=await db.queryOne("SELECT id,action FROM audit_logs WHERE actor_id=? AND action='admin.assistant.report' ORDER BY id DESC LIMIT 1",[dashboardUserId]);
+    assert.ok(auditRow,'assistant action is audited before testing append-only protection');
+    const updateRoute=await request(`/admin/audit-logs/${auditRow.id}`,{method:'PUT',body:{action:'tampered'}});
+    const deleteRoute=await request(`/admin/audit-logs/${auditRow.id}`,{method:'DELETE'});
+    assert.equal(updateRoute.status,404);assert.equal(deleteRoute.status,404);
+    await assert.rejects(db.execute("UPDATE audit_logs SET action='tampered' WHERE id=?",[auditRow.id]),err=>err.code==='ER_SIGNAL_EXCEPTION'||Number(err.errno)===1644);
+    await assert.rejects(db.execute('DELETE FROM audit_logs WHERE id=?',[auditRow.id]),err=>err.code==='ER_SIGNAL_EXCEPTION'||Number(err.errno)===1644);
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM audit_logs WHERE id=?',[auditRow.id])).n),1,'UPDATE and DELETE triggers preserve historical events');
+    const triggerCount=await db.queryOne("SELECT COUNT(*) AS n FROM information_schema.triggers WHERE TRIGGER_SCHEMA=DATABASE() AND TRIGGER_NAME IN ('trg_audit_logs_no_update','trg_audit_logs_no_delete')");
+    assert.equal(Number(triggerCount.n),2);
+  });
+
+  test('all registered legacy admin method/path pairs deny a logged-in zero-grant staff account',async(t)=>{
+    if(!MYSQL_HOST)return t.skip(SKIP);
+    const deniedCookie=await login(noGrantEmail);
+    const routes=collectAdminRoutes().filter(r=>!policyForAdminRoute(r.method,r.path).exempt);
+    assert.ok(routes.length>=250,'inventory covers every literal admin route plus dynamic settings pages');
+    const unmapped=routes.filter(r=>policyForAdminRoute(r.method,r.path).unmapped);
+    assert.deepEqual(unmapped,[],'every registered legacy route has a named policy');
+    for(const route of routes){
+      const target=concretePath(route.path);
+      const response=await request(target,{method:route.method,cookie:deniedCookie,token:'',body:['POST','PUT','PATCH','DELETE'].includes(route.method)?{}:null});
+      assert.equal(response.status,403,`${route.method} ${route.path} must be denied to zero-grant staff`);
+    }
   });
 
   test('MySQL role/staff lifecycle validates, audits, avoids hard deletion and revokes sessions',async(t)=>{
@@ -149,6 +186,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     assert.equal(managerStaffPage.status,200); assert.doesNotMatch(managerStaffPage.text,/name="password"/);
     assert.equal((await request('/admin/phase09/access/staff',{method:'POST',cookie:managerCookie,token:managerCsrf,body:{name:'Should not create',email:`deny-${Date.now()}@example.invalid`,password:'ValidPhase09Password!2026',roleId}})).status,403);
     assert.equal((await request(`/admin/phase09/access/roles/${roleId}/permissions`,{method:'PUT',cookie:managerCookie,token:managerCsrf,body:{permissions:['dashboard.view']}})).status,403,'role managers cannot grant permissions without the separate grant-management key');
+    assert.equal((await request(`/admin/phase09/access/roles/${roleId}/permissions`,{method:'PUT',body:{permissions:['admin.nonexistent']}})).status,400,'permission grant allow-list rejects undefined keys');
     const grant=await request(`/admin/phase09/access/roles/${roleId}/permissions`,{method:'PUT',body:{permissions:['dashboard.view']}});
     assert.equal(grant.status,200); assert.deepEqual(grant.json.data.permissions,['dashboard.view']);
     const token=csrfToken;
@@ -158,6 +196,13 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     const persistedStaff=await db.queryOne('SELECT email,status,role_id,password_hash FROM users WHERE id=?',[createdStaff.json.data.id]);
     assert.equal(persistedStaff.email,staffEmail.toLowerCase()); assert.equal(Number(persistedStaff.status),1); assert.equal(Number(persistedStaff.role_id),Number(roleId));
     assert.equal(await bcrypt.compare('ValidPhase09Password!2026',persistedStaff.password_hash),true,'new staff password must be bcrypt-verifiable');
+    const auditFailureEmail=`p09-audit-fail-${Date.now()}@example.invalid`;
+    await db.execute("CREATE TRIGGER p09_test_fail_audit_insert BEFORE INSERT ON audit_logs FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture audit failure'");
+    let failedCreate;
+    try{failedCreate=await request('/admin/phase09/access/staff',{method:'POST',body:{name:'Audit failure fixture',email:auditFailureEmail,password:'ValidPhase09Password!2026',roleId}});}
+    finally{await db.execute('DROP TRIGGER p09_test_fail_audit_insert');}
+    assert.equal(failedCreate.status,500,'transaction-backed staff mutation fails when its required audit insert fails');
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM users WHERE email=?',[auditFailureEmail])).n),0,'failed audit insert rolls back the staff row');
     const selfDisable=await request(`/admin/phase09/access/staff/${dashboardUserId}`,{method:'PATCH',body:{status:0}}); assert.equal(selfDisable.status,409);
     const badSlug=await request('/admin/phase09/access/roles',{method:'POST',body:{name:'Bad role',slug:'not allowed'}}); assert.equal(badSlug.status,400);
     const next=await request(`/admin/phase09/access/roles/${roleId}/permissions`,{method:'PUT',body:{permissions:['dashboard.view','assistant.report']}}); assert.equal(next.status,200);
@@ -174,6 +219,11 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     assert.equal(Number(retained.n),permissionNames.length,'down migration preserves catalog entries referenced by role grants');
     await migrateUp(pool);
     assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM role_permissions WHERE role_id=?',[roleIds.p09_full])).n),grantsBefore);
+    assert.equal((await request('/logout',{method:'POST',cookie:dashboardCookie,token:''})).status,403,'logout is a CSRF-protected POST');
+    const logout=await request('/logout',{method:'POST',cookie:dashboardCookie,token:csrfToken});
+    assert.equal(logout.status,302);assert.equal(logout.headers.get('location'),'/admin/login');
+    assert.equal(Number((await db.queryOne("SELECT COUNT(*) AS n FROM audit_logs WHERE actor_id=? AND action='admin.logout'",[dashboardUserId])).n),1);
+    assert.equal((await request('/admin/dashboard',{cookie:dashboardCookie})).status,401,'logout destroys the database-backed session');
     assert.ok(token);
   });
 });

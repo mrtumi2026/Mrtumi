@@ -314,11 +314,13 @@ describe('Phase 04 — Branding, Design System, Accessibility & Bilingual UI (`b
     // Authenticate into Admin Dashboard & verify dark sidebar, mobile backdrop, ARIA collapse & all routes
     const loginPage = await httpRequest(baseUrl, '/admin/login');
     let adminCookie = mergeCookies('', loginPage.headers['set-cookie']);
+    const loginCsrf=loginPage.text.match(/name="_csrf" value="([^"]+)"/)?.[1];
+    assert.ok(loginCsrf,'login form exposes a session-bound CSRF token');
 
     const loginPost = await httpRequest(baseUrl, '/admin/login', {
       method: 'POST',
       headers: { Cookie: adminCookie },
-      body: { email: TEST_ADMIN_EMAIL, password: TEST_ADMIN_PASSWORD },
+      body: { email: TEST_ADMIN_EMAIL, password: TEST_ADMIN_PASSWORD, _csrf:loginCsrf },
     });
     assert.equal(loginPost.status, 302);
     assert.equal(loginPost.headers.location, '/admin/dashboard');

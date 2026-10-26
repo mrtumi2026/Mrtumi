@@ -65,7 +65,9 @@ describe('Phase 08 — authenticated MySQL admin HTTP, RBAC, CSRF, replay and au
     return{status:response.status,headers:response.headers,text,json};
   }
   async function login(user){
-    const response=await request('/admin/login',{method:'POST',body:new URLSearchParams({email:user.email,password:testPassword}).toString(),headers:{'content-type':'application/x-www-form-urlencoded'}});
+    const csrfResponse=await request('/__test/csrf');const csrfCookie=csrfResponse.headers.get('set-cookie');
+    const csrf=csrfResponse.json.token;
+    const response=await request('/admin/login',{method:'POST',cookie:csrfCookie.split(';')[0],csrf,body:new URLSearchParams({email:user.email,password:testPassword}).toString(),headers:{'content-type':'application/x-www-form-urlencoded'}});
     assert.equal(response.status,302,'real admin login should create the test role session');
     const raw=response.headers.get('set-cookie');assert.ok(raw);return raw.split(';')[0];
   }

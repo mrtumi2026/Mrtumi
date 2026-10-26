@@ -3,9 +3,13 @@
 process.env.LOG_SILENT = 'true';
 const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
+const express = require('express');
 const fs = require('node:fs');
 const path = require('node:path');
 const repo = require('../src/repositories/adminDashboardRepository');
+const { policyForAdminRoute,legacyAdminRbac,legacyAdminCsrf } = require('../src/middleware/legacyAdminRbac');
+const { createLegacyAdminAudit } = require('../src/middleware/legacyAdminAudit');
+const { collectAdminRoutes } = require('./helpers/adminRouteInventory');
 
 describe('Phase 09 dashboard repository contract', () => {
   test('dashboard route delegates MySQL-mode reads to repository; SQLite calls stay only in explicit local branches', () => {
@@ -18,6 +22,57 @@ describe('Phase 09 dashboard repository contract', () => {
     assert.match(source, /dashboardRepository\.getPollNewOrders/);
     assert.match(source, /dashboardRepository\.getUnseenOrders/);
     assert.doesNotMatch(source, /18420|1485\.50|342 \/ 5,000|25 Nov 2026|Pro Business Plan/);
+  });
+
+  test('route inventory has an explicit allow/deny permission decision and CSRF policy for every unique active admin endpoint', () => {
+    const routes=collectAdminRoutes();
+    assert.ok(routes.length>=250);
+    for(const route of routes){
+      const policy=policyForAdminRoute(route.method,route.path);
+      if(policy.exempt)continue;
+      assert.ok(policy.key,`${route.method} ${route.path} has a policy key`);
+      assert.notEqual(policy.unmapped,true,`${route.method} ${route.path} must not fall through to unmapped policy`);
+      let allowedError=null; legacyAdminRbac({method:route.method,path:route.path,adminUser:{id:1,role_slug:'p09_test',permissions:[policy.key,...(policy.also||[])]}},{},err=>{allowedError=err||null;});
+      assert.equal(allowedError,null,`${route.method} ${route.path} allows its assigned permission`);
+      let deniedError=null; legacyAdminRbac({method:route.method,path:route.path,adminUser:{id:2,role_slug:'p09_no_grants',permissions:[]}},{},err=>{deniedError=err||null;});
+      assert.equal(deniedError.statusCode,403,`${route.method} ${route.path} denies a user without grants`);
+    }
+    let csrfError=null; legacyAdminCsrf({method:'POST',path:'/admin/order/create',adminUser:{id:1},session:{}},{},err=>{csrfError=err||null;});
+    assert.equal(csrfError.statusCode,403,'authenticated state-changing admin requests require CSRF');
+    let safeError=null; legacyAdminCsrf({method:'GET',path:'/admin/order/create',adminUser:{id:1},session:{}},{},err=>{safeError=err||null;});
+    assert.equal(safeError,null,'safe methods do not require CSRF');
+  });
+
+  test('legacy admin audit writer failure does not report a successful mutation', async () => {
+    let writtenEvent=null;
+    const app=express();
+    app.use((req,_res,next)=>{req.adminUser={id:17};req.adminRoutePolicy={key:'catalog.manage',audit:true};req.id='test-request';next();});
+    app.use(createLegacyAdminAudit({writer:async event=>{writtenEvent=event;throw new Error('sensitive backend detail');},loggerInstance:{error(){}}}));
+    app.post('/admin/products/create',(req,res)=>res.redirect('/admin/products/manage'));
+    const server=await new Promise(resolve=>{const s=app.listen(0,'127.0.0.1',()=>resolve(s));});
+    try{
+      const response=await fetch(`http://127.0.0.1:${server.address().port}/admin/products/create`,{method:'POST',headers:{accept:'application/json'}});
+      const body=await response.json();
+      assert.equal(response.status,503);assert.equal(body.error,'AUDIT_UNAVAILABLE');
+      assert.match(body.message,/may have been applied/);
+      assert.equal(writtenEvent.actorId,17);assert.equal(writtenEvent.action,'admin.legacy.catalog.manage.mutation');
+      assert.equal(Object.hasOwn(writtenEvent,'requestBody'),false);
+    }finally{await new Promise(resolve=>server.close(resolve));}
+  });
+
+  test('sensitive CSV exports emit a minimized audit event before response', async () => {
+    let event=null;
+    const app=express();
+    app.use((req,_res,next)=>{req.adminUser={id:19};req.adminRoutePolicy={key:'reports.view',auditRead:true};next();});
+    app.use(createLegacyAdminAudit({writer:async value=>{event=value;},loggerInstance:{error(){}}}));
+    app.get('/admin/reports/orders',(req,res)=>res.type('text/csv').send('id\\n1'));
+    const server=await new Promise(resolve=>{const s=app.listen(0,'127.0.0.1',()=>resolve(s));});
+    try{
+      const response=await fetch(`http://127.0.0.1:${server.address().port}/admin/reports/orders?export=csv`);
+      assert.equal(response.status,200);assert.match(await response.text(),/id/);
+      assert.equal(event.action,'admin.legacy.reports.export');assert.equal(event.entityType,'admin_report');
+      assert.deepEqual(event.afterState,{method:'GET',path:'/admin/reports/orders',permission:'reports.view',status:200,format:'csv'});
+    }finally{await new Promise(resolve=>server.close(resolve));}
   });
 
   test('MySQL repository uses bound params, converts paisa, and sanitizes database failures', async () => {

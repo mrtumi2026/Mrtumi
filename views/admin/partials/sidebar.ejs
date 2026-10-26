@@ -477,12 +477,14 @@
                 </a>
               </li>
 
+              <% if (hasPermission('settings.manage')) { %>
               <li>
-                <a href="/admin/clear-cache" onclick="return confirm('<%= locale === 'bn' ? 'আপনি কি সিস্টেম ক্যাশ ক্লিয়ার করতে চান?' : 'Clear application cache now?' %>')">
-                  <i data-feather="refresh-cw"></i>
-                  <span><%= locale === 'bn' ? 'ক্যাশ ক্লিয়ার' : 'Clear Cache' %></span>
-                </a>
+                <form action="/admin/clear-cache" method="POST" onsubmit="return confirm('<%= locale === 'bn' ? 'আপনি কি সিস্টেম ক্যাশ ক্লিয়ার করতে চান?' : 'Clear application cache now?' %>')">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                  <button class="nav-link border-0 bg-transparent w-100 text-start" type="submit"><i data-feather="refresh-cw"></i><span><%= locale === 'bn' ? 'ক্যাশ ক্লিয়ার' : 'Clear Cache' %></span></button>
+                </form>
               </li>
+              <% } %>
 
               <li>
                 <a href="/admin/error-log">

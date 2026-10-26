@@ -239,10 +239,10 @@ describe('Phase 03 — Production SQLite Prohibition & DB Connection Failure Han
 describe('Phase 03 — Migration Loader, Validator, Logger Redaction, CSRF, Rate Limit & RBAC', () => {
   test('Loads versioned reversible migration pairs in strict order and validates SQL integrity', () => {
     const pairs = loadMigrationPairs();
-    assert.equal(pairs.length, 8);
+    assert.equal(pairs.length, 9);
     assert.deepEqual(
       pairs.map((p) => p.version),
-      ['0001', '0002', '0003', '0004', '0005', '0006', '0007', '0008']
+      ['0001', '0002', '0003', '0004', '0005', '0006', '0007', '0008', '0009']
     );
 
     let totalCreateTables = 0;
@@ -457,6 +457,9 @@ describe('Phase 03 — Existing Portal Regression & Health/Auth Integration', ()
     const csrfEndpoint = await httpRequest(baseUrl, '/api/v1/csrf-token');
     assert.equal(csrfEndpoint.statusCode, 200);
     assert.ok(JSON.parse(csrfEndpoint.body).data.csrfToken.length > 32);
+    const loginCsrfToken=JSON.parse(csrfEndpoint.body).data.csrfToken;
+    const loginCookieHeader=Array.isArray(csrfEndpoint.headers['set-cookie'])?csrfEndpoint.headers['set-cookie'][0]:csrfEndpoint.headers['set-cookie'];
+    const loginCookie=loginCookieHeader.split(';')[0];
 
     const api404 = await httpRequest(baseUrl, '/api/v1/unknown-endpoint');
     assert.equal(api404.statusCode, 404);
@@ -470,14 +473,16 @@ describe('Phase 03 — Existing Portal Regression & Health/Auth Integration', ()
     // Wrong password returns 401
     const badLogin = await httpRequest(baseUrl, '/admin/login', {
       method: 'POST',
-      body: { email: 'phase03admin@mrtumi.test', password: 'WrongPassword' },
+      headers: { Cookie: loginCookie },
+      body: { email: 'phase03admin@mrtumi.test', password: 'WrongPassword', _csrf: loginCsrfToken },
     });
     assert.equal(badLogin.statusCode, 401);
 
     // Valid password persists session via sessionRepository and redirects to /admin/dashboard
     const goodLogin = await httpRequest(baseUrl, '/admin/login', {
       method: 'POST',
-      body: { email: 'phase03admin@mrtumi.test', password: 'Phase03StrongPassword!99' },
+      headers: { Cookie: loginCookie },
+      body: { email: 'phase03admin@mrtumi.test', password: 'Phase03StrongPassword!99', _csrf: loginCsrfToken },
     });
     assert.equal(goodLogin.statusCode, 302);
     assert.match(goodLogin.headers.location || '', /^\/admin\/dashboard/);

@@ -59,7 +59,7 @@ jobs:
       - name: Run foundation lint, EJS compile, migration SQL & secret scan
         run: npm run lint
 
-      - name: Verify MySQL CLI migrator (up -> status -> down 8)
+      - name: Verify MySQL CLI migrator (up -> status -> down 9)
         env:
           DB_CLIENT: mysql
           DB_HOST: 127.0.0.1
@@ -84,7 +84,7 @@ jobs:
           }
           run_and_report 'MySQL migrate up' npm run migrate:up
           run_and_report 'MySQL migration status' npm run migrate:status
-          run_and_report 'MySQL migrate down 8' npm run migrate:down -- 8
+          run_and_report 'MySQL migrate down 9' npm run migrate:down -- 9
 
       - name: Run automated unit, portal regression & live MySQL 8.0 test suites
         run: |

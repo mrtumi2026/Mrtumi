@@ -11,6 +11,8 @@ const { attachCsrfToken } = require('./src/middleware/csrf');
 const { i18nMiddleware } = require('./src/middleware/i18n');
 const { attachRequestId, wantsJsonResponse, createErrorHandler } = require('./src/middleware/errorHandler');
 const { attachGlobals } = require('./src/middleware/auth');
+const { legacyAdminRbac, legacyAdminCsrf } = require('./src/middleware/legacyAdminRbac');
+const { legacyAdminAudit } = require('./src/middleware/legacyAdminAudit');
 const { recordErrorLog } = require('./src/repositories/auditLogRepository');
 
 const localeRoutes = require('./src/routes/locale');
@@ -66,6 +68,11 @@ app.use(apiFoundationRoutes);
 
 // Portal template globals (settings, categories, actors, RBAC helpers)
 app.use(attachGlobals);
+// Fail closed on every authenticated legacy admin route, and require CSRF on all admin writes.
+// Route modules retain their local auth/permission checks and response behavior.
+app.use(legacyAdminRbac);
+app.use(legacyAdminCsrf);
+app.use(legacyAdminAudit);
 
 // Mount modular portal routes
 app.use(adminAuthRoutes);

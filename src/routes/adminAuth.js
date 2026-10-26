@@ -9,6 +9,8 @@ const {
   recordAdminLoginSuccess,
 } = require('../repositories/authRepository');
 const { recordAuditLog } = require('../repositories/auditLogRepository');
+const { requireCsrf } = require('../middleware/csrf');
+const { logger } = require('../utils/logger');
 
 const router = express.Router();
 
@@ -36,6 +38,7 @@ router.get('/admin/login', (req, res) => {
 router.post(
   '/admin/login',
   adminLoginLimiter,
+  requireCsrf,
   asyncHandler(async (req, res) => {
     const email = String(req.body.email || '').trim().toLowerCase();
     const password = String(req.body.password || '');
@@ -52,8 +55,9 @@ router.post(
         entityId: user ? user.id : null,
         ipAddress: getClientIp(req),
         userAgent: req.headers['user-agent'] || '',
-        metadata: { email },
-      }).catch(() => {});
+      }).catch((auditError) => {
+        logger.error('Failed-login audit write failed',{code:auditError&&auditError.code||'AUDIT_WRITE_FAILED',requestId:req.id||''});
+      });
 
       return res.status(401).render('admin/login', {
         error: 'ইমেইল অথবা পাসওয়ার্ড সঠিক নয়। আবার চেষ্টা করুন।',
@@ -75,15 +79,20 @@ router.post(
     };
 
     await recordAdminLoginSuccess(user.id);
-    await recordAuditLog({
-      actorType: 'admin',
-      actorId: user.id,
-      action: 'admin.login.succeeded',
-      entityType: 'users',
-      entityId: user.id,
-      ipAddress: getClientIp(req),
-      userAgent: req.headers['user-agent'] || '',
-    }).catch(() => {});
+    try {
+      await recordAuditLog({
+        actorType: 'admin',
+        actorId: user.id,
+        action: 'admin.login.succeeded',
+        entityType: 'users',
+        entityId: user.id,
+        ipAddress: getClientIp(req),
+        userAgent: req.headers['user-agent'] || '',
+      });
+    } catch (auditError) {
+      await new Promise((resolve,reject)=>req.session.destroy(err=>err?reject(err):resolve()));
+      throw auditError;
+    }
 
     if (typeof req.flash === 'function') {
       req.flash('success', `স্বাগতম, ${user.name}! অ্যাডমিন প্যানেলে সফলভাবে লগইন হয়েছে।`);
@@ -92,13 +101,18 @@ router.post(
   })
 );
 
-function handleLogout(req, res) {
-  delete req.session.adminUser;
+async function handleLogout(req, res) {
+  const actor=req.session.adminUser;
+  if(actor){
+    try{await recordAuditLog({actorType:'admin',actorId:actor.id,action:'admin.logout',entityType:'session',entityId:req.sessionID,ipAddress:getClientIp(req),userAgent:req.headers['user-agent']||''});}
+    catch(_err){logger.error('Admin logout audit write failed',{requestId:req.id||''});}
+  }
+  await new Promise((resolve,reject)=>req.session.destroy(err=>err?reject(err):resolve()));
   return res.redirect('/admin/login');
 }
 
-router.post('/logout', handleLogout);
-router.get('/logout', handleLogout);
-router.get('/admin/logout', handleLogout);
+router.post('/logout', requireCsrf, asyncHandler(handleLogout));
+router.get('/logout', (_req,res) => res.redirect('/admin/dashboard'));
+router.get('/admin/logout', (_req,res) => res.redirect('/admin/dashboard'));
 
 module.exports = router;
