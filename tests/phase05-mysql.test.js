@@ -362,7 +362,7 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
           qty: 2,
         }),
       });
-      assert.equal(cartAdd.statusCode, 200);
+      assert.equal(cartAdd.statusCode, 200, `MySQL cart-add HTTP failed: ${cartAdd.body.slice(0,500)}`);
       const cartPayload = JSON.parse(cartAdd.body);
       assert.equal(cartPayload.success, true);
       assert.equal(cartPayload.cartCount, 2);
@@ -372,7 +372,7 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
       const setCookie = cartAdd.headers['set-cookie'];
       const cookieHeader = (Array.isArray(setCookie) ? setCookie : [setCookie]).filter(Boolean).map((c) => c.split(';')[0]).join('; ');
       const checkoutPage = await httpRequest(baseUrl, '/customer/checkout?lang=en', { headers: { Cookie: cookieHeader } });
-      assert.equal(checkoutPage.statusCode, 200);
+      assert.equal(checkoutPage.statusCode, 200, `MySQL checkout GET failed: ${checkoutPage.body.slice(0,500)}`);
       assert.doesNotMatch(checkoutPage.body, /name="cart_backup_json"/,'MySQL checkout must not accept a client cart backup');
       assert.match(checkoutPage.body, /Cash on delivery/);
       const csrf = checkoutPage.body.match(/name="_csrf" value="([^"]+)"/);
@@ -380,7 +380,7 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
       assert.ok(csrf && requestKey,'checkout form binds CSRF and an idempotency request key');
       assert.equal(Number((await client.queryOne("SELECT COUNT(*) AS n FROM incomplete_orders WHERE phone='01712345678' AND consent_given=1")).n),0,'checkout data is not captured before opt-in');
       const capture = await httpRequest(baseUrl,'/checkout/save-incomplete',{method:'POST',headers:{Cookie:cookieHeader,'Content-Type':'application/json','x-csrf-token':csrf[1]},body:JSON.stringify({name:'Checkout Test',phone:'01712345678',consent:'true',notification_consent:'false'})});
-      assert.equal(capture.statusCode,200);const capturePayload=JSON.parse(capture.body);assert.equal(capturePayload.ok,true);
+      assert.equal(capture.statusCode,200,`Recovery opt-in HTTP failed: ${capture.body.slice(0,500)}`);const capturePayload=JSON.parse(capture.body);assert.equal(capturePayload.ok,true);
       const form = new URLSearchParams({
         _csrf: csrf[1], checkout_request_key: requestKey[1], customer_name: 'Checkout Test', phone: '01712345678',
         address: 'House 1, Test Road, Dhanmondi', delivery_location_id: String(deliveryLocationId), payment_method: 'cod',
