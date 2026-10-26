@@ -13,5 +13,5 @@ CREATE TABLE IF NOT EXISTS `customer_cart_items` (
   KEY `idx_customer_cart_customer` (`customer_id`),
   CONSTRAINT `fk_customer_cart_customer` FOREIGN KEY (`customer_id`) REFERENCES `customers` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_customer_cart_product` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE CASCADE,
-  CONSTRAINT `fk_customer_cart_variant` FOREIGN KEY (`variant_id`) REFERENCES `product_variants` (`id`) ON DELETE SET NULL
+  CONSTRAINT `fk_customer_cart_variant` FOREIGN KEY (`variant_id`) REFERENCES `product_variants` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
