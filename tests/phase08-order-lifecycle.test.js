@@ -52,6 +52,7 @@ test('Phase 08 migration 0006 is a paired additive migration with nullable uniqu
   assert.match(pair.upSql,/ADD UNIQUE KEY `uq_refunds_request_key`/);
   assert.match(pair.upSql,/CREATE TABLE IF NOT EXISTS `refund_status_history`/);
   assert.match(pair.downSql,/DROP INDEX `uq_refunds_request_key`/);
+  assert.match(pair.downSql,/ADD CONSTRAINT `fk_order_otps_order`/);
 });
 test('Phase 08 admin action permission keys deny absent grants and allow an explicit grant', () => {
   const guard=requirePermission('refunds.review');
