@@ -96,7 +96,7 @@ For each endpoint in a priority family, track one row in a sprint issue/test map
 - Retention/archive/deletion/legal-hold: **BLOCKED — owner policy pending; no purge configured**.
 - Vendor/reseller scope: **BLOCKED — owner confirmation pending; current admin surface is platform-wide**.
 - Production DB privilege/account split: **UNVERIFIED — approved read-only evidence collection plan only**.
-- Remaining legacy authorized success paths/MySQL migration: **IN PROGRESS — only `POST /admin/settings/save` has been selected in this incremental slice; its MySQL CI is pending; prioritize the remaining P0→P5 families.**
+- Remaining legacy authorized success paths/MySQL migration: **IN PROGRESS — only `POST /admin/settings/save` has been selected in this incremental slice; its MySQL 8.0 CI passed on code SHA `67e9fd924ccccdded0a926b3305989a34f5d4533`; prioritize the remaining P0→P5 families.**
 - Phase 09: **IN PROGRESS / NOT COMPLETE**. Phase 07 and Phase 08 remain **IN PROGRESS / NOT COMPLETE**.
 
 ## Incomplete request item
