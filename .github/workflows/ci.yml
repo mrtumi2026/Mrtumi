@@ -72,13 +72,12 @@ jobs:
           run_and_report() {
             label="$1"
             shift
-            if output="$("$@" 2>&1)"; then
-              printf '%s\\n' "$output"
+            echo "::group::${label}"
+            if "$@"; then
+              echo "::endgroup::"
             else
               rc=$?
-              while IFS= read -r line; do
-                echo "::error title=${label}::${line}"
-              done <<< "$output"
+              echo "::endgroup::"
               exit "$rc"
             fi
           }
