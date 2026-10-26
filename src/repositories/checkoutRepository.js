@@ -6,8 +6,12 @@ const {env}=require('../config/env');
 const {normalizeBdPhone,requirePositiveInt,requireString}=require('../utils/validator');
 const {ValidationError,ConflictError,NotFoundError}=require('../utils/errors');
 const lifecycle=require('./phase08Repository');
-const {pickLocalizedText}=require('./storefrontRepository');
 
+function localizedText(locale,bnValue,enValue,fallback=''){
+  const en=String(enValue||'').trim(),bn=String(bnValue||'').trim();
+  if(locale==='en')return en||bn||fallback;
+  return bn||en||fallback;
+}
 function assertMysql(){if(env.db.client!=='mysql')throw new Error('Canonical checkout requires MySQL/InnoDB.');}
 function client(){assertMysql();return mysql.createQueryClient(mysql.getPool());}
 function asSafeInteger(value,label){const n=Number(value||0);if(!Number.isSafeInteger(n)||n<0)throw new ValidationError(`${label} is outside the supported integer range.`);return n;}
@@ -52,7 +56,7 @@ async function loadLines(tx,lines,locale='bn',lock=true){
     if(!Number.isSafeInteger(hand)||!Number.isSafeInteger(held)||hand-held<line.qty)throw new ConflictError(`Insufficient available stock for product ${line.productId}.`);
     if(v && Number(p.stock_on_hand)-Number(p.stock_reserved)<line.qty)throw new ConflictError(`Aggregate stock is inconsistent for product ${line.productId}; checkout is blocked.`);
     const lineTotalPaisa=price*line.qty;if(!Number.isSafeInteger(lineTotalPaisa))throw new ValidationError('Order line total exceeds the safe calculation range.');
-    result.push({...line,product:p,variant:v,unitPricePaisa:price,lineTotalPaisa,name:pickLocalizedText(locale,p.name_bn,p.name_en,p.sku),image:String(p.image_url||''),size:String(v?.size_label||''),color:String(v?.color_label||'')});
+    result.push({...line,product:p,variant:v,unitPricePaisa:price,lineTotalPaisa,name:localizedText(locale,p.name_bn,p.name_en,p.sku),image:String(p.image_url||''),size:String(v?.size_label||''),color:String(v?.color_label||'')});
   }
   return result;
 }
