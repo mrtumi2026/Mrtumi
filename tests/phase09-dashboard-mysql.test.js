@@ -69,7 +69,7 @@ describe('Phase 09 — live MySQL 8.0 admin dashboard repository and HTTP access
   after(async () => { if (server) await new Promise((resolve) => server.close(resolve)); if (MYSQL_HOST) await closePool(); });
 
   async function get(path, useCookie = cookie) {
-    return fetch(`${baseUrl}${path}`, { headers: useCookie ? { cookie: useCookie } : {}, redirect: 'manual' });
+    return fetch(`${baseUrl}${path}`, { headers: { accept: 'application/json', ...(useCookie ? { cookie: useCookie } : {}) }, redirect: 'manual' });
   }
   async function sessionFor(allowed) {
     const response = await fetch(`${baseUrl}/__test/login/${allowed ? 'yes' : 'no'}`);
