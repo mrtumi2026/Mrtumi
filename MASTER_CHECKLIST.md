@@ -70,25 +70,25 @@
 | ID | Feature / Deliverable | Status | Notes |
 |---|---|---|---|
 | P07-01 | Customer registration, login, logout, password recovery & address book | `IN PROGRESS` | MySQL-backed registration/login, regenerated sessions, POST logout and address management implemented; verified notification-based password recovery remains unavailable pending authorized channel |
-| P07-02 | Guest checkout, BD phone validation & persistent cart sync | `IN PROGRESS` | MySQL checkout path now ignores client cart/prices and writes server-priced orders transactionally; persistent cart sync and live MySQL CI remain outstanding |
+| P07-02 | Guest checkout, BD phone validation & persistent cart sync | `IN PROGRESS` | MySQL checkout/reservation slice passed live MySQL CI `40301701753`; persistent cart sync remains outstanding |
 | P07-03 | Configurable delivery zones/fees, server-only total math & duplicate order lock | `IN PROGRESS` | Requires active owner-configured `delivery_locations` and COD gateway; server computes paisa totals, reserves inventory and uses request-hash idempotency; no defaults are seeded |
-| P07-04 | Terms/privacy consent handling at checkout | `IN PROGRESS` | Required order confirmation and optional recovery opt-in exist; approved legal copy/retention policy and live MySQL CI remain blockers |
+| P07-04 | Terms/privacy consent handling at checkout | `IN PROGRESS` | Required order confirmation and optional recovery opt-in exist; coded checkout slice passed live MySQL CI `40301701753`; approved legal copy/retention policy remain blockers |
 
 ### PHASE 08 — Order Management, Incomplete Orders, OTP & Advance Payment
 | ID | Feature / Deliverable | Status | Notes |
 |---|---|---|---|
-| P08-01 | Order state machine, `order_status_history`, notes & authorized item edits | `IN PROGRESS` | MySQL row-locked transitions/history/audit and guarded admin UI; canonical checkout now creates/reserves orders; new real-login/RBAC/CSRF/admin HTTP suite awaits live CI; notes/item edits remain |
+| P08-01 | Order state machine, `order_status_history`, notes & authorized item edits | `IN PROGRESS` | MySQL row-locked transitions/history/audit and guarded admin UI; canonical checkout now creates/reserves orders; real-login/RBAC/CSRF/admin HTTP suite passed live MySQL CI `40301701753`; notes/item edits remain |
 | P08-02 | Cancellation, returns, refund initiation & stock restoration | `IN PROGRESS` | Admin cancellation/failure releases reservations and shipment consumes stock; final `returned`/restock is disabled pending explicit owner policy; refund approval is internal only, no provider settlement |
-| P08-03 | Consent-aware incomplete checkout capture & duplicate order detection | `IN PROGRESS` | Optional explicit recovery consent, no default capture/message consent, withdrawal/erasure; checkout request-hash migration and replay protection added; live MySQL CI pending |
+| P08-03 | Consent-aware incomplete checkout capture & duplicate order detection | `IN PROGRESS` | Optional explicit recovery consent, no default capture/message consent, withdrawal/erasure; checkout request-hash migration and replay protection tested in live MySQL CI `40301701753`; remaining acceptance is open |
 | P08-04 | Admin-configurable Order OTP verification (expiry, attempt cap, cooldown, rate limit) | `IN PROGRESS` | Repository OTP protections remain; admin HTTP endpoint exposes summary only; checkout blocks when OTP is enabled because customer verification/delivery is not wired; SMS blocked |
-| P08-05 | Admin-configurable advance payment (fixed/%) + remaining COD balance & min/max order rules | `IN PROGRESS` | Integer-paisa math/settings exist; checkout blocks any non-zero advance until a verified provider collection path exists; live MySQL CI pending |
+| P08-05 | Admin-configurable advance payment (fixed/%) + remaining COD balance & min/max order rules | `IN PROGRESS` | Integer-paisa math/settings exist; checkout blocks any non-zero advance until a verified provider collection path exists; coded checkout slice passed live MySQL CI `40301701753`; remaining acceptance is open |
 
 ### PHASE 09 — Admin Dashboard, Users & Permissions
 | ID | Feature / Deliverable | Status | Notes |
 |---|---|---|---|
-| P09-01 | Reference-inspired dashboard powered 100% by real DB queries | `NOT STARTED` | Audit & harden existing prototype |
-| P09-02 | Staff accounts, roles & granular server-side permission middleware | `NOT STARTED` | Enforced on every admin route |
-| P09-03 | Permission-filtered sidebar navigation & immutable `audit_logs` | `NOT STARTED` | Scheduled for Phase 09 |
+| P09-01 | Reference-inspired dashboard powered 100% by real DB queries | `IN PROGRESS` | Async MySQL dashboard repository and route delegation implemented; live MySQL CI verification pending. Provider metrics return unavailable. Dashboard-specific granular RBAC, user/grant management, sidebar filtering and audit-log controls remain open |
+| P09-02 | Staff accounts, roles & granular server-side permission middleware | `IN PROGRESS` | Auth repository loads MySQL role grants and scoped route guards exist; dashboard-specific granular permission is unresolved (no owner-approved grant seeded). Audit/provision grants safely and cover all admin mutation routes |
+| P09-03 | Permission-filtered sidebar navigation & immutable `audit_logs` | `IN PROGRESS` | Phase 08 links have scoped visibility; remaining sidebar links, audit-log access/immutability and real MySQL HTTP tests remain |
 
 ### PHASE 10 — Courier & Delivery Integrations
 | ID | Feature / Deliverable | Status | Notes |

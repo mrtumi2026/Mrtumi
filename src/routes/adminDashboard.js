@@ -1,13 +1,21 @@
 const express = require('express');
 const db = require('../db/database');
 const { requireAdmin } = require('../middleware/auth');
+const { env } = require('../config/env');
+const dashboardRepository = require('../repositories/adminDashboardRepository');
+const { asyncHandler } = require('../utils/asyncHandler');
+const { requireCsrf } = require('../middleware/csrf');
 
 const router = express.Router();
 
 router.use('/admin', requireAdmin);
 
-// Main Dashboard
-router.get('/admin/dashboard', (req, res) => {
+// Main Dashboard. Production/MySQL reads are isolated in the async repository.
+router.get('/admin/dashboard', asyncHandler(async (req, res) => {
+  if (env.db.client === 'mysql') {
+    return res.render('admin/dashboard', await dashboardRepository.getDashboardData());
+  }
+  // Legacy local prototype only; SQLite is prohibited by the DB guard in production/MySQL.
   const totalOrders = db.get('SELECT COUNT(*) AS c FROM orders').c;
   const pendingOrders = db.get("SELECT COUNT(*) AS c FROM orders WHERE status = 'pending'").c;
   const deliveredRow = db.get(
@@ -107,74 +115,38 @@ router.get('/admin/dashboard', (req, res) => {
     day: 'numeric',
   });
 
-  res.render('admin/dashboard', {
-    formattedDate,
-    totalOrders,
-    pendingOrders,
-    totalRevenue: deliveredRow.rev,
-    deliveredCount: deliveredRow.c,
-    lowStockCount,
-    todayOrders: todayOrdersRow.c,
-    todayRevenue: todayOrdersRow.rev,
-    todayDeliveredRev,
-    trafficSources,
-    trendLabels,
-    trendData,
-    statusBreakdown,
-    totalProducts,
-    dashboardProducts,
-    dashboardCategories,
-    recentOrders,
-    fundBalance,
-    totalExpenses,
-    todayExpenses,
-    monthlyExpenses,
-  });
-});
 
-// Top Widget 1: BulkSMSBD Balance
-router.get('/admin/smsgeteway/balance', (_req, res) => {
-  const settings = db.getSettings();
-  const bal = settings.bulksms_balance || '1485.50';
-  res.json({
-    success: true,
-    balance: bal,
-    gateway: 'BulkSMSBD',
+  return res.render('admin/dashboard', {
+    formattedDate, totalOrders, pendingOrders, totalRevenue: deliveredRow.rev,
+    deliveredCount: deliveredRow.c, lowStockCount, todayOrders: todayOrdersRow.c,
+    todayRevenue: todayOrdersRow.rev, todayDeliveredRev, trafficSources, trendLabels,
+    trendData, statusBreakdown, totalProducts, dashboardProducts, dashboardCategories,
+    recentOrders, fundBalance, totalExpenses, todayExpenses, monthlyExpenses,
   });
-});
+}));
 
-// Top Widget 2: BD Courier Plan
-router.get('/admin/bdcourier/my-plan', (_req, res) => {
-  const settings = db.getSettings();
-  res.json({
-    success: true,
-    data: {
-      has_subscription: true,
-      plan_name: settings.bdcourier_plan || 'Pro Business Plan',
-      api_calls: settings.bdcourier_calls || '342 / 5,000',
-      next_due_display: settings.bdcourier_due_date || '25 Nov 2026',
-    },
-  });
-});
-
-// Top Widget 3: Steadfast Courier Widget
-router.get('/admin/steadfast/dashboard-widget', (_req, res) => {
-  const settings = db.getSettings();
-  const inCourierCount = db.get("SELECT COUNT(*) AS c FROM orders WHERE status = 'in-courier'").c;
-  const sfCourier = db.get("SELECT balance FROM courier_apis WHERE code = 'steadfast'");
-  const balNum = sfCourier ? Number(sfCourier.balance) : 18420;
-  res.json({
-    success: true,
-    balance_display: settings.steadfast_balance || `৳${balNum.toLocaleString('en-IN')}`,
-    in_review_count: Number(settings.steadfast_in_review || 4),
-    in_review_sample_cap: inCourierCount,
-    in_review_checked: inCourierCount,
-    courier_pending_orders: inCourierCount,
-  });
-});
+// External provider widgets stay unavailable until verified provider adapters exist.
+router.get('/admin/smsgeteway/balance', (_req, res) => res.status(503).json({
+  success: false, balance: null, gateway: 'BulkSMSBD', status: 'unavailable',
+  message: 'Provider balance is unavailable; no verified live provider integration is configured.',
+}));
+router.get('/admin/bdcourier/my-plan', (_req, res) => res.status(503).json({
+  success: false, data: null, status: 'unavailable',
+  message: 'Courier account data is unavailable; no verified live provider integration is configured.',
+}));
+router.get('/admin/steadfast/dashboard-widget', (_req, res) => res.status(503).json({
+  success: false, balance_display: null, in_review_count: null, status: 'unavailable',
+  message: 'Courier provider metrics are unavailable; no verified live provider integration is configured.',
+}));
 
 // Real-time New Order Polling (Toast + Chime)
-router.get('/admin/orders/poll-new', (req, res) => {
+router.get('/admin/orders/poll-new', asyncHandler(async (req, res) => {
+  if (env.db.client === 'mysql') {
+    const raw = Number.parseInt(req.query.after_id || '0', 10);
+    const result = await dashboardRepository.getPollNewOrders(Number.isSafeInteger(raw) && raw > 0 ? raw : 0);
+    if (req.query.init) return res.json({ init: true, latest_id: result.latestId, orders: [] });
+    return res.json({ latest_id: result.latestId, orders: result.orders });
+  }
   const latestRow = db.get('SELECT COALESCE(MAX(id), 0) AS max_id FROM orders');
   const latestId = latestRow ? latestRow.max_id : 0;
 
@@ -215,11 +187,15 @@ router.get('/admin/orders/poll-new', (req, res) => {
     };
   });
 
-  res.json({ latest_id: latestId, orders: enriched });
-});
+  return res.json({ latest_id: latestId, orders: enriched });
+}));
 
 // New Orders Modal Popup
-router.get('/admin/dashboard/new-orders-popup', (_req, res) => {
+router.get('/admin/dashboard/new-orders-popup', asyncHandler(async (_req, res) => {
+  if (env.db.client === 'mysql') {
+    const result = await dashboardRepository.getUnseenOrders();
+    return res.json({ show: result.orders.length > 0, latest_id: result.latestId, orders: result.orders });
+  }
   const latestId = db.get('SELECT COALESCE(MAX(id), 0) AS m FROM orders').m;
   const unseen = db.all(
     `SELECT o.*, COALESCE(os.name, 'Pending') AS status_name
@@ -242,16 +218,33 @@ router.get('/admin/dashboard/new-orders-popup', (_req, res) => {
       process_url: `/admin/order/view/${o.id}`,
     })),
   });
-});
+}));
 
-router.post('/admin/dashboard/dismiss-new-orders-popup', (_req, res) => {
-  db.run('UPDATE orders SET is_seen = 1 WHERE is_seen = 0');
-  res.json({ success: true });
-});
+router.post('/admin/dashboard/dismiss-new-orders-popup', requireCsrf, asyncHandler(async (_req, res) => {
+  if (env.db.client === 'mysql') await dashboardRepository.dismissUnseenOrders();
+  else db.run('UPDATE orders SET is_seen = 1 WHERE is_seen = 0');
+  return res.json({ success: true });
+}));
 
 // Gemini AI Assistant (Full Page + Slide-over Widget API)
-function buildSmartAdminReply(message) {
+async function buildSmartAdminReply(message) {
   const q = String(message || '').toLowerCase();
+  if (env.db.client === 'mysql') {
+    const data = await dashboardRepository.getAssistantSnapshot();
+    const lowTxt = data.lowStock.length
+      ? data.lowStock.map((p) => `${p.name} (${p.stock} pcs)`).join(', ')
+      : 'No low-stock products are currently recorded.';
+    if (q.includes('আজ') || q.includes('today') || q.includes('অর্ডার') || q.includes('order')) {
+      return `📊 বর্তমান অর্ডার রিপোর্ট:\n• আজকের অর্ডার: ${data.todayOrders} টি\n• পেন্ডিং অর্ডার: ${data.pendingOrders} টি\n• সর্বমোট অর্ডার: ${data.totalOrders} টি\n• ডেলিভার্ড রেভিনিউ: ৳${data.totalRevenue.toLocaleString('en-IN')}`;
+    }
+    if (q.includes('প্রোডাক্ট') || q.includes('product') || q.includes('stock') || q.includes('স্টক')) {
+      return `📦 প্রোডাক্ট ও স্টক আপডেট:\n• মোট প্রোডাক্ট: ${data.totalProducts} টি\n• লো-স্টক: ${lowTxt}`;
+    }
+    if (q.includes('হিসাব') || q.includes('রেভিনিউ') || q.includes('fund') || q.includes('expense') || q.includes('লাভ')) {
+      return `💰 ফান্ড ও ফাইন্যান্স সামারি:\n• বর্তমান ফান্ড ব্যালেন্স: ৳${data.fundBalance.toLocaleString('en-IN')}\n• মোট খরচ: ৳${data.totalExpenses.toLocaleString('en-IN')}\n• ডেলিভার্ড সেলস: ৳${data.totalRevenue.toLocaleString('en-IN')}`;
+    }
+    return `🤖 অ্যাডমিন রিপোর্টে ${data.totalProducts} টি পণ্য ও ${data.totalOrders} টি অর্ডার রয়েছে। অর্ডার, স্টক বা খরচ সম্পর্কে জিজ্ঞাসা করুন।`;
+  }
   const totalOrders = db.get('SELECT COUNT(*) AS c FROM orders').c;
   const pendingOrders = db.get("SELECT COUNT(*) AS c FROM orders WHERE status = 'pending'").c;
   const completedRev = db.get("SELECT COALESCE(SUM(amount), 0) AS s FROM orders WHERE status = 'completed'").s;
@@ -318,19 +311,19 @@ router.get('/admin/gemini-chat', (req, res) => {
   res.render('admin/gemini-chat', { chatHistory });
 });
 
-router.post('/admin/gemini-chat/send', (req, res) => {
+router.post('/admin/gemini-chat/send', asyncHandler(async (req, res) => {
   const msg = String(req.body.message || '').trim();
   if (!msg) {
     return res.status(400).json({ success: false, message: 'বার্তা খালি রাখা যাবে না।' });
   }
-  const reply = buildSmartAdminReply(msg);
+  const reply = await buildSmartAdminReply(msg);
   if (!Array.isArray(req.session.geminiHistory)) {
     req.session.geminiHistory = [];
   }
   req.session.geminiHistory.push({ role: 'user', text: msg });
   req.session.geminiHistory.push({ role: 'bot', text: reply });
-  res.json({ success: true, reply });
-});
+  return res.json({ success: true, reply });
+}));
 
 router.post('/admin/gemini-chat/clear', (req, res) => {
   req.session.geminiHistory = [];

@@ -1,6 +1,6 @@
 # PHASE 08 — ORDER MANAGEMENT, INCOMPLETE ORDERS, OTP & ADVANCE PAYMENT
 
-**Status: `IN PROGRESS`.** This branch now contains a canonical MySQL checkout path and expanded live-MySQL tests, but those tests have not yet run in CI. Local MySQL-only tests are explicitly skipped. Provider delivery/settlement, owner-controlled return policy, production configuration, and Phase 07 end-to-end acceptance remain open.
+**Status: `IN PROGRESS` (not complete).** The coded checkout/reservation and admin HTTP/RBAC slice passed live MySQL 8.0 CI run `40301701753`. Remaining work is classified: provider delivery/settlement is **BLOCKED** pending authorized credentials and verified external evidence; partial-return/refund/restock rules are **AWAITING OWNER POLICY DECISION**; production configuration and Phase 07 end-to-end acceptance remain **OPEN / NOT VERIFIED**. Local MySQL-only suites are explicitly skipped.
 
 ## Current implementation
 
@@ -37,9 +37,10 @@ Until that decision is recorded, staff cannot mark an order `returned`; no schem
 - Added live MySQL HTTP coverage in `tests/phase05-mysql.test.js` for the MySQL storefront checkout, CSRF, server-side pricing despite forged client cart data, configured delivery fee/COD, idempotent replay/mismatch, reservation, unpaid status, no payment row and a privacy-minimized order-success page.
 - Added `tests/phase08-admin-http-mysql.test.js`: actual MySQL role/permission rows and admin login are used with HTTP routes to test authentication, per-role RBAC, CSRF, invalid transitions, concurrent replay, audit, refund review without settlement, recovery consent/settings and OTP-summary privacy. `tests/phase06-mysql.test.js` now asserts final return/restock is blocked pending policy.
 - The shared MySQL migration test now covers seven paired migrations, including `0007`, and CI runs up/status/down-seven/up.
-- Local `npm run lint` and `npm test` passed at the current branch state, but all live MySQL suites were skipped locally because no MySQL service is available. These local results do **not** establish the MySQL checkout, admin HTTP or migration round-trip as passed. A new CI run is required.
-- Previous successful CI run `40292904036` was for the earlier SHA `9fca29a8ed07ac278d2553d53f99ec5e74d79b2a`; it predates these changes and is not evidence for this branch's checkout/migration/admin additions.
+- The live MySQL 8.0 GitHub Actions CI run **40301701753** passed for commit `6a9b37189c22eacd271ce06fe338d6990cf29774`: production dependency audit, foundation lint, seven-migration CLI up/status/down, the canonical MySQL storefront checkout/reservation HTTP test, the authenticated Phase 08 admin HTTP/RBAC/CSRF/replay/audit suite, and all other automated suites passed. This is MySQL test evidence for the coded slice, not production deployment or live provider evidence.
+- Local `npm run lint` and `npm test` pass, but local MySQL-only suites skip because no MySQL service is available. Local passes are not substituted for CI.
+- Older CI run `40292904036` predates these checkout/migration/admin additions and is superseded for this slice by `40301701753`.
 
 ## Phase 07/08 completion gate
 
-Keep both phases `IN PROGRESS` until the new MySQL 8.0 CI suite passes, production deployment configuration is supplied/verified, remaining P07 cart/privacy acceptance is addressed, operational reservation expiry/recovery is resolved, OTP/advance behavior is safely integrated or explicitly deferred by the owner, and the return policy above is approved or formally deferred. Do not execute production migrations, deployment, SMS, payment or refunds.
+Phase 08 remains `IN PROGRESS`: the coded-slice MySQL 8.0 CI gate is **PASS** (`40301701753`), while production configuration and Phase 07 cart/privacy acceptance remain **OPEN / NOT VERIFIED**; reservation expiry/recovery and OTP/advance behavior require a safe implementation or explicit owner deferral; provider delivery/settlement is **BLOCKED** pending authorization and verified evidence; return/refund/restock policy is **AWAITING OWNER DECISION** (or a formal documented deferral). Phase 09 may proceed concurrently under the user's explicit authorization. Do not execute production migrations, deployment, SMS, payment or refunds.
