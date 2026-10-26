@@ -68,9 +68,23 @@ jobs:
           DB_USER: mrtumi_test
           DB_PASSWORD: mrtumi_test_pw
         run: |
-          npm run migrate:up
-          npm run migrate:status
-          npm run migrate:down -- 6
+          set -euo pipefail
+          run_and_report() {
+            label="$1"
+            shift
+            if output="$("$@" 2>&1)"; then
+              printf '%s\\n' "$output"
+            else
+              rc=$?
+              while IFS= read -r line; do
+                echo "::error title=${label}::${line}"
+              done <<< "$output"
+              exit "$rc"
+            fi
+          }
+          run_and_report 'MySQL migrate up' npm run migrate:up
+          run_and_report 'MySQL migration status' npm run migrate:status
+          run_and_report 'MySQL migrate down 6' npm run migrate:down -- 6
 
       - name: Run automated unit, portal regression & live MySQL 8.0 test suites
         run: |
