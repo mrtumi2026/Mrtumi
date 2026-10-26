@@ -114,10 +114,10 @@ describe('Phase 03 — Real MySQL 8.0 Schema, Migrations, Constraints, Transacti
     if (!pool) return t.skip(SKIP_REASON);
 
     const applied = await migrateUp(pool);
-    assert.equal(applied.length, 4);
+    assert.equal(applied.length, 6);
     assert.deepEqual(
       applied.map((m) => m.version),
-      ['0001', '0002', '0003', '0004']
+      ['0001', '0002', '0003', '0004', '0005', '0006']
     );
 
     const statusAfterUp = await getMigrationStatus(pool);
@@ -129,7 +129,7 @@ describe('Phase 03 — Real MySQL 8.0 Schema, Migrations, Constraints, Transacti
        WHERE TABLE_SCHEMA = ? AND TABLE_NAME <> 'schema_migrations'`,
       [testDbConfig.name]
     );
-    assert.equal(tableMeta.length, 72, 'All 71 foundation tables plus the Phase 06 receipt table must be created');
+    assert.equal(tableMeta.length, 73, 'All 71 foundation tables plus Phase 06 receipt and Phase 07 cart tables must be created');
     for (const tbl of tableMeta) {
       assert.equal(tbl.engine, 'InnoDB', `Table ${tbl.name} must use InnoDB`);
       assert.equal(
@@ -138,13 +138,18 @@ describe('Phase 03 — Real MySQL 8.0 Schema, Migrations, Constraints, Transacti
         `Table ${tbl.name} must use utf8mb4_unicode_ci`
       );
     }
+    const refundKeyColumn=await dbClient.queryOne(`SELECT IS_NULLABLE AS nullable, CHARACTER_MAXIMUM_LENGTH AS max_length FROM information_schema.columns WHERE TABLE_SCHEMA=? AND TABLE_NAME='refunds' AND COLUMN_NAME='request_key'`,[testDbConfig.name]);
+    assert.equal(refundKeyColumn.nullable,'YES','Existing refund rows remain compatible via NULL request keys');
+    assert.equal(Number(refundKeyColumn.max_length),128);
+    const refundKeyIndex=await dbClient.queryOne(`SELECT NON_UNIQUE AS non_unique FROM information_schema.statistics WHERE TABLE_SCHEMA=? AND TABLE_NAME='refunds' AND INDEX_NAME='uq_refunds_request_key' LIMIT 1`,[testDbConfig.name]);
+    assert.equal(Number(refundKeyIndex.non_unique),0,'Refund idempotency key must be unique');
 
-    // Roll back all 4 migrations in reverse FK order and verify clean schema
-    const rolledBack = await migrateDown(pool, { steps: 4 });
-    assert.equal(rolledBack.length, 4);
+    // Roll back all 6 migrations in reverse FK order and verify clean schema
+    const rolledBack = await migrateDown(pool, { steps: 6 });
+    assert.equal(rolledBack.length, 6);
     assert.deepEqual(
       rolledBack.map((m) => m.version),
-      ['0004', '0003', '0002', '0001']
+      ['0006', '0005', '0004', '0003', '0002', '0001']
     );
 
     const remainingTables = await dbClient.queryAll(
@@ -157,7 +162,7 @@ describe('Phase 03 — Real MySQL 8.0 Schema, Migrations, Constraints, Transacti
 
     // Re-apply cleanly for subsequent tests
     const reapplied = await migrateUp(pool);
-    assert.equal(reapplied.length, 4);
+    assert.equal(reapplied.length, 6);
   });
 
   test('2. Migration checksum tamper detection, out-of-order rejection, and failed statement handling', async (t) => {
@@ -177,17 +182,17 @@ describe('Phase 03 — Real MySQL 8.0 Schema, Migrations, Constraints, Transacti
         (err) => err instanceof MigrationError && err.code === 'MIGRATION_CHECKSUM_MISMATCH'
       );
 
-      // Restore 0001 checksum, add failing 0004 migration, verify failure handling & advisory lock release
+      // Restore 0001 checksum, add failing 0007 migration, verify failure handling & advisory lock release
       fs.copyFileSync(
         path.join(realDir, '0001_core_security_and_sessions.up.sql'),
         path.join(tmpDir, '0001_core_security_and_sessions.up.sql')
       );
       fs.writeFileSync(
-        path.join(tmpDir, '0005_broken_sql.up.sql'),
+        path.join(tmpDir, '0007_broken_sql.up.sql'),
         'INVALID SQL STATEMENT THAT MUST FAIL;'
       );
       fs.writeFileSync(
-        path.join(tmpDir, '0005_broken_sql.down.sql'),
+        path.join(tmpDir, '0007_broken_sql.down.sql'),
         'SELECT 1;'
       );
 
@@ -196,9 +201,9 @@ describe('Phase 03 — Real MySQL 8.0 Schema, Migrations, Constraints, Transacti
         (err) => err instanceof MigrationError && err.code === 'MIGRATION_STATEMENT_FAILED'
       );
 
-      // Verify 0005 was NOT recorded in schema_migrations and advisory lock was released
+      // Verify 0007 was NOT recorded in schema_migrations and advisory lock was released
       const status = await getMigrationStatus(pool);
-      assert.equal(status.length, 4);
+      assert.equal(status.length, 6);
       const lockCheck = await dbClient.queryOne(
         "SELECT IS_FREE_LOCK('mrtumi_schema_migration') AS free_lock"
       );

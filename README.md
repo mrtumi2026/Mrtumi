@@ -2,7 +2,7 @@
 
 Bilingual (**Bangla `bn` + English `en`**) e-commerce, wholesale, multivendor, reseller, and POS platform engineered for Bangladesh (`BDT / ৳`, `Asia/Dhaka`).
 
-> **Current Phase:** **PHASE 05 — CUSTOMER STOREFRONT** (`TESTED AND PASSED`; awaiting explicit owner approval to start **Phase 06 — Products, Inventory, Purchases and Suppliers**).
+> **Current Phase:** **PHASE 08 — ORDER MANAGEMENT, INCOMPLETE ORDERS, OTP & ADVANCE PAYMENT** (`IN PROGRESS`; Phase 06 milestone accepted by owner; Phase 07 checkout prerequisites remain open). Production deployment remains unauthorized.
 
 ---
 
@@ -23,6 +23,8 @@ Bilingual (**Bangla `bn` + English `en`**) e-commerce, wholesale, multivendor, r
 | [`docs/PHASE_04_UI_DESIGN_SYSTEM.md`](docs/PHASE_04_UI_DESIGN_SYSTEM.md) | Phase 04 frontend audit baseline, WCAG AA design tokens, temporary logo placeholders & `bn`/`en` i18n architecture |
 | [`docs/PHASE_05_CUSTOMER_STOREFRONT.md`](docs/PHASE_05_CUSTOMER_STOREFRONT.md) | Phase 05 storefront audit, MySQL-first `storefrontRepository.js`, deferred SQLite route map & SEO/catalogue spec |
 | [`docs/PHASE_06_PRODUCTS_INVENTORY_PURCHASES_SUPPLIERS.md`](docs/PHASE_06_PRODUCTS_INVENTORY_PURCHASES_SUPPLIERS.md) | Phase 06 implementation status, migration, tested vertical slice, gaps and lot/expiry decision tracking |
+| [`docs/PHASE_07_CUSTOMER_ACCOUNTS_CART_CHECKOUT.md`](docs/PHASE_07_CUSTOMER_ACCOUNTS_CART_CHECKOUT.md) | Phase 07 account/cart implementation status, MySQL migration, verification and checkout gaps |
+| [`docs/PHASE_08_ORDER_LIFECYCLE_OTP_ADVANCE.md`](docs/PHASE_08_ORDER_LIFECYCLE_OTP_ADVANCE.md) | Phase 08 order lifecycle, refund request, consent, OTP and advance-payment status and gaps |
 
 ---
 

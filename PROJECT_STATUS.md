@@ -4,7 +4,7 @@
 **Repository:** `mrtumi2026/Mrtumi` (Working Branch: `arena/8689c974-mrtumi`)
 **Hosting Provider:** BestWebHostBD (`Node.js` + `SSH` + `MySQL-only` confirmed by owner via support; exact target runtime/DB versions `UNVERIFIED` — see `docs/CPANEL_COMPATIBILITY.md`). Local sandbox runtime checked: Node `v22.22.3`, npm `10.9.8`; this does not verify cPanel runtime.
 **Current Completed Phase:** **PHASE 05 — CUSTOMER STOREFRONT**
-**Current Work:** **PHASE 06 — PRODUCTS, INVENTORY, PURCHASES & SUPPLIERS** (`IN PROGRESS`); owner authorized implementation through Phase 20. No deployment or production database change is authorized.
+**Current Work:** **PHASE 08 — ORDER MANAGEMENT, INCOMPLETE ORDERS, OTP & ADVANCE PAYMENT** (`IN PROGRESS`); Phase 07 remains incomplete and its checkout/stock-reservation dependencies are explicitly tracked. Owner accepted Phase 06's current milestone and authorized implementation through Phase 20. No deployment or production database change is authorized.
 
 ---
 
@@ -17,9 +17,9 @@
 | **Phase 03** | Database, Backend and API Foundation | `TESTED AND PASSED` | Complete (`63bb7a0` — `71` `InnoDB` `utf8mb4` MySQL tables, `paisa` math, ACID transactions, RBAC/CSRF/rate-limit, live `mysql:8.0` CI) |
 | **Phase 04** | Branding, Design System and Bilingual UI | `TESTED AND PASSED` | Complete (`033009a` — WCAG AA tokens, temporary brand placeholders, `bn`/`en` dictionaries, `৳`/`Asia/Dhaka` formatters, 4-portal responsive UI) |
 | **Phase 05** | Customer Storefront | `TESTED AND PASSED` | **Complete.** MySQL-first `storefrontRepository.js`, Homepage, Category/Subcategory/Childcategory/Brand/Search/Filter/Sort/Pagination, Product Detail (DB gallery, `product_variants`, approved wholesale guard, moderated reviews, JSON-LD), Cart entry points, `/about`, `/faq`, `/contact`, Blogs, `/sitemap.xml` & `/robots.txt` verified locally & on live `mysql:8.0` CI; waiting for explicit owner sign-off (`OWNER APPROVAL REQUIRED`) before Phase 06 |
-| **Phase 06** | Products, Inventory, Purchases and Suppliers | `IN PROGRESS` | Local tested vertical slice implemented; live MySQL 8.0 CI pending. Product edit/variants/gallery/bulk, supplier maintenance, PO transitions/cancel/returns and lot/expiry policy remain outstanding (`docs/PHASE_06_PRODUCTS_INVENTORY_PURCHASES_SUPPLIERS.md`) |
-| **Phase 07** | Customer Accounts, Cart and Checkout | `NOT STARTED` | Depends on Phase 05–06 |
-| **Phase 08** | Order Management, Incomplete Orders, OTP and Advance Payment | `NOT STARTED` | Depends on Phase 07 (configurable OTP & advance payment approved) |
+| **Phase 06** | Products, Inventory, Purchases and Suppliers | `IN PROGRESS` | Owner accepted the current milestone; live MySQL 8.0 CI passed previously. Product edit/variants/gallery/bulk, supplier maintenance, PO transitions/cancel/returns and lot/expiry policy remain outstanding (`docs/PHASE_06_PRODUCTS_INVENTORY_PURCHASES_SUPPLIERS.md`) |
+| **Phase 07** | Customer Accounts, Cart and Checkout | `IN PROGRESS` | MySQL-backed accounts, addresses and guest-cart merge implemented; checkout, persistent full-cart sync, configured delivery rates and approved consent handling remain outstanding (`docs/PHASE_07_CUSTOMER_ACCOUNTS_CART_CHECKOUT.md`) |
+| **Phase 08** | Order Management, Incomplete Orders, OTP and Advance Payment | `IN PROGRESS` | Transaction-backed order/refund lifecycle, guarded bilingual admin screens, consent/withdrawal workflows, OTP and advance settings, and limited reservation foundation implemented; checkout integration/provider delivery and live MySQL CI evidence remain (`docs/PHASE_08_ORDER_LIFECYCLE_OTP_ADVANCE.md`) |
 | **Phase 09** | Admin Dashboard, Users and Permissions | `NOT STARTED` | Depends on Phase 03, 06, 08 |
 | **Phase 10** | Courier and Delivery Integrations | `BLOCKED` | Adapter build in P10; live test blocked until Steadfast/Pathao/RedX credentials & outbound access verified |
 | **Phase 11** | Payment Gateways | `BLOCKED` | Adapter build in P11; sandbox/live test blocked until bKash/ShurjoPay/UddoktaPay credentials provided |
@@ -39,9 +39,9 @@
 
 - Added reversible migration `0004_phase06_inventory_purchases_suppliers` for supplier metadata, product type, purchase totals/lines, unit-cost stock ledger, and idempotent receipt records. Migration up/status/down and repository integration tests passed in GitHub Actions against live MySQL 8.0.
 - Implemented an Admin-session + CSRF-protected initial screen at `/admin/phase06` and async repository methods for product creation, optional opening stock, archive/restore, safe raster-upload validation, supplier creation, reasoned stock adjustments, draft multi-line purchase orders, and partial/full receipts.
-- Verified result: `npm run lint` — 575 passed; local `npm test` — 27 passed, 8 MySQL-only tests explicitly skipped, 0 failed; `npm audit --omit=dev` — 0 vulnerabilities. GitHub Actions `Run 40277859457` / job `121424359602` passed all checks including the real `mysql:8.0` service, all 4 migrations up/status/down, and the full automated test suite with MySQL tests active.
-- Phase 06 remains `IN PROGRESS`; edit/variants/gallery/bulk/CSV, supplier maintenance, full PO state/cancel/returns, exact receipt UI, unresolved batch/lot/expiry rules, and live MySQL CI remain outstanding. See `docs/PHASE_06_PRODUCTS_INVENTORY_PURCHASES_SUPPLIERS.md`.
-- Phase 07–20 remain `NOT STARTED` (provider operations for Phase 10–13 remain blocked until provider documentation/credentials/approvals are available). No production deployment or live data migration was performed.
+- Verified result for the preceding Phase 06 milestone: lint 575 passed; local tests 27 passed with 8 explicit MySQL skips and no failures; production dependency audit 0 vulnerabilities. GitHub Actions Run `40278078567` passed with MySQL 8.0 migrations and tests active (the documented Phase 06 evidence).
+- Phase 06 remains `IN PROGRESS` despite owner acceptance of the current milestone; edit/variants/gallery/bulk/CSV, supplier maintenance, full PO transitions/returns, receipt UI, unresolved batch/lot/expiry policy remain documented gaps. See `docs/PHASE_06_PRODUCTS_INVENTORY_PURCHASES_SUPPLIERS.md`.
+- Phase 07 remains `IN PROGRESS`: account registration/login, saved addresses, and guest-cart merge are implemented as an initial slice; canonical checkout acceptance remains open. Phase 08 remains `IN PROGRESS`: transactional lifecycle/refund requests, guarded admin views, consent-only recovery, OTP/advance settings and a limited reservation foundation are implemented, but checkout is not wired to them and Phase 08 MySQL CI has not yet been verified. See `docs/PHASE_07_CUSTOMER_ACCOUNTS_CART_CHECKOUT.md` and `docs/PHASE_08_ORDER_LIFECYCLE_OTP_ADVANCE.md`. Provider operations remain blocked pending credentials/evidence. No production deployment or live data migration was performed.
 
 ## Summary of Finalized Phase 05 Deliverables & Remaining Staged Dependencies
 

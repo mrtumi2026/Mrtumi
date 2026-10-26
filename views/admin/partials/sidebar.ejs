@@ -37,6 +37,7 @@
                 <div class="collapse" id="sidebar-orders">
                   <ul class="nav-second-level">
                     <li><a href="/admin/order/all"><i data-feather="file-plus"></i> <%= t('admin.menu.allOrders') %></a></li>
+                    <% if (hasPermission('orders.manage')) { %><li><a href="/admin/phase08/orders"><i data-feather="repeat"></i> <%= locale === 'bn' ? 'অর্ডার লাইফসাইকেল (Phase 08)' : 'Order Lifecycle (Phase 08)' %></a></li><% } %>
                     <li><a href="/admin/reseller-orders"><i data-feather="users"></i> <%= t('admin.menu.resellerOrders') %></a></li>
                     <li><a href="/admin/incomplete-orders"><i data-feather="file-plus"></i> <%= locale === 'bn' ? 'অসম্পূর্ণ অর্ডার' : 'Incomplete Orders' %></a></li>
                     <li><a href="/admin/order/pending"><i data-feather="file-plus"></i> <%= t('admin.menu.pending') %> (<%= fmt.number(pendingOrdersCount || 0) %>)</a></li>
@@ -64,6 +65,9 @@
                     <li><a href="/admin/refunds?status=pending"><i data-feather="clock"></i> <%= locale === 'bn' ? 'পেন্ডিং রিফান্ড' : 'Pending Refunds' %></a></li>
                     <li><a href="/admin/refunds?status=approved"><i data-feather="check-circle"></i> <%= locale === 'bn' ? 'অনুমোদিত রিফান্ড' : 'Approved Refunds' %></a></li>
                     <li><a href="/admin/refunds?status=processed"><i data-feather="check"></i> <%= locale === 'bn' ? 'সম্পন্ন রিফান্ড' : 'Processed Refunds' %></a></li>
+                    <% if (hasPermission('refunds.review')) { %><li><a href="/admin/phase08/refunds"><i data-feather="shield"></i> <%= locale === 'bn' ? 'রিফান্ড রিভিউ (Phase 08)' : 'Refund Review (Phase 08)' %></a></li><% } %>
+                    <% if (hasPermission('checkout.recovery.view')) { %><li><a href="/admin/phase08/incomplete"><i data-feather="user-check"></i> <%= locale === 'bn' ? 'সম্মতিসহ চেকআউট রিকভারি' : 'Consented Checkout Recovery' %></a></li><% } %>
+                    <% if (hasPermission('settings.manage')) { %><li><a href="/admin/phase08/settings"><i data-feather="settings"></i> <%= locale === 'bn' ? 'OTP ও অগ্রিম নীতি' : 'OTP & Advance Policy' %></a></li><% } %>
                   </ul>
                 </div>
               </li>

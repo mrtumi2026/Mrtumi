@@ -25,6 +25,8 @@ const phase06Routes = require('./src/routes/phase06');
 const vendorPanelRoutes = require('./src/routes/vendorPanel');
 const resellerPanelRoutes = require('./src/routes/resellerPanel');
 const storefrontRoutes = require('./src/routes/storefront');
+const customerAccountRoutes = require('./src/routes/customerAccount');
+const phase08AdminRoutes = require('./src/routes/phase08Admin');
 
 // Initialize local SQLite prototype ONLY in non-production when DB_CLIENT=sqlite.
 // Production strictly uses MySQL via versioned migrations (`npm run migrate:up`).
@@ -71,8 +73,11 @@ app.use(adminOrdersRoutes);
 app.use(adminCatalogRoutes);
 app.use(adminOperationsRoutes);
 app.use(adminSettingsRoutes);
+app.use(phase06Routes);
+app.use(phase08AdminRoutes);
 app.use(vendorPanelRoutes);
 app.use(resellerPanelRoutes);
+app.use(customerAccountRoutes);
 app.use(storefrontRoutes);
 
 // 404 Handler (JSON envelope for API paths, HTML/redirects for portal paths)

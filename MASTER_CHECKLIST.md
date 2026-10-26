@@ -64,24 +64,24 @@
 | P06-02 | Warehouse/vendor inventory reads, reason-required negative-safe adjustments, immutable `stock_ledger` movements, low-stock threshold display, MySQL row locks and audit | `IN PROGRESS` | Covered adjustments and concurrent locking passed local and MySQL 8.0 CI (`40277859457`); variant movement, reservation/release and full inventory reports remain outstanding |
 | P06-03 | Supplier create, multi-line draft purchase order, partial/full receipt, receipt idempotency and atomic stock/ledger update | `IN PROGRESS` | Covered draft/partial receipt/idempotency paths tested locally and on MySQL 8.0 CI (`40277859457`). Supplier edit/history, PO order/cancel transitions, receipt UI, supplier returns and payable ledger remain outstanding |
 | P06-04 | Checkout stock reservation/release, low-stock thresholds & CSV import/export | `NOT STARTED` | Phase 07 checkout reservation/release; CSV tooling is outstanding |
-| P06-05 | Phase 06 complete acceptance, batch/lot/expiry policy decision and live MySQL 8.0 approval | `IN PROGRESS` | `docs/PHASE_06_PRODUCTS_INVENTORY_PURCHASES_SUPPLIERS.md`; batch/expiry requirements are unresolved and documented, not assumed |
+| P06-05 | Phase 06 complete acceptance, batch/lot/expiry policy decision and live MySQL 8.0 approval | `IN PROGRESS` | Owner accepted the current milestone and approved moving into Phase 07; acceptance gaps and the unresolved batch/expiry requirement remain tracked in `docs/PHASE_06_PRODUCTS_INVENTORY_PURCHASES_SUPPLIERS.md` |
 
 ### PHASE 07 — Customer Accounts, Cart & Checkout
 | ID | Feature / Deliverable | Status | Notes |
 |---|---|---|---|
-| P07-01 | Customer registration, login, logout, password recovery & address book | `NOT STARTED` | Scheduled for Phase 07 |
-| P07-02 | Guest checkout, BD phone validation & persistent cart sync | `NOT STARTED` | Scheduled for Phase 07 |
-| P07-03 | Configurable delivery zones/fees, server-only total math & duplicate order lock | `NOT STARTED` | Scheduled for Phase 07 |
-| P07-04 | Terms/privacy consent handling at checkout | `NOT STARTED` | Scheduled for Phase 07 |
+| P07-01 | Customer registration, login, logout, password recovery & address book | `IN PROGRESS` | MySQL-backed registration/login, regenerated sessions, POST logout and address management implemented; verified notification-based password recovery remains unavailable pending authorized channel |
+| P07-02 | Guest checkout, BD phone validation & persistent cart sync | `IN PROGRESS` | BD phone validation and bounded guest-to-customer cart merge implemented; persistent read/sync for all cart mutations and canonical checkout remain outstanding |
+| P07-03 | Configurable delivery zones/fees, server-only total math & duplicate order lock | `NOT STARTED` | Requires real configured delivery data and MySQL order/idempotency transaction; no fee values fabricated |
+| P07-04 | Terms/privacy consent handling at checkout | `NOT STARTED` | Depends on checkout UI and owner-approved legal wording |
 
 ### PHASE 08 — Order Management, Incomplete Orders, OTP & Advance Payment
 | ID | Feature / Deliverable | Status | Notes |
 |---|---|---|---|
-| P08-01 | Order state machine, `order_status_history`, notes & authorized item edits | `NOT STARTED` | Scheduled for Phase 08 |
-| P08-02 | Cancellation, returns, refund initiation & stock restoration | `NOT STARTED` | Scheduled for Phase 08 |
-| P08-03 | Consent-aware incomplete checkout capture & duplicate order detection | `NOT STARTED` | Scheduled for Phase 08 |
-| P08-04 | Admin-configurable Order OTP verification (expiry, attempt cap, cooldown, rate limit) | `NOT STARTED` | Approved (`ADR-005`) |
-| P08-05 | Admin-configurable advance payment (fixed/%) + remaining COD balance & min/max order rules | `NOT STARTED` | Approved (`ADR-005`) |
+| P08-01 | Order state machine, `order_status_history`, notes & authorized item edits | `IN PROGRESS` | MySQL row-locked transitions/history/audit and guarded bilingual admin screen implemented; granular permission provisioning exists as a dependency; notes/item edits and live MySQL evidence remain |
+| P08-02 | Cancellation, returns, refund initiation & stock restoration | `IN PROGRESS` | Cancellation/failure releases held reservations and shipment consumes them; bounded/idempotent refund requests and approve/reject history implemented. Checkout is not wired to reservations; partial returns/restock and provider reconciliation remain |
+| P08-03 | Consent-aware incomplete checkout capture & duplicate order detection | `IN PROGRESS` | Consent-only minimal capture, dedupe/search/status/withdrawal admin workflows and recovered-order idempotency guard implemented; canonical checkout integration and live MySQL evidence remain |
+| P08-04 | Admin-configurable Order OTP verification (expiry, attempt cap, cooldown, rate limit) | `IN PROGRESS` | MySQL-bound OTP digest/expiry/attempt/order-customer-session checks, replay rejection and hourly/cooldown limits implemented; settings UI exists; no delivery route/provider and live MySQL evidence remains |
+| P08-05 | Admin-configurable advance payment (fixed/%) + remaining COD balance & min/max order rules | `IN PROGRESS` | Admin settings persistence/UI and bounded integer-paisa calculations implemented; authoritative MySQL checkout/order integration and live MySQL evidence remain |
 
 ### PHASE 09 — Admin Dashboard, Users & Permissions
 | ID | Feature / Deliverable | Status | Notes |
