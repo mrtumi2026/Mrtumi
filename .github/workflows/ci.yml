@@ -59,6 +59,16 @@ jobs:
       - name: Run foundation lint, EJS compile, migration SQL & secret scan
         run: npm run lint
 
+      - name: Diagnose MySQL migrations individually on a fresh schema
+        env:
+          DB_CLIENT: mysql
+          DB_HOST: 127.0.0.1
+          DB_PORT: "3306"
+          DB_NAME: mrtumi_test
+          DB_USER: mrtumi_test
+          DB_PASSWORD: mrtumi_test_pw
+        run: node scripts/diagnose-migrations.js
+
       - name: Verify MySQL CLI migrator (up -> status -> down 9)
         env:
           DB_CLIENT: mysql
