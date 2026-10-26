@@ -182,17 +182,17 @@ describe('Phase 03 — Real MySQL 8.0 Schema, Migrations, Constraints, Transacti
         (err) => err instanceof MigrationError && err.code === 'MIGRATION_CHECKSUM_MISMATCH'
       );
 
-      // Restore 0001 checksum, add failing 0008 migration, verify failure handling & advisory lock release
+      // Restore 0001 checksum, add failing 0009 migration, verify failure handling & advisory lock release
       fs.copyFileSync(
         path.join(realDir, '0001_core_security_and_sessions.up.sql'),
         path.join(tmpDir, '0001_core_security_and_sessions.up.sql')
       );
       fs.writeFileSync(
-        path.join(tmpDir, '0008_broken_sql.up.sql'),
+        path.join(tmpDir, '0009_broken_sql.up.sql'),
         'INVALID SQL STATEMENT THAT MUST FAIL;'
       );
       fs.writeFileSync(
-        path.join(tmpDir, '0008_broken_sql.down.sql'),
+        path.join(tmpDir, '0009_broken_sql.down.sql'),
         'SELECT 1;'
       );
 
@@ -201,10 +201,10 @@ describe('Phase 03 — Real MySQL 8.0 Schema, Migrations, Constraints, Transacti
         (err) => err instanceof MigrationError && err.code === 'MIGRATION_STATEMENT_FAILED'
       );
 
-      // Verify 0008 was NOT recorded in schema_migrations and advisory lock was released
+      // Verify 0009 was NOT recorded in schema_migrations and advisory lock was released
       const status = await getMigrationStatus(pool);
       assert.equal(status.length, 8);
-      const failedMigration = await dbClient.queryOne("SELECT version FROM schema_migrations WHERE version='0008'");
+      const failedMigration = await dbClient.queryOne("SELECT version FROM schema_migrations WHERE version='0009'");
       assert.equal(failedMigration, null, 'failed migration version must not be recorded');
       const lockCheck = await dbClient.queryOne(
         "SELECT IS_FREE_LOCK('mrtumi_schema_migration') AS free_lock"
