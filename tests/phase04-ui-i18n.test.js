@@ -132,6 +132,7 @@ describe('Phase 04 — Branding, Design System, Accessibility & Bilingual UI (`b
   let baseUrl;
 
   before(async () => {
+    sqliteDb.run('UPDATE users SET role = ? WHERE LOWER(email) = ?', 'Super Admin', TEST_ADMIN_EMAIL.toLowerCase());
     await new Promise((resolve) => {
       server = app.listen(0, '127.0.0.1', () => {
         const addr = server.address();

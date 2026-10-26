@@ -12,6 +12,9 @@ describe('Phase 09 dashboard repository contract', () => {
     const source = fs.readFileSync(path.join(__dirname, '../src/routes/adminDashboard.js'), 'utf8');
     assert.match(source, /if \(env\.db\.client === 'mysql'\)\s*\{\s*return res\.render\('admin\/dashboard', await dashboardRepository\.getDashboardData\(\)\)/);
     assert.match(source, /router\.use\('\/admin', requireAdmin\)/);
+    assert.match(source, /router\.get\('\/admin\/dashboard', requirePermission\('dashboard\.view'\)/);
+    assert.match(source, /router\.get\('\/admin\/orders\/poll-new', requirePermission\('orders\.poll'\)/);
+    assert.match(source, /router\.post\('\/admin\/gemini-chat\/send', requirePermission\('assistant\.report'\), requireCsrf/);
     assert.match(source, /dashboardRepository\.getPollNewOrders/);
     assert.match(source, /dashboardRepository\.getUnseenOrders/);
     assert.doesNotMatch(source, /18420|1485\.50|342 \/ 5,000|25 Nov 2026|Pro Business Plan/);

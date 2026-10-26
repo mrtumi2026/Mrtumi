@@ -1,37 +1,34 @@
 # Phase 09 — Admin Dashboard, Users & Permissions
 
-**Status: `IN PROGRESS` (kickoff authorized by the user).** Phase 08 remains independently `IN PROGRESS`; its verified live-MySQL test slice does not close its policy- and provider-dependent work.
+**Status: `IN PROGRESS`.** This sprint adds an additive permission catalog migration and protected MySQL-backed access-management routes. No role grants are assigned automatically. Current changes require a fresh live MySQL 8.0 CI run before their HTTP/migration acceptance can be called verified.
 
-## Acceptance scope
+## Implemented in the current sprint — verification pending
 
-- Dashboard figures must come from the active database and use the MySQL/InnoDB production path; unsupported or missing data must be shown as unavailable, never invented.
-- Admin accounts, roles and granular permission grants must be managed with server-side authorization, validation, CSRF protection, audit records and safe MySQL transactions.
-- Every admin route must enforce permissions server-side; navigation visibility is convenience only. Audit records must not be silently mutable through ordinary admin functionality.
-- Add authenticated HTTP tests using MySQL role/grant data for permitted and denied access, including mutations, CSRF, audit and replay where applicable.
-- Preserve bilingual Bangla-default/English behavior and the modular Express monolith. Do not alter production data or seed/overwrite owner grants without explicit authorization.
+- Migration `0008_phase09_admin_access` adds permission definitions for dashboard, order notifications, assistant reports, staff administration, staff-role assignment (`staff.assign_role`), role administration, separate permission-grant administration (`roles.grants.manage`), and audit-log reading. It does **not** assign grants. Separating role administration from role-grant administration prevents a role manager from automatically gaining privilege-assignment power. Its down migration removes only these definitions that are not referenced by a role, preserving in-use permission keys/grants.
+- Dashboard, provider widgets, order polling, popup visibility/dismissal, and assistant report routes use explicit server-side permission keys. Sensitive writes require CSRF. Assistant report use and popup dismissal are audited without storing the submitted prompt or order/customer data in the audit event.
+- Added `src/repositories/adminAccessRepository.js` and protected routes for staff listing/create/update/status, role listing/create/status/grant replacement, permission catalog read, and paginated audit-log read. Staff deactivation and profile/role changes revoke that user’s persisted web sessions. Passwords are bcrypt-hashed; responses omit hashes. Role grants are allow-listed against permission rows; Super Admin role grants cannot be edited by this workflow.
+- Legacy `/admin/users/manage`, `/admin/roles/manage`, and `/admin/permissions/manage` views now read from MySQL-backed repositories when the Phase 09 routes match first. Legacy user/role delete URLs perform safe deactivation, not hard deletion. Permission definitions are migration-managed rather than freely created/deleted through the old CRUD interface.
+- Sidebar entries for dashboard, assistant, staff, roles/permission catalog and audit-log access are filtered by effective grants. Other legacy admin navigation/routes still lack consistent granular coverage.
+- Audit logs have a permission-protected read path and no application edit/delete endpoints. The system does not yet enforce database-level append-only integrity against privileged direct SQL; Phase 09 is therefore not complete.
 
-## Implemented — pending MySQL CI verification
+## Verification plan in the current branch
 
-- Added `src/repositories/adminDashboardRepository.js`, using the canonical MySQL pool/query client and parameterized SQL for dashboard summaries, Dhaka-local day/week/month ranges, status and traffic breakdowns, approved product/category aggregates, recent orders, fund/expense totals, order polling, unseen-order popup, and assistant report snapshots.
-- `src/routes/adminDashboard.js` delegates the dashboard and the listed read paths to the repository when `DB_CLIENT=mysql`; direct SQLite queries remain solely in its local non-MySQL prototype branches. This does not migrate unrelated admin routes or the rest of the application.
-- Monetary values are read from integer paisa fields and converted for the existing BDT display. Empty result sets return actual empty/zero aggregates from SQL; unsupported provider account data is a distinct unavailable response.
-- Dismiss-new-orders mutation is CSRF-protected. Database failures are passed to the centralized safe error handling; SQL text and credentials are not returned by the repository layer.
-- Added repository contract tests and `tests/phase09-dashboard-mysql.test.js` for live MySQL repository, date/status/amount/stock behavior, authenticated HTTP access, and unavailable provider responses. GitHub Actions MySQL 8.0 run `40303685398` passed for commit `13b1636da323e91b4c483edc35024b9207d401f5`; this verifies dashboard summary queries, Dhaka-day boundaries/status filters, product/finance aggregates, authenticated route response and explicit provider-unavailable behavior.
-- MySQL HTTP coverage for order polling, unseen-order popup, dismiss mutation and assistant snapshot is still outstanding; their repository SQL is implemented but not live-tested over HTTP yet.
+- `tests/phase09-dashboard-mysql.test.js` now uses the full application HTTP stack with real MySQL role/grant rows and real password login. It covers dashboard, polling, popup, CSRF dismissal, assistant reporting, permitted/denied admin access, staff create/deactivate/session revocation, role creation/grant changes, malformed role input, permission catalog, audit access/integrity surface and unavailable provider responses.
+- Dashboard repository and prior summary HTTP behavior passed MySQL CI `40303959168` at the previous commit; that run predates migration `0008`, new guards, access-management routes and the expanded full-app tests. It is **not** verification of this sprint.
+- Local checks after the current edits: `npm run lint` — 676 checks passed; `npm test` — 53 tests, 45 passed, 0 failed, 8 local MySQL skips. These skips are not MySQL evidence.
+- The updated CI workflow and migration tests now expect eight migrations. A new live MySQL 8.0 CI run is required for the current commit before reporting this work as verified.
 
-## Blocked / incomplete
+## Explicitly unresolved / owner decision needed
 
-- `P09-01` — `IN PROGRESS`: implementation exists; live MySQL 8.0 CI verification is pending. UI compatibility and date/status/empty/error edge cases must be confirmed against MySQL.
-- External SMS/courier metric endpoints always return explicit `503 unavailable`; no provider adapter, authorized credentials, or verified live account data exists. Do not infer delivery or settlement from local settings.
-- `P09-02` — `IN PROGRESS`: this dashboard currently requires an admin session but has no dashboard-specific granular permission key/guard. Do not silently invent or seed owner grants. Staff/grant lifecycle, all admin route permission coverage and MySQL HTTP denial tests remain outstanding.
-- `P09-03` — `IN PROGRESS`: permission-filtered sidebar coverage, audit-log access/immutability and full MySQL HTTP verification remain outstanding.
+- **Permission assignment:** which existing staff roles/users should receive each new key (particularly `dashboard.view`, `staff.manage`, `roles.manage`, and `audit_logs.view`). No grant is seeded or assumed; owner or authorized Super Admin must assign least-privilege grants.
+- `P09-01` remains `IN PROGRESS` until the new full-stack MySQL HTTP suite passes and polling/popup/assistant behavior is evidenced on this commit.
+- `P09-02` remains `IN PROGRESS`: editing roles beyond grants, password reset workflow, broader user-management UX, all admin-route permission coverage, and owner-approved grants remain open.
+- `P09-03` remains `IN PROGRESS`: sidebar filtering covers only selected Phase 09 links; map and enforce every legacy admin navigation/route. Application-level audit immutability is not protection from direct privileged SQL; database-level protection and approved retention policy remain unresolved.
+- Tenant/vendor isolation is not applicable to the store-wide admin dashboard as currently designed; no vendor-specific dashboard is exposed by these routes.
+- Provider SMS/courier metrics remain explicit `503 unavailable`; no provider adapter, authorized credentials, or verified live account data exists.
 
-## Verification record
+## Phase 07 and Phase 08
 
-- Local `npm run lint` passed (659 checks); the full local `npm test` passed (53 tests: 45 passed, 0 failed, 8 skipped). The live Phase 09 MySQL suite is among the local skips because no MySQL service is available; these are not MySQL passes.
-- A dashboard-specific `dashboard.view` guard was explored and removed after it broke the existing Super Admin regression test and no owner-approved grants exist. Current dashboard-specific RBAC remains unresolved and must not be described as implemented.
-- Prior Phase 08 live MySQL run `40301701753` verifies only its documented checkout/reservation and admin lifecycle slice; it does not verify this Phase 09 repository.
+Phase 08 remains `IN PROGRESS` / **NOT COMPLETE**. Its checkout/reservation and admin HTTP slice passed CI `40301701753`, but provider delivery/settlement remains blocked, return/refund/restock policy awaits the owner, reservation-expiry/OTP/advance work remains open, and production configuration is unverified. Phase 07 remains in progress: persistent cart sync, approved legal copy/retention policy, production configuration and remaining end-to-end acceptance criteria remain outstanding.
 
-## Safety gates
-
-No provider calls, fabricated metrics, production migrations/deployment, permission seeding, or owner-policy assumptions. Integrations remain blocked until relevant authorization, credentials and verified evidence exist. Phase 08 return/refund/restock policy remains an owner decision and is not part of this phase's implementation assumptions.
+No production migration/deployment, payment/refund, SMS or external-provider operation occurred.

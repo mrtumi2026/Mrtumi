@@ -215,7 +215,7 @@
           input.value = '';
           fetch('/admin/gemini-chat/send', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || '' },
             body: JSON.stringify({ message: txt })
           })
           .then(function(r) { return r.json(); })
@@ -228,7 +228,7 @@
           b.addEventListener('click', function() { sendGaw(b.getAttribute('data-q')); });
         });
         document.getElementById('gaw-clear').addEventListener('click', function() {
-          fetch('/admin/gemini-chat/clear', { method: 'POST' }).then(function() { messages.innerHTML = ''; });
+          fetch('/admin/gemini-chat/clear', { method: 'POST', headers: { 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || '' } }).then(function() { messages.innerHTML = ''; });
         });
 
         // Poll New Orders every 12s

@@ -453,7 +453,15 @@
           val.textContent = parseFloat(d.balance).toLocaleString('en-BD', { minimumFractionDigits: 2 }) + ' tk';
           msg.textContent = 'Updated ' + new Date().toLocaleTimeString();
           msg.style.color = '#16a34a';
+        } else {
+          val.textContent = '<%= locale === "bn" ? "অনুপলব্ধ" : "Unavailable" %>';
+          msg.textContent = d.message || '<%= locale === "bn" ? "লাইভ ডেটা পাওয়া যায়নি" : "Live data unavailable" %>';
+          msg.style.color = '#b91c1c';
         }
+      }).catch(function() {
+        val.textContent = '<%= locale === "bn" ? "অনুপলব্ধ" : "Unavailable" %>';
+        msg.textContent = '<%= locale === "bn" ? "লাইভ ডেটা পাওয়া যায়নি" : "Live data unavailable" %>';
+        msg.style.color = '#b91c1c';
       });
   }
 
@@ -467,7 +475,13 @@
         if (d.success && d.data) {
           main.textContent = d.data.plan_name;
           det.textContent = 'API কল (ব্যবহার): ' + d.data.api_calls + '\nনেক্সট ডিউ ডেট: ' + d.data.next_due_display;
+        } else {
+          main.textContent = '<%= locale === "bn" ? "অনুপলব্ধ" : "Unavailable" %>';
+          det.textContent = d.message || '<%= locale === "bn" ? "লাইভ ডেটা পাওয়া যায়নি" : "Live data unavailable" %>';
         }
+      }).catch(function() {
+        main.textContent = '<%= locale === "bn" ? "অনুপলব্ধ" : "Unavailable" %>';
+        det.textContent = '<%= locale === "bn" ? "লাইভ ডেটা পাওয়া যায়নি" : "Live data unavailable" %>';
       });
   }
 
@@ -481,7 +495,13 @@
         if (d.success) {
           main.textContent = d.balance_display;
           det.textContent = 'ইন রিভিউতে: ' + d.in_review_count + ' টি পার্সেল\nকুরিয়ারে মোট (অ্যাপ): ' + d.courier_pending_orders + ' টি অর্ডার';
+        } else {
+          main.textContent = '<%= locale === "bn" ? "অনুপলব্ধ" : "Unavailable" %>';
+          det.textContent = d.message || '<%= locale === "bn" ? "লাইভ ডেটা পাওয়া যায়নি" : "Live data unavailable" %>';
         }
+      }).catch(function() {
+        main.textContent = '<%= locale === "bn" ? "অনুপলব্ধ" : "Unavailable" %>';
+        det.textContent = '<%= locale === "bn" ? "লাইভ ডেটা পাওয়া যায়নি" : "Live data unavailable" %>';
       });
   }
 </script>

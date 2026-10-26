@@ -86,9 +86,9 @@
 ### PHASE 09 — Admin Dashboard, Users & Permissions
 | ID | Feature / Deliverable | Status | Notes |
 |---|---|---|---|
-| P09-01 | Reference-inspired dashboard powered 100% by real DB queries | `IN PROGRESS` | Async MySQL dashboard summary and authenticated HTTP path passed live MySQL 8.0 CI `40303685398`; polling/popup/assistant HTTP coverage and broader UI compatibility remain. Provider metrics return unavailable. Dashboard-specific granular RBAC, user/grant management, sidebar filtering and audit-log controls remain open |
-| P09-02 | Staff accounts, roles & granular server-side permission middleware | `IN PROGRESS` | Auth repository loads MySQL role grants and scoped route guards exist; dashboard-specific granular permission is unresolved (no owner-approved grant seeded). Audit/provision grants safely and cover all admin mutation routes |
-| P09-03 | Permission-filtered sidebar navigation & immutable `audit_logs` | `IN PROGRESS` | Phase 08 links have scoped visibility; remaining sidebar links, audit-log access/immutability and real MySQL HTTP tests remain |
+| P09-01 | Reference-inspired dashboard powered 100% by real DB queries | `IN PROGRESS` | MySQL repository + dashboard route now use explicit permissions; full-stack MySQL HTTP coverage expanded in current unverified commit. Previous CI `40303959168` predates these changes. Provider metrics remain unavailable |
+| P09-02 | Staff accounts, roles & granular server-side permission middleware | `IN PROGRESS` | Migration `0008` adds catalog keys without grants; MySQL staff/role create, update/status, grant and session revocation APIs are implemented, but current CI verification is pending. Owner must decide who receives grants; full legacy admin route coverage remains |
+| P09-03 | Permission-filtered sidebar navigation & immutable `audit_logs` | `IN PROGRESS` | Selected dashboard/staff/role/audit sidebar links are grant-filtered; read-only audit UI/API and mutation audit records added. Remaining legacy links, database-level append-only protection and retention decision remain open |
 
 ### PHASE 10 — Courier & Delivery Integrations
 | ID | Feature / Deliverable | Status | Notes |

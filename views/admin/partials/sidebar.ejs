@@ -7,19 +7,23 @@
                 <%= t('admin.navigationHeader') %>
               </li>
 
+              <% if (hasPermission('dashboard.view')) { %>
               <li>
                 <a href="/admin/dashboard">
                   <i data-feather="airplay"></i>
                   <span><%= t('admin.menu.dashboard') %></span>
                 </a>
               </li>
+              <% } %>
 
+              <% if (hasPermission('assistant.report')) { %>
               <li>
                 <a href="/admin/gemini-chat">
                   <i data-feather="message-circle"></i>
                   <span><%= t('admin.menu.geminiAi') %></span>
                 </a>
               </li>
+              <% } %>
 
               <li>
                 <a href="/admin/order/create">
@@ -273,10 +277,11 @@
                 </a>
                 <div class="collapse" id="sidebar-users">
                   <ul class="nav-second-level">
-                    <li><a href="/admin/users/manage"><i data-feather="user"></i> <%= t('admin.menu.admins') %></a></li>
-                    <li><a href="/admin/roles/manage"><i data-feather="lock"></i> <%= locale === 'bn' ? 'রোলসমূহ (Roles)' : 'Roles' %></a></li>
-                    <li><a href="/admin/permissions/manage"><i data-feather="key"></i> <%= locale === 'bn' ? 'পারমিশনসমূহ' : 'Permissions' %></a></li>
+                    <% if (hasPermission('staff.manage')) { %><li><a href="/admin/users/manage"><i data-feather="user"></i> <%= t('admin.menu.admins') %></a></li><% } %>
+                    <% if (hasPermission('roles.manage')) { %><li><a href="/admin/roles/manage"><i data-feather="lock"></i> <%= locale === 'bn' ? 'রোলসমূহ (Roles)' : 'Roles' %></a></li>
+                    <li><a href="/admin/permissions/manage"><i data-feather="key"></i> <%= locale === 'bn' ? 'পারমিশনসমূহ' : 'Permissions' %></a></li><% } %>
                     <li><a href="/admin/customer"><i data-feather="users"></i> <%= t('admin.menu.customers') %></a></li>
+                    <% if (hasPermission('audit_logs.view')) { %><li><a href="/admin/audit-logs"><i data-feather="clipboard"></i> <%= locale === 'bn' ? 'অ্যাডমিন অডিট লগ' : 'Admin Audit Log' %></a></li><% } %>
                   </ul>
                 </div>
               </li>

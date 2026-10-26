@@ -125,8 +125,15 @@ async function getUnseenOrders({ pool = null } = {}) {
   return { latestId: asNum(latest.latest_id), orders: orders.map((o) => ({ ...o, id: Number(o.id), process_url: `/admin/order/view/${o.id}` })) };
 }
 
-async function dismissUnseenOrders({ pool = null } = {}) {
-  return mysqlClient(pool).execute('UPDATE orders SET is_seen=1 WHERE is_seen=0');
+async function dismissUnseenOrders(actor = {}, { pool = null } = {}) {
+  const activePool = pool || getPool();
+  return require('../db/mysqlPool').withTransaction(async (tx) => {
+    const result = await tx.execute('UPDATE orders SET is_seen=1 WHERE is_seen=0');
+    await tx.execute(`INSERT INTO audit_logs(actor_type,actor_id,action,entity_type,entity_id,before_json,after_json,ip_address,user_agent)
+      VALUES('admin',?,'admin.dashboard.popup.dismissed','dashboard','unseen_orders',NULL,?,?,?)`,
+      [actor.id || null, JSON.stringify({dismissedCount:Number(result.affectedRows||0)}), String(actor.ip||'').slice(0,64), String(actor.userAgent||'').slice(0,255)]);
+    return result;
+  }, {pool:activePool});
 }
 
 async function getAssistantSnapshot({ pool = null, now = new Date() } = {}) {

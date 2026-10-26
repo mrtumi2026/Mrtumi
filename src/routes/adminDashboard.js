@@ -5,13 +5,15 @@ const { env } = require('../config/env');
 const dashboardRepository = require('../repositories/adminDashboardRepository');
 const { asyncHandler } = require('../utils/asyncHandler');
 const { requireCsrf } = require('../middleware/csrf');
+const { requirePermission } = require('../middleware/rbac');
+const { recordAuditLog } = require('../repositories/auditLogRepository');
 
 const router = express.Router();
 
 router.use('/admin', requireAdmin);
 
 // Main Dashboard. Production/MySQL reads are isolated in the async repository.
-router.get('/admin/dashboard', asyncHandler(async (req, res) => {
+router.get('/admin/dashboard', requirePermission('dashboard.view'), asyncHandler(async (req, res) => {
   if (env.db.client === 'mysql') {
     return res.render('admin/dashboard', await dashboardRepository.getDashboardData());
   }
@@ -126,21 +128,21 @@ router.get('/admin/dashboard', asyncHandler(async (req, res) => {
 }));
 
 // External provider widgets stay unavailable until verified provider adapters exist.
-router.get('/admin/smsgeteway/balance', (_req, res) => res.status(503).json({
+router.get('/admin/smsgeteway/balance', requirePermission('dashboard.view'), (_req, res) => res.status(503).json({
   success: false, balance: null, gateway: 'BulkSMSBD', status: 'unavailable',
   message: 'Provider balance is unavailable; no verified live provider integration is configured.',
 }));
-router.get('/admin/bdcourier/my-plan', (_req, res) => res.status(503).json({
+router.get('/admin/bdcourier/my-plan', requirePermission('dashboard.view'), (_req, res) => res.status(503).json({
   success: false, data: null, status: 'unavailable',
   message: 'Courier account data is unavailable; no verified live provider integration is configured.',
 }));
-router.get('/admin/steadfast/dashboard-widget', (_req, res) => res.status(503).json({
+router.get('/admin/steadfast/dashboard-widget', requirePermission('dashboard.view'), (_req, res) => res.status(503).json({
   success: false, balance_display: null, in_review_count: null, status: 'unavailable',
   message: 'Courier provider metrics are unavailable; no verified live provider integration is configured.',
 }));
 
 // Real-time New Order Polling (Toast + Chime)
-router.get('/admin/orders/poll-new', asyncHandler(async (req, res) => {
+router.get('/admin/orders/poll-new', requirePermission('orders.poll'), asyncHandler(async (req, res) => {
   if (env.db.client === 'mysql') {
     const raw = Number.parseInt(req.query.after_id || '0', 10);
     const result = await dashboardRepository.getPollNewOrders(Number.isSafeInteger(raw) && raw > 0 ? raw : 0);
@@ -191,7 +193,7 @@ router.get('/admin/orders/poll-new', asyncHandler(async (req, res) => {
 }));
 
 // New Orders Modal Popup
-router.get('/admin/dashboard/new-orders-popup', asyncHandler(async (_req, res) => {
+router.get('/admin/dashboard/new-orders-popup', requirePermission('orders.popup.view'), asyncHandler(async (_req, res) => {
   if (env.db.client === 'mysql') {
     const result = await dashboardRepository.getUnseenOrders();
     return res.json({ show: result.orders.length > 0, latest_id: result.latestId, orders: result.orders });
@@ -220,8 +222,8 @@ router.get('/admin/dashboard/new-orders-popup', asyncHandler(async (_req, res) =
   });
 }));
 
-router.post('/admin/dashboard/dismiss-new-orders-popup', requireCsrf, asyncHandler(async (_req, res) => {
-  if (env.db.client === 'mysql') await dashboardRepository.dismissUnseenOrders();
+router.post('/admin/dashboard/dismiss-new-orders-popup', requirePermission('orders.popup.dismiss'), requireCsrf, asyncHandler(async (req, res) => {
+  if (env.db.client === 'mysql') await dashboardRepository.dismissUnseenOrders({id:req.adminUser?.id,ip:req.ip,userAgent:req.get('user-agent')||''});
   else db.run('UPDATE orders SET is_seen = 1 WHERE is_seen = 0');
   return res.json({ success: true });
 }));
@@ -306,17 +308,22 @@ async function buildSmartAdminReply(message) {
   );
 }
 
-router.get('/admin/gemini-chat', (req, res) => {
+router.get('/admin/gemini-chat', requirePermission('assistant.report'), (req, res) => {
   const chatHistory = req.session.geminiHistory || [];
   res.render('admin/gemini-chat', { chatHistory });
 });
 
-router.post('/admin/gemini-chat/send', asyncHandler(async (req, res) => {
+router.post('/admin/gemini-chat/send', requirePermission('assistant.report'), requireCsrf, asyncHandler(async (req, res) => {
   const msg = String(req.body.message || '').trim();
   if (!msg) {
     return res.status(400).json({ success: false, message: 'বার্তা খালি রাখা যাবে না।' });
   }
   const reply = await buildSmartAdminReply(msg);
+  const query = msg.toLowerCase();
+  const intent = query.includes('order') || query.includes('অর্ডার') || query.includes('today') || query.includes('আজ') ? 'orders'
+    : query.includes('product') || query.includes('stock') || query.includes('স্টক') || query.includes('প্রোডাক্ট') ? 'inventory'
+      : query.includes('fund') || query.includes('expense') || query.includes('হিসাব') ? 'finance' : 'general';
+  await recordAuditLog({actorType:'admin',actorId:req.adminUser?.id,action:'admin.assistant.report',entityType:'dashboard_report',entityId:intent,metadata:{intent},ipAddress:req.ip,userAgent:req.get('user-agent')||''});
   if (!Array.isArray(req.session.geminiHistory)) {
     req.session.geminiHistory = [];
   }
@@ -325,12 +332,12 @@ router.post('/admin/gemini-chat/send', asyncHandler(async (req, res) => {
   return res.json({ success: true, reply });
 }));
 
-router.post('/admin/gemini-chat/clear', (req, res) => {
+router.post('/admin/gemini-chat/clear', requirePermission('assistant.report'), requireCsrf, (req, res) => {
   req.session.geminiHistory = [];
   res.json({ success: true });
 });
 
-router.post('/admin/gemini-chat/refresh-context', (_req, res) => {
+router.post('/admin/gemini-chat/refresh-context', requirePermission('assistant.report'), requireCsrf, (_req, res) => {
   res.json({ success: true, message: 'ডাটাবেস কনটেক্সট রিফ্রেশ হয়েছে।' });
 });
 

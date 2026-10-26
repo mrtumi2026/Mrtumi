@@ -114,10 +114,10 @@ describe('Phase 03 — Real MySQL 8.0 Schema, Migrations, Constraints, Transacti
     if (!pool) return t.skip(SKIP_REASON);
 
     const applied = await migrateUp(pool);
-    assert.equal(applied.length, 7);
+    assert.equal(applied.length, 8);
     assert.deepEqual(
       applied.map((m) => m.version),
-      ['0001', '0002', '0003', '0004', '0005', '0006', '0007']
+      ['0001', '0002', '0003', '0004', '0005', '0006', '0007', '0008']
     );
 
     const statusAfterUp = await getMigrationStatus(pool);
@@ -144,12 +144,12 @@ describe('Phase 03 — Real MySQL 8.0 Schema, Migrations, Constraints, Transacti
     const refundKeyIndex=await dbClient.queryOne(`SELECT NON_UNIQUE AS non_unique FROM information_schema.statistics WHERE TABLE_SCHEMA=? AND TABLE_NAME='refunds' AND INDEX_NAME='uq_refunds_request_key' LIMIT 1`,[testDbConfig.name]);
     assert.equal(Number(refundKeyIndex.non_unique),0,'Refund idempotency key must be unique');
 
-    // Roll back all 6 migrations in reverse FK order and verify clean schema
-    const rolledBack = await migrateDown(pool, { steps: 7 });
-    assert.equal(rolledBack.length, 7);
+    // Roll back all 8 migrations in reverse dependency order and verify clean schema
+    const rolledBack = await migrateDown(pool, { steps: 8 });
+    assert.equal(rolledBack.length, 8);
     assert.deepEqual(
       rolledBack.map((m) => m.version),
-      ['0007', '0006', '0005', '0004', '0003', '0002', '0001']
+      ['0008', '0007', '0006', '0005', '0004', '0003', '0002', '0001']
     );
 
     const remainingTables = await dbClient.queryAll(

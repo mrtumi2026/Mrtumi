@@ -17,6 +17,7 @@ const localeRoutes = require('./src/routes/locale');
 const apiFoundationRoutes = require('./src/routes/apiFoundation');
 const adminAuthRoutes = require('./src/routes/adminAuth');
 const adminDashboardRoutes = require('./src/routes/adminDashboard');
+const adminAccessRoutes = require('./src/routes/adminAccess');
 const adminOrdersRoutes = require('./src/routes/adminOrders');
 const adminCatalogRoutes = require('./src/routes/adminCatalog');
 const adminOperationsRoutes = require('./src/routes/adminOperations');
@@ -69,6 +70,7 @@ app.use(attachGlobals);
 // Mount modular portal routes
 app.use(adminAuthRoutes);
 app.use(adminDashboardRoutes);
+app.use(adminAccessRoutes);
 app.use(adminOrdersRoutes);
 app.use(adminCatalogRoutes);
 app.use(adminOperationsRoutes);

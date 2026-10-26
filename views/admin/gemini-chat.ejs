@@ -72,7 +72,7 @@
       input.value = '';
       fetch('/admin/gemini-chat/send', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || '' },
         body: JSON.stringify({ message: msg })
       })
       .then(function(r) { return r.json(); })
@@ -84,7 +84,7 @@
       b.addEventListener('click', function() { send(b.getAttribute('data-q')); });
     });
     document.getElementById('fullClearBtn').addEventListener('click', function() {
-      fetch('/admin/gemini-chat/clear', { method: 'POST' }).then(function() { location.reload(); });
+      fetch('/admin/gemini-chat/clear', { method: 'POST', headers: { 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || '' } }).then(function() { location.reload(); });
     });
   })();
 </script>
