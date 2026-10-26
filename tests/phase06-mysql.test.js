@@ -139,7 +139,7 @@ describe('Phase 06 — Live MySQL 8.0 schema, product, stock ledger & purchase r
     await db.execute('INSERT INTO order_otps (phone,order_id,otp_hash,attempts,max_attempts,expires_at) VALUES (?,?,?,?,?,DATE_SUB(UTC_TIMESTAMP(),INTERVAL 1 SECOND))',['01712345678',order.insertId,phase08.otpDigest('01712345678','123456'),0,3]);
     assert.equal(await phase08.verifyOrderOtp('01712345678','123456',{orderId:order.insertId}),false,'expired code is rejected');
     assert.equal((await db.queryOne('SELECT otp_status FROM orders WHERE id=?',[order.insertId])).otp_status,'verified');
-    const otpRow=await db.queryOne('SELECT id FROM order_otps WHERE order_id=? ORDER BY id DESC LIMIT 1',[order.insertId]);
+    const otpRow=await db.queryOne('SELECT id FROM order_otps WHERE order_id=? AND verified_at IS NOT NULL ORDER BY id DESC LIMIT 1',[order.insertId]);
     assert.equal(Number((await db.queryOne("SELECT COUNT(*) AS n FROM audit_logs WHERE entity_type='order_otp' AND entity_id=?",[String(otpRow.id)])).n),1);
 
     const cappedOrder=await db.execute("INSERT INTO orders (invoice_no,customer_name,customer_phone,shipping_address,total_paisa,order_status) VALUES (?, 'OTP Cap Customer', '01812345678', 'CI fixture address', 1000, 'pending')",[`P08OTPCAP-${suffix}`]);
