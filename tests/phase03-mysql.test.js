@@ -162,7 +162,7 @@ describe('Phase 03 — Real MySQL 8.0 Schema, Migrations, Constraints, Transacti
 
     // Re-apply cleanly for subsequent tests
     const reapplied = await migrateUp(pool);
-    assert.equal(reapplied.length, 7);
+    assert.equal(reapplied.length, 8);
   });
 
   test('2. Migration checksum tamper detection, out-of-order rejection, and failed statement handling', async (t) => {
@@ -203,7 +203,7 @@ describe('Phase 03 — Real MySQL 8.0 Schema, Migrations, Constraints, Transacti
 
       // Verify 0008 was NOT recorded in schema_migrations and advisory lock was released
       const status = await getMigrationStatus(pool);
-      assert.equal(status.length, 7);
+      assert.equal(status.length, 8);
       const failedMigration = await dbClient.queryOne("SELECT version FROM schema_migrations WHERE version='0008'");
       assert.equal(failedMigration, null, 'failed migration version must not be recorded');
       const lockCheck = await dbClient.queryOne(
