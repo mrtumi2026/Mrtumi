@@ -214,11 +214,21 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     assert.ok(accessAudit.some(r=>r.action==='admin.staff.created'));
     assert.ok(accessAudit.some(r=>r.action==='admin.staff.deactivated'));
     const grantsBefore=Number((await db.queryOne('SELECT COUNT(*) AS n FROM role_permissions WHERE role_id=?',[roleIds.p09_full])).n);
-    assert.equal((await migrateDown(pool,{steps:1})).length,1);
-    const retained=await db.queryOne(`SELECT COUNT(*) AS n FROM permissions WHERE name IN (${permissionNames.map(()=>'?').join(',')})`,permissionNames);
-    assert.equal(Number(retained.n),permissionNames.length,'down migration preserves catalog entries referenced by role grants');
-    await migrateUp(pool);
-    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM role_permissions WHERE role_id=?',[roleIds.p09_full])).n),grantsBefore);
+    const auditRowsBeforeRollback=Number((await db.queryOne('SELECT COUNT(*) AS n FROM audit_logs')).n);
+    await db.execute('CREATE TRIGGER p09_unrelated_fixture BEFORE UPDATE ON orders FOR EACH ROW SET @p09_unrelated_fixture=NEW.id');
+    try{
+      assert.equal((await migrateDown(pool,{steps:1})).length,1);
+      const triggersAfterDown=await db.queryOne("SELECT COUNT(*) AS n FROM information_schema.triggers WHERE TRIGGER_SCHEMA=DATABASE() AND TRIGGER_NAME IN ('trg_audit_logs_no_update','trg_audit_logs_no_delete')");
+      assert.equal(Number(triggersAfterDown.n),0,'0009 rollback removes its two audit triggers');
+      assert.equal(Number((await db.queryOne("SELECT COUNT(*) AS n FROM information_schema.triggers WHERE TRIGGER_SCHEMA=DATABASE() AND TRIGGER_NAME='p09_unrelated_fixture'")).n),1,'0009 rollback preserves an unrelated trigger');
+      assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM audit_logs')).n),auditRowsBeforeRollback,'0009 rollback never deletes audit history');
+      const retained=await db.queryOne(`SELECT COUNT(*) AS n FROM permissions WHERE name IN (${permissionNames.map(()=>'?').join(',')})`,permissionNames);
+      assert.equal(Number(retained.n),permissionNames.length,'down migration preserves catalog entries referenced by role grants');
+      await migrateUp(pool);
+      assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM role_permissions WHERE role_id=?',[roleIds.p09_full])).n),grantsBefore);
+      const triggersAfterReapply=await db.queryOne("SELECT COUNT(*) AS n FROM information_schema.triggers WHERE TRIGGER_SCHEMA=DATABASE() AND TRIGGER_NAME IN ('trg_audit_logs_no_update','trg_audit_logs_no_delete')");
+      assert.equal(Number(triggersAfterReapply.n),2,'reapplying 0009 restores both audit triggers');
+    }finally{await db.execute('DROP TRIGGER IF EXISTS p09_unrelated_fixture');}
     assert.equal((await request('/logout',{method:'POST',cookie:dashboardCookie,token:''})).status,403,'logout is a CSRF-protected POST');
     const logout=await request('/logout',{method:'POST',cookie:dashboardCookie,token:csrfToken});
     assert.equal(logout.status,302);assert.equal(logout.headers.get('location'),'/admin/login');

@@ -59,6 +59,31 @@ jobs:
       - name: Run foundation lint, EJS compile, migration SQL & secret scan
         run: npm run lint
 
+      - name: Configure disposable MySQL binlog policy for trigger migrations
+        env:
+          DB_HOST: 127.0.0.1
+          MYSQL_ROOT_PASSWORD: root_ci_password
+        run: |
+          node <<'NODE'
+          const mysql = require('mysql2/promise');
+          (async () => {
+            const connection = await mysql.createConnection({
+              host: process.env.DB_HOST,
+              user: 'root',
+              password: process.env.MYSQL_ROOT_PASSWORD,
+            });
+            try {
+              await connection.query('SET GLOBAL log_bin_trust_function_creators = 1');
+              console.log('Configured disposable CI MySQL 8.0 to permit the database-scoped migration user to create deterministic audit triggers; no SUPER grant was given to that user.');
+            } finally {
+              await connection.end();
+            }
+          })().catch((error) => {
+            console.error(`Unable to configure disposable CI MySQL trigger policy: ${error.code || 'ERROR'}: ${error.message}`);
+            process.exitCode = 1;
+          });
+          NODE
+
       - name: Diagnose MySQL migrations individually on a fresh schema
         env:
           DB_CLIENT: mysql
@@ -91,9 +116,13 @@ jobs:
               exit "$rc"
             fi
           }
-          run_and_report 'MySQL migrate up' npm run migrate:up
+          run_and_report 'MySQL migrate up (idempotent after per-version diagnostic)' npm run migrate:up
           run_and_report 'MySQL migration status' npm run migrate:status
+          run_and_report 'MySQL migration status (repeat)' npm run migrate:status
           run_and_report 'MySQL migrate down 9' npm run migrate:down -- 9
+          run_and_report 'MySQL migrate up after rollback' npm run migrate:up
+          run_and_report 'MySQL migration status after reapply' npm run migrate:status
+          run_and_report 'MySQL migrate down 9 (leave schema clean for tests)' npm run migrate:down -- 9
 
       - name: Run automated unit, portal regression & live MySQL 8.0 test suites
         run: |
