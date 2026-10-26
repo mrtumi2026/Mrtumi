@@ -371,7 +371,7 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
 
       const setCookie = cartAdd.headers['set-cookie'];
       const cookieHeader = (Array.isArray(setCookie) ? setCookie : [setCookie]).filter(Boolean).map((c) => c.split(';')[0]).join('; ');
-      const checkoutPage = await httpRequest(baseUrl, '/customer/checkout?lang=en', { headers: { Cookie: cookieHeader } });
+      const checkoutPage = await httpRequest(baseUrl, '/customer/checkout?lang=en', { headers: { Cookie: cookieHeader, Accept:'application/json' } });
       assert.equal(checkoutPage.statusCode, 200, `MySQL checkout GET failed: ${checkoutPage.body.slice(0,500)}`);
       assert.doesNotMatch(checkoutPage.body, /name="cart_backup_json"/,'MySQL checkout must not accept a client cart backup');
       assert.match(checkoutPage.body, /Cash on delivery/);
