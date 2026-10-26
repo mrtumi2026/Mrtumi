@@ -39,7 +39,7 @@
 
 - Added reversible migration `0004_phase06_inventory_purchases_suppliers` for supplier metadata, product type, purchase totals/lines, unit-cost stock ledger, and idempotent receipt records. MySQL migration tests are pending the GitHub Actions live MySQL run.
 - Implemented an Admin-session + CSRF-protected initial screen at `/admin/phase06` and async repository methods for product creation, optional opening stock, archive/restore, safe raster-upload validation, supplier creation, reasoned stock adjustments, draft multi-line purchase orders, and partial/full receipts.
-- Local result: `npm run lint` — 567 passed; `npm test` — 27 passed, 8 MySQL tests skipped locally, 0 failed; `npm audit --omit=dev` — 0 vulnerabilities. Live MySQL 8.0 result is not yet available for this revision.
+- Verified result: `npm run lint` — 575 passed; local `npm test` — 27 passed, 8 MySQL-only tests explicitly skipped, 0 failed; `npm audit --omit=dev` — 0 vulnerabilities. GitHub Actions `Run 40277859457` / job `121424359602` passed all checks including the real `mysql:8.0` service, all 4 migrations up/status/down, and the full automated test suite with MySQL tests active.
 - Phase 06 remains `IN PROGRESS`; edit/variants/gallery/bulk/CSV, supplier maintenance, full PO state/cancel/returns, exact receipt UI, unresolved batch/lot/expiry rules, and live MySQL CI remain outstanding. See `docs/PHASE_06_PRODUCTS_INVENTORY_PURCHASES_SUPPLIERS.md`.
 - Phase 07–20 remain `NOT STARTED` (provider operations for Phase 10–13 remain blocked until provider documentation/credentials/approvals are available). No production deployment or live data migration was performed.
 

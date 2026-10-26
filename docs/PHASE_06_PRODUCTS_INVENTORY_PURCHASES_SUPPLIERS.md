@@ -20,8 +20,8 @@
 ## Tests and evidence
 
 - `tests/phase06-inventory-purchases.test.js`: 4 local SQLite-adapter tests pass for SKU uniqueness, money validation, opening-ledger event, reasoned adjustments and negative-stock prevention, draft-PO stock invariance, partial/full receipt, duplicate-receipt idempotency, archive/restore history, and SVG signature rejection.
-- `tests/phase06-mysql.test.js`: requires the workflow's live `mysql:8.0` service and tests schema application, draft PO behavior, transactional partial receiving, duplicate receipt, and concurrent row-locked stock changes. It is explicitly skipped on this local sandbox when no MySQL service is available; only GitHub Actions can establish live MySQL test status.
-- `npm run lint`: 565 checks passed (after Phase 06 additions). `npm test`: 27 pass, 8 live-MySQL tests skipped locally, 0 failed after the migration-pair expectation was updated from 3 to 4. `npm audit --omit=dev`: 0 vulnerabilities.
+- `tests/phase06-mysql.test.js`: live MySQL 8.0 CI test covered schema application, draft PO stock invariance, transactional partial receiving, duplicate receipt/payload mismatch, and concurrent row-locked adjustments. **GitHub Actions `Run 40277859457`, job `121424359602` passed**; the CLI migrator applied/status-checked and rolled back all four migrations, and the automated test step passed. Local test run reports 27 passed, 8 MySQL-only tests skipped, 0 failures; CI with MySQL executes those tests.
+- `npm run lint`: 575 checks passed. `npm audit --omit=dev`: 0 vulnerabilities. Local `npm test`: 27 pass, 8 live-MySQL tests explicitly skipped, 0 fail. GitHub Actions completed the entire test step with MySQL-only tests active; the CI job is the live-database evidence.
 
 ## Remaining Phase 06 work (not complete)
 
