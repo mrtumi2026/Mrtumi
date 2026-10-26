@@ -101,6 +101,8 @@ describe('Phase 08 — authenticated MySQL admin HTTP, RBAC, CSRF, replay and au
     const otpStatus=await request(`/admin/phase08/orders/${orderId}/otp`,{cookie:orderStaff});
     assert.equal(otpStatus.status,200);assert.equal(otpStatus.json.issuedCount,1);assert.equal(otpStatus.json.status,'not_required');
     assert.doesNotMatch(otpStatus.text,/otp_hash|01712345678|"code"/,'OTP admin status exposes no secret or customer phone');
+    const cancelled=await request(`/admin/phase08/orders/${orderId}/status`,{method:'POST',cookie:orderStaff,csrf:orderToken,body:{status:'cancelled',reason:'release CI stock before refund review',request_key:`p08-http-cancel-${orderId}`}});
+    assert.equal(cancelled.status,200);assert.equal(Number((await db.queryOne('SELECT stock_reserved FROM products WHERE id=?',[productId])).stock_reserved),0,'admin cancellation releases inventory');
 
     const refund=await phase08.requestRefund(orderId,3000,'HTTP review fixture',`p08-http-refund-${orderId}`);
     assert.equal((await request('/admin/phase08/refunds',{cookie:refundStaff})).status,200);
@@ -126,7 +128,5 @@ describe('Phase 08 — authenticated MySQL admin HTTP, RBAC, CSRF, replay and au
     const noSettingsCsrf=await request('/admin/phase08/settings',{method:'POST',cookie:settingsStaff,body:{advance_payment_mode:'percent',advance_payment_value:20}});assert.equal(noSettingsCsrf.status,403);
     const invalidSettings=await request('/admin/phase08/settings',{method:'POST',cookie:settingsStaff,csrf:settingsToken,body:{advance_payment_mode:'unverified',advance_payment_value:20}});assert.equal(invalidSettings.status,400);
     assert.equal(Number((await db.queryOne("SELECT COUNT(*) AS n FROM audit_logs WHERE action='order.status.confirmed' AND entity_id=?",[String(orderId)])).n),1,'order transition audit is written once despite HTTP replay');
-    await request(`/admin/phase08/orders/${orderId}/status`,{method:'POST',cookie:orderStaff,csrf:orderToken,body:{status:'cancelled',reason:'release CI stock',request_key:`p08-http-cancel-${orderId}`}});
-    assert.equal(Number((await db.queryOne('SELECT stock_reserved FROM products WHERE id=?',[productId])).stock_reserved),0,'cancel releases reservation transactionally');
   });
 });
