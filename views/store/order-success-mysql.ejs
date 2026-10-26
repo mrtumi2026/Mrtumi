@@ -1,0 +1,21 @@
+<%- include('partials/header', { title: isEn ? 'Order confirmed' : 'অর্ডার নিশ্চিত' }) %>
+<main class="container py-5" style="max-width:760px">
+  <section class="bg-white border rounded-4 p-4 p-md-5 shadow-sm">
+    <div class="text-success fw-bold mb-2"><%= isEn ? 'Order received' : 'অর্ডার গ্রহণ করা হয়েছে' %></div>
+    <h1 class="h3 fw-bold"><%= isEn ? 'Thank you for your order' : 'আপনার অর্ডারের জন্য ধন্যবাদ' %></h1>
+    <p class="text-muted"><%= isEn ? 'Your order is pending confirmation. No online payment has been recorded.' : 'আপনার অর্ডারটি নিশ্চিতকরণের অপেক্ষায়। কোনো অনলাইন পেমেন্ট রেকর্ড করা হয়নি।' %></p>
+    <dl class="row border-top border-bottom py-3 my-4">
+      <dt class="col-6"><%= isEn ? 'Invoice' : 'ইনভয়েস' %></dt><dd class="col-6 text-end fw-semibold"><%= order.invoice_no %></dd>
+      <dt class="col-6"><%= isEn ? 'Order status' : 'অর্ডারের অবস্থা' %></dt><dd class="col-6 text-end"><%= order.order_status %></dd>
+      <dt class="col-6"><%= isEn ? 'Payment' : 'পেমেন্ট' %></dt><dd class="col-6 text-end"><%= order.payment_status %> · <%= order.payment_status === 'unpaid' ? (isEn ? 'Cash on delivery' : 'ক্যাশ অন ডেলিভারি') : '' %></dd>
+      <dt class="col-6"><%= isEn ? 'Total' : 'মোট' %></dt><dd class="col-6 text-end fw-bold">৳<%= (Number(order.total_paisa) / 100).toLocaleString('en-IN',{minimumFractionDigits:2}) %></dd>
+      <dt class="col-6"><%= isEn ? 'Due on delivery' : 'ডেলিভারিতে প্রদেয়' %></dt><dd class="col-6 text-end">৳<%= (Number(order.cod_due_paisa) / 100).toLocaleString('en-IN',{minimumFractionDigits:2}) %></dd>
+    </dl>
+    <h2 class="h6 fw-bold"><%= isEn ? 'Items' : 'পণ্যসমূহ' %></h2>
+    <ul class="list-group list-group-flush mb-4"><% items.forEach(function(item) { %>
+      <li class="list-group-item d-flex justify-content-between px-0"><span><%= item.product_name %> × <%= item.qty %><% if (item.size_label) { %> · <%= item.size_label %><% } %></span><span>৳<%= (Number(item.line_total_paisa) / 100).toLocaleString('en-IN',{minimumFractionDigits:2}) %></span></li>
+    <% }) %></ul>
+    <a class="btn btn-success" href="/all-products"><%= isEn ? 'Continue shopping' : 'কেনাকাটা চালিয়ে যান' %></a>
+  </section>
+</main>
+<%- include('partials/footer') %>

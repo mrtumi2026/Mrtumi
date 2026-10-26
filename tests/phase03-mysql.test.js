@@ -114,10 +114,10 @@ describe('Phase 03 — Real MySQL 8.0 Schema, Migrations, Constraints, Transacti
     if (!pool) return t.skip(SKIP_REASON);
 
     const applied = await migrateUp(pool);
-    assert.equal(applied.length, 6);
+    assert.equal(applied.length, 7);
     assert.deepEqual(
       applied.map((m) => m.version),
-      ['0001', '0002', '0003', '0004', '0005', '0006']
+      ['0001', '0002', '0003', '0004', '0005', '0006', '0007']
     );
 
     const statusAfterUp = await getMigrationStatus(pool);
@@ -145,11 +145,11 @@ describe('Phase 03 — Real MySQL 8.0 Schema, Migrations, Constraints, Transacti
     assert.equal(Number(refundKeyIndex.non_unique),0,'Refund idempotency key must be unique');
 
     // Roll back all 6 migrations in reverse FK order and verify clean schema
-    const rolledBack = await migrateDown(pool, { steps: 6 });
-    assert.equal(rolledBack.length, 6);
+    const rolledBack = await migrateDown(pool, { steps: 7 });
+    assert.equal(rolledBack.length, 7);
     assert.deepEqual(
       rolledBack.map((m) => m.version),
-      ['0006', '0005', '0004', '0003', '0002', '0001']
+      ['0007', '0006', '0005', '0004', '0003', '0002', '0001']
     );
 
     const remainingTables = await dbClient.queryAll(
@@ -162,7 +162,7 @@ describe('Phase 03 — Real MySQL 8.0 Schema, Migrations, Constraints, Transacti
 
     // Re-apply cleanly for subsequent tests
     const reapplied = await migrateUp(pool);
-    assert.equal(reapplied.length, 6);
+    assert.equal(reapplied.length, 7);
   });
 
   test('2. Migration checksum tamper detection, out-of-order rejection, and failed statement handling', async (t) => {
@@ -182,17 +182,17 @@ describe('Phase 03 — Real MySQL 8.0 Schema, Migrations, Constraints, Transacti
         (err) => err instanceof MigrationError && err.code === 'MIGRATION_CHECKSUM_MISMATCH'
       );
 
-      // Restore 0001 checksum, add failing 0007 migration, verify failure handling & advisory lock release
+      // Restore 0001 checksum, add failing 0008 migration, verify failure handling & advisory lock release
       fs.copyFileSync(
         path.join(realDir, '0001_core_security_and_sessions.up.sql'),
         path.join(tmpDir, '0001_core_security_and_sessions.up.sql')
       );
       fs.writeFileSync(
-        path.join(tmpDir, '0007_broken_sql.up.sql'),
+        path.join(tmpDir, '0008_broken_sql.up.sql'),
         'INVALID SQL STATEMENT THAT MUST FAIL;'
       );
       fs.writeFileSync(
-        path.join(tmpDir, '0007_broken_sql.down.sql'),
+        path.join(tmpDir, '0008_broken_sql.down.sql'),
         'SELECT 1;'
       );
 
@@ -201,9 +201,10 @@ describe('Phase 03 — Real MySQL 8.0 Schema, Migrations, Constraints, Transacti
         (err) => err instanceof MigrationError && err.code === 'MIGRATION_STATEMENT_FAILED'
       );
 
-      // Verify 0007 was NOT recorded in schema_migrations and advisory lock was released
+      // Verify 0008 was NOT recorded in schema_migrations and advisory lock was released
       const status = await getMigrationStatus(pool);
-      assert.equal(status.length, 6);
+      assert.equal(status.length, 8);
+      assert.equal(status.find((m) => m.version === '0008').applied, false);
       const lockCheck = await dbClient.queryOne(
         "SELECT IS_FREE_LOCK('mrtumi_schema_migration') AS free_lock"
       );

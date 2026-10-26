@@ -19,6 +19,10 @@ router.get('/admin/phase08/orders',requirePermission('orders.manage'),asyncHandl
   const [data,history]=await Promise.all([repo.listOrders({search:req.query.q,status:req.query.status,page:req.query.page,limit:25}),req.query.id?repo.listOrderHistory(req.query.id):Promise.resolve([])]);
   res.render('admin/phase08-orders',{...data,history,transitions:repo.TRANSITIONS,isEn:isEn(req),query:String(req.query.q||''),status:String(req.query.status||''),csrfToken:req.csrfToken(),rows:data.rows.map(row=>({...row,requestKey:idempotencyId()}))});
 }));
+router.get('/admin/phase08/orders/:id/otp',requirePermission('orders.manage'),asyncHandler(async(req,res)=>{
+  const summary=await repo.getOrderOtpStatus(req.params.id);
+  return res.json({success:true,...summary});
+}));
 router.post('/admin/phase08/orders/:id/status',requirePermission('orders.manage'),requireCsrf,asyncHandler(async(req,res)=>{
   const result=await repo.transitionOrder(req.params.id,req.body.status,req.body.reason,actor(req),req.body.request_key||req.get('Idempotency-Key'));
   if(wantsJson(req))return res.json({success:true,...result});

@@ -41,6 +41,7 @@ if (MYSQL_HOST) {
 const { getPool, closePool, createQueryClient } = require('../src/db/mysqlPool');
 const { migrateUp, migrateDown } = require('../src/db/migrator');
 const storefrontRepo = require('../src/repositories/storefrontRepository');
+const checkoutRepo = require('../src/repositories/checkoutRepository');
 const { bdtToPaisa } = require('../src/utils/money');
 
 const SKIP_REASON =
@@ -81,6 +82,7 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
   let baseUrl = '';
   let variant5KgId = null;
   let inhouseProdId = null;
+  let deliveryLocationId = null;
 
   before(async () => {
     if (!MYSQL_HOST) return;
@@ -185,6 +187,8 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
     await client.execute(
       "INSERT INTO `cms_pages` (`title_bn`, `title_en`, `slug`, `content_bn`, `content_en`, `status`) VALUES ('আমাদের সম্পর্কে', 'About Mr. Tumi', 'about-us', 'বাংলা বিবরণ', 'English verified summary', 1)"
     );
+    deliveryLocationId = (await client.execute("INSERT INTO delivery_locations (division,district,upazila,delivery_charge_paisa,status) VALUES ('Dhaka Division','Dhaka','Dhanmondi',5500,1)")).insertId;
+    await client.execute("INSERT INTO payment_gateways (name,code,gateway_type,sandbox,status) VALUES ('Cash on delivery','cod','manual',1,1)");
 
     const { startServer } = require('../server');
     await new Promise((resolve) => {
@@ -364,6 +368,62 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
       assert.equal(cartPayload.cartCount, 2);
       assert.equal(cartPayload.cartSubtotal, 1760);
       assert.equal(cartPayload.cart[0].sku, 'MT-RICE-01-5KG');
+
+      const setCookie = cartAdd.headers['set-cookie'];
+      const cookieHeader = (Array.isArray(setCookie) ? setCookie : [setCookie]).filter(Boolean).map((c) => c.split(';')[0]).join('; ');
+      const checkoutPage = await httpRequest(baseUrl, '/customer/checkout?lang=en', { headers: { Cookie: cookieHeader } });
+      assert.equal(checkoutPage.statusCode, 200);
+      assert.doesNotMatch(checkoutPage.body, /name="cart_backup_json"/,'MySQL checkout must not accept a client cart backup');
+      assert.match(checkoutPage.body, /Cash on delivery/);
+      const csrf = checkoutPage.body.match(/name="_csrf" value="([^"]+)"/);
+      const requestKey = checkoutPage.body.match(/name="checkout_request_key" value="([^"]+)"/);
+      assert.ok(csrf && requestKey,'checkout form binds CSRF and an idempotency request key');
+      assert.equal(Number((await client.queryOne("SELECT COUNT(*) AS n FROM incomplete_orders WHERE phone='01712345678' AND consent_given=1")).n),0,'checkout data is not captured before opt-in');
+      const capture = await httpRequest(baseUrl,'/checkout/save-incomplete',{method:'POST',headers:{Cookie:cookieHeader,'Content-Type':'application/json','x-csrf-token':csrf[1]},body:JSON.stringify({name:'Checkout Test',phone:'01712345678',consent:'true',notification_consent:'false'})});
+      assert.equal(capture.statusCode,200);const capturePayload=JSON.parse(capture.body);assert.equal(capturePayload.ok,true);
+      const form = new URLSearchParams({
+        _csrf: csrf[1], checkout_request_key: requestKey[1], customer_name: 'Checkout Test', phone: '01712345678',
+        address: 'House 1, Test Road, Dhanmondi', delivery_location_id: String(deliveryLocationId), payment_method: 'cod',
+        note: 'CI checkout', confirm_order: 'yes', cart_backup_json: JSON.stringify([{ product_id: inhouseProdId, qty: 99, price: 0.01 }]),
+      }).toString();
+      const csrfRejected = await httpRequest(baseUrl, '/customer/checkout', { method:'POST',headers:{Cookie:cookieHeader,'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({checkout_request_key:requestKey[1],confirm_order:'yes'}).toString() });
+      assert.equal(csrfRejected.statusCode,403,'checkout rejects a missing CSRF token');
+      const submitted = await httpRequest(baseUrl, '/customer/checkout', { method:'POST',headers:{Cookie:cookieHeader,'Content-Type':'application/x-www-form-urlencoded'},body:form });
+      assert.equal(submitted.statusCode,302);
+      const invoice = decodeURIComponent(submitted.headers.location.split('/').pop());
+      const placed = await client.queryOne('SELECT id,subtotal_paisa,shipping_paisa,total_paisa,paid_paisa,cod_due_paisa,payment_status,payment_method,order_status FROM orders WHERE invoice_no=?',[invoice]);
+      assert.ok(placed);
+      assert.deepEqual([Number(placed.subtotal_paisa),Number(placed.shipping_paisa),Number(placed.total_paisa),Number(placed.paid_paisa),Number(placed.cod_due_paisa)],[176000,5500,181500,0,181500]);
+      assert.equal(placed.payment_status,'unpaid'); assert.equal(placed.payment_method,'cod'); assert.equal(placed.order_status,'pending');
+      assert.equal(Number((await client.queryOne('SELECT COUNT(*) AS n FROM order_payments WHERE order_id=?',[placed.id])).n),0,'unverified payment is never recorded as paid');
+      assert.equal(Number((await client.queryOne('SELECT stock_reserved FROM products WHERE id=?',[inhouseProdId])).stock_reserved),7);
+      assert.equal(Number((await client.queryOne('SELECT stock_reserved FROM product_variants WHERE id=?',[variant5KgId])).stock_reserved),5);
+      const replayResponses = await Promise.all([1,2].map(()=>httpRequest(baseUrl, '/customer/checkout', { method:'POST',headers:{Cookie:cookieHeader,'Content-Type':'application/x-www-form-urlencoded'},body:form })));
+      assert.ok(replayResponses.every((replay)=>replay.statusCode===302));
+      assert.ok(replayResponses.every((replay)=>replay.headers.location===submitted.headers.location),'concurrent same-payload retries resolve to one invoice');
+      const mismatchForm = new URLSearchParams({ ...Object.fromEntries(new URLSearchParams(form)), phone:'01812345678' }).toString();
+      const mismatch = await httpRequest(baseUrl, '/customer/checkout', { method:'POST',headers:{Cookie:cookieHeader,'Content-Type':'application/x-www-form-urlencoded'},body:mismatchForm });
+      assert.equal(mismatch.statusCode,409,'reusing an idempotency key with changed data is rejected');
+      const durableKey=`incomplete:${capturePayload.id}`;
+      const orderCount = await client.queryOne('SELECT COUNT(*) AS n FROM orders WHERE idempotency_key=?',[durableKey]);
+      assert.equal(Number(orderCount.n),1);
+      const recoveryState=await client.queryOne('SELECT status,recovered_order_id,notification_allowed FROM incomplete_orders WHERE id=?',[capturePayload.id]);
+      assert.equal(recoveryState.status,'recovered');assert.equal(Number(recoveryState.recovered_order_id),Number(placed.id));assert.equal(Number(recoveryState.notification_allowed),0);
+      const successPage = await httpRequest(baseUrl, submitted.headers.location, { headers: { Cookie: cookieHeader } });
+      assert.equal(successPage.statusCode,200); assert.match(successPage.body,/No online payment has been recorded/);
+      assert.doesNotMatch(successPage.body,/01712345678|House 1, Test Road/,'public success page does not expose customer contact or address');
+
+      const concurrentKeys=[`p08-checkout-stock-a-${Date.now()}`,`p08-checkout-stock-b-${Date.now()}`];
+      const concurrentOrders=await Promise.allSettled(concurrentKeys.map((requestKey)=>checkoutRepo.createOrder({customer_name:'Concurrent Checkout',phone:'01912345678',address:'House 2, Concurrent Road',delivery_location_id:deliveryLocationId,payment_method:'cod'}, {locale:'en',requestKey,cart:[{product_id:inhouseProdId,variant_id:variant5KgId,qty:3}]})));
+      assert.equal(concurrentOrders.filter(x=>x.status==='fulfilled').length,1,'row locks prevent two distinct checkouts from overselling the remaining variant stock');
+      assert.equal(concurrentOrders.filter(x=>x.status==='rejected'&&x.reason.code==='CONFLICT').length,1);
+      assert.equal(Number((await client.queryOne('SELECT stock_reserved FROM product_variants WHERE id=?',[variant5KgId])).stock_reserved),8);
+      await client.execute("INSERT INTO settings (setting_key,setting_value) VALUES ('otp_mode','on') ON DUPLICATE KEY UPDATE setting_value='on'");
+      await assert.rejects(()=>checkoutRepo.createOrder({customer_name:'OTP blocked',phone:'01912345678',address:'House 3, Policy Road',delivery_location_id:deliveryLocationId,payment_method:'cod'},{locale:'en',requestKey:`p08-checkout-otp-${Date.now()}`,cart:[{product_id:inhouseProdId,qty:1}]}),(err)=>err.code==='CONFLICT');
+      await client.execute("UPDATE settings SET setting_value='off' WHERE setting_key='otp_mode'");
+      await client.execute("INSERT INTO settings (setting_key,setting_value) VALUES ('advance_payment_mode','fixed'),('advance_payment_value','100') ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)");
+      await assert.rejects(()=>checkoutRepo.createOrder({customer_name:'Advance blocked',phone:'01912345678',address:'House 3, Policy Road',delivery_location_id:deliveryLocationId,payment_method:'cod'},{locale:'en',requestKey:`p08-checkout-advance-${Date.now()}`,cart:[{product_id:inhouseProdId,qty:1}]}),(err)=>err.code==='CONFLICT');
+      await client.execute("UPDATE settings SET setting_value='off' WHERE setting_key='advance_payment_mode'");
     }
   );
 });

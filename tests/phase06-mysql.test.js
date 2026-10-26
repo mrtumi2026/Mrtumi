@@ -120,9 +120,9 @@ describe('Phase 06 — Live MySQL 8.0 schema, product, stock ledger & purchase r
     assert.equal((await phase08.transitionOrder(shipped.insertId,'shipped','Courier handoff',{id:null},shipKey)).replayed,true);
     await phase08.transitionOrder(shipped.insertId,'delivered','Delivery confirmed',{id:null},`p08-deliver-${shipped.insertId}`);
     await phase08.transitionOrder(shipped.insertId,'return_requested','Customer reported return',{id:null},`p08-return-request-${shipped.insertId}`);
-    await phase08.transitionOrder(shipped.insertId,'returned','Item received and inspected',{id:null},`p08-returned-${shipped.insertId}`);
-    assert.equal(Number((await db.queryOne('SELECT stock_on_hand FROM products WHERE id=?',[productId])).stock_on_hand),7);
-    assert.equal((await db.queryOne('SELECT status FROM stock_reservations WHERE reservation_key=?',[`order:${shipped.insertId}`])).status,'returned');
+    await assert.rejects(()=>phase08.transitionOrder(shipped.insertId,'returned','Unapproved automatic return/restock',{id:null},`p08-returned-${shipped.insertId}`),(err)=>err.code==='CONFLICT');
+    assert.equal(Number((await db.queryOne('SELECT stock_on_hand FROM products WHERE id=?',[productId])).stock_on_hand),6,'return request does not restock before owner policy and inspection');
+    assert.equal((await db.queryOne('SELECT status FROM stock_reservations WHERE reservation_key=?',[`order:${shipped.insertId}`])).status,'consumed');
   });
 
   test('Phase 08 OTP binding, expiry, replay/cooldown and consented incomplete-checkout lifecycle', async () => {

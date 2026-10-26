@@ -1,35 +1,26 @@
 # PHASE 07 — CUSTOMER ACCOUNTS, CART & CHECKOUT
 
-**Status:** `IN PROGRESS` — customer account and saved-address vertical slice implemented; checkout acceptance is not complete.
-**Database:** Production path is MySQL/InnoDB. Existing synchronous SQLite storefront checkout remains legacy and is not the production implementation for this phase.
-**Migration:** `0005_phase07_customer_cart` creates reversible persistent customer cart storage.
+**Status: `IN PROGRESS`.** Customer account/address/cart-merge work remains an initial slice. A canonical `DB_CLIENT=mysql` checkout path has now been added, but live MySQL CI for this branch is pending and persistent-cart sync, approved privacy/legal copy, account recovery and payment/OTP integrations remain incomplete.
 
-## Implemented vertical slice
+## Implemented vertical slices
 
-- Customer registration and login use the existing `customers` table, bcrypt password hashes (cost 12), Bangladesh mobile normalization, bounded input validation, generic invalid-credential errors, login/registration rate limits, session regeneration on successful registration/login, and POST-only logout.
-- Authenticated customers can add and remove their own saved addresses. Address inserts validate recipient, Bangladesh mobile, division/district and length limits; default-address changes serialize on the customer row and clear the prior default in one transaction. Address removal is constrained by both address and customer IDs.
-- Guest session cart merge is bounded (each product/variant quantity capped at 99), ignores malformed/inactive product IDs and invalid variants, and writes transactionally. A generated non-null variant key enforces one persisted row per customer/product/variant, including base products.
-- Account form and address pages support Bangla default and English text. Writes rely on the app-wide CSRF guard; there is no GET logout.
-- Password recovery is intentionally unavailable until a verified notification channel and its delivery procedure exist. The interface says so; no fake token-delivery behavior is claimed.
-
-## Verification
-
-- Local tests cover Bangladesh phone normalization, password bounds, and ordered/reversible migration-pair discovery.
-- Added live MySQL CI assertions for registration/hash authentication, bad-password rejection, saved-address ownership/deletion and default state, plus bounded cart merge. They have **not yet run** for this change.
-- CI migration checks have been extended to include migration `0005`. Live MySQL evidence is pending; this work is not reported `TESTED AND PASSED` against MySQL yet.
-- Latest local `npm run verify`: 438 foundation checks, 32 tests passed, 8 MySQL-only tests explicitly skipped locally, 0 failures. `npm audit --omit=dev`: 0 vulnerabilities.
+- Customer registration/login use MySQL customer rows, bcrypt hashes, Bangladesh phone normalization, bounded validation/rate limits and session regeneration. Customers can maintain their own addresses; guest-cart merge validates product/variant identities.
+- Checkout now uses `src/repositories/checkoutRepository.js` in MySQL mode. It ignores client cart JSON/prices, revalidates current product/variant pricing and availability, requires a configured delivery location and active internal COD gateway, computes integer-paisa totals, and creates order/lines/status history/reservation/audit atomically. A unique idempotency key plus request hash protects replay and rejects changed payload reuse.
+- The MySQL success page does not display customer phone/address. Orders are initially unpaid, with zero recorded payment and full COD due. No provider payment evidence is inferred. MySQL quick order is disabled; customer invoice cancellation remains blocked until ownership verification exists.
+- Guest recovery capture is optional and consent-gated; the browser does not capture data by default and does not opt customers into notifications. Consent can be withdrawn and associated PII/cart fields erased. The opt-in wording is an operational statement, not an approved terms/privacy policy.
 
 ## Remaining Phase 07 acceptance
 
-- Password reset workflow with an authorized, verified email/SMS notification channel; customer profile/password changes and account recovery safeguards.
-- Persistent-cart read/sync on every cart mutation, stale price/availability revalidation, cross-session merge policy and cart UI state. Current code merges the guest cart on account login but does not yet make every cart operation durable.
-- Guest checkout and signed-in checkout with canonical product/variant/stock resolution; submitted prices and totals must never be trusted. Existing legacy checkout routes are not replaced by this slice.
-- Configurable delivery zone/rate administration and authoritative server-computed shipping/discount/tax/total values. Do not invent zone fees or seed fake locations.
-- Duplicate-order request locking/idempotency, atomic order + line persistence and inventory reservation/release coordination (dependent on remaining Phase 06 inventory work and Phase 08 lifecycle).
-- Checkout terms/privacy consent capture using approved copy, explicit consent timestamp, localized UI and legal-copy review. Do not publish draft legal language as approved.
-- End-to-end live MySQL tests for account HTTP sessions, checkout idempotency/concurrency, stock behavior and delivery-fee calculations.
+- Persistent cart reads and writes across sessions and every cart mutation, stale-availability handling, and customer/guest merge policy.
+- Owner-configured active `delivery_locations` and COD gateway rows on the actual target database. Empty configuration blocks checkout; do not seed fees or zones from legacy defaults.
+- Owner-approved Bangla/English Terms/Privacy copy and a documented consent version/retention policy. Do not treat the inline recovery opt-in as a substitute for approved legal/privacy policy.
+- Customer password recovery only after an authorized verified delivery channel, plus profile/password change and account recovery safeguards.
+- OTP/advance enforcement remains safely blocked when configured on because there is no customer verification/delivery route or verified payment collection path. Online/manual payment methods are rejected.
+- Customer cancellation ownership verification, full historical-order compatibility and reservation expiry/cleanup/recovery workflow.
+- Run the new MySQL HTTP checkout tests and seven-migration up/status/down/up suite in CI. Local MySQL-only skips do not count as passes.
 
-## Security and operational boundaries
+## Verification and boundaries
 
-- Routes are mounted behind existing request parsing, session, CSRF and shared localization/global middleware. Production must use secure cookies/TLS and MySQL; local SQLite is not an acceptable production substitute.
-- No provider credentials, notifications, payment, shipment, production migration, or deployment were performed. No live customer data was created.
+- The new live-MySQL HTTP test covers server-side prices, CSRF, configured COD/delivery, replay/mismatch, inventory reservation, unpaid/COD accounting, no payment insertion and success-page privacy; CI evidence is pending for this change.
+- Local SQLite/unit tests are regression coverage only, not evidence that the canonical MySQL path passed.
+- No provider credentials, SMS, payment, shipping, production migration or deployment were used.

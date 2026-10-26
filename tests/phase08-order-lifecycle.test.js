@@ -10,6 +10,7 @@ test('Phase 08 state machine blocks invalid and terminal transitions', () => {
   assert.deepEqual(phase08.TRANSITIONS.pending, ['confirmed', 'cancelled', 'failed']);
   assert.deepEqual(phase08.TRANSITIONS.cancelled, []);
   assert.deepEqual(phase08.TRANSITIONS.returned, []);
+  assert.deepEqual(phase08.TRANSITIONS.return_requested, [], 'return completion is blocked pending an owner-approved disposition/refund policy');
 });
 test('OTP policy validates expiry, attempt and cooldown bounds', () => {
   assert.deepEqual(phase08.validateOtpPolicy({ enabled:true, expirySeconds:120, maxAttempts:4, cooldownSeconds:45 }), { enabled:true, expirySeconds:120, maxAttempts:4, cooldownSeconds:45, maxPerHour:5 });
@@ -54,6 +55,12 @@ test('Phase 08 migration 0006 is a paired additive migration with nullable uniqu
   assert.match(pair.upSql,/CREATE TABLE IF NOT EXISTS `refund_status_history`/);
   assert.match(pair.downSql,/DROP INDEX `uq_refunds_request_key`/);
   assert.match(pair.downSql,/ADD CONSTRAINT `fk_order_otps_order`/);
+});
+test('Checkout request-hash migration is additive and reversible', () => {
+  const pair=loadMigrationPairs().find(p=>p.version==='0007');
+  assert.ok(pair);
+  assert.match(pair.upSql,/checkout_request_hash.*CHAR\(64\).*DEFAULT NULL/s);
+  assert.match(pair.downSql,/DROP COLUMN `checkout_request_hash`/);
 });
 test('Phase 08 admin action permission keys deny absent grants and allow an explicit grant', () => {
   const guard=requirePermission('refunds.review');

@@ -20,7 +20,13 @@
     }) %>
   <% } else { %>
     <form action="/customer/checkout" method="POST" id="mainCheckoutForm">
-      <input type="hidden" name="cart_backup_json" id="ckCartBackupJson" value='<%- JSON.stringify(cart) %>' />
+      <% if (csrfToken) { %><input type="hidden" name="_csrf" value="<%= csrfToken %>" /><% } %>
+      <% if (canonicalMysqlCheckout) { %>
+        <input type="hidden" name="checkout_request_key" value="<%= checkoutRequestKey %>" />
+        <input type="hidden" name="coupon_code" id="checkoutCouponCode" value="<%= appliedCoupon ? appliedCoupon.code : '' %>" />
+      <% } else { %>
+        <input type="hidden" name="cart_backup_json" id="ckCartBackupJson" value='<%- JSON.stringify(cart) %>' />
+      <% } %>
 
       <div class="row g-4">
         <!-- Left Column: Delivery Info & Payment Gateways -->
@@ -44,15 +50,28 @@
               </div>
               <div class="col-md-6">
                 <label for="ckShipping" class="form-label small fw-semibold"><%= t('store.shippingArea') %> *</label>
-                <select name="shipping_area" id="ckShipping" class="form-select" onchange="recalcCheckout()">
-                  <option value="ঢাকার ভিতরে" data-charge="<%= siteSettings.inside_dhaka_charge || 60 %>"><%= t('common.insideDhaka') %> (৳<%= siteSettings.inside_dhaka_charge || 60 %>)</option>
-                  <option value="ঢাকার বাইরে" data-charge="<%= siteSettings.outside_dhaka_charge || 120 %>"><%= t('common.outsideDhaka') %> (৳<%= siteSettings.outside_dhaka_charge || 120 %>)</option>
+                <select name="<%= canonicalMysqlCheckout ? 'delivery_location_id' : 'shipping_area' %>" id="ckShipping" class="form-select" onchange="recalcCheckout()" required>
+                  <% if (canonicalMysqlCheckout) { %>
+                    <option value="" data-charge="0"><%= isEn ? 'Choose a configured delivery area' : 'কনফিগার করা ডেলিভারি এলাকা নির্বাচন করুন' %></option>
+                    <% deliveryLocations.forEach(function(location) { const charge = Number(location.delivery_charge_paisa) / 100; %>
+                      <option value="<%= location.id %>" data-charge="<%= charge %>"><%= [location.division, location.district, location.upazila].filter(Boolean).join(' / ') %> (৳<%= charge.toLocaleString('en-IN') %>)</option>
+                    <% }) %>
+                  <% } else { %>
+                    <option value="ঢাকার ভিতরে" data-charge="<%= siteSettings.inside_dhaka_charge || 60 %>"><%= t('common.insideDhaka') %> (৳<%= siteSettings.inside_dhaka_charge || 60 %>)</option>
+                    <option value="ঢাকার বাইরে" data-charge="<%= siteSettings.outside_dhaka_charge || 120 %>"><%= t('common.outsideDhaka') %> (৳<%= siteSettings.outside_dhaka_charge || 120 %>)</option>
+                  <% } %>
                 </select>
               </div>
               <div class="col-md-6">
                 <label for="ckNote" class="form-label small fw-semibold"><%= t('store.orderNote') %></label>
                 <input type="text" id="ckNote" name="note" class="form-control" placeholder="<%= t('store.orderNotePlaceholder') %>" />
               </div>
+              <% if (canonicalMysqlCheckout) { %>
+                <div class="col-12 form-check ms-2 mt-3">
+                  <input class="form-check-input" type="checkbox" id="recoveryConsent" />
+                  <label class="form-check-label small" for="recoveryConsent"><%= isEn ? 'Optional: I consent to saving my phone number and cart so I can resume this checkout. I do not consent to messages.' : 'ঐচ্ছিক: পরে এই চেকআউট চালিয়ে যেতে আমার ফোন নম্বর ও কার্ট সংরক্ষণে সম্মতি দিচ্ছি। কোনো বার্তা পাঠানোর সম্মতি দিচ্ছি না।' %></label>
+                </div>
+              <% } %>
             </div>
           </div>
 
@@ -62,23 +81,21 @@
             <p class="text-muted small mb-3"><%= t('store.paymentMethodSub') %></p>
 
             <div class="row g-2">
-              <% gateways.forEach(function(gw, idx) { %>
-                <div class="col-md-6">
-                  <label class="pay-option w-100 d-flex align-items-start gap-2 <%= idx === 0 ? 'active' : '' %>" onclick="selectGateway(this, '<%= gw.type %>', <%- JSON.stringify(gw.account_number || '') %>, <%- JSON.stringify(gw.instructions || '') %>)">
-                    <input
-                      type="radio"
-                      name="payment_method"
-                      value="<%= gw.name %>"
-                      class="form-check-input mt-1"
-                      <%= idx === 0 ? 'checked' : '' %>
-                    />
-                    <div>
-                      <div class="fw-bold small"><%= gw.name %></div>
-                      <div class="text-muted" style="font-size: 11.5px;"><%= gw.instructions || 'নিরাপদ লেনদেন' %></div>
-                    </div>
-                  </label>
-                </div>
-              <% }) %>
+              <% if (canonicalMysqlCheckout) { %>
+                <% if (gateways && gateways.length) { %>
+                  <div class="col-md-6"><label class="pay-option active w-100 d-flex align-items-start gap-2">
+                    <input type="radio" name="payment_method" value="cod" class="form-check-input mt-1" checked />
+                    <div><div class="fw-bold small"><%= gateways[0].name %></div><div class="text-muted" style="font-size:11.5px;"><%= isEn ? 'Pay the configured COD due on delivery. No online payment is accepted.' : 'ডেলিভারির সময় প্রদেয় অর্থ দিন। অনলাইন পেমেন্ট বর্তমানে চালু নেই।' %></div></div>
+                  </label></div>
+                <% } else { %><div class="col-12 alert alert-warning"><%= isEn ? 'Checkout is unavailable: COD is not enabled in payment settings.' : 'চেকআউট করা যাচ্ছে না: পেমেন্ট সেটিংসে COD চালু নেই।' %></div><% } %>
+              <% } else { %>
+                <% gateways.forEach(function(gw, idx) { %>
+                  <div class="col-md-6"><label class="pay-option w-100 d-flex align-items-start gap-2 <%= idx === 0 ? 'active' : '' %>" onclick="selectGateway(this, '<%= gw.type %>', <%- JSON.stringify(gw.account_number || '') %>, <%- JSON.stringify(gw.instructions || '') %>)">
+                    <input type="radio" name="payment_method" value="<%= gw.name %>" class="form-check-input mt-1" <%= idx === 0 ? 'checked' : '' %> />
+                    <div><div class="fw-bold small"><%= gw.name %></div><div class="text-muted" style="font-size:11.5px;"><%= gw.instructions || 'নিরাপদ লেনদেন' %></div></div>
+                  </label></div>
+                <% }) %>
+              <% } %>
             </div>
 
             <!-- Conditional Manual Payment TrxID Box -->
@@ -153,7 +170,10 @@
               </div>
             </div>
 
-            <button type="submit" class="btn btn-success w-100 py-3 fw-bold fs-6 rounded-3 mt-2 shadow-sm" style="background:#1b4332;border-color:#1b4332;">
+            <% if (canonicalMysqlCheckout) { %>
+              <div class="form-check small mb-2"><input class="form-check-input" type="checkbox" id="confirmOrder" name="confirm_order" value="yes" required /><label class="form-check-label" for="confirmOrder"><%= isEn ? 'I reviewed the contact, delivery, items and total above and confirm this order.' : 'উপরের যোগাযোগ, ডেলিভারি, পণ্য ও মোট মূল্য যাচাই করে অর্ডারটি নিশ্চিত করছি।' %></label></div>
+            <% } %>
+            <button type="submit" <%= canonicalMysqlCheckout && !checkoutAvailable ? 'disabled' : '' %> class="btn btn-success w-100 py-3 fw-bold fs-6 rounded-3 mt-2 shadow-sm" style="background:#1b4332;border-color:#1b4332;">
               ✓ অর্ডার নিশ্চিত করুন
             </button>
 
@@ -172,13 +192,14 @@
 <script>
   var baseSubtotal = <%= Number(cartSubtotal || 0) %>;
   var currentDiscount = <%= Number(appliedCoupon ? appliedCoupon.discount : 0) %>;
-  var freeShippingMin = <%= Number(siteSettings.free_shipping_min || 2500) %>;
+  var freeShippingMin = <%= Number(siteSettings.free_shipping_min || 0) %>;
+  var canonicalMysqlCheckout = <%= canonicalMysqlCheckout ? 'true' : 'false' %>;
 
   function recalcCheckout() {
     var sel = document.getElementById('ckShipping');
     if (!sel) return;
     var opt = sel.options[sel.selectedIndex];
-    var ship = Number(opt.getAttribute('data-charge') || 60);
+    var ship = Number(opt.getAttribute('data-charge') || (canonicalMysqlCheckout ? 0 : 60));
     if (freeShippingMin > 0 && baseSubtotal >= freeShippingMin) ship = 0;
     document.getElementById('ckSubtotal').textContent = baseSubtotal.toLocaleString('en-IN');
     document.getElementById('ckShipVal').textContent = ship;
@@ -247,7 +268,7 @@
     if (!code) return;
     fetch('/checkout/apply-coupon', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-csrf-token': '<%= csrfToken || "" %>' },
       body: JSON.stringify({ code: code })
     })
     .then(function(r) { return r.json(); })
@@ -256,25 +277,37 @@
       msg.className = 'small mb-2 ' + (d.success ? 'text-success fw-semibold' : 'text-danger');
       if (d.success) {
         currentDiscount = Number(d.discount || 0);
+        var couponCode = document.getElementById('checkoutCouponCode');
+        if (couponCode) couponCode.value = d.code || code;
         recalcCheckout();
       }
     });
   }
 
-  // Abandoned Checkout Capture on phone blur
+  // Recovery capture is opt-in only. No capture or notification occurs on the default path.
+  var recoveryRecordId = null;
+  var recoveryConsentEl = document.getElementById('recoveryConsent');
+  if (recoveryConsentEl) recoveryConsentEl.addEventListener('change', function() {
+    if (!this.checked && recoveryRecordId) {
+      fetch('/checkout/withdraw-recovery-consent', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-csrf-token': '<%= csrfToken || "" %>' }, body: JSON.stringify({ record_id: recoveryRecordId }) })
+        .then(function(r) { if (r.ok) recoveryRecordId = null; }).catch(function() {});
+    }
+  });
   var ckPhoneEl = document.getElementById('ckPhone');
   if (ckPhoneEl) {
     ckPhoneEl.addEventListener('blur', function() {
-      if (this.value.trim().length >= 10) {
+      var recoveryConsent = document.getElementById('recoveryConsent');
+      if (this.value.trim().length >= 10 && (!canonicalMysqlCheckout || (recoveryConsent && recoveryConsent.checked))) {
         fetch('/checkout/save-incomplete', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': '<%= csrfToken || "" %>' },
           body: JSON.stringify({
             name: document.getElementById('ckName').value,
             phone: this.value,
-            address: document.getElementById('ckAddress').value
+            address: document.getElementById('ckAddress').value,
+            consent: 'true', notification_consent: 'false'
           })
-        }).catch(function() {});
+        }).then(function(r) { return r.json(); }).then(function(d) { if (d.ok && d.id) recoveryRecordId = d.id; }).catch(function() {});
       }
     });
   }

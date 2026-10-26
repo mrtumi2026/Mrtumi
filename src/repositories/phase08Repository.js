@@ -12,7 +12,8 @@ const TRANSITIONS = Object.freeze({
   processing: ['shipped', 'cancelled', 'failed'],
   shipped: ['delivered', 'return_requested'],
   delivered: ['return_requested'],
-  return_requested: ['returned'],
+  // Final return acceptance/restock is intentionally disabled pending owner-approved partial-return, inspection, refund and disposition policy.
+  return_requested: [],
   cancelled: [], failed: [], returned: [],
 });
 const REFUND_STATES = Object.freeze({
@@ -23,8 +24,8 @@ const REFUND_STATES = Object.freeze({
 });
 const RESERVED_REFUND_STATES = ['requested', 'pending', 'approved', 'processing', 'succeeded', 'completed'];
 const INCOMPLETE_STATES = Object.freeze({
-  abandoned: ['contacted', 'recovery_started', 'withdrawn'],
-  contacted: ['recovery_started', 'withdrawn'],
+  abandoned: ['contacted', 'recovery_started', 'recovered', 'withdrawn'],
+  contacted: ['recovery_started', 'recovered', 'withdrawn'],
   recovery_started: ['contacted', 'recovered', 'withdrawn'],
   recovered: [], withdrawn: [],
 });
@@ -225,6 +226,7 @@ async function transitionOrder(orderId, toStatus, note, actor = {}, requestKey) 
       return { id, to: target, replayed: true };
     }
     const from = String(order.order_status);
+    if (target === 'returned') throw new ConflictError('Return completion and restock are disabled until the owner approves item eligibility, inspection/disposition, partial-return, refund and shipping-fee policy.');
     if (!TRANSITIONS[from]?.includes(target)) throw new ConflictError(`Order cannot move from ${from} to ${target}.`);
     if (target === 'confirmed') await reserveOrderInventoryTx(tx, id, actor);
     if (target === 'cancelled' || target === 'failed') await releaseOrderInventoryTx(tx, id, actor, reason);
@@ -367,6 +369,21 @@ async function recordIncompleteCheckout(input = {}) {
     throw err;
   }
 }
+async function withdrawIncompleteCheckout(recordId, sessionSid) {
+  assertMysql();
+  const id=requirePositiveInt(recordId,'incomplete order ID');
+  const sessionHash=safeHash(requireString(sessionSid,'session',{min:24,max:128}));
+  return mysql.withTransaction(async tx=>{
+    const row=await tx.queryOne('SELECT id,status,session_sid FROM incomplete_orders WHERE id=? FOR UPDATE',[id]);
+    if(!row || row.session_sid!==sessionHash) throw new NotFoundError('Recovery consent record not found for this session.');
+    if(row.status==='withdrawn') return {id,status:'withdrawn',replayed:true};
+    if(!INCOMPLETE_STATES[row.status]?.includes('withdrawn')) throw new ConflictError(`Recovery consent cannot be withdrawn from ${row.status}.`);
+    await tx.execute("UPDATE incomplete_orders SET status='withdrawn',consent_withdrawn_at=UTC_TIMESTAMP(),notification_allowed=0,phone='',customer_name='',session_sid='',cart_json=NULL WHERE id=?",[id]);
+    await tx.execute("INSERT INTO incomplete_order_history (incomplete_order_id,from_status,to_status,reason) VALUES (?,?,'withdrawn','Customer withdrew recovery consent')",[id,row.status]);
+    await insertAudit(tx,{type:'customer'},'checkout.recovery.consent_withdrawn','incomplete_order',id,{status:row.status},{status:'withdrawn'});
+    return {id,status:'withdrawn',replayed:false};
+  });
+}
 async function listIncompleteCheckouts({ search='',status='',page=1,limit=25 } = {}) {
   assertMysql();
   const q = String(search || '').trim().slice(0,100);
@@ -472,6 +489,12 @@ async function listRefunds({search='',status='',page=1,limit=25}={}){
   assertMysql();const valid=['requested','pending','approved','processing','succeeded','failed','rejected','completed'];if(status&&!valid.includes(status))throw new ValidationError('Invalid refund status filter.');const q=String(search||'').trim().slice(0,100);const pg=Math.max(1,Math.min(10000,Number(page)||1));const take=Math.max(1,Math.min(100,Number(limit)||25));const where=[];const params=[];if(status){where.push('r.status=?');params.push(status);}if(q){where.push('(r.invoice_no LIKE ? OR o.customer_phone LIKE ?)');params.push(`%${q}%`,`%${q}%`);}const clause=where.length?`WHERE ${where.join(' AND ')}`:'';const db=client();const rows=await db.queryAll(`SELECT r.id,r.order_id,r.invoice_no,r.amount_paisa,r.reason,r.status,r.request_key,r.created_at,o.customer_name,o.customer_phone FROM refunds r JOIN orders o ON o.id=r.order_id ${clause} ORDER BY r.id DESC LIMIT ? OFFSET ?`,[...params,take,(pg-1)*take]);const total=await db.queryOne(`SELECT COUNT(*) AS total FROM refunds r JOIN orders o ON o.id=r.order_id ${clause}`,params);return{rows,total:Number(total?.total||0),page:pg,limit:take,totalPages:Math.ceil(Number(total?.total||0)/take)};
 }
 async function listRefundHistory(refundId){assertMysql();return client().queryAll('SELECT h.*,u.name AS actor_name FROM refund_status_history h LEFT JOIN users u ON u.id=h.actor_user_id WHERE h.refund_id=? ORDER BY h.id',[requirePositiveInt(refundId,'refund ID')]);}
+async function getOrderOtpStatus(orderId){
+  assertMysql();const id=requirePositiveInt(orderId,'order ID');const db=client();
+  const order=await db.queryOne('SELECT id,otp_status FROM orders WHERE id=?',[id]);if(!order)throw new NotFoundError('Order not found.');
+  const summary=await db.queryOne('SELECT COUNT(*) AS issued_count,SUM(verified_at IS NOT NULL) AS verified_count,MAX(attempts) AS max_attempts,MAX(expires_at) AS latest_expiry FROM order_otps WHERE order_id=?',[id]);
+  return{orderId:id,status:order.otp_status,issuedCount:Number(summary?.issued_count||0),verifiedCount:Number(summary?.verified_count||0),maxAttempts:Number(summary?.max_attempts||0),latestExpiry:summary?.latest_expiry||null};
+}
 async function listOrderHistory(orderId){assertMysql();return client().queryAll('SELECT h.*,u.name AS actor_name FROM order_status_history h LEFT JOIN users u ON u.id=h.changed_by_user_id WHERE h.order_id=? ORDER BY h.id',[requirePositiveInt(orderId,'order ID')]);}
 
-module.exports={TRANSITIONS,REFUND_STATES,INCOMPLETE_STATES,validateOtpPolicy,validateAdvancePolicy,calculateAdvance,computeOrderPayment,otpDigest,makeOtp,normalizeCaptureCart,transitionOrder,requestRefund,transitionRefund,recordIncompleteCheckout,listIncompleteCheckouts,transitionIncompleteCheckout,createOrderOtp,verifyOrderOtp,getPhase08Settings,savePhase08Settings,listOrders,listRefunds,listRefundHistory,listOrderHistory,reserveOrderInventory:async(orderId,actor={})=>mysql.withTransaction(tx=>reserveOrderInventoryTx(tx,requirePositiveInt(orderId,'order ID'),actor)),releaseOrderInventory:async(orderId,actor={},reason='Order cancelled')=>mysql.withTransaction(tx=>releaseOrderInventoryTx(tx,requirePositiveInt(orderId,'order ID'),actor,reason))};
+module.exports={TRANSITIONS,REFUND_STATES,INCOMPLETE_STATES,validateOtpPolicy,validateAdvancePolicy,calculateAdvance,computeOrderPayment,otpDigest,makeOtp,normalizeCaptureCart,transitionOrder,requestRefund,transitionRefund,recordIncompleteCheckout,withdrawIncompleteCheckout,listIncompleteCheckouts,transitionIncompleteCheckout,createOrderOtp,verifyOrderOtp,getPhase08Settings,savePhase08Settings,listOrders,listRefunds,listRefundHistory,listOrderHistory,getOrderOtpStatus,reserveOrderInventory:async(orderId,actor={})=>mysql.withTransaction(tx=>reserveOrderInventoryTx(tx,requirePositiveInt(orderId,'order ID'),actor)),reserveOrderInventoryTx,releaseOrderInventory:async(orderId,actor={},reason='Order cancelled')=>mysql.withTransaction(tx=>releaseOrderInventoryTx(tx,requirePositiveInt(orderId,'order ID'),actor,reason))};

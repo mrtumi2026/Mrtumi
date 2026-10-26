@@ -1,7 +1,11 @@
 'use strict';
 
 const express = require('express');
+const crypto = require('crypto');
 const db = require('../db/database');
+const { requireCsrf } = require('../middleware/csrf');
+const checkoutRepo = require('../repositories/checkoutRepository');
+const phase08Repo = require('../repositories/phase08Repository');
 const { asyncHandler } = require('../utils/asyncHandler');
 const { createRateLimiter } = require('../middleware/rateLimit');
 const storefrontRepo = require('../repositories/storefrontRepository');
@@ -662,6 +666,7 @@ router.get('/cart/json', (req, res) => {
 
 // ─── Direct 1-Click Quick Order (from Quick Order Modal or Product Page) ───
 router.post('/order/quick-submit', (req, res) => {
+  if (storefrontRepo.isMysqlMode()) return res.status(409).json({ success:false, message:'Quick order is not enabled on the canonical MySQL path. Add the product to the cart and use checkout.' });
   const {
     product_id,
     qty,
@@ -797,7 +802,12 @@ router.post('/order/quick-submit', (req, res) => {
 });
 
 // ─── Coupon Validation ───
-router.post('/checkout/apply-coupon', (req, res) => {
+router.post('/checkout/apply-coupon', requireCsrf, asyncHandler(async (req, res) => {
+  if (storefrontRepo.isMysqlMode()) {
+    const result = await checkoutRepo.validateCoupon(req.body.code, req.session.cart || [], { locale: req.locale });
+    req.session.appliedCoupon = { code: result.code };
+    return res.json({ success: true, code: result.code, discount: result.amount / 100, message: `Coupon applied: ৳${result.amount / 100}` });
+  }
   const code = String(req.body.code || '').trim().toUpperCase();
   const subtotal = (req.session.cart || []).reduce((s, i) => s + Number(i.price) * Number(i.qty), 0);
 
@@ -824,11 +834,20 @@ router.post('/checkout/apply-coupon', (req, res) => {
     discount,
     message: `কুপন "${coupon.code}" প্রয়োগ হয়েছে! ছাড়: ৳${discount}`,
   });
-});
+}));
 
 // ─── Save Incomplete / Abandoned Checkout ───
-router.post('/checkout/save-incomplete', (req, res) => {
+router.post('/checkout/save-incomplete', requireCsrf, asyncHandler(async (req, res) => {
   const { name, phone, address } = req.body;
+  if (storefrontRepo.isMysqlMode()) {
+    if (req.body.consent !== 'true' || req.body.notification_consent === 'true') return res.json({ ok: false, reason: 'explicit_consent_required' });
+    const result = await phase08Repo.recordIncompleteCheckout({
+      consent: true, notificationConsent: false, phone, name, sessionSid: req.sessionID,
+      cart: (req.session.cart || []).map((item) => ({ product_id: item.product_id ?? item.productId ?? item.id, variant_id: item.variant_id ?? item.variantId ?? null, qty: item.qty ?? item.quantity })),
+    });
+    if (result.recorded) req.session.incompleteCheckoutId = result.id;
+    return res.json({ ok: Boolean(result.recorded), id: result.id || null, reason: result.reason || null });
+  }
   const cleanPhone = String(phone || '').trim();
   if (cleanPhone.length >= 10 && Array.isArray(req.session.cart) && req.session.cart.length > 0) {
     const summary = req.session.cart.map((i) => `${i.name} × ${i.qty}`).join(', ');
@@ -858,19 +877,63 @@ router.post('/checkout/save-incomplete', (req, res) => {
     }
   }
   res.json({ ok: true });
-});
+}));
+
+router.post('/checkout/withdraw-recovery-consent', requireCsrf, asyncHandler(async (req, res) => {
+  if (!storefrontRepo.isMysqlMode()) return res.json({ ok: true });
+  const result = await phase08Repo.withdrawIncompleteCheckout(req.body.record_id, req.sessionID);
+  if (Number(req.session.incompleteCheckoutId) === Number(result.id)) delete req.session.incompleteCheckoutId;
+  return res.json({ ok: true, status: result.status });
+}));
 
 // ─── Customer Checkout Page ───
-router.get('/customer/checkout', (req, res) => {
+router.get('/customer/checkout', asyncHandler(async (req, res) => {
+  if (storefrontRepo.isMysqlMode()) {
+    const source = Array.isArray(req.session.cart) ? req.session.cart : [];
+    const quote = source.length ? await checkoutRepo.quoteCart(source, { locale: req.locale }) : { items: [], subtotalPaisa: 0, count: 0 };
+    const sourceKeys = new Map(source.map((item) => [`${Number(item.product_id ?? item.productId ?? item.id)}:${Number(item.variant_id ?? item.variantId ?? 0)}:${String(item.size||'')}:${String(item.color||'')}`, item.key]));
+    const cart = quote.items.map((item) => ({ ...item, key: sourceKeys.get(`${Number(item.product_id)}:${Number(item.variant_id||0)}:${String(item.size||'')}:${String(item.color||'')}`) || `${item.product_id}:${item.variant_id || 0}`, price: item.price_paisa / 100 }));
+    req.session.cart = cart.map((item) => ({ key: item.key, product_id: item.product_id, variant_id: item.variant_id, qty: item.qty, name: item.name, image: item.image, price: item.price, size: item.size, color: item.color }));
+    let discount = 0;
+    if (req.session.appliedCoupon?.code && cart.length) {
+      try { discount = (await checkoutRepo.validateCoupon(req.session.appliedCoupon.code, cart, { locale: req.locale })).amount / 100; }
+      catch (_err) { delete req.session.appliedCoupon; }
+    }
+    if (!req.session.checkoutRequestKey || req.session.checkoutLastRequestKey === req.session.checkoutRequestKey) req.session.checkoutRequestKey = crypto.randomBytes(24).toString('hex');
+    const [locations, methods] = await Promise.all([checkoutRepo.listDeliveryLocations(), checkoutRepo.listCheckoutMethods()]);
+    return res.render('store/checkout', {
+      cart, cartCount: quote.count, cartSubtotal: quote.subtotalPaisa / 100, discount,
+      appliedCoupon: req.session.appliedCoupon || null, gateways: methods,
+      deliveryLocations: locations, checkoutAvailable: Boolean(locations.length && methods.length), canonicalMysqlCheckout: true, checkoutRequestKey: req.session.checkoutRequestKey,
+      csrfToken: req.csrfToken(), siteSettings: { free_shipping_min: 0 },
+    });
+  }
   const state = computeCartTotals(req);
   const gateways = db.all('SELECT * FROM payment_gateways WHERE status = 1 ORDER BY id ASC');
-  res.render('store/checkout', {
-    ...state,
-    gateways,
-  });
-});
+  return res.render('store/checkout', { ...state, gateways, canonicalMysqlCheckout: false, csrfToken: req.csrfToken() });
+}));
 
-router.post('/customer/checkout', (req, res) => {
+router.post('/customer/checkout', requireCsrf, asyncHandler(async (req, res) => {
+  if (storefrontRepo.isMysqlMode()) {
+    const candidate = String(req.body.checkout_request_key || '');
+    const activeKey = String(req.session.checkoutRequestKey || '');
+    const replayKey = String(req.session.checkoutLastRequestKey || '');
+    const matches = (key) => key && candidate.length === key.length && crypto.timingSafeEqual(Buffer.from(key), Buffer.from(candidate));
+    const expected = matches(activeKey) ? activeKey : (matches(replayKey) ? replayKey : '');
+    if (!expected) throw new (require('../utils/errors').ConflictError)('Checkout session expired. Reload checkout and try again.');
+    if (req.body.confirm_order !== 'yes') throw new (require('../utils/errors').ValidationError)('Confirm the order details before submitting.');
+    const isReplay = matches(replayKey);
+    const sourceCart = isReplay ? (req.session.checkoutLastCart || []) : (req.session.cart || []);
+    const incompleteOrderId = isReplay ? (req.session.checkoutLastRecoveryId || null) : (req.session.incompleteCheckoutId || null);
+    if (!Array.isArray(sourceCart) || !sourceCart.length) throw new (require('../utils/errors').ValidationError)('Your server-side cart is empty.');
+    const result = await checkoutRepo.createOrder({
+      customer_name: req.body.customer_name, phone: req.body.phone, address: req.body.address,
+      delivery_location_id: req.body.delivery_location_id, payment_method: req.body.payment_method,
+      note: req.body.note, coupon_code: matches(replayKey) ? String(req.body.coupon_code || '') : (req.session.appliedCoupon?.code || ''),
+    }, { locale: req.locale, sessionCustomer: req.customerUser || null, ip: req.ip, requestKey: expected, cart: sourceCart, incompleteOrderId, sessionSid: req.sessionID });
+    if (!isReplay) { req.session.checkoutLastCart = JSON.parse(JSON.stringify(sourceCart)); req.session.checkoutLastRequestKey = expected; req.session.checkoutLastRecoveryId = incompleteOrderId; delete req.session.incompleteCheckoutId; req.session.cart = []; delete req.session.appliedCoupon; }
+    return res.redirect(`/order-success/${encodeURIComponent(result.invoiceNo)}`);
+  }
   const {
     customer_name,
     phone,
@@ -1006,9 +1069,14 @@ router.post('/customer/checkout', (req, res) => {
   delete req.session.appliedCoupon;
 
   return res.redirect(`/order-success/${inv}`);
-});
+}));
 
-router.get('/order-success/:invoiceId', (req, res) => {
+router.get('/order-success/:invoiceId', asyncHandler(async (req, res) => {
+  if (storefrontRepo.isMysqlMode()) {
+    const result = await checkoutRepo.getOrderForSuccess(req.params.invoiceId);
+    if (!result) return res.redirect('/');
+    return res.render('store/order-success-mysql', { order: result.order, items: result.items, isEn: req.locale === 'en' });
+  }
   const order = db.get(
     `SELECT o.*, COALESCE(os.name, o.status) AS status_label
      FROM orders o
@@ -1019,9 +1087,10 @@ router.get('/order-success/:invoiceId', (req, res) => {
   if (!order) return res.redirect('/');
   const items = db.all('SELECT * FROM order_items WHERE order_id = ?', order.id);
   return res.render('store/order-success', { order, items });
-});
+}));
 
 router.post('/order/:invoiceId/cancel', (req, res) => {
+  if (storefrontRepo.isMysqlMode()) return res.status(409).json({ success:false, message:'Customer cancellation is paused on MySQL until invoice ownership verification is available. Contact support; authorized admins can cancel pending orders.' });
   const order = db.get('SELECT * FROM orders WHERE invoice_id = ?', req.params.invoiceId);
   if (!order) return res.redirect('/track-order');
 
