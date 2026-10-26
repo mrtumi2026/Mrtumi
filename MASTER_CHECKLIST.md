@@ -77,11 +77,11 @@
 ### PHASE 08 — Order Management, Incomplete Orders, OTP & Advance Payment
 | ID | Feature / Deliverable | Status | Notes |
 |---|---|---|---|
-| P08-01 | Order state machine, `order_status_history`, notes & authorized item edits | `IN PROGRESS` | MySQL row-locked transitions/history/audit and guarded bilingual admin screen implemented; granular permission provisioning exists as a dependency; notes/item edits and live MySQL evidence remain |
-| P08-02 | Cancellation, returns, refund initiation & stock restoration | `IN PROGRESS` | Cancellation/failure releases held reservations and shipment consumes them; bounded/idempotent refund requests and approve/reject history implemented. Checkout is not wired to reservations; partial returns/restock and provider reconciliation remain |
-| P08-03 | Consent-aware incomplete checkout capture & duplicate order detection | `IN PROGRESS` | Consent-only minimal capture, dedupe/search/status/withdrawal admin workflows and recovered-order idempotency guard implemented; canonical checkout integration and live MySQL evidence remain |
-| P08-04 | Admin-configurable Order OTP verification (expiry, attempt cap, cooldown, rate limit) | `IN PROGRESS` | MySQL-bound OTP digest/expiry/attempt/order-customer-session checks, replay rejection and hourly/cooldown limits implemented; settings UI exists; no delivery route/provider and live MySQL evidence remains |
-| P08-05 | Admin-configurable advance payment (fixed/%) + remaining COD balance & min/max order rules | `IN PROGRESS` | Admin settings persistence/UI and bounded integer-paisa calculations implemented; authoritative MySQL checkout/order integration and live MySQL evidence remain |
+| P08-01 | Order state machine, `order_status_history`, notes & authorized item edits | `IN PROGRESS` | MySQL row-locked transitions/history/audit and guarded bilingual admin screen implemented; live lifecycle and migration suites pass in CI `40292688111`; granular permission provisioning, notes/item edits and admin HTTP coverage remain |
+| P08-02 | Cancellation, returns, refund initiation & stock restoration | `IN PROGRESS` | Cancellation/failure releases held reservations, shipment consumes them, and recorded returned reservations restore stock; concurrent refund-cap and approval-history tests pass in CI `40292688111`. Checkout wiring, partial returns and provider reconciliation remain |
+| P08-03 | Consent-aware incomplete checkout capture & duplicate order detection | `IN PROGRESS` | Consent-only minimal capture, dedupe/search/status/withdrawal and recovered-order idempotency guard pass the live MySQL test slice in CI `40292688111`; canonical checkout integration remains |
+| P08-04 | Admin-configurable Order OTP verification (expiry, attempt cap, cooldown, rate limit) | `IN PROGRESS` | MySQL-bound digest/expiry/attempt/order-customer-session checks, replay rejection and hourly/cooldown limits pass CI `40292688111`; no delivery route/provider, and admin HTTP coverage remains |
+| P08-05 | Admin-configurable advance payment (fixed/%) + remaining COD balance & min/max order rules | `IN PROGRESS` | Admin settings persistence/UI and bounded integer-paisa calculations implemented; math tests pass locally. Authoritative MySQL checkout/order integration remains |
 
 ### PHASE 09 — Admin Dashboard, Users & Permissions
 | ID | Feature / Deliverable | Status | Notes |
