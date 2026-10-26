@@ -114,10 +114,10 @@ describe('Phase 03 — Real MySQL 8.0 Schema, Migrations, Constraints, Transacti
     if (!pool) return t.skip(SKIP_REASON);
 
     const applied = await migrateUp(pool);
-    assert.equal(applied.length, 3);
+    assert.equal(applied.length, 4);
     assert.deepEqual(
       applied.map((m) => m.version),
-      ['0001', '0002', '0003']
+      ['0001', '0002', '0003', '0004']
     );
 
     const statusAfterUp = await getMigrationStatus(pool);
@@ -129,7 +129,7 @@ describe('Phase 03 — Real MySQL 8.0 Schema, Migrations, Constraints, Transacti
        WHERE TABLE_SCHEMA = ? AND TABLE_NAME <> 'schema_migrations'`,
       [testDbConfig.name]
     );
-    assert.equal(tableMeta.length, 71, 'All 71 domain tables must be created');
+    assert.equal(tableMeta.length, 72, 'All 71 foundation tables plus the Phase 06 receipt table must be created');
     for (const tbl of tableMeta) {
       assert.equal(tbl.engine, 'InnoDB', `Table ${tbl.name} must use InnoDB`);
       assert.equal(
@@ -139,12 +139,12 @@ describe('Phase 03 — Real MySQL 8.0 Schema, Migrations, Constraints, Transacti
       );
     }
 
-    // Roll back all 3 migrations in reverse FK order and verify clean schema
-    const rolledBack = await migrateDown(pool, { steps: 3 });
-    assert.equal(rolledBack.length, 3);
+    // Roll back all 4 migrations in reverse FK order and verify clean schema
+    const rolledBack = await migrateDown(pool, { steps: 4 });
+    assert.equal(rolledBack.length, 4);
     assert.deepEqual(
       rolledBack.map((m) => m.version),
-      ['0003', '0002', '0001']
+      ['0004', '0003', '0002', '0001']
     );
 
     const remainingTables = await dbClient.queryAll(
@@ -157,7 +157,7 @@ describe('Phase 03 — Real MySQL 8.0 Schema, Migrations, Constraints, Transacti
 
     // Re-apply cleanly for subsequent tests
     const reapplied = await migrateUp(pool);
-    assert.equal(reapplied.length, 3);
+    assert.equal(reapplied.length, 4);
   });
 
   test('2. Migration checksum tamper detection, out-of-order rejection, and failed statement handling', async (t) => {
@@ -183,11 +183,11 @@ describe('Phase 03 — Real MySQL 8.0 Schema, Migrations, Constraints, Transacti
         path.join(tmpDir, '0001_core_security_and_sessions.up.sql')
       );
       fs.writeFileSync(
-        path.join(tmpDir, '0004_broken_sql.up.sql'),
+        path.join(tmpDir, '0005_broken_sql.up.sql'),
         'INVALID SQL STATEMENT THAT MUST FAIL;'
       );
       fs.writeFileSync(
-        path.join(tmpDir, '0004_broken_sql.down.sql'),
+        path.join(tmpDir, '0005_broken_sql.down.sql'),
         'SELECT 1;'
       );
 
@@ -196,9 +196,9 @@ describe('Phase 03 — Real MySQL 8.0 Schema, Migrations, Constraints, Transacti
         (err) => err instanceof MigrationError && err.code === 'MIGRATION_STATEMENT_FAILED'
       );
 
-      // Verify 0004 was NOT recorded in schema_migrations and advisory lock was released
+      // Verify 0005 was NOT recorded in schema_migrations and advisory lock was released
       const status = await getMigrationStatus(pool);
-      assert.equal(status.length, 3);
+      assert.equal(status.length, 4);
       const lockCheck = await dbClient.queryOne(
         "SELECT IS_FREE_LOCK('mrtumi_schema_migration') AS free_lock"
       );
