@@ -406,17 +406,17 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
       assert.equal(mismatch.statusCode,409,'reusing an idempotency key with changed data is rejected');
       const durableKey=`incomplete:${capturePayload.id}`;
       const orderCount = await client.queryOne('SELECT COUNT(*) AS n FROM orders WHERE idempotency_key=?',[durableKey]);
-      assert.equal(Number(orderCount.n),1);
+      assert.equal(Number(orderCount.n),1,`recovery order idempotency key was not persisted (found ${orderCount.n})`);
       const recoveryState=await client.queryOne('SELECT status,recovered_order_id,notification_allowed FROM incomplete_orders WHERE id=?',[capturePayload.id]);
-      assert.equal(recoveryState.status,'recovered');assert.equal(Number(recoveryState.recovered_order_id),Number(placed.id));assert.equal(Number(recoveryState.notification_allowed),0);
+      assert.equal(recoveryState.status,'recovered');assert.equal(Number(recoveryState.recovered_order_id),Number(placed.id),`recovery link ${recoveryState.recovered_order_id} does not match order ${placed.id}`);assert.equal(Number(recoveryState.notification_allowed),0);
       const successPage = await httpRequest(baseUrl, submitted.headers.location, { headers: { Cookie: cookieHeader } });
       assert.equal(successPage.statusCode,200); assert.match(successPage.body,/No online payment has been recorded/);
       assert.doesNotMatch(successPage.body,/01712345678|House 1, Test Road/,'public success page does not expose customer contact or address');
 
       const concurrentKeys=[`p08-checkout-stock-a-${Date.now()}`,`p08-checkout-stock-b-${Date.now()}`];
       const concurrentOrders=await Promise.allSettled(concurrentKeys.map((requestKey)=>checkoutRepo.createOrder({customer_name:'Concurrent Checkout',phone:'01912345678',address:'House 2, Concurrent Road',delivery_location_id:deliveryLocationId,payment_method:'cod'}, {locale:'en',requestKey,cart:[{product_id:inhouseProdId,variant_id:variant5KgId,qty:3}]})));
-      assert.equal(concurrentOrders.filter(x=>x.status==='fulfilled').length,1,'row locks prevent two distinct checkouts from overselling the remaining variant stock');
-      assert.equal(concurrentOrders.filter(x=>x.status==='rejected'&&x.reason.code==='CONFLICT').length,1);
+      assert.equal(concurrentOrders.filter(x=>x.status==='fulfilled').length,1,`row locks should allow one checkout; outcomes=${concurrentOrders.map(x=>x.status==='fulfilled'?'fulfilled':x.reason?.message).join('; ')}`);
+      assert.equal(concurrentOrders.filter(x=>x.status==='rejected'&&x.reason.code==='CONFLICT').length,1,`exactly one checkout should be rejected for stock; outcomes=${concurrentOrders.map(x=>x.status==='fulfilled'?'fulfilled':`${x.reason?.code}:${x.reason?.message}`).join('; ')}`);
       assert.equal(Number((await client.queryOne('SELECT stock_reserved FROM product_variants WHERE id=?',[variant5KgId])).stock_reserved),8);
       await client.execute("INSERT INTO settings (setting_key,setting_value) VALUES ('otp_mode','on') ON DUPLICATE KEY UPDATE setting_value='on'");
       await assert.rejects(()=>checkoutRepo.createOrder({customer_name:'OTP blocked',phone:'01912345678',address:'House 3, Policy Road',delivery_location_id:deliveryLocationId,payment_method:'cod'},{locale:'en',requestKey:`p08-checkout-otp-${Date.now()}`,cart:[{product_id:inhouseProdId,qty:1}]}),(err)=>err.code==='CONFLICT');
