@@ -103,7 +103,7 @@ describe('Phase 09 — live MySQL 8.0 admin dashboard repository and HTTP access
     const dash = await get('/admin/dashboard');
     assert.equal(dash.status, 200);
     const body = await dash.text();
-    assert.match(body, /Dashboard product/);
+    assert.match(body, /পরীক্ষা/, 'dashboard keeps the Bangla-first product label present in the MySQL fixture');
     for (const route of ['/admin/smsgeteway/balance', '/admin/bdcourier/my-plan', '/admin/steadfast/dashboard-widget']) {
       const response = await get(route);
       assert.equal(response.status, 503);
