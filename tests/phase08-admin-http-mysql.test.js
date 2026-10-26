@@ -108,7 +108,7 @@ describe('Phase 08 — authenticated MySQL admin HTTP, RBAC, CSRF, replay and au
     assert.equal((await request('/admin/phase08/refunds',{cookie:refundStaff})).status,200);
     assert.equal((await request(`/admin/phase08/refunds/${refund.id}/decision`,{method:'POST',cookie:refundStaff,body:{status:'approved',reason:'missing csrf',request_key:'p08-http-refund-nocsrf'}})).status,403);
     const invalidRefund=await request(`/admin/phase08/refunds/${refund.id}/decision`,{method:'POST',cookie:refundStaff,csrf:refundToken,body:{status:'succeeded',reason:'cannot settle',request_key:'p08-http-refund-invalid'}});
-    assert.equal(invalidRefund.status,409);
+    assert.equal(invalidRefund.status,400,'admin HTTP rejects provider settlement status because only approve/reject is available');
     const decisionKey=`p08-http-approve-${refund.id}`;
     const approved=await request(`/admin/phase08/refunds/${refund.id}/decision`,{method:'POST',cookie:refundStaff,csrf:refundToken,body:{status:'approved',reason:'manual evidence review',request_key:decisionKey}});
     assert.equal(approved.status,200);assert.equal(approved.json.status,'approved');
