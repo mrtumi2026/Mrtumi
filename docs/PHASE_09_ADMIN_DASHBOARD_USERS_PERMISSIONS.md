@@ -16,7 +16,8 @@
 - `src/routes/adminDashboard.js` delegates the dashboard and the listed read paths to the repository when `DB_CLIENT=mysql`; direct SQLite queries remain solely in its local non-MySQL prototype branches. This does not migrate unrelated admin routes or the rest of the application.
 - Monetary values are read from integer paisa fields and converted for the existing BDT display. Empty result sets return actual empty/zero aggregates from SQL; unsupported provider account data is a distinct unavailable response.
 - Dismiss-new-orders mutation is CSRF-protected. Database failures are passed to the centralized safe error handling; SQL text and credentials are not returned by the repository layer.
-- Added repository contract tests and `tests/phase09-dashboard-mysql.test.js` for live MySQL repository, date/status/amount/stock behavior, authenticated HTTP access, and unavailable provider responses. The live suite has not yet run in this checkout's CI.
+- Added repository contract tests and `tests/phase09-dashboard-mysql.test.js` for live MySQL repository, date/status/amount/stock behavior, authenticated HTTP access, and unavailable provider responses. GitHub Actions MySQL 8.0 run `40303685398` passed for commit `13b1636da323e91b4c483edc35024b9207d401f5`; this verifies dashboard summary queries, Dhaka-day boundaries/status filters, product/finance aggregates, authenticated route response and explicit provider-unavailable behavior.
+- MySQL HTTP coverage for order polling, unseen-order popup, dismiss mutation and assistant snapshot is still outstanding; their repository SQL is implemented but not live-tested over HTTP yet.
 
 ## Blocked / incomplete
 
