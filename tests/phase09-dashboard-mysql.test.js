@@ -184,6 +184,68 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     assert.equal(invalid.status,302); assert.equal(invalid.headers.get('location'),'/admin/order/all');
   });
 
+  test('legacy status-filtered order list uses MySQL with search, status counts and safe failure handling',async(t)=>{
+    if(!MYSQL_HOST)return t.skip(SKIP);
+    const invoice=await db.queryOne('SELECT invoice_no FROM orders WHERE id=?',[invoiceOrderId]);
+    const encodedInvoice=encodeURIComponent(invoice.invoice_no);
+    assert.equal((await request(`/admin/order/completed?q=${encodedInvoice}`,{cookie:''})).status,401,'order list requires authentication');
+    const noGrantCookie=await login(noGrantEmail);
+    assert.equal((await request(`/admin/order/completed?q=${encodedInvoice}`,{cookie:noGrantCookie})).status,403,'order list requires orders.manage');
+
+    const completed=await request(`/admin/order/completed?q=${encodedInvoice}`,{accept:'text/html'});
+    assert.equal(completed.status,200);
+    assert.match(completed.text,new RegExp(`#${invoice.invoice_no}`));
+    assert.match(completed.text,/P09 fixture/);
+    assert.match(completed.text,/৳100/);
+    assert.doesNotMatch(completed.text,/P09 unrelated/,'search result must not include another customer/order');
+    assert.match(completed.text,/Completed/);
+    const customerSearch=await request('/admin/order/all?q=P09%20fixture',{accept:'text/html'});
+    assert.equal(customerSearch.status,200); assert.match(customerSearch.text,new RegExp(`#${invoice.invoice_no}`));
+    const phoneSearch=await request('/admin/order/completed?q=01712345678',{accept:'text/html'});
+    assert.equal(phoneSearch.status,200); assert.match(phoneSearch.text,new RegExp(`#${invoice.invoice_no}`));
+
+    const pending=await request(`/admin/order/pending?q=${encodedInvoice}`,{accept:'text/html'});
+    assert.equal(pending.status,200);
+    assert.doesNotMatch(pending.text,new RegExp(`#${invoice.invoice_no}`),'status filter excludes a matching invoice in another status');
+    const unpaid=await request(`/admin/order/unpaid?q=${encodedInvoice}`,{accept:'text/html'});
+    assert.equal(unpaid.status,200);
+    assert.match(unpaid.text,new RegExp(`#${invoice.invoice_no}`),'unpaid filter includes payment_status=unpaid even when order status is completed');
+
+    const ordered=await request('/admin/order/all?q=P09-',{accept:'text/html'});
+    assert.equal(ordered.status,200);
+    const expectedOrder=await db.queryAll("SELECT invoice_no FROM orders WHERE invoice_no LIKE ? ORDER BY id DESC",['P09-%']);
+    let previousPosition=Number.POSITIVE_INFINITY;
+    for(const row of expectedOrder){
+      const position=ordered.text.indexOf(`#${row.invoice_no}`);
+      assert.ok(position>=0,`search list includes persisted invoice ${row.invoice_no}`);
+      assert.ok(position<previousPosition,'legacy order list remains sorted by descending order ID');
+      previousPosition=position;
+    }
+
+    const all=await request('/admin/order/all?q=%27%20OR%201%3D1%20--',{accept:'text/html'});
+    assert.equal(all.status,200);
+    assert.match(all.text,/কোনো অর্ডার পাওয়া যায়নি/,'search text is bound as data, not interpreted as SQL');
+    const invalidStatus=await request('/admin/order/not-a-real-status',{accept:'text/html'});
+    assert.equal(invalidStatus.status,200);
+    assert.match(invalidStatus.text,/কোনো অর্ডার পাওয়া যায়নি/,'unknown legacy status preserves the existing empty-list behavior');
+
+    const originalQuery=pool.query; const hadOwnQuery=Object.hasOwn(pool,'query');
+    pool.query=function(sql,...args){
+      if(String(sql).includes('FROM orders o')){
+        const forced= new Error('forced order-list database failure'); forced.code='ER_ACCESS_DENIED_ERROR';
+        return Promise.reject(forced);
+      }
+      return originalQuery.call(this,sql,...args);
+    };
+    let failed;
+    try { failed=await request('/admin/order/all',{accept:'application/json'}); }
+    finally { if(hadOwnQuery)pool.query=originalQuery; else delete pool.query; }
+    assert.equal(failed.status,503);
+    assert.equal(failed.json.ok,false);
+    assert.equal(failed.json.error.code,'DB_CONNECTION_FAILED');
+    assert.doesNotMatch(failed.text,/forced order-list database failure|SELECT |password/i,'sanitized HTTP error must not disclose SQL or driver details');
+  });
+
   test('legacy general settings save uses transactional MySQL persistence and value-free audit',async(t)=>{
     if(!MYSQL_HOST)return t.skip(SKIP);
     const key=`p09_route_setting_${Date.now()}`;

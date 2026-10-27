@@ -661,41 +661,9 @@ router.post('/admin/refunds/delete/:id', (req, res) => {
 });
 
 // ─── Orders List by Status (/admin/order/:status) ───
-router.get('/admin/order/:status', (req, res) => {
+router.get('/admin/order/:status', asyncHandler(async (req, res) => {
   const statusParam = req.params.status;
   const q = String(req.query.q || '').trim();
-
-  let where = 'WHERE 1=1';
-  const params = [];
-
-  if (statusParam && statusParam !== 'all') {
-    if (statusParam === 'unpaid') {
-      where += " AND (o.payment_status = 'unpaid' OR o.status = 'unpaid')";
-    } else {
-      where += ' AND o.status = ?';
-      params.push(statusParam);
-    }
-  }
-
-  if (q) {
-    where += ' AND (o.invoice_id LIKE ? OR o.customer_name LIKE ? OR o.phone LIKE ?)';
-    params.push(`%${q}%`, `%${q}%`, `%${q}%`);
-  }
-
-  const orders = db.all(
-    `SELECT o.*, COALESCE(os.name, o.status) AS status_label, COALESCE(os.badge_class, 'sb-1') AS badge_class
-     FROM orders o
-     LEFT JOIN order_statuses os ON os.slug = o.status
-     ${where}
-     ORDER BY o.id DESC`,
-    ...params
-  );
-
-  const statuses = db.all('SELECT * FROM order_statuses WHERE status = 1 ORDER BY sort_order ASC');
-  const countRows = db.all('SELECT status, COUNT(*) AS c FROM orders GROUP BY status');
-  const statusCounts = { all: db.get('SELECT COUNT(*) AS c FROM orders').c };
-  for (const r of countRows) statusCounts[r.status] = r.c;
-
   const titleMap = {
     all: 'All Orders',
     pending: 'Pending Orders',
@@ -707,7 +675,43 @@ router.get('/admin/order/:status', (req, res) => {
     cancelled: 'Cancelled Orders',
   };
 
-  res.render('admin/orders', {
+  if (env.db.client === 'mysql') {
+    const data = await adminOrderReadRepository.listAdminOrders({ statusParam, searchQuery: q });
+    return res.render('admin/orders', {
+      pageTitle: titleMap[statusParam] || `Orders (${statusParam})`,
+      statusFilter: statusParam,
+      searchQuery: q,
+      ...data,
+    });
+  }
+
+  let where = 'WHERE 1=1';
+  const params = [];
+  if (statusParam && statusParam !== 'all') {
+    if (statusParam === 'unpaid') {
+      where += " AND (o.payment_status = 'unpaid' OR o.status = 'unpaid')";
+    } else {
+      where += ' AND o.status = ?';
+      params.push(statusParam);
+    }
+  }
+  if (q) {
+    where += ' AND (o.invoice_id LIKE ? OR o.customer_name LIKE ? OR o.phone LIKE ?)';
+    params.push(`%${q}%`, `%${q}%`, `%${q}%`);
+  }
+  const orders = db.all(
+    `SELECT o.*, COALESCE(os.name, o.status) AS status_label, COALESCE(os.badge_class, 'sb-1') AS badge_class
+     FROM orders o
+     LEFT JOIN order_statuses os ON os.slug = o.status
+     ${where}
+     ORDER BY o.id DESC`,
+    ...params
+  );
+  const statuses = db.all('SELECT * FROM order_statuses WHERE status = 1 ORDER BY sort_order ASC');
+  const countRows = db.all('SELECT status, COUNT(*) AS c FROM orders GROUP BY status');
+  const statusCounts = { all: db.get('SELECT COUNT(*) AS c FROM orders').c };
+  for (const row of countRows) statusCounts[row.status] = row.c;
+  return res.render('admin/orders', {
     pageTitle: titleMap[statusParam] || `Orders (${statusParam})`,
     statusFilter: statusParam,
     orders,
@@ -715,6 +719,6 @@ router.get('/admin/order/:status', (req, res) => {
     searchQuery: q,
     statusCounts,
   });
-});
+}));
 
 module.exports = router;
