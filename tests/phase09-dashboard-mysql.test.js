@@ -66,6 +66,12 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     productId=Number((await db.execute("INSERT INTO products(sku,slug,name_bn,name_en,category_id,regular_price_paisa,sale_price_paisa,stock_on_hand,stock_reserved,approval_status,status) VALUES(?,?,?,?,?,12000,10000,9,2,'approved',1)",[ `P09-${suffix}`,`p09-dash-product-${suffix}`,'পরীক্ষা','Dashboard product',cat.insertId])).insertId);
     await db.execute("INSERT INTO order_statuses(name,slug,badge_class,color,sort_order,status) VALUES('Completed','completed','sb-2','#00aa00',1,1) ON DUPLICATE KEY UPDATE name=VALUES(name)");
     const orderId=Number((await db.execute("INSERT INTO orders(invoice_no,customer_name,customer_phone,shipping_address,subtotal_paisa,total_paisa,paid_paisa,cod_due_paisa,order_status,traffic_source,created_at) VALUES(?, 'P09 fixture','01712345678','Test address',10000,10000,0,10000,'completed','phase09-test',UTC_TIMESTAMP())",[`P09-${suffix}`])).insertId); invoiceOrderId=orderId;
+    const courierCode=`p09-courier-${suffix}`;
+    const courierName='P09 Test Courier';
+    await db.execute('INSERT INTO courier_apis(name,code,status) VALUES(?,?,1)',[courierName,courierCode]);
+    const riderId=Number((await db.execute("INSERT INTO delivery_boys(name,phone,status) VALUES('P09 Test Rider','01711116666',1)")).insertId);
+    await db.execute('UPDATE orders SET courier_code=?,courier_tracking_id=?,delivery_boy_id=?,shipping_zone=?,customer_note=?,admin_note=?,coupon_code=? WHERE id=?',[courierCode,`P09-TRACK-${suffix}`,riderId,'Inside Dhaka','P09 customer note','P09 internal note','P09COUPON',orderId]);
+    await db.execute("INSERT INTO order_payments(order_id,gateway_code,provider_trx_id,sender_number,amount_paisa,status) VALUES(?, 'p09-test',?,?,10000,'pending')",[orderId,`P09-TRX-${suffix}`,'01799990000']);
     const {start:dayStart,end:dayEnd}=dashboardRepo.dhakaDayUtcBounds(today);
     for(const [invoice,status,source,paisa,created] of [[`P09-start-${suffix}`,'pending','phase09-boundary',1200,dayStart],[`P09-end-${suffix}`,'pending','phase09-after-day',1300,dayEnd],[`P09-cancel-${suffix}`,'cancelled','phase09-cancelled',1400,dayStart]])
       await db.execute("INSERT INTO orders(invoice_no,customer_name,customer_phone,shipping_address,subtotal_paisa,total_paisa,paid_paisa,cod_due_paisa,order_status,traffic_source,created_at) VALUES(?, 'P09 boundary','01712345678','Test address',?,?,0,?,?,?,?)",[invoice,paisa,paisa,paisa,status,source,created]);
@@ -182,6 +188,70 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     assert.equal(missing.status,302); assert.equal(missing.headers.get('location'),'/admin/order/all');
     const invalid=await request('/admin/order/invoice/not-a-number',{accept:'text/html'});
     assert.equal(invalid.status,302); assert.equal(invalid.headers.get('location'),'/admin/order/all');
+  });
+
+  test('legacy order detail renders related MySQL data, preserves mark-seen, and handles denial/missing/error cases',async(t)=>{
+    if(!MYSQL_HOST)return t.skip(SKIP);
+    assert.equal((await request(`/admin/order/view/${invoiceOrderId}`,{cookie:''})).status,401,'order detail requires an authenticated admin');
+    const noGrantCookie=await login(noGrantEmail);
+    assert.equal((await request(`/admin/order/view/${invoiceOrderId}`,{cookie:noGrantCookie,accept:'text/html'})).status,403,'order detail requires orders.manage');
+
+    const before=await db.queryOne('SELECT invoice_no,is_seen,updated_at FROM orders WHERE id=?',[invoiceOrderId]);
+    assert.equal(Number(before.is_seen),0,'fixture begins unseen');
+    const persistedItems=await db.queryAll('SELECT id,product_name FROM order_items WHERE order_id=? ORDER BY id ASC',[invoiceOrderId]);
+    const response=await request(`/admin/order/view/${invoiceOrderId}`,{accept:'text/html'});
+    assert.equal(response.status,200,'authorized detail request renders HTML');
+    const heading=response.text.match(/<h4 id="order-detail-heading"[^>]*>([\s\S]*?)<\/h4>/)?.[1]||'';
+    assert.match(heading,new RegExp(`#${before.invoice_no}`));
+    assert.match(heading,/Completed/);
+
+    const itemContainer=response.text.match(/<tbody id="order-detail-items">([\s\S]*?)<\/tbody>/)?.[1];
+    assert.ok(itemContainer,'detail view exposes a scoped item container');
+    const renderedItemIds=[...itemContainer.matchAll(/data-order-item-id="(\d+)"/g)].map((match)=>Number(match[1]));
+    assert.deepEqual(renderedItemIds,persistedItems.map((item)=>Number(item.id)),'every rendered item belongs to the requested persisted order, in item-ID order');
+    assert.match(itemContainer,/Dashboard product/);
+    assert.doesNotMatch(itemContainer,/Unrelated invoice sentinel/,'a different order item must not appear in this detail container');
+
+    const orderFields=response.text.match(/<form id="order-detail-fields"[\s\S]*?<\/form>/)?.[0]||'';
+    assert.match(orderFields,/name="customer_name" value="P09 fixture"/);
+    assert.match(orderFields,/name="phone" value="01712345678"/);
+    assert.match(orderFields,/P09 internal note/);
+    assert.match(orderFields,/P09 Test Courier/);
+    assert.match(orderFields,/P09-TRACK-/);
+    assert.match(orderFields,/P09 Test Rider/);
+    const paymentDetails=response.text.match(/<div id="order-detail-payment"[^>]*>([\s\S]*?)<\/div>/)?.[1]||'';
+    assert.match(paymentDetails,/P09-TRX-/);
+    assert.match(paymentDetails,/01799990000/);
+    assert.match(paymentDetails,/P09 customer note/);
+    const totals=response.text.match(/<div id="order-detail-totals"[^>]*>([\s\S]*?)<\/div>/)?.[1]||'';
+    assert.match(totals,/100\.00/,'integer-paisa totals are formatted at the view boundary');
+    const productOptions=response.text.match(/<form id="order-detail-product-options"[\s\S]*?<\/form>/)?.[0]||'';
+    assert.match(productOptions,/Dashboard product — ৳100\.00/,'active product choice uses the canonical product projection');
+
+    const seen=await db.queryOne('SELECT is_seen,updated_at FROM orders WHERE id=?',[invoiceOrderId]);
+    assert.equal(Number(seen.is_seen),1,'opening the detail page preserves the legacy is_seen acknowledgement');
+    assert.equal(String(seen.updated_at),String(before.updated_at),'read tracking does not change the order business updated_at timestamp');
+    for(const invalidId of ['not-a-number','-1','999999999']){
+      const missing=await request(`/admin/order/view/${invalidId}`,{accept:'text/html'});
+      assert.equal(missing.status,302,`invalid/nonexistent order ${invalidId} redirects`);
+      assert.equal(missing.headers.get('location'),'/admin/order/all');
+    }
+
+    const originalQuery=pool.query; const hadOwnQuery=Object.hasOwn(pool,'query');
+    pool.query=function(sql,...args){
+      if(String(sql).includes('FROM orders o')&&String(sql).includes('o.invoice_no AS invoice_id')){
+        const forced=new Error('forced order-detail database failure'); forced.code='ER_ACCESS_DENIED_ERROR';
+        return Promise.reject(forced);
+      }
+      return originalQuery.call(this,sql,...args);
+    };
+    let failed;
+    try{failed=await request(`/admin/order/view/${invoiceOrderId}`,{accept:'application/json'});}
+    finally{if(hadOwnQuery)pool.query=originalQuery;else delete pool.query;}
+    assert.equal(failed.status,503);
+    assert.equal(failed.json.ok,false);
+    assert.equal(failed.json.error.code,'DB_CONNECTION_FAILED');
+    assert.doesNotMatch(failed.text,/forced order-detail database failure|SELECT |password|01712345678/i,'DB failure response must not disclose SQL or customer data');
   });
 
   test('legacy status-filtered order list uses MySQL with search, status counts and safe failure handling',async(t)=>{

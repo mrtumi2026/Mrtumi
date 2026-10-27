@@ -133,7 +133,15 @@ router.post('/admin/order/create', (req, res) => {
 });
 
 // ─── View / Process Single Order ───
-router.get('/admin/order/view/:id', (req, res) => {
+router.get('/admin/order/view/:id', asyncHandler(async (req, res) => {
+  if (env.db.client === 'mysql') {
+    const detail = await adminOrderReadRepository.getAdminOrderDetail(req.params.id);
+    if (!detail) {
+      req.flash('error', 'অর্ডার খুঁজে পাওয়া যায়নি।');
+      return res.redirect('/admin/order/all');
+    }
+    return res.render('admin/order-detail', detail);
+  }
   const order = db.get(
     `SELECT o.*, COALESCE(os.name, o.status) AS status_label, COALESCE(os.badge_class, 'sb-1') AS badge_class
      FROM orders o
@@ -161,7 +169,7 @@ router.get('/admin/order/view/:id', (req, res) => {
     deliveryBoys,
     allProducts,
   });
-});
+}));
 
 function recalcOrderTotals(orderId) {
   const ord = db.get('SELECT * FROM orders WHERE id = ?', orderId);

@@ -15,6 +15,7 @@ function risk(method,routePath){
 }
 function audit(method,path,policy,route){
   if(method==='GET'&&path==='/admin/order/:status')return 'No event for ordinary read; P0 MySQL-backed status/search list has authorized HTTP success and error-path coverage';
+  if(method==='GET'&&path==='/admin/order/view/:id')return 'No audit event for read; MySQL path preserves the existing is_seen read-tracking update';
   if(method==='GET'&&path==='/admin/order/invoice/:id')return 'No event for ordinary read; P0 invoice MySQL path has authorized HTTP success coverage';
   if(method==='POST'&&path==='/logout')return 'Specific admin.logout event; session destroyed';
   if(method==='GET'&&path==='/logout')return 'No-op redirect; does not destroy session';
@@ -62,7 +63,7 @@ for(const r of routes){
   const p=policyForAdminRoute(r.method,r.path);
   const auth=r.path==='/logout'?(r.method==='POST'?'Current admin session only; CSRF required':'No-op redirect; session not mutated'):r.path==='/admin/login'?'Login endpoint; session-bound CSRF required':r.path==='/admin'?'Existing root redirect; subsequent dashboard authorization':'Refreshed admin session + legacyAdminRbac; module requireAdmin also applies';
   const permission=r.path==='/logout'?'Self-only session route':p.exempt?'login/root policy':[p.key,...(p.also||[])].filter(Boolean).join(' + ')||'BLOCKED — unmapped';
-  const test=r.path==='/admin/login'?'auth regression + policy exemption':r.method==='GET'&&r.path==='/admin/order/:status'?'MySQL authenticated status/search/unpaid/unknown-status HTTP success; persisted data, counts and descending-ID order; unauthenticated/zero-grant denials; forced sanitized DB-query failure':r.method==='GET'&&r.path==='/admin/order/invoice/:id'?'policy allow/deny matrix; MySQL authorized invoice/persisted-row/foreign-order isolation + missing-record redirect; unauthenticated and zero-grant HTTP denials':`policy allow/deny matrix; MySQL zero-grant direct HTTP sweep (${r.method} ${r.path})`;
+  const test=r.path==='/admin/login'?'auth regression + policy exemption':r.method==='GET'&&r.path==='/admin/order/:status'?'MySQL authenticated status/search/unpaid/unknown-status HTTP success; persisted data, counts and descending-ID order; unauthenticated/zero-grant denials; forced sanitized DB-query failure':r.method==='GET'&&r.path==='/admin/order/view/:id'?'MySQL authorized detail rendering, related item-ID isolation/order, is_seen persistence, invalid/missing redirects, unauthenticated/zero-grant denials, and forced sanitized DB-query failure':r.method==='GET'&&r.path==='/admin/order/invoice/:id'?'policy allow/deny matrix; MySQL authorized invoice/persisted-row/foreign-order isolation + missing-record redirect; unauthenticated and zero-grant HTTP denials':`policy allow/deny matrix; MySQL zero-grant direct HTTP sweep (${r.method} ${r.path})`;
   const auditRequirement=audit(r.method,r.path,p,r);
   const status=p.unmapped||auditRequirement.startsWith('NO AUDIT')?'BLOCKED':'COMPLETE';
   out.push(`| ${r.method} | \`${r.path}\` | ${auth} | \`${permission}\` | ${risk(r.method,r.path)} | ${auditRequirement} | ${test} | ${status} |`);

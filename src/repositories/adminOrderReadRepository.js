@@ -51,6 +51,68 @@ async function getAdminInvoice(orderId, poolOverride = null) {
   };
 }
 
+/**
+ * Platform-wide detail view projection for the legacy admin order page.
+ * Opening an existing order retains the route's historical is_seen read-tracking update.
+ */
+async function getAdminOrderDetail(orderId, poolOverride = null) {
+  const id = Number(orderId);
+  if (!Number.isSafeInteger(id) || id <= 0) return null;
+  const client = createQueryClient(poolOverride || getPool());
+  const row = await client.queryOne(
+    `SELECT o.id,o.invoice_no AS invoice_id,o.customer_name,o.customer_phone AS phone,
+            o.shipping_address AS address,o.shipping_zone AS shipping_area,
+            o.subtotal_paisa,o.shipping_paisa,o.discount_paisa,o.total_paisa,
+            o.coupon_code,o.payment_method,o.payment_status,o.order_status AS status,
+            COALESCE(os.name,o.order_status) AS status_label,
+            COALESCE(os.badge_class,'sb-1') AS badge_class,
+            COALESCE(NULLIF(ca.name,''),o.courier_code,'') AS courier_name,
+            o.courier_tracking_id,o.delivery_boy_id,o.traffic_source,
+            o.order_channel AS order_type,o.customer_note AS note,o.admin_note,o.created_at,
+            (SELECT op.provider_trx_id FROM order_payments op WHERE op.order_id=o.id ORDER BY op.id DESC LIMIT 1) AS trx_id,
+            (SELECT op.sender_number FROM order_payments op WHERE op.order_id=o.id ORDER BY op.id DESC LIMIT 1) AS sender_number
+       FROM orders o
+       LEFT JOIN order_statuses os ON os.slug=o.order_status
+       LEFT JOIN courier_apis ca ON ca.code=o.courier_code
+      WHERE o.id=? LIMIT 1`,
+    [id]
+  );
+  if (!row) return null;
+
+  // Preserve the legacy detail page's notification acknowledgement on open.
+  await client.execute('UPDATE orders SET is_seen=1,updated_at=updated_at WHERE id=?', [id]);
+  const [rawItems,statuses,couriers,deliveryBoys,rawProducts] = await Promise.all([
+    client.queryAll(
+      `SELECT id,order_id,product_name,product_image,qty,
+              size_label AS size,color_label AS color,unit_price_paisa
+         FROM order_items WHERE order_id=? ORDER BY id ASC`,
+      [id]
+    ),
+    client.queryAll('SELECT id,name,slug,badge_class,sort_order,status FROM order_statuses WHERE status=1 ORDER BY sort_order ASC'),
+    client.queryAll('SELECT id,name,code,status FROM courier_apis WHERE status=1 ORDER BY id ASC'),
+    client.queryAll('SELECT id,name,phone,status FROM delivery_boys WHERE status=1 ORDER BY id ASC'),
+    client.queryAll(
+      `SELECT id,COALESCE(NULLIF(name_en,''),name_bn) AS name,
+              sale_price_paisa,unit_label AS sizes
+         FROM products WHERE status=1 ORDER BY COALESCE(NULLIF(name_en,''),name_bn) ASC`,
+    ),
+  ]);
+  return {
+    order: {
+      ...row,
+      subtotal: toBdtString(row.subtotal_paisa),
+      shipping_charge: toBdtString(row.shipping_paisa),
+      discount: toBdtString(row.discount_paisa),
+      amount: toBdtString(row.total_paisa),
+    },
+    items: rawItems.map((item) => ({ ...item, price: toBdtString(item.unit_price_paisa) })),
+    statuses,
+    couriers,
+    deliveryBoys,
+    allProducts: rawProducts.map((product) => ({ ...product, new_price: toBdtString(product.sale_price_paisa) })),
+  };
+}
+
 /** Platform-wide admin order list projection used by the legacy status/search route. */
 async function listAdminOrders({ statusParam = 'all', searchQuery = '' } = {}, poolOverride = null) {
   const client = createQueryClient(poolOverride || getPool());
@@ -96,4 +158,4 @@ async function listAdminOrders({ statusParam = 'all', searchQuery = '' } = {}, p
   };
 }
 
-module.exports = { getAdminInvoice, listAdminOrders };
+module.exports = { getAdminInvoice, getAdminOrderDetail, listAdminOrders };
