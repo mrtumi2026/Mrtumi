@@ -192,12 +192,16 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
 
   test('legacy order detail renders related MySQL data, preserves mark-seen, and handles denial/missing/error cases',async(t)=>{
     if(!MYSQL_HOST)return t.skip(SKIP);
+    // Earlier dashboard popup coverage intentionally marks every unseen order as seen.
+    // Reset only this disposable fixture, preserving updated_at, to isolate the detail-route behavior.
+    await db.execute('UPDATE orders SET is_seen=0,updated_at=updated_at WHERE id=?',[invoiceOrderId]);
+    const before=await db.queryOne('SELECT invoice_no,is_seen,updated_at FROM orders WHERE id=?',[invoiceOrderId]);
+    assert.equal(Number(before.is_seen),0,'detail fixture begins unseen');
     assert.equal((await request(`/admin/order/view/${invoiceOrderId}`,{cookie:''})).status,401,'order detail requires an authenticated admin');
     const noGrantCookie=await login(noGrantEmail);
     assert.equal((await request(`/admin/order/view/${invoiceOrderId}`,{cookie:noGrantCookie,accept:'text/html'})).status,403,'order detail requires orders.manage');
-
-    const before=await db.queryOne('SELECT invoice_no,is_seen,updated_at FROM orders WHERE id=?',[invoiceOrderId]);
-    assert.equal(Number(before.is_seen),0,'fixture begins unseen');
+    const deniedSeen=await db.queryOne('SELECT is_seen FROM orders WHERE id=?',[invoiceOrderId]);
+    assert.equal(Number(deniedSeen.is_seen),0,'authentication and permission denials do not acknowledge the order');
     const persistedItems=await db.queryAll('SELECT id,product_name FROM order_items WHERE order_id=? ORDER BY id ASC',[invoiceOrderId]);
     const response=await request(`/admin/order/view/${invoiceOrderId}`,{accept:'text/html'});
     assert.equal(response.status,200,'authorized detail request renders HTML');
