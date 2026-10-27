@@ -264,14 +264,22 @@ describe('Phase 05 — Customer Storefront, Catalogue, Product Detail, Support &
     assert.equal(pendingRes.statusCode, 404);
   });
 
-  test('4. Cart entry points enforce stock availability and apply approved wholesale tier pricing', async () => {
+  test('4. Cart entry points enforce CSRF, stock availability and approved wholesale tier pricing', async () => {
+    const csrfResponse = await httpRequest(baseUrl, '/api/v1/csrf-token');
+    const csrfToken = JSON.parse(csrfResponse.body).data.csrfToken;
+    const csrfCookie = mergeCookies(csrfResponse.headers['set-cookie']);
+    const mutationHeaders = { 'Content-Type': 'application/json', Accept: 'application/json', Cookie: csrfCookie, 'x-csrf-token': csrfToken };
+    for (const [path, body] of [['/cart/add',{product_id:1,qty:1}],['/cart/update',{key:'missing',qty:1}],['/cart/remove',{key:'missing'}],['/cart/clear',{}]]) {
+      const denied = await httpRequest(baseUrl,path,{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json',Cookie:csrfCookie},body:JSON.stringify(body)});
+      assert.equal(denied.statusCode,403,`${path} rejects a cart mutation without CSRF`);
+    }
     const giftProd = sqliteDb.get("SELECT id FROM products WHERE slug = 'premium-festive-gift-hamper'");
     const oosProd = sqliteDb.get("SELECT id FROM products WHERE slug = 'out-of-stock-mini-pack'");
 
     // Out-of-stock add-to-cart is rejected with 400
     const oosAdd = await httpRequest(baseUrl, '/cart/add', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      headers: mutationHeaders,
       body: JSON.stringify({ product_id: oosProd.id, qty: 1 }),
     });
     assert.equal(oosAdd.statusCode, 400);
@@ -280,7 +288,7 @@ describe('Phase 05 — Customer Storefront, Catalogue, Product Detail, Support &
     // Add 2 units (< wholesale_min_qty 5) -> retail unit price 800
     const addRetail = await httpRequest(baseUrl, '/cart/add', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      headers: mutationHeaders,
       body: JSON.stringify({ product_id: giftProd.id, qty: 2, size: '১ প্যাক', color: 'গোল্ড বক্স' }),
     });
     assert.equal(addRetail.statusCode, 200);
@@ -299,6 +307,7 @@ describe('Phase 05 — Customer Storefront, Catalogue, Product Detail, Support &
         'Content-Type': 'application/json',
         Accept: 'application/json',
         Cookie: cookieHeader,
+        'x-csrf-token': csrfToken,
       },
       body: JSON.stringify({ key: itemKey, qty: 5 }),
     });

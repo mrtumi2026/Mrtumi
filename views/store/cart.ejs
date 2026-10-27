@@ -25,6 +25,7 @@
           <div class="d-flex justify-content-between align-items-center border-bottom pb-3 mb-3 flex-wrap gap-2">
             <h1 class="h5 fw-bold mb-0">🧺 <%= t('store.cartItemsHeading') %> (<span class="js-cart-count"><%= cartCount %></span>)</h1>
             <form action="/cart/clear" method="POST">
+              <input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>">
               <button type="submit" class="btn btn-outline-danger btn-sm rounded-pill px-3"><%= t('store.clearCart') %></button>
             </form>
           </div>

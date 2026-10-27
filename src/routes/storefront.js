@@ -10,6 +10,8 @@ const { asyncHandler } = require('../utils/asyncHandler');
 const { createRateLimiter } = require('../middleware/rateLimit');
 const storefrontRepo = require('../repositories/storefrontRepository');
 const customerRepo = require('../repositories/customerRepository');
+const { env } = require('../config/env');
+const { captureAttribution, consentGranted } = require('../analytics/attribution');
 
 const router = express.Router();
 
@@ -17,6 +19,38 @@ const publicFormLimiter = createRateLimiter({
   keyPrefix: 'store_public_form',
   windowMs: 60_000,
   max: 20,
+});
+
+router.use((req, res, next) => {
+  const enabled = env.analyticsAttributionEnabled === true;
+  res.locals.analyticsAttributionEnabled = enabled;
+  res.locals.analyticsConsent = consentGranted(req.session, enabled);
+  res.locals.analyticsConsentChoice = String(req.session.analyticsConsentChoice || '');
+  captureAttribution(req.session, req.query, enabled);
+  next();
+});
+
+function safeLocalReturnPath(value) {
+  const path = String(value || '/').trim();
+  if (!path.startsWith('/') || path.startsWith('//') || path.includes('\\') || /[\u0000-\u001f\u007f]/.test(path)) return '/';
+  try {
+    const target = new URL(path, 'https://local.invalid');
+    if (target.origin !== 'https://local.invalid') return '/';
+    return `${target.pathname}${target.search}${target.hash}`;
+  } catch {
+    return '/';
+  }
+}
+
+router.post('/analytics/consent', publicFormLimiter, requireCsrf, (req, res) => {
+  if (env.analyticsAttributionEnabled !== true) return res.sendStatus(404);
+  const choice = String(req.body.choice || '');
+  if (!['accept', 'reject', 'withdraw'].includes(choice)) return res.status(400).send('Choose an available analytics preference.');
+  const granted = choice === 'accept';
+  req.session.analyticsConsent = granted;
+  req.session.analyticsConsentChoice = granted ? 'accepted' : choice === 'withdraw' ? 'withdrawn' : 'rejected';
+  if (!granted) delete req.session.analyticsAttribution;
+  return res.redirect(303, safeLocalReturnPath(req.body.return_to));
 });
 
 function escapeXml(str) {
@@ -466,6 +500,7 @@ router.get('/cart', asyncHandler(async (req, res) => {
 // ─── Cart Entry Endpoints (Product Lookup Backed by MySQL-First Repository) ───
 router.post(
   '/cart/add',
+  requireCsrf,
   asyncHandler(async (req, res) => {
     await refreshCustomerCart(req);
     const t = res.locals.t;
@@ -586,6 +621,7 @@ router.post(
 
 router.post(
   '/cart/update',
+  requireCsrf,
   asyncHandler(async (req, res) => {
     await refreshCustomerCart(req);
     const t = res.locals.t;
@@ -631,7 +667,7 @@ router.post(
   })
 );
 
-router.post('/cart/remove', asyncHandler(async (req, res) => {
+router.post('/cart/remove', requireCsrf, asyncHandler(async (req, res) => {
   await refreshCustomerCart(req);
   const t = res.locals.t;
   const { key } = req.body;
@@ -651,7 +687,7 @@ router.post('/cart/remove', asyncHandler(async (req, res) => {
   return res.redirect(req.get('Referrer') || '/customer/checkout');
 }));
 
-router.post('/cart/clear', asyncHandler(async (req, res) => {
+router.post('/cart/clear', requireCsrf, asyncHandler(async (req, res) => {
   await refreshCustomerCart(req);
   const t = res.locals.t;
   req.session.cart = [];
@@ -952,7 +988,7 @@ router.post('/customer/checkout', requireCsrf, asyncHandler(async (req, res) => 
       customer_name: req.body.customer_name, phone: req.body.phone, address: req.body.address,
       delivery_location_id: req.body.delivery_location_id, payment_method: req.body.payment_method,
       note: req.body.note, coupon_code: matches(replayKey) ? String(req.body.coupon_code || '') : (req.session.appliedCoupon?.code || ''),
-    }, { locale: req.locale, sessionCustomer: req.customerUser || null, ip: req.ip, requestKey: expected, cart: sourceCart, incompleteOrderId, sessionSid: req.sessionID });
+    }, { locale: req.locale, sessionCustomer: req.customerUser || null, ip: req.ip, requestKey: expected, cart: sourceCart, incompleteOrderId, sessionSid: req.sessionID, analyticsConsent: consentGranted(req.session, env.analyticsAttributionEnabled), attribution: req.session.analyticsAttribution || null });
     if (!isReplay) { req.session.checkoutLastCart = JSON.parse(JSON.stringify(sourceCart)); req.session.checkoutLastRequestKey = expected; req.session.checkoutLastRecoveryId = incompleteOrderId; delete req.session.incompleteCheckoutId; req.session.cart = []; delete req.session.appliedCoupon; await persistCustomerCart(req); }
     return res.redirect(`/order-success/${encodeURIComponent(result.invoiceNo)}`);
   }

@@ -94,7 +94,7 @@ jobs:
           DB_PASSWORD: mrtumi_test_pw
         run: node scripts/diagnose-migrations.js
 
-      - name: Verify MySQL CLI migrator (up -> status -> down 9)
+      - name: Verify MySQL CLI migrator (up -> status -> down 10)
         env:
           DB_CLIENT: mysql
           DB_HOST: 127.0.0.1
@@ -119,10 +119,10 @@ jobs:
           run_and_report 'MySQL migrate up (idempotent after per-version diagnostic)' npm run migrate:up
           run_and_report 'MySQL migration status' npm run migrate:status
           run_and_report 'MySQL migration status (repeat)' npm run migrate:status
-          run_and_report 'MySQL migrate down 9' npm run migrate:down -- 9
+          run_and_report 'MySQL migrate down 10' npm run migrate:down -- 10
           run_and_report 'MySQL migrate up after rollback' npm run migrate:up
           run_and_report 'MySQL migration status after reapply' npm run migrate:status
-          run_and_report 'MySQL migrate down 9 (leave schema clean for tests)' npm run migrate:down -- 9
+          run_and_report 'MySQL migrate down 10 (leave schema clean for tests)' npm run migrate:down -- 10
 
       - name: Run automated unit, portal regression & live MySQL 8.0 test suites
         run: |

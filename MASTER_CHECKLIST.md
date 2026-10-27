@@ -70,7 +70,7 @@
 | ID | Feature / Deliverable | Status | Notes |
 |---|---|---|---|
 | P07-01 | Customer registration, login, logout, password recovery & address book | `IN PROGRESS` | MySQL-backed registration/login, regenerated sessions, POST logout and address management implemented; verified notification-based password recovery remains unavailable pending authorized channel |
-| P07-02 | Guest checkout, BD phone validation & persistent cart sync | `IN PROGRESS` | MySQL checkout/reservation slice passed live MySQL CI `40301701753`; persistent cart sync remains outstanding |
+| P07-02 | Guest checkout, BD phone validation & persistent cart sync | `IN PROGRESS` | Persistent cart load/replace/clear, guest merge, authenticated mutations, checkout refresh and post-success clear are implemented; repository assertions passed exact-SHA MySQL CI `40480186793` on `73cdfab3778e1d87dd4e951ac7730bca899a32d1`. Cart cross-device concurrency/error recovery and other Phase 07 criteria remain open |
 | P07-03 | Configurable delivery zones/fees, server-only total math & duplicate order lock | `IN PROGRESS` | Requires active owner-configured `delivery_locations` and COD gateway; server computes paisa totals, reserves inventory and uses request-hash idempotency; no defaults are seeded |
 | P07-04 | Terms/privacy consent handling at checkout | `IN PROGRESS` | Required order confirmation and optional recovery opt-in exist; coded checkout slice passed live MySQL CI `40301701753`; approved legal copy/retention policy remain blockers |
 
@@ -124,7 +124,7 @@
 |---|---|---|---|
 | P14-01 | Meta Pixel + Facebook Conversions API (`event_id` deduplication) | `NOT STARTED` | Scheduled for Phase 14 |
 | P14-02 | Google Tag Manager & TikTok Pixel integration | `NOT STARTED` | Scheduled for Phase 14 |
-| P14-03 | UTM/platform visitor tracking, consent handling & verified-only `Purchase` events | `NOT STARTED` | Scheduled for Phase 14 |
+| P14-03 | UTM/platform visitor tracking, consent handling & verified-only `Purchase` events | `IN PROGRESS` | First-party session UTM capture and order consent provenance are being implemented behind `ANALYTICS_ATTRIBUTION_ENABLED=false` by default; user opt-in is CSRF-protected and revocable. No external event or Purchase dispatch is implemented; exact-SHA MySQL CI is pending |
 
 ### PHASE 15 — Landing Pages, Promotions & Content
 | ID | Feature / Deliverable | Status | Notes |

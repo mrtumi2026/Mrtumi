@@ -29,6 +29,7 @@ if (MYSQL_REQUIRED && !MYSQL_HOST) {
 // boots in strict MySQL mode (`DB_CLIENT=mysql`) when `MYSQL_TEST_HOST` is available.
 process.env.NODE_ENV = 'test';
 process.env.LOG_SILENT = 'true';
+process.env.ANALYTICS_ATTRIBUTION_ENABLED = 'true';
 if (MYSQL_HOST) {
   process.env.DB_CLIENT = 'mysql';
   process.env.DB_HOST = MYSQL_HOST;
@@ -352,10 +353,15 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
         assert.equal(res.statusCode, 200, `MySQL HTTP route ${route} must return 200`);
       }
 
+      // Cart mutations are CSRF-protected in MySQL mode as well as the local prototype.
+      const csrfStart = await httpRequest(baseUrl, '/api/v1/csrf-token');
+      assert.equal(csrfStart.statusCode,200);
+      const cartCsrf = JSON.parse(csrfStart.body).data.csrfToken;
+      const cartCookie = (Array.isArray(csrfStart.headers['set-cookie']) ? csrfStart.headers['set-cookie'] : [csrfStart.headers['set-cookie']]).filter(Boolean).map((c) => c.split(';')[0]).join('; ');
       // Add 5 kg structured variant (`price = 880 BDT`) to cart over HTTP in MySQL mode!
       const cartAdd = await httpRequest(baseUrl, '/cart/add', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json', Cookie:cartCookie, 'x-csrf-token':cartCsrf },
         body: JSON.stringify({
           product_id: inhouseProdId,
           variant_id: variant5KgId,
@@ -371,13 +377,25 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
 
       const setCookie = cartAdd.headers['set-cookie'];
       const cookieHeader = (Array.isArray(setCookie) ? setCookie : [setCookie]).filter(Boolean).map((c) => c.split(';')[0]).join('; ');
-      const checkoutPage = await httpRequest(baseUrl, '/customer/checkout?lang=en', { headers: { Cookie: cookieHeader, Accept:'application/json' } });
+      const checkoutPage = await httpRequest(baseUrl, '/customer/checkout?lang=en&utm_source=facebook&utm_medium=paid_social&utm_campaign=p14-ci', { headers: { Cookie: cookieHeader, Accept:'application/json' } });
       assert.equal(checkoutPage.statusCode, 200, `MySQL checkout GET failed: ${checkoutPage.body.slice(0,500)}`);
       assert.doesNotMatch(checkoutPage.body, /name="cart_backup_json"/,'MySQL checkout must not accept a client cart backup');
       assert.match(checkoutPage.body, /Cash on delivery/);
+      assert.match(checkoutPage.body, /Optional campaign attribution/);
       const csrf = checkoutPage.body.match(/name="_csrf" value="([^"]+)"/);
-      const requestKey = checkoutPage.body.match(/name="checkout_request_key" value="([^"]+)"/);
-      assert.ok(csrf && requestKey,'checkout form binds CSRF and an idempotency request key');
+      assert.ok(csrf,'checkout form binds a CSRF token');
+      const consentCsrfRejected = await httpRequest(baseUrl, '/analytics/consent', { method:'POST', headers:{Cookie:cookieHeader,'Content-Type':'application/x-www-form-urlencoded'}, body:'choice=accept&return_to=%2F' });
+      assert.equal(consentCsrfRejected.statusCode,403,'analytics consent cannot be changed without CSRF');
+      const unsafeReturn = await httpRequest(baseUrl, '/analytics/consent', { method:'POST', headers:{Cookie:cookieHeader,'Content-Type':'application/x-www-form-urlencoded','x-csrf-token':csrf[1]}, body:new URLSearchParams({choice:'reject',return_to:'//attacker.example'}).toString() });
+      assert.equal(unsafeReturn.statusCode,303);
+      assert.equal(unsafeReturn.headers.location,'/','consent preference return path cannot become an external redirect');
+      const consentGranted = await httpRequest(baseUrl, '/analytics/consent', { method:'POST', headers:{Cookie:cookieHeader,'Content-Type':'application/x-www-form-urlencoded','x-csrf-token':csrf[1]}, body:new URLSearchParams({choice:'accept',return_to:'/customer/checkout?lang=en&utm_source=facebook&utm_medium=paid_social&utm_campaign=p14-ci'}).toString() });
+      assert.equal(consentGranted.statusCode,303,'an explicit CSRF-protected opt-in is required');
+      const attributedCheckoutPage = await httpRequest(baseUrl, '/customer/checkout?lang=en&utm_source=facebook&utm_medium=paid_social&utm_campaign=p14-ci', { headers:{Cookie:cookieHeader} });
+      assert.equal(attributedCheckoutPage.statusCode,200);
+      assert.match(attributedCheckoutPage.body,/Campaign attribution is enabled for this session/);
+      const requestKey = attributedCheckoutPage.body.match(/name="checkout_request_key" value="([^"]+)"/);
+      assert.ok(requestKey,'checkout form binds an idempotency request key after consent');
       assert.equal(Number((await client.queryOne("SELECT COUNT(*) AS n FROM incomplete_orders WHERE phone='01712345678' AND consent_given=1")).n),0,'checkout data is not captured before opt-in');
       const capture = await httpRequest(baseUrl,'/checkout/save-incomplete',{method:'POST',headers:{Cookie:cookieHeader,'Content-Type':'application/json','x-csrf-token':csrf[1]},body:JSON.stringify({name:'Checkout Test',phone:'01712345678',consent:'true',notification_consent:'false'})});
       assert.equal(capture.statusCode,200,`Recovery opt-in HTTP failed: ${capture.body.slice(0,500)}`);const capturePayload=JSON.parse(capture.body);assert.equal(capturePayload.ok,true);
@@ -391,10 +409,12 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
       const submitted = await httpRequest(baseUrl, '/customer/checkout', { method:'POST',headers:{Cookie:cookieHeader,'Content-Type':'application/x-www-form-urlencoded'},body:form });
       assert.equal(submitted.statusCode,302);
       const invoice = decodeURIComponent(submitted.headers.location.split('/').pop());
-      const placed = await client.queryOne('SELECT id,subtotal_paisa,shipping_paisa,total_paisa,paid_paisa,cod_due_paisa,payment_status,payment_method,order_status FROM orders WHERE invoice_no=?',[invoice]);
+      const placed = await client.queryOne('SELECT id,subtotal_paisa,shipping_paisa,total_paisa,paid_paisa,cod_due_paisa,payment_status,payment_method,order_status,traffic_source,utm_source,utm_medium,utm_campaign,analytics_consent_at,analytics_consent_version FROM orders WHERE invoice_no=?',[invoice]);
       assert.ok(placed);
       assert.deepEqual([Number(placed.subtotal_paisa),Number(placed.shipping_paisa),Number(placed.total_paisa),Number(placed.paid_paisa),Number(placed.cod_due_paisa)],[176000,5500,181500,0,181500]);
       assert.equal(placed.payment_status,'unpaid'); assert.equal(placed.payment_method,'cod'); assert.equal(placed.order_status,'pending');
+      assert.deepEqual([placed.traffic_source,placed.utm_source,placed.utm_medium,placed.utm_campaign,placed.analytics_consent_version],['Meta','facebook','paid_social','p14-ci','p14-v1']);
+      assert.ok(placed.analytics_consent_at,'the successful order records the explicit first-party attribution consent');
       assert.equal(Number((await client.queryOne('SELECT COUNT(*) AS n FROM order_payments WHERE order_id=?',[placed.id])).n),0,'unverified payment is never recorded as paid');
       assert.equal(Number((await client.queryOne('SELECT stock_reserved FROM products WHERE id=?',[inhouseProdId])).stock_reserved),7);
       assert.equal(Number((await client.queryOne('SELECT stock_reserved FROM product_variants WHERE id=?',[variant5KgId])).stock_reserved),5);
@@ -417,6 +437,8 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
       const concurrentOrders=await Promise.allSettled(concurrentKeys.map((requestKey)=>checkoutRepo.createOrder({customer_name:'Concurrent Checkout',phone:'01912345678',address:'House 2, Concurrent Road',delivery_location_id:deliveryLocationId,payment_method:'cod'}, {locale:'en',requestKey,cart:[{product_id:inhouseProdId,variant_id:variant5KgId,qty:3}]})));
       assert.equal(concurrentOrders.filter(x=>x.status==='fulfilled').length,1,`row locks should allow one checkout; outcomes=${concurrentOrders.map(x=>x.status==='fulfilled'?'fulfilled':x.reason?.message).join('; ')}`);
       assert.equal(concurrentOrders.filter(x=>x.status==='rejected'&&x.reason.code==='CONFLICT').length,1,`exactly one checkout should be rejected for stock; outcomes=${concurrentOrders.map(x=>x.status==='fulfilled'?'fulfilled':`${x.reason?.code}:${x.reason?.message}`).join('; ')}`);
+      const noConsentOrder=await client.queryOne('SELECT traffic_source,utm_source,utm_medium,utm_campaign,analytics_consent_at,analytics_consent_version FROM orders WHERE id=?',[concurrentOrders.find(x=>x.status==='fulfilled').value.id]);
+      assert.deepEqual([noConsentOrder.traffic_source,noConsentOrder.utm_source,noConsentOrder.utm_medium,noConsentOrder.utm_campaign,noConsentOrder.analytics_consent_at,noConsentOrder.analytics_consent_version],['Direct','','','',null,null],'without explicit consent, no attribution is persisted');
       assert.equal(Number((await client.queryOne('SELECT stock_reserved FROM product_variants WHERE id=?',[variant5KgId])).stock_reserved),8);
       await client.execute("INSERT INTO settings (setting_key,setting_value) VALUES ('otp_mode','on') ON DUPLICATE KEY UPDATE setting_value='on'");
       await assert.rejects(()=>checkoutRepo.createOrder({customer_name:'OTP blocked',phone:'01912345678',address:'House 3, Policy Road',delivery_location_id:deliveryLocationId,payment_method:'cod'},{locale:'en',requestKey:`p08-checkout-otp-${Date.now()}`,cart:[{product_id:inhouseProdId,qty:1}]}),(err)=>err.code==='CONFLICT');

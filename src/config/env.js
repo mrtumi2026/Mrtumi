@@ -150,6 +150,7 @@ function buildConfig(overrides = {}) {
     seedDemoData,
     bootstrapAdminEmail: String(raw.BOOTSTRAP_ADMIN_EMAIL || 'admin@mrtumi.local').trim(),
     bootstrapAdminPassword: String(raw.BOOTSTRAP_ADMIN_PASSWORD || '').trim(),
+    analyticsAttributionEnabled: String(raw.ANALYTICS_ATTRIBUTION_ENABLED || '').trim().toLowerCase() === 'true',
   });
 }
 

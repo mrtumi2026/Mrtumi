@@ -32,6 +32,39 @@
       </div>
     </section>
 
+    <% if (typeof analyticsAttributionEnabled !== 'undefined' && analyticsAttributionEnabled) { %>
+      <section class="container my-3" aria-labelledby="analyticsPreferenceTitle">
+        <div class="border rounded-3 p-3 bg-light">
+          <h2 class="h6 mb-1" id="analyticsPreferenceTitle"><%= locale === 'en' ? 'Optional campaign attribution' : 'ঐচ্ছিক ক্যাম্পেইন অ্যাট্রিবিউশন' %></h2>
+          <p class="small mb-2"><%= locale === 'en' ? 'If enabled, campaign source, medium and campaign labels from links may be associated with an order. This setting does not send events to advertising platforms.' : 'চালু করলে লিংকের ক্যাম্পেইন সোর্স, মাধ্যম ও ক্যাম্পেইন লেবেল অর্ডারের সঙ্গে সংরক্ষিত হতে পারে। এই সেটিং বিজ্ঞাপন প্ল্যাটফর্মে কোনো ইভেন্ট পাঠায় না।' %></p>
+          <% if (analyticsConsent) { %>
+            <p class="small mb-2"><%= locale === 'en' ? 'Campaign attribution is enabled for this session.' : 'এই সেশনে ক্যাম্পেইন অ্যাট্রিবিউশন চালু আছে।' %></p>
+            <form action="/analytics/consent" method="post" class="d-inline">
+              <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
+              <input type="hidden" name="choice" value="withdraw">
+              <input type="hidden" name="return_to" value="<%= currentUrl || '/' %>">
+              <button type="submit" class="btn btn-sm btn-outline-secondary"><%= locale === 'en' ? 'Withdraw for this session' : 'এই সেশনের সম্মতি প্রত্যাহার' %></button>
+            </form>
+          <% } else if (analyticsConsentChoice === 'rejected' || analyticsConsentChoice === 'withdrawn') { %>
+            <p class="small mb-2"><%= locale === 'en' ? 'Campaign attribution is off for this session.' : 'এই সেশনে ক্যাম্পেইন অ্যাট্রিবিউশন বন্ধ আছে।' %></p>
+            <form action="/analytics/consent" method="post" class="d-inline">
+              <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
+              <input type="hidden" name="choice" value="accept">
+              <input type="hidden" name="return_to" value="<%= currentUrl || '/' %>">
+              <button type="submit" class="btn btn-sm btn-outline-success"><%= locale === 'en' ? 'Enable campaign attribution' : 'ক্যাম্পেইন অ্যাট্রিবিউশন চালু করুন' %></button>
+            </form>
+          <% } else { %>
+            <form action="/analytics/consent" method="post" class="d-inline-flex flex-wrap gap-2">
+              <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
+              <input type="hidden" name="return_to" value="<%= currentUrl || '/' %>">
+              <button type="submit" name="choice" value="accept" class="btn btn-sm btn-success"><%= locale === 'en' ? 'Allow campaign attribution' : 'ক্যাম্পেইন অ্যাট্রিবিউশনের অনুমতি দিন' %></button>
+              <button type="submit" name="choice" value="reject" class="btn btn-sm btn-outline-secondary"><%= locale === 'en' ? 'No, thanks' : 'না, ধন্যবাদ' %></button>
+            </form>
+          <% } %>
+        </div>
+      </section>
+    <% } %>
+
     <!-- Main Footer -->
     <footer style="background: #072618; color: #e2e8f0;" class="pb-footer pt-5 pb-4" role="contentinfo">
       <div class="container">

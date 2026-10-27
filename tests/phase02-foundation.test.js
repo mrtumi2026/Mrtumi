@@ -51,6 +51,9 @@ test('env.js enforces Bangladesh defaults (Asia/Dhaka, BDT, bn/en) and rejects w
   assert.equal(devCfg.currencyCode, 'BDT');
   assert.equal(devCfg.currencySymbol, '৳');
   assert.ok(devCfg.sessionSecret.length >= 32);
+  assert.equal(devCfg.analyticsAttributionEnabled, false, 'optional attribution is disabled by default');
+  assert.equal(buildConfig({ NODE_ENV: 'test', ANALYTICS_ATTRIBUTION_ENABLED: 'true' }).analyticsAttributionEnabled, true);
+  assert.equal(buildConfig({ NODE_ENV: 'test', ANALYTICS_ATTRIBUTION_ENABLED: '1' }).analyticsAttributionEnabled, false, 'unknown values fail closed');
 
   assert.throws(
     () =>
