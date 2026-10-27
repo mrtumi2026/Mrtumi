@@ -1,10 +1,10 @@
-# Phase 09 — Owner Decisions & Next-Sprint Acceptance Plan
+# Phase 09 — Supporting Owner Decision Details & Next-Sprint Acceptance Plan
 
-**Phase status: `IN PROGRESS / NOT COMPLETE`.** This is a decision-capture and work-priority document, not an approval record. No owner response or operational grant is recorded here. Until a decision is entered and approved, do not assign the associated permission, configure retention/deletion, or change production database privileges.
+**Phase status: `IN PROGRESS / NOT COMPLETE`.** This is a supporting detail and historical work-priority document, not a separate decision register or approval record. The single authoritative decision log is [`OWNER_DECISION_REGISTER.md`](OWNER_DECISION_REGISTER.md). No owner response or operational grant is recorded here. Until the corresponding central decision is explicitly approved, do not assign permissions, configure retention/deletion, or change production database privileges.
 
-## Decision register — owner response required
+## Supporting detail for canonical decisions D1–D4
 
-Complete each decision block in writing. Record the actual approver and date; do not substitute a role label for the actual user/role identifiers to which permission grants would apply.
+Complete supporting details here if needed, but record the actual decision/status, approving identity and date only in the canonical register. Do not substitute a role label for the actual user/role identifiers to which permission grants would apply.
 
 ### D1 — Operational-role permission grants
 

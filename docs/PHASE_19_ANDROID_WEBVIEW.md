@@ -10,7 +10,7 @@
 
 ## Verified dependency gaps
 
-- There is no canonical production origin/host verified in `DEPLOYMENT.md` for use as an app allowlist. Do not invent a URL, ship a placeholder host, or point builds at localhost.
+- Owner decisions and current approvals are recorded only in [`OWNER_DECISION_REGISTER.md`](OWNER_DECISION_REGISTER.md), especially D9–D12. There is no canonical production origin/host verified in `DEPLOYMENT.md` for use as an app allowlist. Do not invent a URL, ship a placeholder host, or point builds at localhost.
 - No Java/Gradle/Android SDK is available here, so compile, lint, emulator and WebView integration tests cannot be run. A source-only skeleton would not meet acceptance and could create unsafe navigation defaults.
 - Signing keystore ownership/release process is unspecified. Do not create or store signing credentials.
 - Online gateway redirects are not implemented in the web app today; Android must not broaden redirects beyond a narrowly allowlisted origin when those routes exist.

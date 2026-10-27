@@ -22,12 +22,10 @@
 - `0010_phase14_attribution_consent` is paired with a reversible down migration that removes only its two nullable metadata columns; it does not alter order totals or previous consent fields.
 - Unit tests cover default-off/no-consent, field bounds, PII-like value rejection, source classification, first-touch retention and withdrawal erasure.
 - MySQL 8.0 HTTP coverage exercises the disabled/no-consent default, CSRF rejection, explicit opt-in, order attribution persistence, consent metadata, and a separate non-opt-in order remaining Direct/empty. The migration lifecycle checks 0010 up/down and complete reapplication.
-- Live MySQL CI is pending for the current implementation SHA. Local MySQL-only skips do not count as passes.
+- Exact-SHA MySQL 8.0 CI passed on commit `5f77f4077125ef40c48c71c1f5bed5284a3be128`, run [`40483319058`](https://github.com/mrtumi2026/Mrtumi/actions/runs/40483319058). It covered the migration lifecycle and MySQL HTTP/order provenance cases. Local MySQL-only skips do not count as passes; remote TAP totals were not available and are not claimed.
 
 ## Remaining acceptance and owner actions
 
-1. Approve final Bangla/English privacy disclosure, purpose limitation, retention/deletion, and consent version before any production activation. The wording shown here is functional description, not approved legal policy.
-2. Supply official Meta/TikTok/GTM identifiers and Meta server secret through the approved secret-management channel; do not place credentials in Git or chat.
-3. Verify current official APIs and implement adapter contracts with event-ID deduplication, retries, signature/amount/order validation and safe errors.
-4. Define “verified paid” as a provider-backed durable payment state; never infer Purchase from an unpaid COD order or request success page.
-5. Run sandbox tests only after credentials and explicit sandbox authorization; live provider verification and deployment need separate explicit authorization.
+Pending approvals and decision statuses are tracked only in [`OWNER_DECISION_REGISTER.md`](OWNER_DECISION_REGISTER.md), especially D6, D8 and D11. The functional disclosure shown here is not approved legal copy. Do not activate production tracking or recovery retention while D6 remains pending.
+
+After decisions are recorded, verify current official APIs and implement adapter contracts with event-ID deduplication, retries, signature/amount/order validation and safe errors. Define “verified paid” as a provider-backed durable payment state; never infer Purchase from an unpaid COD order or request success page. Run sandbox tests only after credentials and explicit sandbox authorization; live provider verification and deployment need separate explicit authorization.

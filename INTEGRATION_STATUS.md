@@ -2,7 +2,7 @@
 
 **Last Updated:** 2026-10-27 (`Asia/Dhaka`)
 
-Per **Fundamental Rules 5, 10, 11, 12, and 25**, no external provider integration is marked live until verified against the real provider with owner-supplied credentials and verified outbound connectivity on BestWebHostBD. A first-party UTM attribution prototype now exists behind `ANALYTICS_ATTRIBUTION_ENABLED=false` (default): session opt-in only, no third-party requests or Purchase event dispatch, and exact-SHA MySQL verification pending. It does not change the external provider rows below.
+Per **Fundamental Rules 5, 10, 11, 12, and 25**, no external provider integration is marked live until verified against the real provider with owner-supplied credentials and verified outbound connectivity on BestWebHostBD. A first-party UTM attribution prototype now exists behind `ANALYTICS_ATTRIBUTION_ENABLED=false` (default): session opt-in only, no third-party requests or Purchase event dispatch, and exact-SHA MySQL verification passed in run `40483319058` on commit `5f77f4077125ef40c48c71c1f5bed5284a3be128`. It does not change the external provider rows below.
 
 | Integration | Category | Target Phase | Adapter Code Status | Credentials Provided? | Outbound Connectivity (`BestWebHostBD`) | Current Overall Status |
 |---|---|---|---|---|---|---|
