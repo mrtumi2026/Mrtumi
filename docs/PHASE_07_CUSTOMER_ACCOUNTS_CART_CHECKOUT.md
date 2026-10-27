@@ -1,6 +1,6 @@
 # PHASE 07 — CUSTOMER ACCOUNTS, CART & CHECKOUT
 
-**Status: `IN PROGRESS`.** Customer account/address/cart-merge and canonical `DB_CLIENT=mysql` checkout paths exist. Persistent cart load/replace/clear, registration/login guest-cart merge, authenticated cart mutation sync, checkout refresh, and post-order clear have now been implemented with MySQL repository assertions. The latest verified baseline CI (`40478094391`, SHA `af14df227b1d7808bbb8c3e51bb8bbddfa024621`) predates this cart change; the new MySQL assertions and routes still require exact-SHA CI. Approved privacy/legal copy, account recovery, and payment/OTP integrations remain incomplete.
+**Status: `IN PROGRESS`.** Customer account/address/cart-merge and canonical `DB_CLIENT=mysql` checkout paths exist. Persistent cart load/replace/clear, registration/login guest-cart merge, authenticated cart mutation sync, checkout refresh, and post-order clear have now been implemented with MySQL repository assertions. Exact-SHA CI run `40480186793` passed on `73cdfab3778e1d87dd4e951ac7730bca899a32d1`, exercising the MySQL test suite including the new persistence assertions. Approved privacy/legal copy, account recovery, and payment/OTP integrations remain incomplete.
 
 ## Implemented vertical slices
 
@@ -17,10 +17,10 @@
 - Customer password recovery only after an authorized verified delivery channel, plus profile/password change and account recovery safeguards.
 - OTP/advance enforcement remains safely blocked when configured on because there is no customer verification/delivery route or verified payment collection path. Online/manual payment methods are rejected.
 - Customer cancellation ownership verification, full historical-order compatibility and reservation expiry/cleanup/recovery workflow.
-- Run the new MySQL HTTP checkout tests and seven-migration up/status/down/up suite in CI. Local MySQL-only skips do not count as passes.
+- Continue expanding route-level MySQL success/denial/CSRF/audit tests for remaining Phase 07 gaps; local MySQL-only skips do not count as passes.
 
 ## Verification and boundaries
 
-- The live-MySQL HTTP test covers server-side prices, CSRF, configured COD/delivery, replay/mismatch, inventory reservation, unpaid/COD accounting, no payment insertion and success-page privacy. Baseline CI run `40478094391` passed on SHA `af14df227b1d7808bbb8c3e51bb8bbddfa024621`; this branch's newer persistent-cart change has not yet been exercised by CI.
+- The live-MySQL HTTP test covers server-side prices, CSRF, configured COD/delivery, replay/mismatch, inventory reservation, unpaid/COD accounting, no payment insertion and success-page privacy. Exact-SHA CI run `40480186793` passed on SHA `73cdfab3778e1d87dd4e951ac7730bca899a32d1`, exercising the new persistent-cart assertions along with the existing HTTP checkout tests.
 - Local SQLite/unit tests are regression coverage only, not evidence that the canonical MySQL path passed.
 - No provider credentials, SMS, payment, shipping, production migration or deployment were used.
