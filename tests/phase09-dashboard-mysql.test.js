@@ -23,7 +23,7 @@ const { collectAdminRoutes,concretePath } = require('./helpers/adminRouteInvento
 const { startServer } = require('../server');
 
 describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audit HTTP', { skip: !MYSQL_HOST && !REQUIRED ? SKIP : false }, () => {
-  let pool, db, server, baseUrl, dashboardCookie, csrfToken, productId, dashboardUserId, limitedUserId, managerUserId, noGrantUserId, fullEmail='', limitedEmail='', managerEmail='', noGrantEmail='';
+  let pool, db, server, baseUrl, dashboardCookie, csrfToken, productId, invoiceOrderId, dashboardUserId, limitedUserId, managerUserId, noGrantUserId, fullEmail='', limitedEmail='', managerEmail='', noGrantEmail='';
   const password = 'Phase09IntegrationPassword!2026';
   const roleIds = {};
   const permissionNames = ['dashboard.view','orders.poll','orders.popup.view','orders.popup.dismiss','assistant.report','staff.manage','staff.assign_role','roles.manage','roles.grants.manage','audit_logs.view','orders.manage','refunds.review','checkout.recovery.view','checkout.recovery.manage','catalog.view','catalog.manage','inventory.manage','content.manage','customers.manage','security.manage','hr.manage','finance.view','finance.manage','vendors.manage','resellers.manage','delivery.manage','settings.manage','integrations.manage','communications.send','analytics.view','reports.view','error_logs.view','error_logs.manage'];
@@ -65,11 +65,13 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     const cat=await db.execute("INSERT INTO categories(name_bn,name_en,slug,status) VALUES('ড্যাশবোর্ড','Dashboard',?,1)",[`p09-dash-${suffix}`]);
     productId=Number((await db.execute("INSERT INTO products(sku,slug,name_bn,name_en,category_id,regular_price_paisa,sale_price_paisa,stock_on_hand,stock_reserved,approval_status,status) VALUES(?,?,?,?,?,12000,10000,9,2,'approved',1)",[ `P09-${suffix}`,`p09-dash-product-${suffix}`,'পরীক্ষা','Dashboard product',cat.insertId])).insertId);
     await db.execute("INSERT INTO order_statuses(name,slug,badge_class,color,sort_order,status) VALUES('Completed','completed','sb-2','#00aa00',1,1) ON DUPLICATE KEY UPDATE name=VALUES(name)");
-    const orderId=Number((await db.execute("INSERT INTO orders(invoice_no,customer_name,customer_phone,shipping_address,subtotal_paisa,total_paisa,paid_paisa,cod_due_paisa,order_status,traffic_source,created_at) VALUES(?, 'P09 fixture','01712345678','Test address',10000,10000,0,10000,'completed','phase09-test',UTC_TIMESTAMP())",[`P09-${suffix}`])).insertId);
+    const orderId=Number((await db.execute("INSERT INTO orders(invoice_no,customer_name,customer_phone,shipping_address,subtotal_paisa,total_paisa,paid_paisa,cod_due_paisa,order_status,traffic_source,created_at) VALUES(?, 'P09 fixture','01712345678','Test address',10000,10000,0,10000,'completed','phase09-test',UTC_TIMESTAMP())",[`P09-${suffix}`])).insertId); invoiceOrderId=orderId;
     const {start:dayStart,end:dayEnd}=dashboardRepo.dhakaDayUtcBounds(today);
     for(const [invoice,status,source,paisa,created] of [[`P09-start-${suffix}`,'pending','phase09-boundary',1200,dayStart],[`P09-end-${suffix}`,'pending','phase09-after-day',1300,dayEnd],[`P09-cancel-${suffix}`,'cancelled','phase09-cancelled',1400,dayStart]])
       await db.execute("INSERT INTO orders(invoice_no,customer_name,customer_phone,shipping_address,subtotal_paisa,total_paisa,paid_paisa,cod_due_paisa,order_status,traffic_source,created_at) VALUES(?, 'P09 boundary','01712345678','Test address',?,?,0,?,?,?,?)",[invoice,paisa,paisa,paisa,status,source,created]);
     await db.execute('INSERT INTO order_items(order_id,product_id,product_name,unit_price_paisa,qty,line_total_paisa) VALUES(?,?,?,10000,1,10000)',[orderId,productId,'Dashboard product']);
+    const unrelatedOrder=Number((await db.execute("INSERT INTO orders(invoice_no,customer_name,customer_phone,shipping_address,subtotal_paisa,total_paisa,order_status,created_at) VALUES(?, 'P09 unrelated','01712345679','Other address',5000,5000,'pending','2000-01-01 00:00:00')",[`P09-OTHER-${suffix}`])).insertId);
+    await db.execute('INSERT INTO order_items(order_id,product_id,product_name,unit_price_paisa,qty,line_total_paisa) VALUES(?,?,?,5000,1,5000)',[unrelatedOrder,productId,'Unrelated invoice sentinel']);
     await db.execute("INSERT INTO fund_transactions(account_name,tx_type,amount_paisa,note,tx_date) VALUES('test','credit',2500,'fixture',?)",[today]);
     await db.execute("INSERT INTO expenses(title,category,amount_paisa,note,expense_date) VALUES('test','test',500,'fixture',?)",[today]);
     server=startServer(0,'127.0.0.1'); await new Promise(resolve=>server.once('listening',resolve));
@@ -160,6 +162,26 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM audit_logs WHERE id=?',[auditRow.id])).n),1,'UPDATE and DELETE triggers preserve historical events');
     const triggerCount=await db.queryOne("SELECT COUNT(*) AS n FROM information_schema.triggers WHERE TRIGGER_SCHEMA=DATABASE() AND TRIGGER_NAME IN ('trg_audit_logs_no_update','trg_audit_logs_no_delete')");
     assert.equal(Number(triggerCount.n),2);
+  });
+
+  test('legacy printable order invoice reads canonical MySQL rows with existing auth and redirect contracts',async(t)=>{
+    if(!MYSQL_HOST)return t.skip(SKIP);
+    assert.equal((await request(`/admin/order/invoice/${invoiceOrderId}`,{cookie:''})).status,401,'invoice requires an authenticated admin');
+    const noGrantCookie=await login(noGrantEmail);
+    assert.equal((await request(`/admin/order/invoice/${invoiceOrderId}`,{cookie:noGrantCookie})).status,403,'invoice requires orders.manage');
+    const persisted=await db.queryOne('SELECT invoice_no,customer_name,customer_phone,total_paisa FROM orders WHERE id=?',[invoiceOrderId]);
+    const response=await request(`/admin/order/invoice/${invoiceOrderId}`,{accept:'text/html'});
+    assert.equal(response.status,200);
+    assert.match(response.text,new RegExp(`INVOICE #${persisted.invoice_no}`));
+    assert.match(response.text,new RegExp(persisted.customer_name));
+    assert.match(response.text,new RegExp(persisted.customer_phone));
+    assert.match(response.text,/Dashboard product/);
+    assert.doesNotMatch(response.text,/Unrelated invoice sentinel/,'invoice line query must not leak another order’s items');
+    assert.match(response.text,/৳100\.00/);
+    const missing=await request('/admin/order/invoice/999999999',{accept:'text/html'});
+    assert.equal(missing.status,302); assert.equal(missing.headers.get('location'),'/admin/order/all');
+    const invalid=await request('/admin/order/invoice/not-a-number',{accept:'text/html'});
+    assert.equal(invalid.status,302); assert.equal(invalid.headers.get('location'),'/admin/order/all');
   });
 
   test('legacy general settings save uses transactional MySQL persistence and value-free audit',async(t)=>{

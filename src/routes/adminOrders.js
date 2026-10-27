@@ -1,6 +1,9 @@
 const express = require('express');
 const db = require('../db/database');
 const { requireAdmin } = require('../middleware/auth');
+const { env } = require('../config/env');
+const { asyncHandler } = require('../utils/asyncHandler');
+const adminOrderReadRepository = require('../repositories/adminOrderReadRepository');
 
 const router = express.Router();
 router.use('/admin', requireAdmin);
@@ -241,7 +244,12 @@ router.post('/admin/order/:id/send-courier', (req, res) => {
 });
 
 // ─── Printable Invoice ───
-router.get('/admin/order/invoice/:id', (req, res) => {
+router.get('/admin/order/invoice/:id', asyncHandler(async (req, res) => {
+  if (env.db.client === 'mysql') {
+    const invoice = await adminOrderReadRepository.getAdminInvoice(req.params.id);
+    if (!invoice) return res.redirect('/admin/order/all');
+    return res.render('admin/order-invoice', invoice);
+  }
   const order = db.get(
     `SELECT o.*, COALESCE(os.name, o.status) AS status_label
      FROM orders o
@@ -251,8 +259,8 @@ router.get('/admin/order/invoice/:id', (req, res) => {
   );
   if (!order) return res.redirect('/admin/order/all');
   const items = db.all('SELECT * FROM order_items WHERE order_id = ?', order.id);
-  res.render('admin/order-invoice', { order, items });
-});
+  return res.render('admin/order-invoice', { order, items });
+}));
 
 // ─── Update Order ───
 router.post('/admin/order/update/:id', (req, res) => {
