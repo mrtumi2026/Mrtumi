@@ -132,6 +132,42 @@ describe('Phase 06 — Live MySQL 8.0 schema, product, stock ledger & purchase r
     assert.equal((await db.queryOne('SELECT status FROM stock_reservations WHERE reservation_key=?',[`order:${shipped.insertId}`])).status,'consumed');
   });
 
+  test('Phase 08 expired reservation recovery is idempotent, concurrent-safe and rolls back on held-stock mismatch', async () => {
+    if (!MYSQL_HOST) return;
+    const suffix = Date.now();
+    const makeConfirmedOrder = async (prefix, productIds = [productId]) => {
+      const inserted = await db.execute("INSERT INTO orders (invoice_no,customer_name,customer_phone,shipping_address,total_paisa,order_status) VALUES (?, 'Expiry Test Customer', '01712345678', 'CI fixture address', 1000, 'pending')", [`${prefix}-${suffix}`]);
+      for (const id of productIds) await db.execute('INSERT INTO order_items (order_id,product_id,product_name,unit_price_paisa,qty,line_total_paisa) VALUES (?,?,?,1000,1,1000)', [inserted.insertId,id,`${prefix} fixture`]);
+      await phase08.transitionOrder(inserted.insertId,'confirmed','Confirm expiry fixture',{id:null},`${prefix}-confirm-${inserted.insertId}`);
+      await db.execute('UPDATE stock_reservations SET expires_at=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 1 SECOND) WHERE reservation_key=?', [`order:${inserted.insertId}`]);
+      return Number(inserted.insertId);
+    };
+    const orderId = await makeConfirmedOrder('P08EXP');
+    const beforeHeld = Number((await db.queryOne('SELECT stock_reserved FROM products WHERE id=?',[productId])).stock_reserved);
+    assert.equal((await phase08.listExpiredOrderReservationCandidates({limit:10})).some(row=>row.reservation_key===`order:${orderId}`),true);
+    const competing = await Promise.all([phase08.expireExpiredOrderReservations({limit:10}),phase08.expireExpiredOrderReservations({limit:10})]);
+    assert.equal(competing.reduce((sum,result)=>sum+result.expiredReservations,0),1);
+    assert.equal(Number((await db.queryOne('SELECT stock_reserved FROM products WHERE id=?',[productId])).stock_reserved),beforeHeld-1);
+    assert.equal((await db.queryOne('SELECT status FROM stock_reservations WHERE reservation_key=?',[`order:${orderId}`])).status,'expired');
+    assert.equal((await db.queryOne('SELECT order_status FROM orders WHERE id=?',[orderId])).order_status,'confirmed','expiry releases inventory without inventing an order-state transition');
+    assert.equal(Number((await db.queryOne("SELECT COUNT(*) AS n FROM stock_ledger WHERE reference_type='order' AND reference_id=? AND movement_type='release' AND reason='Expired order reservation'",[orderId])).n),1);
+    assert.equal(Number((await db.queryOne("SELECT COUNT(*) AS n FROM audit_logs WHERE action='inventory.reservation.expired' AND entity_id=?",[String(orderId)])).n),1);
+    assert.equal((await phase08.expireExpiredOrderReservations({limit:10})).expiredReservations,0,'replay does not release or audit twice');
+
+    const category = await db.queryOne('SELECT category_id FROM products WHERE id=?',[productId]);
+    const rollbackProduct = await repo.createProduct({ sku:`P08-EXP-ROLLBACK-${suffix}`,name_bn:'পরীক্ষা',name_en:'Expiry Rollback Product',slug:`p08-expiry-rollback-${suffix}`,category_id:Number(category.category_id),regular_price_bdt:'10.00',sale_price_bdt:'10.00',cost_price_bdt:'5.00',opening_stock:3,low_stock_threshold:0 });
+    const brokenOrderId = await makeConfirmedOrder('P08EXPFAIL',[productId,rollbackProduct.id]);
+    await db.execute('UPDATE products SET stock_reserved=stock_reserved-1 WHERE id=?',[rollbackProduct.id]);
+    const firstProductHeldBefore = Number((await db.queryOne('SELECT stock_reserved FROM products WHERE id=?',[productId])).stock_reserved);
+    const ledgerBefore = Number((await db.queryOne("SELECT COUNT(*) AS n FROM stock_ledger WHERE reference_type='order' AND reference_id=? AND reason='Expired order reservation'",[brokenOrderId])).n);
+    await assert.rejects(()=>phase08.expireExpiredOrderReservations({limit:10}),(err)=>err.code==='CONFLICT');
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM stock_reservations WHERE reservation_key=? AND status="active"',[`order:${brokenOrderId}`])).n),2,'all reservation state changes roll back');
+    assert.equal(Number((await db.queryOne('SELECT stock_reserved FROM products WHERE id=?',[productId])).stock_reserved),firstProductHeldBefore,'earlier product hold decrement rolls back when a later line fails');
+    assert.equal(Number((await db.queryOne("SELECT COUNT(*) AS n FROM stock_ledger WHERE reference_type='order' AND reference_id=? AND reason='Expired order reservation'",[brokenOrderId])).n),ledgerBefore,'ledger inserts roll back with the transaction');
+    await db.execute('UPDATE products SET stock_reserved=stock_reserved+1 WHERE id=?',[rollbackProduct.id]);
+    assert.equal((await phase08.expireExpiredOrderReservations({limit:10})).expiredReservations,2,'restored stock permits the entire expiry transaction to commit');
+  });
+
   test('Phase 08 OTP binding, expiry, replay/cooldown and consented incomplete-checkout lifecycle', async () => {
     if (!MYSQL_HOST) return;
     const suffix=Date.now();

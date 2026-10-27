@@ -6,6 +6,8 @@ Generated from route registrations in `src/routes/{adminAuth,adminAccess,adminDa
 
 ## Enforcement and limits
 
+- Phase 08 reservation expiry is exposed only as a one-shot application/CLI runner (`npm run reservations:expire`), not as an HTTP endpoint; it does not change the 252-route inventory or add an authorization exception. Apply mode requires explicit `--apply` and remains a separately gated operational action.
+
 - All authenticated `/admin` paths except the existing login/root flow resolve through `policyForAdminRoute`; unmapped routes fail closed even if a role has unrelated keys. Current inventory is the source for reviewing new registrations.
 - Every authenticated non-safe `/admin` request requires the session-bound CSRF token. Admin templates add the token to legacy forms and same-origin `fetch`; existing per-route CSRF guards remain. `GET /admin/clear-cache` is now 405; the state change is POST + CSRF.
 - Existing explicit Phase 06/08/09 and dashboard audit writers are retained. Other successful legacy mutations emit a minimal `admin.legacy.<permission>.mutation` event before the response is sent; event contains method/path/permission/status, not submitted body. Audit failure returns 503 and explicitly warns that the mutation may already have applied; old callback-based mutation handlers are not transactionally coupled to that generic audit insert.

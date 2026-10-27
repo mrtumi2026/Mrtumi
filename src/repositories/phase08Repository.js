@@ -155,6 +155,60 @@ async function releaseOrderInventoryTx(tx, orderId, actor = {}, reason = 'Order 
   }
   return { released: reservations.length };
 }
+async function expireOrderInventoryTx(tx, orderId) {
+  const id = requirePositiveInt(orderId, 'order ID');
+  // Serialize against order transitions first, matching transitionOrder's lock order.
+  const order = await tx.queryOne('SELECT id,order_status FROM orders WHERE id=? FOR UPDATE', [id]);
+  if (!order) throw new NotFoundError('Order not found while expiring its reservation.');
+  const key = orderReservationKey(id);
+  const reservations = await tx.queryAll('SELECT id,product_id,variant_id,stock_pool,qty FROM stock_reservations WHERE reservation_key=? AND status="active" AND expires_at<=UTC_TIMESTAMP() ORDER BY product_id,variant_id FOR UPDATE', [key]);
+  if (!reservations.length) return { expired: 0, orderId: id };
+  const lockedProducts = await tx.lockRowsById('products', reservations.map((r) => Number(r.product_id)), ['id','vendor_id','stock_reserved','vendor_stock_reserved']);
+  const productMap = new Map(lockedProducts.map((p) => [Number(p.id), p]));
+  for (const r of reservations) {
+    const col = r.stock_pool === 'vendor' ? 'vendor_stock_reserved' : 'stock_reserved';
+    const product = productMap.get(Number(r.product_id));
+    if (!product || Number(product[col]) < Number(r.qty)) throw new ConflictError('Cannot expire an inventory reservation that is not held.');
+    if (r.variant_id) {
+      const variant = await tx.queryOne('SELECT stock_reserved FROM product_variants WHERE id=? FOR UPDATE', [r.variant_id]);
+      if (!variant || Number(variant.stock_reserved) < Number(r.qty)) throw new ConflictError('Cannot expire variant inventory that is not reserved.');
+    }
+    await tx.execute(`UPDATE products SET ${col}=${col}-? WHERE id=?`, [r.qty, r.product_id]);
+    if (r.variant_id) await tx.execute('UPDATE product_variants SET stock_reserved=stock_reserved-? WHERE id=?', [r.qty, r.variant_id]);
+    const changed = await tx.execute('UPDATE stock_reservations SET status="expired" WHERE id=? AND status="active" AND expires_at<=UTC_TIMESTAMP()', [r.id]);
+    if (Number(changed.affectedRows) !== 1) throw new ConflictError('Reservation changed while it was being expired.');
+    await tx.execute('INSERT INTO stock_ledger (product_id,variant_id,stock_pool,vendor_id,movement_type,qty_delta,balance_after,reference_type,reference_id,reason,actor_user_id) SELECT p.id,?,?,p.vendor_id,?,?,CASE WHEN ?="vendor" THEN p.vendor_stock_on_hand ELSE p.stock_on_hand END,"order",?,"Expired order reservation",NULL FROM products p WHERE p.id=?', [r.variant_id,r.stock_pool,'release',0,r.stock_pool,id,r.product_id]);
+  }
+  await insertAudit(tx, { type: 'system' }, 'inventory.reservation.expired', 'order', id, { activeReservationRows: reservations.length }, { expiredReservationRows: reservations.length, orderStatusUnchanged: order.order_status });
+  return { expired: reservations.length, orderId: id };
+}
+
+function validateExpiryLimit(limit) {
+  const batchSize = Number(limit);
+  if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 1000) throw new ValidationError('Reservation expiry batch limit must be an integer from 1 to 1000.');
+  return batchSize;
+}
+async function listExpiredOrderReservationCandidates({ limit = 100 } = {}) {
+  assertMysql();
+  const batchSize = validateExpiryLimit(limit);
+  return client().queryAll('SELECT reservation_key,COUNT(*) AS reservation_rows,MIN(expires_at) AS earliest_expiry FROM stock_reservations WHERE status="active" AND expires_at<=UTC_TIMESTAMP() AND reservation_key LIKE "order:%" GROUP BY reservation_key ORDER BY MIN(expires_at),reservation_key LIMIT ?', [batchSize]);
+}
+async function expireExpiredOrderReservations({ limit = 100 } = {}) {
+  assertMysql();
+  const batchSize = validateExpiryLimit(limit);
+  const db = client();
+  const candidates = await db.queryAll('SELECT reservation_key FROM stock_reservations WHERE status="active" AND expires_at<=UTC_TIMESTAMP() AND reservation_key LIKE "order:%" GROUP BY reservation_key ORDER BY MIN(expires_at),reservation_key LIMIT ?', [batchSize]);
+  const results = [];
+  for (const row of candidates) {
+    const match = /^order:([1-9][0-9]*)$/.exec(String(row.reservation_key));
+    if (!match) continue;
+    const orderId = Number(match[1]);
+    if (!Number.isSafeInteger(orderId)) continue;
+    results.push(await mysql.withTransaction((tx) => expireOrderInventoryTx(tx, orderId)));
+  }
+  return { examined: candidates.length, expiredOrders: results.filter((result) => result.expired > 0).length, expiredReservations: results.reduce((sum, result) => sum + result.expired, 0), results };
+}
+
 async function consumeOrderInventoryTx(tx, orderId, actor = {}) {
   const rows = await tx.queryAll('SELECT id,product_id,variant_id,stock_pool,qty,expires_at FROM stock_reservations WHERE reservation_key=? AND status="active" ORDER BY product_id,variant_id FOR UPDATE', [orderReservationKey(orderId)]);
   if (!rows.length) throw new ConflictError('Order has no active inventory reservation; stock was not decremented.');
@@ -497,4 +551,4 @@ async function getOrderOtpStatus(orderId){
 }
 async function listOrderHistory(orderId){assertMysql();return client().queryAll('SELECT h.*,u.name AS actor_name FROM order_status_history h LEFT JOIN users u ON u.id=h.changed_by_user_id WHERE h.order_id=? ORDER BY h.id',[requirePositiveInt(orderId,'order ID')]);}
 
-module.exports={TRANSITIONS,REFUND_STATES,INCOMPLETE_STATES,validateOtpPolicy,validateAdvancePolicy,calculateAdvance,computeOrderPayment,otpDigest,makeOtp,normalizeCaptureCart,transitionOrder,requestRefund,transitionRefund,recordIncompleteCheckout,withdrawIncompleteCheckout,listIncompleteCheckouts,transitionIncompleteCheckout,createOrderOtp,verifyOrderOtp,getPhase08Settings,savePhase08Settings,listOrders,listRefunds,listRefundHistory,listOrderHistory,getOrderOtpStatus,reserveOrderInventory:async(orderId,actor={})=>mysql.withTransaction(tx=>reserveOrderInventoryTx(tx,requirePositiveInt(orderId,'order ID'),actor)),reserveOrderInventoryTx,releaseOrderInventory:async(orderId,actor={},reason='Order cancelled')=>mysql.withTransaction(tx=>releaseOrderInventoryTx(tx,requirePositiveInt(orderId,'order ID'),actor,reason))};
+module.exports={TRANSITIONS,REFUND_STATES,INCOMPLETE_STATES,validateOtpPolicy,validateAdvancePolicy,calculateAdvance,computeOrderPayment,otpDigest,makeOtp,normalizeCaptureCart,transitionOrder,requestRefund,transitionRefund,recordIncompleteCheckout,withdrawIncompleteCheckout,listIncompleteCheckouts,transitionIncompleteCheckout,createOrderOtp,verifyOrderOtp,getPhase08Settings,savePhase08Settings,listOrders,listRefunds,listRefundHistory,listOrderHistory,getOrderOtpStatus,reserveOrderInventory:async(orderId,actor={})=>mysql.withTransaction(tx=>reserveOrderInventoryTx(tx,requirePositiveInt(orderId,'order ID'),actor)),reserveOrderInventoryTx,releaseOrderInventory:async(orderId,actor={},reason='Order cancelled')=>mysql.withTransaction(tx=>releaseOrderInventoryTx(tx,requirePositiveInt(orderId,'order ID'),actor,reason)),listExpiredOrderReservationCandidates,expireExpiredOrderReservations};
