@@ -86,8 +86,8 @@ Based on BestWebHostBD support confirmation (**Node.js supported**, **SSH availa
 - Stored in `env.uploadDir`: defaults to `./public/uploads` locally and points to `/home/<cpanel_user>/mrtumi_storage/uploads` (outside Git release directory, symlinked to `public/uploads/custom`) on BestWebHostBD so uploaded product/banner images survive every Git deployment.
 
 ### 2.11 Scheduled Jobs & Background Tasks (cPanel-Compatible)
-- Shared cPanel Passenger environments put Node.js processes to sleep during low traffic. Therefore, background work **never** relies solely on `setInterval()`.
-- All asynchronous tasks (SMS dispatch/retry, expired OTP & stock-reservation cleanup, incomplete-checkout sweep, courier status polling) are persisted in MySQL queue/state tables and processed by an idempotent CLI runner (`node scripts/cron-runner.js`) invoked every 5 minutes via **cPanel → Cron Jobs** (with MySQL `GET_LOCK('mrtumi_cron', 0)` mutex so overlapping cron invocations never double-execute).
+- Some cPanel Passenger environments may suspend idle Node.js processes; production background work must not rely solely on `setInterval()`.
+- **Implementation status:** this checkout has a one-shot reservation-expiry CLI (`npm run reservations:expire`) with a dry-run default and explicit apply flag. It is not a general queue processor or scheduler and has not been scheduled in production. `scripts/cron-runner.js`, `scripts/backup.sh`, a MySQL `GET_LOCK('mrtumi_cron', 0)` mutex, and persistent worker queues for OTP cleanup, incomplete-checkout sweeps, SMS dispatch/retry or courier polling are not implemented. Do not configure commands that are absent. Any future scheduler/queue/backup tooling requires its own design, MySQL 8.0 tests, verified host capability and owner approval.
 
 ### 2.12 Local Development, Test & Production Configuration (`src/config/env.js`)
 - **`development`:** Reads local untracked `.env`; supports local MySQL (`DB_CLIENT=mysql`) or local sandbox preview (`DB_CLIENT=sqlite` during transition before Phase 03 cutover).

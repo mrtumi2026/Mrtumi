@@ -118,6 +118,48 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     assert.ok(data.todayExpenses>=5); assert.ok(data.totalExpenses>=data.todayExpenses);
   });
 
+  test('legacy blog admin routes use MySQL persistence, permission/CSRF checks, and transactional audit',async(t)=>{
+    if(!MYSQL_HOST)return t.skip(SKIP);
+    dashboardCookie=await login(fullEmail); csrfToken=await fetchCsrf(dashboardCookie);
+    const noGrantCookie=await login(noGrantEmail); const noGrantToken=await fetchCsrf(noGrantCookie);
+    assert.equal((await request('/admin/blogs',{cookie:noGrantCookie,accept:'text/html'})).status,403,'content.manage is required to read blogs');
+    assert.equal((await request('/admin/blog/create',{accept:'text/html'})).status,200,'authorized content managers can load the create form');
+    assert.equal((await request('/admin/blog/create',{method:'POST',token:'',body:{title:'CSRF denied',content:'No write'}})).status,403,'blog mutations require CSRF');
+    assert.equal((await request('/admin/blog/create',{method:'POST',cookie:noGrantCookie,token:noGrantToken,body:{title:'Denied',content:'No write'}})).status,403,'content.manage is required to create blogs');
+    assert.equal((await request('/admin/blog/create',{method:'POST',body:{title:'',content:'Invalid'}})).status,400,'required title validation is enforced');
+
+    const title=`P09 MySQL blog ${Date.now()}`;
+    const created=await request('/admin/blog/create',{method:'POST',body:{title,category:'Test content',image:'/uploads/test-blog.jpg',excerpt:'Safe excerpt',content:'A blog body used to exercise the MySQL admin route.'}});
+    assert.equal(created.status,302,created.text.slice(0,300));
+    assert.equal(created.headers.get('location'),'/admin/blogs');
+    const persisted=await db.queryOne('SELECT id,title,slug,category,image_url,excerpt,content,status FROM blogs WHERE title=?',[title]);
+    assert.ok(persisted); assert.equal(persisted.image_url,'/uploads/test-blog.jpg'); assert.equal(Number(persisted.status),1);
+    const createAudit=await db.queryOne("SELECT actor_id,action,after_json FROM audit_logs WHERE action='admin.blog.created' AND entity_id=?",[String(persisted.id)]);
+    assert.equal(Number(createAudit.actor_id),dashboardUserId);
+    assert.deepEqual(JSON.parse(createAudit.after_json).fields,['title','category','image_url','excerpt','content']);
+    assert.equal(Number((await db.queryOne("SELECT COUNT(*) AS n FROM audit_logs WHERE action LIKE 'admin.legacy.content.manage.mutation' AND entity_id='POST /admin/blog/create' AND actor_id=?",[dashboardUserId])).n),0,'transactional domain audit suppresses the generic duplicate event');
+    const listing=await request('/admin/blogs',{accept:'text/html'});
+    assert.equal(listing.status,200); assert.match(listing.text,new RegExp(title));
+
+    const missingDelete=await request('/admin/blog/delete/999999999',{method:'POST',body:{}});
+    assert.equal(missingDelete.status,404,'unknown blog IDs are not reported as successful deletes');
+    const rollbackTitle=`P09 Blog rollback ${Date.now()}`;
+    await db.execute("CREATE TRIGGER p09_blog_fail_audit BEFORE INSERT ON audit_logs FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture blog audit failure'");
+    let failedCreate;
+    try {
+      failedCreate=await request('/admin/blog/create',{method:'POST',body:{title:rollbackTitle,content:'This insert must roll back with the audit failure.'}});
+    } finally {
+      await db.execute('DROP TRIGGER IF EXISTS p09_blog_fail_audit');
+    }
+    assert.equal(failedCreate.status,500,'audit failure is surfaced rather than reporting successful blog creation');
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM blogs WHERE title=?',[rollbackTitle])).n),0,'blog row is rolled back when its audit event fails');
+
+    const deleted=await request(`/admin/blog/delete/${persisted.id}`,{method:'POST',body:{}});
+    assert.equal(deleted.status,302);
+    assert.equal(await db.queryOne('SELECT id FROM blogs WHERE id=?',[persisted.id]),null,'delete persists in MySQL');
+    assert.ok(await db.queryOne("SELECT id FROM audit_logs WHERE action='admin.blog.deleted' AND entity_id=?",[String(persisted.id)]),'delete is auditable');
+  });
+
   test('Phase 06 inventory adjustment HTTP requires permission and CSRF; stock, ledger and audit commit or roll back together',async(t)=>{
     if(!MYSQL_HOST)return t.skip(SKIP);
     const path='/admin/phase06/inventory/adjust';

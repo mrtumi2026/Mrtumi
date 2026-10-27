@@ -18,7 +18,7 @@ function createLegacyAdminAudit({writer=recordAuditLog,loggerInstance=logger}={}
   let completed=false;
   const originalEnd=res.end;
   res.end=function(...args) {
-    if(completed||res.statusCode>=400)return originalEnd.apply(this,args);
+    if(completed||res.statusCode>=400||req.adminDomainAudit===true)return originalEnd.apply(this,args);
     completed=true;
     const endResponse=()=>originalEnd.apply(res,args);
     const event={

@@ -2,6 +2,9 @@ const express = require('express');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const db = require('../db/database');
+const { env } = require('../config/env');
+const adminBlogRepository = require('../repositories/adminBlogRepository');
+const { asyncHandler } = require('../utils/asyncHandler');
 const { requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
@@ -18,9 +21,11 @@ function slugify(str) {
 }
 
 // ─── Blog Module ───
-function renderBlogs(res, openModal = false) {
-  const rows = db.all('SELECT * FROM blogs ORDER BY id DESC');
-  res.render('admin/crud-module', {
+async function renderBlogs(req, res, openModal = false) {
+  const rows = env.db.client === 'mysql'
+    ? await adminBlogRepository.listBlogs()
+    : db.all('SELECT * FROM blogs ORDER BY id DESC');
+  return res.render('admin/crud-module', {
     pageTitle: 'Blog Management',
     subtitle: 'ফল ও স্বাস্থ্য বিষয়ক ব্লগ আর্টিকেল প্রকাশ ও সম্পাদনা করুন',
     createAction: '/admin/blog/create',
@@ -46,27 +51,43 @@ function renderBlogs(res, openModal = false) {
   });
 }
 
-router.get('/admin/blogs', (_req, res) => renderBlogs(res, false));
-router.get('/admin/blog/create', (_req, res) => renderBlogs(res, true));
-router.post('/admin/blog/create', (req, res) => {
+router.get('/admin/blogs', asyncHandler((req, res) => renderBlogs(req, res, false)));
+router.get('/admin/blog/create', asyncHandler((req, res) => renderBlogs(req, res, true)));
+router.post('/admin/blog/create', asyncHandler(async (req, res) => {
   const { title, category, image, excerpt, content } = req.body;
-  db.run(
-    'INSERT INTO blogs (title, slug, category, image, excerpt, content) VALUES (?, ?, ?, ?, ?, ?)',
-    title,
-    `${slugify(title)}-${Date.now().toString().slice(-3)}`,
-    category || 'ফল ও স্বাস্থ্য',
-    image || '/uploads/banner/banner-1.jpg',
-    excerpt || '',
-    content || ''
-  );
+  if (env.db.client === 'mysql') {
+    await adminBlogRepository.createBlog(req.body, {
+      id: req.adminUser?.id || null,
+      ip: req.ip || '',
+      userAgent: req.get('user-agent') || '',
+    });
+    req.adminDomainAudit = true;
+  } else {
+    db.run(
+      'INSERT INTO blogs (title, slug, category, image, excerpt, content) VALUES (?, ?, ?, ?, ?, ?)',
+      title,
+      `${slugify(title)}-${Date.now().toString().slice(-3)}`,
+      category || 'ফল ও স্বাস্থ্য',
+      image || '/uploads/banner/banner-1.jpg',
+      excerpt || '',
+      content || ''
+    );
+  }
   req.flash('success', 'নতুন ব্লগ পোস্ট প্রকাশিত হয়েছে!');
   res.redirect('/admin/blogs');
-});
-router.post('/admin/blog/delete/:id', (req, res) => {
-  db.run('DELETE FROM blogs WHERE id = ?', req.params.id);
+}));
+router.post('/admin/blog/delete/:id', asyncHandler(async (req, res) => {
+  if (env.db.client === 'mysql') {
+    await adminBlogRepository.deleteBlog(req.params.id, {
+      id: req.adminUser?.id || null,
+      ip: req.ip || '',
+      userAgent: req.get('user-agent') || '',
+    });
+    req.adminDomainAudit = true;
+  } else db.run('DELETE FROM blogs WHERE id = ?', req.params.id);
   req.flash('success', 'ব্লগ পোস্ট ডিলিট হয়েছে।');
   res.redirect('/admin/blogs');
-});
+}));
 
 // ─── Purchases & Suppliers ───
 router.get('/admin/suppliers/manage', (_req, res) => {

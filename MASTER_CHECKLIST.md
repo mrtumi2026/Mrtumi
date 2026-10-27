@@ -88,7 +88,7 @@
 |---|---|---|---|
 | P09-01 | Reference-inspired dashboard powered 100% by real DB queries | `IN PROGRESS` | MySQL repository, explicit route permissions and full-stack MySQL HTTP tests passed CI `40308315393` on `448d2e6a1c60b36422ba825f486a78eea872d58e`. Provider metrics remain explicitly unavailable |
 | P09-02 | Staff accounts, roles & granular server-side permission middleware | `IN PROGRESS` | Migration `0008` adds catalog keys without grants; MySQL staff/role lifecycle, distinct grant/role-assignment permissions, audit and session revocation passed CI `40308315393`. Owner must decide who receives grants; full legacy admin route coverage remains |
-| P09-03 | Permission-filtered sidebar navigation & immutable `audit_logs` | `IN PROGRESS` | Selected sidebar/profile links are grant-filtered; read-only audit UI/API and mutation audit records passed CI `40308315393`. Remaining legacy links, database-level append-only protection and retention decision remain open |
+| P09-03 | Permission-filtered sidebar navigation & immutable `audit_logs` | `IN PROGRESS` | Selected sidebar/profile links are grant-filtered; read-only audit UI/API, append-only MySQL triggers, and this slice's transactional blog create/delete audit are covered in live-MySQL CI (current slice pending exact-SHA run). Remaining legacy links, privileged DDL limits, runtime grants and retention decision remain open |
 
 ### PHASE 10 — Courier & Delivery Integrations
 | ID | Feature / Deliverable | Status | Notes |
