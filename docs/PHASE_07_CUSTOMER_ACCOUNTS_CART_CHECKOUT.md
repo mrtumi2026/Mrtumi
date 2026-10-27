@@ -1,6 +1,6 @@
 # PHASE 07 — CUSTOMER ACCOUNTS, CART & CHECKOUT
 
-**Status: `IN PROGRESS`.** Customer account/address/cart-merge and canonical `DB_CLIENT=mysql` checkout paths exist. Persistent cart load/replace/clear, registration/login guest-cart merge, authenticated cart mutation sync, checkout refresh, and post-order clear have MySQL repository assertions. The current continuation adds strict cart quantity and stale-availability handling; its MySQL HTTP assertions are pending exact-SHA CI. Approved privacy/legal copy, account recovery, and payment/OTP integrations remain incomplete. Historical persistent-cart evidence: run `40480186793` on `73cdfab3778e1d87dd4e951ac7730bca899a32d1`.
+**Status: `IN PROGRESS`.** Customer account/address/cart-merge and canonical `DB_CLIENT=mysql` checkout paths exist. Persistent cart load/replace/clear, registration/login guest-cart merge, authenticated cart mutation sync, checkout refresh, and post-order clear have MySQL repository assertions. Cart updates now reject invalid quantities, cap to current stock, and remove stale/out-of-stock items. Guest and authenticated MySQL HTTP cases plus SQLite-backed guest regression passed exact-SHA MySQL 8.0 CI run [`40498016622`](https://github.com/mrtumi2026/Mrtumi/actions/runs/40498016622) on `15f96ea7bdbec7fd02ef62d7f2f91e1d47bf1558`. Approved privacy/legal copy, account recovery, and payment/OTP integrations remain incomplete. Historical persistent-cart evidence: run `40480186793` on `73cdfab3778e1d87dd4e951ac7730bca899a32d1`.
 
 ## Implemented vertical slices
 
@@ -11,7 +11,7 @@
 
 ## Remaining Phase 07 acceptance
 
-- Cart update now validates integer quantities, caps requested quantity to current availability, and removes unavailable/deactivated products or variants instead of forcing a minimum quantity of one. Guest-mode regression and MySQL HTTP coverage have been added for invalid quantity, stock capping, and zero-stock removal; the MySQL case awaits exact-SHA CI.
+- Cart update now validates integer quantities, caps requested quantity to current availability, and removes unavailable/deactivated products or variants instead of forcing a minimum quantity of one. Guest-mode regression and MySQL guest/authenticated HTTP coverage for invalid quantity, stock capping, persistence and zero-stock removal passed exact-SHA CI run `40498016622` on `15f96ea7bdbec7fd02ef62d7f2f91e1d47bf1558`.
 - Complete persistent-cart cross-session/concurrency/error recovery and customer/guest merge policy evidence.
 - Owner-configured active `delivery_locations` and COD gateway rows on the actual target database. Empty configuration blocks checkout; do not seed fees or zones from legacy defaults.
 - Owner-approved Bangla/English Terms/Privacy copy and a documented consent version/retention policy. Do not treat the inline recovery opt-in as a substitute for approved legal/privacy policy.
@@ -22,6 +22,6 @@
 
 ## Verification and boundaries
 
-- The live-MySQL HTTP test covers server-side prices, CSRF, configured COD/delivery, replay/mismatch, inventory reservation, unpaid/COD accounting, no payment insertion and success-page privacy. Exact-SHA CI run `40480186793` passed on SHA `73cdfab3778e1d87dd4e951ac7730bca899a32d1`, exercising the new persistent-cart assertions along with the existing HTTP checkout tests.
+- The live-MySQL HTTP suite covers server-side prices, CSRF, configured COD/delivery, replay/mismatch, inventory reservation, unpaid/COD accounting, no payment insertion and success-page privacy. This continuation's guest and authenticated cart update availability/persistence tests passed MySQL 8.0 CI run `40498016622` on `15f96ea7bdbec7fd02ef62d7f2f91e1d47bf1558`; the full local suite separately reported 52 passed, 8 MySQL-only skipped, 0 failed. Local skips are not treated as passes; CI TAP totals are not inferred.
 - Local SQLite/unit tests are regression coverage only, not evidence that the canonical MySQL path passed.
 - No provider credentials, SMS, payment, shipping, production migration or deployment were used.
