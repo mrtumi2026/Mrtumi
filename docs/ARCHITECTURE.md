@@ -20,8 +20,8 @@ Based on BestWebHostBD support confirmation (**Node.js supported**, **SSH availa
 ## 2. Core Technical Specifications (13 Architectural Pillars)
 
 ### 2.1 Supported Node.js Runtime Requirement
-- **Target Production Runtime:** **Node.js `>= 18.18.0` LTS (`20.x LTS` or `22.x LTS` preferred)** once Phase 03 switches production DB access to pure-JS `mysql2/promise`.
-- **Current Sandbox / Local Dev Note:** Until Phase 03 replaces direct `require('node:sqlite')` in `src/db/database.js`, local execution of the prototype baseline uses **Node.js `>= 22.5.0`** (`v22.22.3` verified in workspace). Removing top-level `node:sqlite` coupling in Phase 03 ensures compatibility even if BestWebHostBD's CloudLinux selector offers Node `18` or `20` (`U-01` in `docs/CPANEL_COMPATIBILITY.md`).
+- **Current repository contract:** `package.json` declares **Node.js `>=22.5.0`**. The production host must use a maintained runtime meeting this contract, verified on the actual process-manager binary; do not infer Node 18/20 compatibility from the MySQL driver alone.
+- **Compatibility change gate:** Node 18/20 may only be considered after a deliberate update to `engines`, audit of runtime APIs/dependencies (including the local SQLite adapter), and exact-runtime CI/staging tests. The installed sandbox runtime is not proof of host availability. See `U-01` in `docs/CPANEL_COMPATIBILITY.md`.
 
 ### 2.2 MySQL Version & Required Engine Features
 - **Server Version Status:** Exact BestWebHostBD MySQL/MariaDB version is currently `UNVERIFIED` (`U-02`).

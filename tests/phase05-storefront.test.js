@@ -314,6 +314,21 @@ describe('Phase 05 — Customer Storefront, Catalogue, Product Detail, Support &
     assert.equal(updWholesale.statusCode, 200);
     const wsData = JSON.parse(updWholesale.body);
     assert.equal(wsData.cartSubtotal, 3600);
+
+    const invalidQty=await httpRequest(baseUrl,'/cart/update',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json',Cookie:cookieHeader,'x-csrf-token':csrfToken},body:JSON.stringify({key:itemKey,qty:'2.5'})});
+    assert.equal(invalidQty.statusCode,400,'fractional cart quantity is rejected');
+    const stockBefore=sqliteDb.get('SELECT stock,stock_reserved FROM products WHERE id=?',giftProd.id);
+    sqliteDb.run('UPDATE products SET stock=? WHERE id=?',Number(stockBefore.stock_reserved)+1,giftProd.id);
+    const cappedUpdate=await httpRequest(baseUrl,'/cart/update',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json',Cookie:cookieHeader,'x-csrf-token':csrfToken},body:JSON.stringify({key:itemKey,qty:3})});
+    assert.equal(cappedUpdate.statusCode,200);
+    assert.equal(JSON.parse(cappedUpdate.body).availabilityAdjusted,true);
+    assert.equal(JSON.parse(cappedUpdate.body).cart[0].qty,1,'requested quantity is capped to current available stock');
+    sqliteDb.run('UPDATE products SET stock=? WHERE id=?',Number(stockBefore.stock_reserved),giftProd.id);
+    const staleUpdate=await httpRequest(baseUrl,'/cart/update',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json',Cookie:cookieHeader,'x-csrf-token':csrfToken},body:JSON.stringify({key:itemKey,qty:3})});
+    assert.equal(staleUpdate.statusCode,200);
+    assert.equal(JSON.parse(staleUpdate.body).availabilityAdjusted,true);
+    assert.equal(JSON.parse(staleUpdate.body).cartCount,0,'zero-available product must be removed, not forced to one');
+    sqliteDb.run('UPDATE products SET stock=? WHERE id=?',Number(stockBefore.stock),giftProd.id);
   });
 
   test('5. About, FAQ, Contact, Blogs, Moderated Reviews & SEO (`/sitemap.xml`, `/robots.txt`) work in `bn` & `en`', async () => {

@@ -43,6 +43,7 @@ const { getPool, closePool, createQueryClient } = require('../src/db/mysqlPool')
 const { migrateUp, migrateDown } = require('../src/db/migrator');
 const storefrontRepo = require('../src/repositories/storefrontRepository');
 const checkoutRepo = require('../src/repositories/checkoutRepository');
+const customerRepo = require('../src/repositories/customerRepository');
 const { bdtToPaisa } = require('../src/utils/money');
 
 const SKIP_REASON =
@@ -376,7 +377,57 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
       assert.equal(cartPayload.cart[0].sku, 'MT-RICE-01-5KG');
 
       const setCookie = cartAdd.headers['set-cookie'];
-      const cookieHeader = (Array.isArray(setCookie) ? setCookie : [setCookie]).filter(Boolean).map((c) => c.split(';')[0]).join('; ');
+      let cookieHeader = (Array.isArray(setCookie) ? setCookie : [setCookie]).filter(Boolean).map((c) => c.split(';')[0]).join('; ');
+      const cartItemKey=cartPayload.cart[0].key;
+      const invalidQty=await httpRequest(baseUrl,'/cart/update',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json',Cookie:cookieHeader,'x-csrf-token':cartCsrf},body:JSON.stringify({key:cartItemKey,qty:'2.5'})});
+      assert.equal(invalidQty.statusCode,400,'fractional cart quantity is rejected without altering cart state');
+      const variantStock=await client.queryOne('SELECT stock_on_hand,stock_reserved FROM product_variants WHERE id=?',[variant5KgId]);
+      await client.execute('UPDATE product_variants SET stock_reserved=? WHERE id=?',[Number(variantStock.stock_on_hand)-1,variant5KgId]);
+      const cappedUpdate=await httpRequest(baseUrl,'/cart/update',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json',Cookie:cookieHeader,'x-csrf-token':cartCsrf},body:JSON.stringify({key:cartItemKey,qty:5})});
+      assert.equal(cappedUpdate.statusCode,200,`availability cap HTTP failed: ${cappedUpdate.body.slice(0,300)}`);
+      assert.equal(JSON.parse(cappedUpdate.body).availabilityAdjusted,true,'requested quantity is capped when current stock is lower');
+      assert.equal(JSON.parse(cappedUpdate.body).cart[0].qty,1);
+      await client.execute('UPDATE product_variants SET stock_reserved=stock_on_hand WHERE id=?',[variant5KgId]);
+      const staleUpdate=await httpRequest(baseUrl,'/cart/update',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json',Cookie:cookieHeader,'x-csrf-token':cartCsrf},body:JSON.stringify({key:cartItemKey,qty:5})});
+      assert.equal(staleUpdate.statusCode,200,`stale cart update HTTP failed: ${staleUpdate.body.slice(0,300)}`);
+      assert.equal(JSON.parse(staleUpdate.body).availabilityAdjusted,true,'zero available variant is identified as stale');
+      assert.equal(JSON.parse(staleUpdate.body).cartCount,0,'zero available variant is removed instead of forced to one unit');
+      await client.execute('UPDATE product_variants SET stock_reserved=? WHERE id=?',[variantStock.stock_reserved,variant5KgId]);
+      const cartReadded=await httpRequest(baseUrl,'/cart/add',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json',Cookie:cookieHeader,'x-csrf-token':cartCsrf},body:JSON.stringify({product_id:inhouseProdId,variant_id:variant5KgId,qty:2})});
+      assert.equal(cartReadded.statusCode,200,`cart restoration HTTP failed: ${cartReadded.body.slice(0,300)}`);
+      const readdedSetCookie=cartReadded.headers['set-cookie'];
+      cookieHeader=(Array.isArray(readdedSetCookie)?readdedSetCookie:[readdedSetCookie]).filter(Boolean).map((c)=>c.split(';')[0]).join('; ')||cookieHeader;
+      assert.equal(JSON.parse(cartReadded.body).cartCount,2,'guest can restore the available cart line after stock recovers');
+
+      // Exercise the same stale-stock rules with a logged-in customer whose cart is persisted in MySQL.
+      const customerPhone=`018${String(Date.now()).slice(-8)}`;
+      const testCustomer=await customerRepo.registerCustomer({name:'Persistent Cart Test',phone:customerPhone,password:'SecureCartPassword!2026'});
+      const loginCsrfStart=await httpRequest(baseUrl,'/api/v1/csrf-token');
+      let customerCookie=(Array.isArray(loginCsrfStart.headers['set-cookie'])?loginCsrfStart.headers['set-cookie']:[loginCsrfStart.headers['set-cookie']]).filter(Boolean).map((c)=>c.split(';')[0]).join('; ');
+      const loginCsrf=JSON.parse(loginCsrfStart.body).data.csrfToken;
+      const customerLogin=await httpRequest(baseUrl,'/customer/login',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded',Cookie:customerCookie,'x-csrf-token':loginCsrf},body:new URLSearchParams({phone:customerPhone,password:'SecureCartPassword!2026'}).toString()});
+      assert.equal(customerLogin.statusCode,302,'customer can authenticate to persistent cart');
+      customerCookie=(Array.isArray(customerLogin.headers['set-cookie'])?customerLogin.headers['set-cookie']:[customerLogin.headers['set-cookie']]).filter(Boolean).map((c)=>c.split(';')[0]).join('; ');
+      const customerCsrfStart=await httpRequest(baseUrl,'/api/v1/csrf-token',{headers:{Cookie:customerCookie}});
+      const customerCsrf=JSON.parse(customerCsrfStart.body).data.csrfToken;
+      const customerAdd=await httpRequest(baseUrl,'/cart/add',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json',Cookie:customerCookie,'x-csrf-token':customerCsrf},body:JSON.stringify({product_id:inhouseProdId,variant_id:variant5KgId,qty:2})});
+      assert.equal(customerAdd.statusCode,200,`authenticated add failed: ${customerAdd.body.slice(0,300)}`);
+      assert.equal(Number((await client.queryOne('SELECT quantity FROM customer_cart_items WHERE customer_id=? AND product_id=? AND variant_id=?',[testCustomer.id,inhouseProdId,variant5KgId])).quantity),2,'authenticated cart addition persists to MySQL');
+      const savedCartResponse=await httpRequest(baseUrl,'/cart/json',{headers:{Cookie:customerCookie,Accept:'application/json'}});
+      const savedCart=JSON.parse(savedCartResponse.body).cart;
+      const persistedItemKey=savedCart[0].key;
+      const customerVariant=await client.queryOne('SELECT stock_on_hand,stock_reserved FROM product_variants WHERE id=?',[variant5KgId]);
+      await client.execute('UPDATE product_variants SET stock_reserved=stock_on_hand-1 WHERE id=?',[variant5KgId]);
+      const customerCapped=await httpRequest(baseUrl,'/cart/update',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json',Cookie:customerCookie,'x-csrf-token':customerCsrf},body:JSON.stringify({key:persistedItemKey,qty:5})});
+      assert.equal(customerCapped.statusCode,200);
+      assert.equal(Number((await client.queryOne('SELECT quantity FROM customer_cart_items WHERE customer_id=? AND product_id=? AND variant_id=?',[testCustomer.id,inhouseProdId,variant5KgId])).quantity),1,'authenticated capped cart is persisted');
+      await client.execute('UPDATE product_variants SET stock_reserved=stock_on_hand WHERE id=?',[variant5KgId]);
+      const customerStale=await httpRequest(baseUrl,'/cart/update',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json',Cookie:customerCookie,'x-csrf-token':customerCsrf},body:JSON.stringify({key:persistedItemKey,qty:5})});
+      assert.equal(customerStale.statusCode,200);
+      assert.equal(JSON.parse(customerStale.body).availabilityAdjusted,true);
+      assert.equal(Number((await client.queryOne('SELECT COUNT(*) AS n FROM customer_cart_items WHERE customer_id=?',[testCustomer.id])).n),0,'unavailable authenticated cart line is removed from persistence');
+      await client.execute('UPDATE product_variants SET stock_reserved=? WHERE id=?',[customerVariant.stock_reserved,variant5KgId]);
+
       const checkoutPage = await httpRequest(baseUrl, '/customer/checkout?lang=en&utm_source=facebook&utm_medium=paid_social&utm_campaign=p14-ci', { headers: { Cookie: cookieHeader, Accept:'application/json' } });
       assert.equal(checkoutPage.statusCode, 200, `MySQL checkout GET failed: ${checkoutPage.body.slice(0,500)}`);
       assert.doesNotMatch(checkoutPage.body, /name="cart_backup_json"/,'MySQL checkout must not accept a client cart backup');

@@ -626,27 +626,28 @@ router.post(
     await refreshCustomerCart(req);
     const t = res.locals.t;
     const { key, qty } = req.body;
+    const qtyText = String(qty ?? '');
+    if (!/^\d+$/.test(qtyText) || Number(qtyText) > 99) throw new (require('../utils/errors').ValidationError)('Quantity must be a whole number from 0 to 99.');
+    let availabilityAdjusted = false;
     if (Array.isArray(req.session.cart)) {
       const item = req.session.cart.find((i) => i.key === key);
       if (item) {
-        const n = Number(qty);
-        if (n <= 0) {
+        const requested = Number(qtyText);
+        if (requested === 0) {
           req.session.cart = req.session.cart.filter((i) => i.key !== key);
         } else {
-          const prod = await storefrontRepo.findProductForCart(item.product_id, {
-            locale: req.locale,
-          });
-          const matchedVariant =
-            prod && item.variant_id
-              ? prod.variants.find((v) => Number(v.id) === Number(item.variant_id))
-              : null;
-          const maxStock = matchedVariant
-            ? Math.max(1, Number(matchedVariant.available_stock || 1))
-            : prod
-              ? Math.max(1, Number(prod.available_stock || 1))
-              : 999;
-          item.qty = Math.min(maxStock, Math.floor(n));
-          if (prod) {
+          const prod = await storefrontRepo.findProductForCart(item.product_id, { locale: req.locale });
+          const matchedVariant = prod && item.variant_id
+            ? (prod.variants || []).find((v) => Number(v.id) === Number(item.variant_id)) || null
+            : null;
+          const staleVariant = Boolean(item.variant_id) && !matchedVariant;
+          const availableStock = matchedVariant ? Number(matchedVariant.available_stock || 0) : Number(prod?.available_stock || 0);
+          if (!prod || staleVariant || !Number.isSafeInteger(availableStock) || availableStock <= 0) {
+            req.session.cart = req.session.cart.filter((i) => i.key !== key);
+            availabilityAdjusted = true;
+          } else {
+            item.qty = Math.min(availableStock, requested);
+            availabilityAdjusted = item.qty !== requested;
             item.price = resolveEffectiveUnitPrice(prod, matchedVariant, item.qty);
           }
         }
@@ -659,6 +660,7 @@ router.post(
       return res.json({
         success: true,
         message: t('store.updatedCartMsg'),
+        availabilityAdjusted,
         ...state,
         sessionToken: req.sessionID,
       });

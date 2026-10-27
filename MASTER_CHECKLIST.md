@@ -70,7 +70,7 @@
 | ID | Feature / Deliverable | Status | Notes |
 |---|---|---|---|
 | P07-01 | Customer registration, login, logout, password recovery & address book | `IN PROGRESS` | MySQL-backed registration/login, regenerated sessions, POST logout and address management implemented; verified notification-based password recovery remains unavailable pending authorized channel |
-| P07-02 | Guest checkout, BD phone validation & persistent cart sync | `IN PROGRESS` | Persistent cart load/replace/clear, guest merge, authenticated mutations, checkout refresh and post-success clear are implemented; cart add/update/remove/clear are CSRF-protected and exact-SHA MySQL CI run `40483319058` passed on `5f77f4077125ef40c48c71c1f5bed5284a3be128`. Cart cross-device concurrency/error recovery and other Phase 07 criteria remain open |
+| P07-02 | Guest checkout, BD phone validation & persistent cart sync | `IN PROGRESS` | Existing MySQL cart persistence/merge/checkout evidence remains historical. New cart update rejects fractional/out-of-range quantities, caps to current stock, and removes zero-stock/missing variants; local guest HTTP tests pass. MySQL HTTP cases are added but await exact-SHA CI. Cross-session concurrency/error recovery and other Phase 07 criteria remain open |
 | P07-03 | Configurable delivery zones/fees, server-only total math & duplicate order lock | `IN PROGRESS` | Requires active owner-configured `delivery_locations` and COD gateway; server computes paisa totals, reserves inventory and uses request-hash idempotency; no defaults are seeded |
 | P07-04 | Terms/privacy consent handling at checkout | `IN PROGRESS` | Required order confirmation and optional recovery opt-in exist; coded checkout slice passed live MySQL CI `40301701753`; approved legal copy/retention policy remain blockers |
 
@@ -163,6 +163,6 @@
 ### PHASE 20 — Full QA, Security Audit & Owner-Hosting Deployment
 | ID | Feature / Deliverable | Status | Notes |
 |---|---|---|---|
-| P20-01 | Full unit, integration, RBAC, financial reconciliation & E2E test suite execution | `NOT STARTED` | Scheduled for Phase 20 |
-| P20-02 | Security audit (CSRF, XSS, SQLi, upload safety, dependency audit, PII redaction) | `NOT STARTED` | Scheduled for Phase 20 |
-| P20-03 | Backup & restore drill, `DEPLOYMENT.md`, `INTEGRATION_STATUS.md` & release checklist | `NOT STARTED` | Production deploy requires explicit owner approval |
+| P20-01 | Full unit, integration, RBAC, financial reconciliation & E2E test suite execution | `IN PROGRESS` | Full automated CI runs exist, but end-to-end financial reconciliation and owner-host QA evidence are not complete |
+| P20-02 | Security audit (CSRF, XSS, SQLi, upload safety, dependency audit, PII redaction) | `IN PROGRESS` | CI runs foundation/secret/dependency checks and route/security tests; no full security audit sign-off is recorded |
+| P20-03 | Backup & restore drill, `DEPLOYMENT.md`, `INTEGRATION_STATUS.md` & release checklist | `IN PROGRESS` | `DEPLOYMENT.md` now provides a conditional, preparation-only hosting runbook; backup/restore tooling and rehearsal, host facts, integration status reconciliation and release approval remain outstanding |

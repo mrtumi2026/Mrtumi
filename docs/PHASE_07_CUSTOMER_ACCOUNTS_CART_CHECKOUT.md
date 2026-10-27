@@ -1,6 +1,6 @@
 # PHASE 07 — CUSTOMER ACCOUNTS, CART & CHECKOUT
 
-**Status: `IN PROGRESS`.** Customer account/address/cart-merge and canonical `DB_CLIENT=mysql` checkout paths exist. Persistent cart load/replace/clear, registration/login guest-cart merge, authenticated cart mutation sync, checkout refresh, and post-order clear have now been implemented with MySQL repository assertions. Exact-SHA CI run `40480186793` passed on `73cdfab3778e1d87dd4e951ac7730bca899a32d1`, exercising the MySQL test suite including the new persistence assertions. Approved privacy/legal copy, account recovery, and payment/OTP integrations remain incomplete.
+**Status: `IN PROGRESS`.** Customer account/address/cart-merge and canonical `DB_CLIENT=mysql` checkout paths exist. Persistent cart load/replace/clear, registration/login guest-cart merge, authenticated cart mutation sync, checkout refresh, and post-order clear have MySQL repository assertions. The current continuation adds strict cart quantity and stale-availability handling; its MySQL HTTP assertions are pending exact-SHA CI. Approved privacy/legal copy, account recovery, and payment/OTP integrations remain incomplete. Historical persistent-cart evidence: run `40480186793` on `73cdfab3778e1d87dd4e951ac7730bca899a32d1`.
 
 ## Implemented vertical slices
 
@@ -11,7 +11,8 @@
 
 ## Remaining Phase 07 acceptance
 
-- Persistent cart reads and writes across sessions and every cart mutation, stale-availability handling, and customer/guest merge policy.
+- Cart update now validates integer quantities, caps requested quantity to current availability, and removes unavailable/deactivated products or variants instead of forcing a minimum quantity of one. Guest-mode regression and MySQL HTTP coverage have been added for invalid quantity, stock capping, and zero-stock removal; the MySQL case awaits exact-SHA CI.
+- Complete persistent-cart cross-session/concurrency/error recovery and customer/guest merge policy evidence.
 - Owner-configured active `delivery_locations` and COD gateway rows on the actual target database. Empty configuration blocks checkout; do not seed fees or zones from legacy defaults.
 - Owner-approved Bangla/English Terms/Privacy copy and a documented consent version/retention policy. Do not treat the inline recovery opt-in as a substitute for approved legal/privacy policy.
 - Customer password recovery only after an authorized verified delivery channel, plus profile/password change and account recovery safeguards.
