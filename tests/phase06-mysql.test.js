@@ -184,8 +184,21 @@ describe('Phase 06 — Live MySQL 8.0 schema, product, stock ledger & purchase r
     await assert.rejects(()=>db.execute("INSERT INTO orders (invoice_no,idempotency_key,customer_name,customer_phone,shipping_address,total_paisa,order_status) VALUES (?,?,'Consent Test','01712345678','CI fixture address',2000,'pending')",[`P08REDUP-${suffix}`,`incomplete:${recoverable.id}`]),(err)=>err.code==='DB_DUPLICATE_ENTRY');
   });
 
-  test('concurrent warehouse adjustments serialize and the ledger balance remains exact', async () => {
+  test('inventory adjustment audit failure rolls back stock/ledger; concurrent adjustments serialize with exact audit balances', async () => {
     if (!MYSQL_HOST) return;
+    const before=await db.queryOne('SELECT stock_on_hand FROM products WHERE id=?',[productId]);
+    const ledgerBefore=Number((await db.queryOne("SELECT COUNT(*) AS n FROM stock_ledger WHERE product_id=? AND movement_type='adjustment'",[productId])).n);
+    const auditBefore=Number((await db.queryOne("SELECT COUNT(*) AS n FROM audit_logs WHERE action='inventory.adjust' AND entity_id=?",[String(productId)])).n);
+    await db.execute("CREATE TRIGGER p06_fail_inventory_audit BEFORE INSERT ON audit_logs FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture inventory audit failure'");
+    try {
+      await assert.rejects(()=>repo.adjustStock({product_id:productId,stock_pool:'warehouse',qty_delta:1,reason:'Audit rollback fixture'}));
+    } finally {
+      await db.execute('DROP TRIGGER IF EXISTS p06_fail_inventory_audit');
+    }
+    assert.equal(Number((await db.queryOne('SELECT stock_on_hand FROM products WHERE id=?',[productId])).stock_on_hand),Number(before.stock_on_hand),'failed audit insert rolls stock back');
+    assert.equal(Number((await db.queryOne("SELECT COUNT(*) AS n FROM stock_ledger WHERE product_id=? AND movement_type='adjustment'",[productId])).n),ledgerBefore,'failed audit insert rolls the ledger back');
+    assert.equal(Number((await db.queryOne("SELECT COUNT(*) AS n FROM audit_logs WHERE action='inventory.adjust' AND entity_id=?",[String(productId)])).n),auditBefore);
+
     await Promise.all([
       repo.adjustStock({product_id:productId,stock_pool:'warehouse',qty_delta:1,reason:'Concurrent receiving recount'}),
       repo.adjustStock({product_id:productId,stock_pool:'warehouse',qty_delta:2,reason:'Concurrent receiving recount'}),
@@ -194,6 +207,9 @@ describe('Phase 06 — Live MySQL 8.0 schema, product, stock ledger & purchase r
     const ledger = await db.queryOne("SELECT balance_after FROM stock_ledger WHERE product_id=? AND stock_pool='warehouse' ORDER BY id DESC LIMIT 1",[productId]);
     assert.equal(Number(product.stock_on_hand),9,'blocked return finalization leaves one shipped unit consumed before the two inventory adjustments');
     assert.equal(Number(ledger.balance_after),9);
+    const adjustmentAudit=await db.queryAll("SELECT after_json FROM audit_logs WHERE action='inventory.adjust' AND entity_id=? ORDER BY id DESC LIMIT 2",[String(productId)]);
+    assert.equal(adjustmentAudit.length,2);
+    assert.ok(adjustmentAudit.every(row=>Number(JSON.parse(row.after_json).balanceAfter)<=9));
     assert.ok(supplierId && purchaseId);
   });
 });

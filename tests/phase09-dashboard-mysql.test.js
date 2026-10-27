@@ -118,6 +118,43 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     assert.ok(data.todayExpenses>=5); assert.ok(data.totalExpenses>=data.todayExpenses);
   });
 
+  test('Phase 06 inventory adjustment HTTP requires permission and CSRF; stock, ledger and audit commit or roll back together',async(t)=>{
+    if(!MYSQL_HOST)return t.skip(SKIP);
+    const path='/admin/phase06/inventory/adjust';
+    const base={product_id:productId,stock_pool:'warehouse',qty_delta:2,reason:'Phase 06 HTTP count correction'};
+    assert.equal((await request(path,{method:'POST',cookie:'',token:'',body:base})).status,401,'inventory adjustment requires an authenticated admin');
+    const noGrantCookie=await login(noGrantEmail); const noGrantToken=await fetchCsrf(noGrantCookie);
+    assert.equal((await request(path,{method:'POST',cookie:noGrantCookie,token:noGrantToken,body:base})).status,403,'inventory.manage is required');
+    dashboardCookie=await login(fullEmail); csrfToken=await fetchCsrf(dashboardCookie);
+    assert.equal((await request(path,{method:'POST',token:'',body:base})).status,403,'inventory adjustment requires CSRF');
+    assert.equal((await request(path,{method:'POST',body:{...base,qty_delta:0}})).status,400,'zero movements are rejected');
+    assert.equal((await request(path,{method:'POST',body:{...base,product_id:999999999}})).status,404,'missing products are rejected');
+    const before=await db.queryOne('SELECT stock_on_hand FROM products WHERE id=?',[productId]);
+    const success=await request(path,{method:'POST',body:base});
+    assert.equal(success.status,200,success.text.slice(0,300));
+    assert.deepEqual(success.json.movement,{productId,stockPool:'warehouse',previousBalance:Number(before.stock_on_hand),qtyDelta:2,balanceAfter:Number(before.stock_on_hand)+2});
+    const persisted=await db.queryOne('SELECT stock_on_hand FROM products WHERE id=?',[productId]);
+    assert.equal(Number(persisted.stock_on_hand),Number(before.stock_on_hand)+2);
+    const movement=await db.queryOne("SELECT qty_delta,balance_after,reason FROM stock_ledger WHERE product_id=? AND movement_type='adjustment' ORDER BY id DESC LIMIT 1",[productId]);
+    assert.deepEqual([Number(movement.qty_delta),Number(movement.balance_after),movement.reason],[2,Number(persisted.stock_on_hand),'Phase 06 HTTP count correction']);
+    const audit=await db.queryOne("SELECT actor_id,after_json FROM audit_logs WHERE action='inventory.adjust' AND entity_id=? ORDER BY id DESC LIMIT 1",[String(productId)]);
+    assert.equal(Number(audit.actor_id),dashboardUserId);
+    assert.equal(JSON.parse(audit.after_json).balanceAfter,Number(persisted.stock_on_hand));
+
+    const ledgerCount=Number((await db.queryOne("SELECT COUNT(*) AS n FROM stock_ledger WHERE product_id=? AND movement_type='adjustment'",[productId])).n);
+    const auditCount=Number((await db.queryOne("SELECT COUNT(*) AS n FROM audit_logs WHERE action='inventory.adjust' AND entity_id=?",[String(productId)])).n);
+    await db.execute("CREATE TRIGGER p06_http_fail_inventory_audit BEFORE INSERT ON audit_logs FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture inventory audit failure'");
+    try {
+      const failed=await request(path,{method:'POST',body:{...base,qty_delta:3,reason:'Must roll back'}});
+      assert.equal(failed.status,500,failed.text.slice(0,300));
+    } finally {
+      await db.execute('DROP TRIGGER IF EXISTS p06_http_fail_inventory_audit');
+    }
+    assert.equal(Number((await db.queryOne('SELECT stock_on_hand FROM products WHERE id=?',[productId])).stock_on_hand),Number(persisted.stock_on_hand),'audit failure must roll back stock');
+    assert.equal(Number((await db.queryOne("SELECT COUNT(*) AS n FROM stock_ledger WHERE product_id=? AND movement_type='adjustment'",[productId])).n),ledgerCount,'audit failure must roll back the stock ledger');
+    assert.equal(Number((await db.queryOne("SELECT COUNT(*) AS n FROM audit_logs WHERE action='inventory.adjust' AND entity_id=?",[String(productId)])).n),auditCount,'failed audit must not be partially recorded');
+  });
+
   test('real application routes enforce role grants, CSRF, safe errors, provider unavailable, popup audit and assistant audit',async(t)=>{
     if(!MYSQL_HOST)return t.skip(SKIP);
     assert.equal((await request('/admin/dashboard',{cookie:''})).status,401);

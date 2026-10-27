@@ -175,13 +175,17 @@ async function adjustStock(input, actor = {}) {
   const productId = positiveId(input.product_id, 'Product');
   const delta = Number(input.qty_delta);
   if (!Number.isSafeInteger(delta) || delta === 0) throw new ValidationError('Stock movement must be a non-zero whole number.');
+  if (!['warehouse', 'vendor'].includes(input.stock_pool || 'warehouse')) throw new ValidationError('Stock pool must be warehouse or vendor.');
   const poolName = input.stock_pool === 'vendor' ? 'vendor' : 'warehouse';
   const reason = cleanText(input.reason, 255, 'Reason', true);
   if (isMysql()) {
     const { adjustProductStockAtomically } = require('./inventoryFoundationRepository');
-    const movement = await adjustProductStockAtomically({ productId, stockPool: poolName, movementType: 'adjustment', qtyDelta: delta, reason, actorUserId: actor.id || null });
-    await recordAuditLog({ actorType: 'admin', actorId: actor.id || null, action: 'inventory.adjust', entityType: 'product', entityId: productId, afterState: { ...movement, reason }, ipAddress: actor.ip || '', userAgent: actor.userAgent || '' });
-    return movement;
+    const pool = require('../db/mysqlPool').getPool();
+    return withTransaction(async (tx) => {
+      const movement = await adjustProductStockAtomically({ productId, stockPool: poolName, movementType: 'adjustment', qtyDelta: delta, reason, actorUserId: actor.id || null, existingTx: tx });
+      await recordAuditLog({ actorType: 'admin', actorId: actor.id || null, action: 'inventory.adjust', entityType: 'product', entityId: productId, afterState: { ...movement, reason }, ipAddress: actor.ip || '', userAgent: actor.userAgent || '' }, tx);
+      return movement;
+    }, { pool });
   }
   sqlite.rawDb.exec('BEGIN IMMEDIATE');
   try {
@@ -193,8 +197,11 @@ async function adjustStock(input, actor = {}) {
     sqlite.run(`UPDATE products SET ${col}=? WHERE id=?`, next, productId);
     sqlite.run(`INSERT INTO stock_ledger (product_id,stock_pool,movement_type,qty_delta,balance_after,reason,actor_user_id)
       VALUES (?,?,'adjustment',?,?,?,?)`, productId, poolName, delta, next, reason, actor.id || null);
+    const movement = { productId, stockPool: poolName, previousBalance: Number(product.balance || 0), qtyDelta: delta, balanceAfter: next };
+    sqlite.run(`INSERT INTO audit_logs (actor_type,actor_id,action,entity_type,entity_id,after_json,ip_address,user_agent)
+      VALUES ('admin',?,'inventory.adjust','product',?,?,?,?)`, actor.id || null, String(productId), JSON.stringify({ ...movement, reason }), String(actor.ip || '').slice(0,64), String(actor.userAgent || '').slice(0,255));
     sqlite.rawDb.exec('COMMIT');
-    return { productId, stockPool: poolName, previousBalance: Number(product.balance || 0), qtyDelta: delta, balanceAfter: next };
+    return movement;
   } catch (err) {
     try { sqlite.rawDb.exec('ROLLBACK'); } catch (_e) {}
     throw err;

@@ -48,13 +48,29 @@ describe('Phase 06 — Product, Inventory Ledger, Supplier & Purchase Receiving'
     }), ValidationError);
   });
 
-  test('authorized adjustments are reasoned, ledger-backed and cannot make stock negative', async () => {
+  test('authorized adjustments are reasoned, ledger-backed, audited atomically and cannot make stock negative', async () => {
     const product = db.get("SELECT id FROM products WHERE code='P06-TEST-001'");
-    const result = await repo.adjustStock({ product_id: product.id, stock_pool: 'warehouse', qty_delta: -2, reason: 'Damaged during count' }, { id: 7 });
+    const result = await repo.adjustStock({ product_id: product.id, stock_pool: 'warehouse', qty_delta: -2, reason: 'Damaged during count' }, { id: 7, ip:'192.0.2.2' });
     assert.equal(result.balanceAfter, 6);
     assert.equal(db.get("SELECT reason FROM stock_ledger WHERE product_id=? AND movement_type='adjustment' ORDER BY id DESC LIMIT 1", product.id).reason, 'Damaged during count');
+    const audit = db.get("SELECT actor_id,after_json FROM audit_logs WHERE action='inventory.adjust' AND entity_id=? ORDER BY id DESC LIMIT 1", String(product.id));
+    assert.equal(audit.actor_id, 7);
+    assert.deepEqual(JSON.parse(audit.after_json), { ...result, reason:'Damaged during count' });
     await assert.rejects(() => repo.adjustStock({ product_id: product.id, qty_delta: -99, reason: 'Invalid correction' }), AppError);
+    await assert.rejects(() => repo.adjustStock({ product_id: product.id, stock_pool:'unknown', qty_delta: 1, reason:'Wrong pool' }), ValidationError);
     await assert.rejects(() => repo.adjustStock({ product_id: product.id, qty_delta: 1, reason: '' }), ValidationError);
+
+    const ledgerBefore=Number(db.get("SELECT COUNT(*) AS n FROM stock_ledger WHERE product_id=? AND movement_type='adjustment'",product.id).n);
+    const auditBefore=Number(db.get("SELECT COUNT(*) AS n FROM audit_logs WHERE action='inventory.adjust' AND entity_id=?",String(product.id)).n);
+    db.rawDb.exec("CREATE TRIGGER p06_fail_inventory_audit BEFORE INSERT ON audit_logs WHEN NEW.action='inventory.adjust' BEGIN SELECT RAISE(ABORT,'fixture inventory audit failure'); END");
+    try {
+      await assert.rejects(() => repo.adjustStock({ product_id:product.id,qty_delta:1,reason:'Audit rollback fixture' },{id:7}));
+    } finally {
+      db.rawDb.exec('DROP TRIGGER IF EXISTS p06_fail_inventory_audit');
+    }
+    assert.equal(Number(db.get('SELECT stock FROM products WHERE id=?',product.id).stock),6,'audit failure rolls stock back');
+    assert.equal(Number(db.get("SELECT COUNT(*) AS n FROM stock_ledger WHERE product_id=? AND movement_type='adjustment'",product.id).n),ledgerBefore,'audit failure rolls ledger back');
+    assert.equal(Number(db.get("SELECT COUNT(*) AS n FROM audit_logs WHERE action='inventory.adjust' AND entity_id=?",String(product.id)).n),auditBefore,'failed audit is not partially recorded');
   });
 
   test('purchase order creation leaves stock unchanged; partial and duplicate-safe receipts update stock atomically', async () => {

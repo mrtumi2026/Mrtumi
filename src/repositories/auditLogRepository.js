@@ -10,6 +10,9 @@ function isMysqlMode(config = env) {
 }
 
 function getClient(poolOverride = null) {
+  // A MySQL transaction query client already satisfies this repository contract; reuse it
+  // rather than escaping the active transaction through the pool.
+  if (poolOverride && typeof poolOverride.execute === 'function' && typeof poolOverride.queryOne === 'function') return poolOverride;
   return createQueryClient(poolOverride || getPool());
 }
 
