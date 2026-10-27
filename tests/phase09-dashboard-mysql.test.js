@@ -197,7 +197,11 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     assert.match(completed.text,new RegExp(`#${invoice.invoice_no}`));
     assert.match(completed.text,/P09 fixture/);
     assert.match(completed.text,/৳100/);
-    assert.doesNotMatch(completed.text,/P09 unrelated/,'search result must not include another customer/order');
+    const orderTable=completed.text.match(/<tbody>([\s\S]*?)<\/tbody>/)?.[1]||'';
+    assert.match(orderTable,new RegExp(`#${invoice.invoice_no}`));
+    assert.doesNotMatch(orderTable,/P09 unrelated/,'filtered order table must exclude another customer/order; global pending notifications are outside this table');
+    const renderedOrderIds=[...orderTable.matchAll(/href="\/admin\/order\/view\/(\d+)"/g)].map((match)=>match[1]);
+    assert.deepEqual([...new Set(renderedOrderIds)],[String(invoiceOrderId)],'filtered table must contain only the matching persisted order');
     assert.match(completed.text,/Completed/);
     const customerSearch=await request('/admin/order/all?q=P09%20fixture',{accept:'text/html'});
     assert.equal(customerSearch.status,200); assert.match(customerSearch.text,new RegExp(`#${invoice.invoice_no}`));
