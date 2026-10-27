@@ -155,6 +155,37 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     assert.equal(Number((await db.queryOne("SELECT COUNT(*) AS n FROM audit_logs WHERE action='inventory.adjust' AND entity_id=?",[String(productId)])).n),auditCount,'failed audit must not be partially recorded');
   });
 
+  test('Phase 06 supplier create HTTP enforces auth, inventory permission and CSRF; persists and audits atomically',async(t)=>{
+    if(!MYSQL_HOST)return t.skip(SKIP);
+    const path='/admin/phase06/suppliers';
+    const suffix=Date.now();
+    const input={name:'Phase 06 HTTP Supplier',supplier_code:`P06-HTTP-${suffix}`,phone:'+8801712345678',email:`supplier-${suffix}@example.invalid`,company:'Fixture supplier'};
+    assert.equal((await request(path,{method:'POST',cookie:'',token:'',body:input})).status,401,'supplier create requires authentication');
+    const noGrantCookie=await login(noGrantEmail); const noGrantToken=await fetchCsrf(noGrantCookie);
+    assert.equal((await request(path,{method:'POST',cookie:noGrantCookie,token:noGrantToken,body:input})).status,403,'inventory.manage is required');
+    dashboardCookie=await login(fullEmail); csrfToken=await fetchCsrf(dashboardCookie);
+    assert.equal((await request(path,{method:'POST',token:'',body:input})).status,403,'supplier create requires CSRF');
+    assert.equal((await request(path,{method:'POST',body:{...input,email:'invalid'}})).status,400,'invalid email is rejected');
+    const created=await request(path,{method:'POST',body:input});
+    assert.equal(created.status,201,created.text.slice(0,300));
+    const id=Number(created.json.supplier.id);
+    const persisted=await db.queryOne('SELECT name,supplier_code,phone,email,company FROM suppliers WHERE id=?',[id]);
+    assert.deepEqual(persisted,{name:input.name,supplier_code:input.supplier_code,phone:input.phone,email:input.email,company:input.company});
+    const audit=await db.queryOne("SELECT actor_id,after_json FROM audit_logs WHERE action='supplier.create' AND entity_id=?",[String(id)]);
+    assert.equal(Number(audit.actor_id),dashboardUserId);
+    assert.equal(JSON.parse(audit.after_json).supplier_code,input.supplier_code);
+
+    const rollbackCode=`P06-ROLLBACK-${suffix}`;
+    await db.execute("CREATE TRIGGER p06_http_fail_supplier_audit BEFORE INSERT ON audit_logs FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture supplier audit failure'");
+    try {
+      const failed=await request(path,{method:'POST',body:{...input,supplier_code:rollbackCode}});
+      assert.equal(failed.status,500,failed.text.slice(0,300));
+    } finally {
+      await db.execute('DROP TRIGGER IF EXISTS p06_http_fail_supplier_audit');
+    }
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM suppliers WHERE supplier_code=?',[rollbackCode])).n),0,'audit failure must roll back supplier persistence');
+  });
+
   test('real application routes enforce role grants, CSRF, safe errors, provider unavailable, popup audit and assistant audit',async(t)=>{
     if(!MYSQL_HOST)return t.skip(SKIP);
     assert.equal((await request('/admin/dashboard',{cookie:''})).status,401);

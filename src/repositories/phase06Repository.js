@@ -58,20 +58,33 @@ async function createSupplier(input, actor = {}) {
   if (supplier.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(supplier.email)) throw new ValidationError('Email address is invalid.');
   if (isMysql()) {
     const pool = require('../db/mysqlPool').getPool();
-    const [result] = await pool.execute(
+    return withTransaction(async (tx) => {
+      const result = await tx.execute(
+        `INSERT INTO suppliers (supplier_code, name, company, contact_person, phone, email, address, tax_or_trade_id, notes)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [supplier.code || null, supplier.name, supplier.company, supplier.contact, supplier.phone, supplier.email || null, supplier.address || null, supplier.businessId, supplier.notes || null]
+      );
+      const out = { id: result.insertId, ...supplier };
+      await recordAuditLog({ actorType: 'admin', actorId: actor.id || null, action: 'supplier.create', entityType: 'supplier', entityId: result.insertId, afterState: supplier, ipAddress: actor.ip || '', userAgent: actor.userAgent || '' }, tx);
+      return out;
+    }, { pool });
+  }
+  sqlite.rawDb.exec('BEGIN IMMEDIATE');
+  try {
+    const result = sqlite.run(
       `INSERT INTO suppliers (supplier_code, name, company, contact_person, phone, email, address, tax_or_trade_id, notes)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [supplier.code || null, supplier.name, supplier.company, supplier.contact, supplier.phone, supplier.email || null, supplier.address || null, supplier.businessId, supplier.notes || null]
+      supplier.code || null, supplier.name, supplier.company, supplier.contact, supplier.phone, supplier.email, supplier.address, supplier.businessId, supplier.notes
     );
-    await recordAuditLog({ actorType: 'admin', actorId: actor.id || null, action: 'supplier.create', entityType: 'supplier', entityId: result.insertId, afterState: supplier, ipAddress: actor.ip || '', userAgent: actor.userAgent || '' });
-    return { id: result.insertId, ...supplier };
+    const out = { id: Number(result.lastInsertRowid), ...supplier };
+    sqlite.run(`INSERT INTO audit_logs (actor_type,actor_id,action,entity_type,entity_id,after_json,ip_address,user_agent)
+      VALUES ('admin',?,'supplier.create','supplier',?,?,?,?)`, actor.id || null, String(out.id), JSON.stringify(supplier), String(actor.ip || '').slice(0,64), String(actor.userAgent || '').slice(0,255));
+    sqlite.rawDb.exec('COMMIT');
+    return out;
+  } catch (err) {
+    try { sqlite.rawDb.exec('ROLLBACK'); } catch (_e) {}
+    throw err;
   }
-  const result = sqlite.run(
-    `INSERT INTO suppliers (supplier_code, name, company, contact_person, phone, email, address, tax_or_trade_id, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    supplier.code || null, supplier.name, supplier.company, supplier.contact, supplier.phone, supplier.email, supplier.address, supplier.businessId, supplier.notes
-  );
-  return { id: Number(result.lastInsertRowid), ...supplier };
 }
 
 async function listSuppliers() {

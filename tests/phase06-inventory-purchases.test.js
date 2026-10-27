@@ -48,6 +48,27 @@ describe('Phase 06 — Product, Inventory Ledger, Supplier & Purchase Receiving'
     }), ValidationError);
   });
 
+  test('supplier creation validates fields and atomically records its audit event', async () => {
+    const input = { name:'Verified supplier', supplier_code:'P06-SUP-AUDIT', phone:'+8801712345678', email:'supplier-audit@example.com', tax_or_trade_id:'BD-TIN-123' };
+    const created = await repo.createSupplier(input, { id:7, ip:'192.0.2.8' });
+    assert.ok(created.id > 0);
+    const persisted = db.get('SELECT name,supplier_code,email,tax_or_trade_id FROM suppliers WHERE id=?',created.id);
+    assert.deepEqual(persisted,{name:'Verified supplier',supplier_code:'P06-SUP-AUDIT',email:'supplier-audit@example.com',tax_or_trade_id:'BD-TIN-123'});
+    const audit = db.get("SELECT actor_id,after_json FROM audit_logs WHERE action='supplier.create' AND entity_id=?",String(created.id));
+    assert.equal(audit.actor_id,7);
+    assert.equal(JSON.parse(audit.after_json).name,input.name);
+    await assert.rejects(() => repo.createSupplier({...input,supplier_code:'P06-SUP-INVALID',email:'bad-email'}),ValidationError);
+    assert.equal(db.get("SELECT COUNT(*) AS n FROM suppliers WHERE supplier_code='P06-SUP-INVALID'").n,0);
+
+    db.rawDb.exec("CREATE TRIGGER p06_fail_supplier_audit BEFORE INSERT ON audit_logs WHEN NEW.action='supplier.create' BEGIN SELECT RAISE(ABORT,'fixture supplier audit failure'); END");
+    try {
+      await assert.rejects(() => repo.createSupplier({...input,supplier_code:'P06-SUP-ROLLBACK'}));
+    } finally {
+      db.rawDb.exec('DROP TRIGGER IF EXISTS p06_fail_supplier_audit');
+    }
+    assert.equal(db.get("SELECT COUNT(*) AS n FROM suppliers WHERE supplier_code='P06-SUP-ROLLBACK'").n,0,'audit failure must roll back supplier insert');
+  });
+
   test('authorized adjustments are reasoned, ledger-backed, audited atomically and cannot make stock negative', async () => {
     const product = db.get("SELECT id FROM products WHERE code='P06-TEST-001'");
     const result = await repo.adjustStock({ product_id: product.id, stock_pool: 'warehouse', qty_delta: -2, reason: 'Damaged during count' }, { id: 7, ip:'192.0.2.2' });
