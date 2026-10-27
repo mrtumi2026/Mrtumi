@@ -146,13 +146,18 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     const rollbackTitle=`P09 Blog rollback ${Date.now()}`;
     await db.execute("CREATE TRIGGER p09_blog_fail_audit BEFORE INSERT ON audit_logs FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture blog audit failure'");
     let failedCreate;
+    let failedDelete;
     try {
       failedCreate=await request('/admin/blog/create',{method:'POST',body:{title:rollbackTitle,content:'This insert must roll back with the audit failure.'}});
+      failedDelete=await request(`/admin/blog/delete/${persisted.id}`,{method:'POST',body:{}});
     } finally {
       await db.execute('DROP TRIGGER IF EXISTS p09_blog_fail_audit');
     }
     assert.equal(failedCreate.status,500,'audit failure is surfaced rather than reporting successful blog creation');
     assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM blogs WHERE title=?',[rollbackTitle])).n),0,'blog row is rolled back when its audit event fails');
+    assert.equal(failedDelete.status,500,'audit failure is surfaced rather than reporting successful blog deletion');
+    assert.ok(await db.queryOne('SELECT id FROM blogs WHERE id=?',[persisted.id]),'delete row is restored when its audit insert fails');
+    assert.equal(Number((await db.queryOne("SELECT COUNT(*) AS n FROM audit_logs WHERE action='admin.blog.deleted' AND entity_id=?",[String(persisted.id)])).n),0,'failed delete audit leaves no partial audit event');
 
     const deleted=await request(`/admin/blog/delete/${persisted.id}`,{method:'POST',body:{}});
     assert.equal(deleted.status,302);
