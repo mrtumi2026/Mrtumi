@@ -173,7 +173,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     assert.deepEqual(persisted,{name:input.name,supplier_code:input.supplier_code,phone:input.phone,email:input.email,company:input.company});
     const audit=await db.queryOne("SELECT actor_id,after_json FROM audit_logs WHERE action='supplier.create' AND entity_id=?",[String(id)]);
     assert.equal(Number(audit.actor_id),dashboardUserId);
-    assert.equal(JSON.parse(audit.after_json).supplier_code,input.supplier_code);
+    assert.equal(JSON.parse(audit.after_json).code,input.supplier_code,'supplier audit stores the normalized supplier code');
 
     const rollbackCode=`P06-ROLLBACK-${suffix}`;
     await db.execute("CREATE TRIGGER p06_http_fail_supplier_audit BEFORE INSERT ON audit_logs FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture supplier audit failure'");
