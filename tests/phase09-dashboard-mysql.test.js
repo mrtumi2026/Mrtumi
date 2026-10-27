@@ -218,9 +218,10 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     const ordered=await request('/admin/order/all?q=P09-',{accept:'text/html'});
     assert.equal(ordered.status,200);
     const expectedOrder=await db.queryAll("SELECT invoice_no FROM orders WHERE invoice_no LIKE ? ORDER BY id DESC",['P09-%']);
+    const orderedTable=ordered.text.match(/<tbody>([\s\S]*?)<\/tbody>/)?.[1]||'';
     let previousPosition=Number.POSITIVE_INFINITY;
     for(const row of expectedOrder){
-      const position=ordered.text.indexOf(`#${row.invoice_no}`);
+      const position=orderedTable.indexOf(`#${row.invoice_no}`);
       assert.ok(position>=0,`search list includes persisted invoice ${row.invoice_no}`);
       assert.ok(position<previousPosition,'legacy order list remains sorted by descending order ID');
       previousPosition=position;
