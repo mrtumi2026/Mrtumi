@@ -13,9 +13,12 @@ const isEn = (req) => req.locale === 'en';
 function formPage(req, res, title, error = '') { return res.status(error ? 400 : 200).render('customer/account-form', { title, error, isEn: isEn(req), customer: req.session.customerUser || null }); }
 router.get('/customer/register', (req, res) => formPage(req, res, isEn(req) ? 'Create account' : 'অ্যাকাউন্ট তৈরি করুন'));
 router.post('/customer/register', registerLimiter, requireCsrf, asyncHandler(async (req, res) => {
+  const guestCart = Array.isArray(req.session.cart) ? req.session.cart : [];
   const account = await customers.registerCustomer(req.body);
   await new Promise((resolve, reject) => req.session.regenerate((err) => err ? reject(err) : resolve()));
   req.session.customerUser = account;
+  await customers.mergeCart(account.id, guestCart);
+  req.session.cart = await customers.listCart(account.id, req.locale);
   return res.redirect('/customer/account');
 }));
 router.get('/customer/login', (req, res) => formPage(req, res, isEn(req) ? 'Customer login' : 'কাস্টমার লগইন'));
@@ -26,8 +29,8 @@ router.post('/customer/login', loginLimiter, requireCsrf, asyncHandler(async (re
   const guestCart = Array.isArray(req.session.cart) ? req.session.cart : [];
   await new Promise((resolve, reject) => req.session.regenerate((err) => err ? reject(err) : resolve()));
   req.session.customerUser = customer;
-  req.session.cart = guestCart;
   await customers.mergeCart(customer.id, guestCart);
+  req.session.cart = await customers.listCart(customer.id, req.locale);
   return res.redirect('/customer/account');
 }));
 router.post('/customer/logout', requireCsrf, (req, res) => req.session.destroy(() => res.redirect('/customer/login')));

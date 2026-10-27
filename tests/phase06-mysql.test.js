@@ -75,6 +75,13 @@ describe('Phase 06 — Live MySQL 8.0 schema, product, stock ledger & purchase r
     await customerRepo.mergeCart(customer.id, [{ product_id:productId, qty:2 }, { product_id:productId, qty:3 }]);
     const cartRow = await db.queryOne('SELECT quantity FROM customer_cart_items WHERE customer_id=? AND product_id=? AND variant_id IS NULL', [customer.id, productId]);
     assert.equal(Number(cartRow.quantity), 5);
+    await customerRepo.replaceCart(customer.id, [{ product_id: productId, qty: 4 }, { product_id: productId, qty: 0 }, { product_id: -1, qty: 8 }]);
+    const persistedCart = await customerRepo.listCart(customer.id, 'en');
+    assert.equal(persistedCart.length, 1);
+    assert.equal(persistedCart[0].product_id, productId);
+    assert.equal(persistedCart[0].qty, 4);
+    await customerRepo.clearCart(customer.id);
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM customer_cart_items WHERE customer_id=?', [customer.id])).n), 0);
   });
 
   test('Phase 08 transactional order history, reservation release, refund idempotency and concurrent cap', async () => {

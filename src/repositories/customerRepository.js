@@ -66,28 +66,62 @@ async function deleteAddress(customerId, addressId) {
   const result = await mysqlClient().execute('DELETE FROM `customer_addresses` WHERE `id` = ? AND `customer_id` = ?', [addressId, customerId]);
   if (!result.affectedRows) throw new NotFoundError('Address not found.');
 }
-async function mergeCart(customerId, sessionCart) {
-  if (!Array.isArray(sessionCart)) return;
+function normalizeCartLines(sessionCart, { additive = false } = {}) {
+  if (!Array.isArray(sessionCart)) return [];
   const normalized = new Map();
   for (const item of sessionCart) {
     const productId = Number(item.product_id || item.productId || item.id);
     const variantId = Number(item.variant_id || item.variantId) || null;
     const quantity = Number(item.qty || item.quantity);
-    if (!Number.isSafeInteger(productId) || productId < 1 || !Number.isSafeInteger(quantity) || quantity < 1 || quantity > 99) continue;
+    if (!Number.isSafeInteger(productId) || productId < 1 || variantId !== null && (!Number.isSafeInteger(variantId) || variantId < 1) || !Number.isSafeInteger(quantity) || quantity < 1 || quantity > 99) continue;
     const key = `${productId}:${variantId || 0}`;
-    normalized.set(key, { productId, variantId, quantity: Math.min(99, quantity + (normalized.get(key)?.quantity || 0)) });
+    const previous = normalized.get(key)?.quantity || 0;
+    normalized.set(key, { productId, variantId, quantity: Math.min(99, quantity + (additive ? previous : 0)) });
   }
+  return [...normalized.values()];
+}
+async function mergeCart(customerId, sessionCart) {
+  const normalized = normalizeCartLines(sessionCart, { additive: true });
   await withTransaction(async (tx) => {
-    for (const item of normalized.values()) {
-      const product = await tx.queryOne('SELECT `id` FROM `products` WHERE `id` = ? AND `status` = 1 LIMIT 1', [item.productId]);
+    for (const item of normalized) {
+      const product = await tx.queryOne('SELECT `id` FROM `products` WHERE `id` = ? AND `status` = 1 AND `is_archived` = 0 LIMIT 1', [item.productId]);
       if (!product) continue;
       if (item.variantId) {
-        const variant = await tx.queryOne('SELECT `id` FROM `product_variants` WHERE `id` = ? AND `product_id` = ? LIMIT 1', [item.variantId, item.productId]);
+        const variant = await tx.queryOne('SELECT `id` FROM `product_variants` WHERE `id` = ? AND `product_id` = ? AND `status` = 1 LIMIT 1', [item.variantId, item.productId]);
         if (!variant) continue;
       }
-      // The generated non-null variant key makes this upsert safe for both base and variant rows.
       await tx.execute('INSERT INTO `customer_cart_items` (`customer_id`, `product_id`, `variant_id`, `quantity`) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE `quantity` = LEAST(99, `quantity` + VALUES(`quantity`))', [customerId, item.productId, item.variantId, item.quantity]);
     }
   });
 }
-module.exports = { normalizeBdPhone, validatePassword, registerCustomer, authenticateCustomer, listAddresses, saveAddress, deleteAddress, mergeCart };
+async function listCart(customerId, locale = 'bn') {
+  const rows = await mysqlClient().queryAll('SELECT c.product_id, c.variant_id, c.quantity, p.sku, p.slug, p.name_bn, p.name_en, p.image_url, p.regular_price_paisa, p.sale_price_paisa, p.wholesale_price_paisa, p.wholesale_min_qty, p.is_wholesale, p.approval_status, v.variant_sku, v.size_label, v.color_label, v.price_paisa FROM customer_cart_items c JOIN products p ON p.id=c.product_id LEFT JOIN product_variants v ON v.id=c.variant_id WHERE c.customer_id=? ORDER BY c.id', [customerId]);
+  return rows.map((row) => {
+    const qty = Number(row.quantity);
+    const retailPaisa = Number(row.sale_price_paisa) > 0 ? Number(row.sale_price_paisa) : Number(row.regular_price_paisa);
+    const wholesalePaisa = Number(row.wholesale_price_paisa || 0);
+    const eligibleWholesale = Number(row.is_wholesale) === 1 && row.approval_status === 'approved' && Number(row.wholesale_min_qty) >= 2 && qty >= Number(row.wholesale_min_qty) && wholesalePaisa > 0 && wholesalePaisa < retailPaisa;
+    const unitPaisa = eligibleWholesale ? wholesalePaisa : Number(row.price_paisa) > 0 ? Number(row.price_paisa) : retailPaisa;
+    return { key: `saved-${row.product_id}-${row.variant_id || 0}`, product_id: Number(row.product_id), variant_id: row.variant_id == null ? null : Number(row.variant_id), sku: row.variant_sku || row.sku, name: locale === 'en' ? row.name_en || row.name_bn : row.name_bn || row.name_en, slug: row.slug, image: row.image_url, regular_price: retailPaisa / 100, wholesale_price: wholesalePaisa / 100, wholesale_min_qty: Number(row.wholesale_min_qty || 0), price: unitPaisa / 100, qty, size: row.size_label || '', color: row.color_label || '' };
+  });
+}
+async function replaceCart(customerId, sessionCart) {
+  const normalized = normalizeCartLines(sessionCart);
+  await withTransaction(async (tx) => {
+    await tx.queryOne('SELECT `id` FROM `customers` WHERE `id`=? FOR UPDATE', [customerId]);
+    await tx.execute('DELETE FROM `customer_cart_items` WHERE `customer_id`=?', [customerId]);
+    for (const item of normalized) {
+      const product = await tx.queryOne('SELECT `id` FROM `products` WHERE `id`=? AND `status`=1 AND `is_archived`=0 LIMIT 1', [item.productId]);
+      if (!product) continue;
+      if (item.variantId) {
+        const variant = await tx.queryOne('SELECT `id` FROM `product_variants` WHERE `id`=? AND `product_id`=? AND `status`=1 LIMIT 1', [item.variantId, item.productId]);
+        if (!variant) continue;
+      }
+      await tx.execute('INSERT INTO `customer_cart_items` (`customer_id`,`product_id`,`variant_id`,`quantity`) VALUES (?,?,?,?)', [customerId, item.productId, item.variantId, item.quantity]);
+    }
+  });
+}
+async function clearCart(customerId) {
+  await mysqlClient().execute('DELETE FROM `customer_cart_items` WHERE `customer_id`=?', [customerId]);
+}
+module.exports = { normalizeBdPhone, validatePassword, registerCustomer, authenticateCustomer, listAddresses, saveAddress, deleteAddress, mergeCart, listCart, replaceCart, clearCart };

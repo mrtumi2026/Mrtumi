@@ -9,6 +9,7 @@ const phase08Repo = require('../repositories/phase08Repository');
 const { asyncHandler } = require('../utils/asyncHandler');
 const { createRateLimiter } = require('../middleware/rateLimit');
 const storefrontRepo = require('../repositories/storefrontRepository');
+const customerRepo = require('../repositories/customerRepository');
 
 const router = express.Router();
 
@@ -97,6 +98,16 @@ function wantsJson(req) {
   );
 }
 
+async function refreshCustomerCart(req) {
+  if (storefrontRepo.isMysqlMode() && req.customerUser?.id) {
+    req.session.cart = await customerRepo.listCart(req.customerUser.id, req.locale);
+  }
+}
+async function persistCustomerCart(req) {
+  if (storefrontRepo.isMysqlMode() && req.customerUser?.id) {
+    await customerRepo.replaceCart(req.customerUser.id, req.session.cart || []);
+  }
+}
 function computeCartTotals(req) {
   if (!Array.isArray(req.session.cart)) req.session.cart = [];
   const cart = req.session.cart;
@@ -446,15 +457,17 @@ router.get(
 );
 
 // ─── Dedicated Shopping Cart Page (/cart) ───
-router.get('/cart', (req, res) => {
+router.get('/cart', asyncHandler(async (req, res) => {
+  await refreshCustomerCart(req);
   const state = computeCartTotals(req);
   res.render('store/cart', state);
-});
+}));
 
 // ─── Cart Entry Endpoints (Product Lookup Backed by MySQL-First Repository) ───
 router.post(
   '/cart/add',
   asyncHandler(async (req, res) => {
+    await refreshCustomerCart(req);
     const t = res.locals.t;
     const { product_id, variant_id, qty, size, color, buy_now } = req.body;
     const prod = await storefrontRepo.findProductForCart(product_id, { locale: req.locale });
@@ -548,6 +561,7 @@ router.post(
       });
     }
 
+    await persistCustomerCart(req);
     const state = computeCartTotals(req);
     const isBuyNow = String(buy_now || '') === '1' || buy_now === true;
     const addedMsg = t('store.addedToCartMsg', { name: prod.name });
@@ -573,6 +587,7 @@ router.post(
 router.post(
   '/cart/update',
   asyncHandler(async (req, res) => {
+    await refreshCustomerCart(req);
     const t = res.locals.t;
     const { key, qty } = req.body;
     if (Array.isArray(req.session.cart)) {
@@ -602,6 +617,7 @@ router.post(
       }
     }
 
+    await persistCustomerCart(req);
     const state = computeCartTotals(req);
     if (wantsJson(req)) {
       return res.json({
@@ -615,12 +631,14 @@ router.post(
   })
 );
 
-router.post('/cart/remove', (req, res) => {
+router.post('/cart/remove', asyncHandler(async (req, res) => {
+  await refreshCustomerCart(req);
   const t = res.locals.t;
   const { key } = req.body;
   if (Array.isArray(req.session.cart)) {
     req.session.cart = req.session.cart.filter((i) => i.key !== key);
   }
+  await persistCustomerCart(req);
   const state = computeCartTotals(req);
   if (wantsJson(req)) {
     return res.json({
@@ -631,12 +649,14 @@ router.post('/cart/remove', (req, res) => {
     });
   }
   return res.redirect(req.get('Referrer') || '/customer/checkout');
-});
+}));
 
-router.post('/cart/clear', (req, res) => {
+router.post('/cart/clear', asyncHandler(async (req, res) => {
+  await refreshCustomerCart(req);
   const t = res.locals.t;
   req.session.cart = [];
   delete req.session.appliedCoupon;
+  await persistCustomerCart(req);
   if (wantsJson(req)) {
     return res.json({
       success: true,
@@ -649,15 +669,16 @@ router.post('/cart/clear', (req, res) => {
   }
   req.flash('success', t('store.clearedCartMsg'));
   return res.redirect('/cart');
-});
+}));
 
-router.get('/cart/json', (req, res) => {
+router.get('/cart/json', asyncHandler(async (req, res) => {
+  await refreshCustomerCart(req);
   const state = computeCartTotals(req);
   res.json({
     ...state,
     sessionToken: req.sessionID,
   });
-});
+}));
 
 // ============================================================================
 // DEFERRED CHECKOUT, ORDER & LANDING PAGE ROUTES (SCHEDULED PHASES 07, 08, 15)
@@ -889,6 +910,7 @@ router.post('/checkout/withdraw-recovery-consent', requireCsrf, asyncHandler(asy
 // ─── Customer Checkout Page ───
 router.get('/customer/checkout', asyncHandler(async (req, res) => {
   if (storefrontRepo.isMysqlMode()) {
+    await refreshCustomerCart(req);
     const source = Array.isArray(req.session.cart) ? req.session.cart : [];
     const quote = source.length ? await checkoutRepo.quoteCart(source, { locale: req.locale }) : { items: [], subtotalPaisa: 0, count: 0 };
     const sourceKeys = new Map(source.map((item) => [`${Number(item.product_id ?? item.productId ?? item.id)}:${Number(item.variant_id ?? item.variantId ?? 0)}:${String(item.size||'')}:${String(item.color||'')}`, item.key]));
@@ -931,7 +953,7 @@ router.post('/customer/checkout', requireCsrf, asyncHandler(async (req, res) => 
       delivery_location_id: req.body.delivery_location_id, payment_method: req.body.payment_method,
       note: req.body.note, coupon_code: matches(replayKey) ? String(req.body.coupon_code || '') : (req.session.appliedCoupon?.code || ''),
     }, { locale: req.locale, sessionCustomer: req.customerUser || null, ip: req.ip, requestKey: expected, cart: sourceCart, incompleteOrderId, sessionSid: req.sessionID });
-    if (!isReplay) { req.session.checkoutLastCart = JSON.parse(JSON.stringify(sourceCart)); req.session.checkoutLastRequestKey = expected; req.session.checkoutLastRecoveryId = incompleteOrderId; delete req.session.incompleteCheckoutId; req.session.cart = []; delete req.session.appliedCoupon; }
+    if (!isReplay) { req.session.checkoutLastCart = JSON.parse(JSON.stringify(sourceCart)); req.session.checkoutLastRequestKey = expected; req.session.checkoutLastRecoveryId = incompleteOrderId; delete req.session.incompleteCheckoutId; req.session.cart = []; delete req.session.appliedCoupon; await persistCustomerCart(req); }
     return res.redirect(`/order-success/${encodeURIComponent(result.invoiceNo)}`);
   }
   const {

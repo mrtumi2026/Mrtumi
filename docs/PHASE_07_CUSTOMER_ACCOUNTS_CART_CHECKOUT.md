@@ -1,6 +1,6 @@
 # PHASE 07 — CUSTOMER ACCOUNTS, CART & CHECKOUT
 
-**Status: `IN PROGRESS`.** Customer account/address/cart-merge work remains an initial slice. A canonical `DB_CLIENT=mysql` checkout path has now been added, but live MySQL CI for this branch is pending and persistent-cart sync, approved privacy/legal copy, account recovery and payment/OTP integrations remain incomplete.
+**Status: `IN PROGRESS`.** Customer account/address/cart-merge and canonical `DB_CLIENT=mysql` checkout paths exist. Persistent cart load/replace/clear, registration/login guest-cart merge, authenticated cart mutation sync, checkout refresh, and post-order clear have now been implemented with MySQL repository assertions. The latest verified baseline CI (`40478094391`, SHA `af14df227b1d7808bbb8c3e51bb8bbddfa024621`) predates this cart change; the new MySQL assertions and routes still require exact-SHA CI. Approved privacy/legal copy, account recovery, and payment/OTP integrations remain incomplete.
 
 ## Implemented vertical slices
 
@@ -21,6 +21,6 @@
 
 ## Verification and boundaries
 
-- The new live-MySQL HTTP test covers server-side prices, CSRF, configured COD/delivery, replay/mismatch, inventory reservation, unpaid/COD accounting, no payment insertion and success-page privacy; CI evidence is pending for this change.
+- The live-MySQL HTTP test covers server-side prices, CSRF, configured COD/delivery, replay/mismatch, inventory reservation, unpaid/COD accounting, no payment insertion and success-page privacy. Baseline CI run `40478094391` passed on SHA `af14df227b1d7808bbb8c3e51bb8bbddfa024621`; this branch's newer persistent-cart change has not yet been exercised by CI.
 - Local SQLite/unit tests are regression coverage only, not evidence that the canonical MySQL path passed.
 - No provider credentials, SMS, payment, shipping, production migration or deployment were used.
