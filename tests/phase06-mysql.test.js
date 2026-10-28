@@ -60,22 +60,27 @@ describe('Phase 06 — Live MySQL 8.0 schema, product, stock ledger & purchase r
     assert.equal(replay.replayed,true);
     assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM purchase_receipts WHERE idempotency_key=?',['p06-mysql-receipt-1'])).n),1);
     await assert.rejects(() => repo.receivePurchase(purchaseId,{idempotency_key:'p06-mysql-receipt-1',lines:[{purchase_item_id:purchaseItemId,received_qty:2}]}),(err)=>err.code==='IDEMPOTENCY_PAYLOAD_MISMATCH');
-    const ledgerBefore=Number((await db.queryOne("SELECT COUNT(*) AS n FROM stock_ledger WHERE product_id=? AND movement_type='purchase_receipt'",[productId])).n);
-    const receiptCountBefore=Number((await db.queryOne('SELECT COUNT(*) AS n FROM purchase_receipts WHERE purchase_id=?',[purchaseId])).n);
-    const auditCountBefore=Number((await db.queryOne("SELECT COUNT(*) AS n FROM audit_logs WHERE action='purchase.receive' AND entity_id=?",[String(purchaseId)])).n);
+    const category=await db.queryOne("SELECT id FROM categories WHERE slug='phase06-mysql-test'");
+    const rollbackProduct=await repo.createProduct({sku:'P06-MYSQL-AUDIT-ROLLBACK',name_bn:'রোলব্যাক পণ্য',name_en:'Receipt Rollback Product',slug:'phase06-mysql-audit-rollback-product',category_id:Number(category.id),regular_price_bdt:'20.00',sale_price_bdt:'20.00',cost_price_bdt:'5.00',opening_stock:0,low_stock_threshold:0});
+    const rollbackPurchase=await repo.createPurchase({supplier_id:supplierId,lines:[{product_id:rollbackProduct.id,ordered_qty:2,unit_cost_bdt:'5.00'}]});
+    const rollbackItem=await db.queryOne('SELECT id FROM purchase_items WHERE purchase_id=?',[rollbackPurchase.id]);
+    const rollbackKey='p06-mysql-audit-failure-receipt';
+    const ledgerBefore=Number((await db.queryOne("SELECT COUNT(*) AS n FROM stock_ledger WHERE product_id=? AND movement_type='purchase_receipt'",[rollbackProduct.id])).n);
+    const receiptCountBefore=Number((await db.queryOne('SELECT COUNT(*) AS n FROM purchase_receipts WHERE purchase_id=?',[rollbackPurchase.id])).n);
+    const auditCountBefore=Number((await db.queryOne("SELECT COUNT(*) AS n FROM audit_logs WHERE action='purchase.receive' AND entity_id=?",[String(rollbackPurchase.id)])).n);
     await db.execute("CREATE TRIGGER p06_fail_purchase_receipt_audit BEFORE INSERT ON audit_logs FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture receipt audit failure'");
-    try { await assert.rejects(()=>repo.receivePurchase(purchaseId,{idempotency_key:'p06-mysql-receipt-2',lines:[{purchase_item_id:purchaseItemId,received_qty:2}]})); }
+    try { await assert.rejects(()=>repo.receivePurchase(rollbackPurchase.id,{idempotency_key:rollbackKey,lines:[{purchase_item_id:Number(rollbackItem.id),received_qty:2}]})); }
     finally { await db.execute('DROP TRIGGER IF EXISTS p06_fail_purchase_receipt_audit'); }
-    assert.equal(Number((await db.queryOne('SELECT stock_on_hand FROM products WHERE id=?',[productId])).stock_on_hand),7,'audit insert failure rolls receipt stock back');
-    assert.equal(Number((await db.queryOne('SELECT received_qty FROM purchase_items WHERE id=?',[purchaseItemId])).received_qty),3,'audit insert failure rolls received units back');
-    assert.equal(Number((await db.queryOne("SELECT COUNT(*) AS n FROM stock_ledger WHERE product_id=? AND movement_type='purchase_receipt'",[productId])).n),ledgerBefore,'audit insert failure rolls stock ledger back');
-    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM purchase_receipts WHERE purchase_id=?',[purchaseId])).n),receiptCountBefore,'audit insert failure rolls receipt history back');
-    assert.equal(Number((await db.queryOne("SELECT COUNT(*) AS n FROM audit_logs WHERE action='purchase.receive' AND entity_id=?",[String(purchaseId)])).n),auditCountBefore,'failed receipt leaves no audit entry');
-    const completed=await repo.receivePurchase(purchaseId,{idempotency_key:'p06-mysql-receipt-2',lines:[{purchase_item_id:purchaseItemId,received_qty:2}]});
+    assert.equal(Number((await db.queryOne('SELECT stock_on_hand FROM products WHERE id=?',[rollbackProduct.id])).stock_on_hand),0,'audit insert failure rolls receipt stock back');
+    assert.equal(Number((await db.queryOne('SELECT received_qty FROM purchase_items WHERE id=?',[rollbackItem.id])).received_qty),0,'audit insert failure rolls received units back');
+    assert.equal(Number((await db.queryOne("SELECT COUNT(*) AS n FROM stock_ledger WHERE product_id=? AND movement_type='purchase_receipt'",[rollbackProduct.id])).n),ledgerBefore,'audit insert failure rolls stock ledger back');
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM purchase_receipts WHERE purchase_id=?',[rollbackPurchase.id])).n),receiptCountBefore,'audit insert failure rolls receipt history back');
+    assert.equal(Number((await db.queryOne("SELECT COUNT(*) AS n FROM audit_logs WHERE action='purchase.receive' AND entity_id=?",[String(rollbackPurchase.id)])).n),auditCountBefore,'failed receipt leaves no audit entry');
+    const completed=await repo.receivePurchase(rollbackPurchase.id,{idempotency_key:rollbackKey,lines:[{purchase_item_id:Number(rollbackItem.id),received_qty:2}]});
     assert.equal(completed.status,'received');
-    const completedReplay=await repo.receivePurchase(purchaseId,{idempotency_key:'p06-mysql-receipt-2',lines:[{purchase_item_id:purchaseItemId,received_qty:2}]});
+    const completedReplay=await repo.receivePurchase(rollbackPurchase.id,{idempotency_key:rollbackKey,lines:[{purchase_item_id:Number(rollbackItem.id),received_qty:2}]});
     assert.equal(completedReplay.replayed,true,'completed receipt remains idempotent after terminal status');
-    assert.equal(Number((await db.queryOne('SELECT stock_on_hand FROM products WHERE id=?',[productId])).stock_on_hand),9,'final receipt replay does not double stock');
+    assert.equal(Number((await db.queryOne('SELECT stock_on_hand FROM products WHERE id=?',[rollbackProduct.id])).stock_on_hand),2,'final receipt replay does not double stock');
   });
 
   test('Phase 07 customer registration, authentication, address ownership and cart merge use MySQL', async () => {
