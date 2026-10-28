@@ -579,7 +579,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     assert.doesNotMatch(JSON.stringify(history.json),/balance_due|payable|settlement|paid_amount|total_cost/,'history response excludes financial settlement data');
     const historyHtml=await request(historyPath,{accept:'text/html'});
     assert.equal(historyHtml.status,200,historyHtml.text.slice(0,250));
-    assert.match(historyHtml.text,/Read-only purchase, line and receipt history/);
+    assert.match(historyHtml.text,/ক্রয়, পণ্য-সারি ও রিসিপ্টের ইতিহাস/,'Bangla is the default localized history view');
     assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM stock_ledger')).n),historyLedgerBefore,'history GET cannot mutate the stock ledger');
     assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM audit_logs')).n),historyAuditBefore,'history GET cannot mutate audit records');
     const balanceBefore=Number((await db.queryOne('SELECT balance_due_paisa FROM suppliers WHERE id=?',[supplierId])).balance_due_paisa);
