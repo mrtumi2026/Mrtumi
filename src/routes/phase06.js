@@ -162,6 +162,7 @@ router.get('/admin/phase06/suppliers/:id/purchases', asyncRoute(async (req,res) 
   const history=await repo.getSupplierPurchaseHistory(req.params.id,req.query.page||1);
   res.setHeader('Cache-Control','no-store');
   if(wantsJson(req))return res.json({success:true,...history});
+  for(const purchase of history.purchases)purchase.receiptFormKey=crypto.randomBytes(24).toString('hex');
   return res.render('admin/phase06-supplier-purchases',{...history,csrfToken:req.csrfToken(),locale:req.locale,
     pageTitle:req.locale==='en'?`Purchase history — ${history.supplier.name}`:`ক্রয় ইতিহাস — ${history.supplier.name}`});
 }));
@@ -191,7 +192,9 @@ router.post('/admin/phase06/purchases/:id/receive', requireCsrf, asyncRoute(asyn
   const receipt = await repo.receivePurchase(req.params.id, req.body, actor(req));
   if (wantsJson(req)) return res.json({ success:true, receipt });
   req.flash('success', req.locale === 'en' ? `Receipt recorded (${receipt.totalQty} units).` : `রিসিপ্ট রেকর্ড হয়েছে (${receipt.totalQty} ইউনিট)।`);
-  return res.redirect('/admin/phase06#purchases');
+  const requestedPage=String(req.body.history_page||'1');
+  const historyPage=/^[1-9]\d{0,5}$/.test(requestedPage)?Number(requestedPage):1;
+  return res.redirect(`/admin/phase06/suppliers/${receipt.supplierId}/purchases?page=${historyPage}`);
 }));
 
 router.get('/admin/phase06/inventory.json', asyncRoute(async (_req,res) => {

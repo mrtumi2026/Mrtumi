@@ -60,6 +60,22 @@ describe('Phase 06 — Live MySQL 8.0 schema, product, stock ledger & purchase r
     assert.equal(replay.replayed,true);
     assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM purchase_receipts WHERE idempotency_key=?',['p06-mysql-receipt-1'])).n),1);
     await assert.rejects(() => repo.receivePurchase(purchaseId,{idempotency_key:'p06-mysql-receipt-1',lines:[{purchase_item_id:purchaseItemId,received_qty:2}]}),(err)=>err.code==='IDEMPOTENCY_PAYLOAD_MISMATCH');
+    const ledgerBefore=Number((await db.queryOne("SELECT COUNT(*) AS n FROM stock_ledger WHERE product_id=? AND movement_type='purchase_receipt'",[productId])).n);
+    const receiptCountBefore=Number((await db.queryOne('SELECT COUNT(*) AS n FROM purchase_receipts WHERE purchase_id=?',[purchaseId])).n);
+    const auditCountBefore=Number((await db.queryOne("SELECT COUNT(*) AS n FROM audit_logs WHERE action='purchase.receive' AND entity_id=?",[String(purchaseId)])).n);
+    await db.execute("CREATE TRIGGER p06_fail_purchase_receipt_audit BEFORE INSERT ON audit_logs FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture receipt audit failure'");
+    try { await assert.rejects(()=>repo.receivePurchase(purchaseId,{idempotency_key:'p06-mysql-receipt-2',lines:[{purchase_item_id:purchaseItemId,received_qty:2}]})); }
+    finally { await db.execute('DROP TRIGGER IF EXISTS p06_fail_purchase_receipt_audit'); }
+    assert.equal(Number((await db.queryOne('SELECT stock_on_hand FROM products WHERE id=?',[productId])).stock_on_hand),7,'audit insert failure rolls receipt stock back');
+    assert.equal(Number((await db.queryOne('SELECT received_qty FROM purchase_items WHERE id=?',[purchaseItemId])).received_qty),3,'audit insert failure rolls received units back');
+    assert.equal(Number((await db.queryOne("SELECT COUNT(*) AS n FROM stock_ledger WHERE product_id=? AND movement_type='purchase_receipt'",[productId])).n),ledgerBefore,'audit insert failure rolls stock ledger back');
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM purchase_receipts WHERE purchase_id=?',[purchaseId])).n),receiptCountBefore,'audit insert failure rolls receipt history back');
+    assert.equal(Number((await db.queryOne("SELECT COUNT(*) AS n FROM audit_logs WHERE action='purchase.receive' AND entity_id=?",[String(purchaseId)])).n),auditCountBefore,'failed receipt leaves no audit entry');
+    const completed=await repo.receivePurchase(purchaseId,{idempotency_key:'p06-mysql-receipt-2',lines:[{purchase_item_id:purchaseItemId,received_qty:2}]});
+    assert.equal(completed.status,'received');
+    const completedReplay=await repo.receivePurchase(purchaseId,{idempotency_key:'p06-mysql-receipt-2',lines:[{purchase_item_id:purchaseItemId,received_qty:2}]});
+    assert.equal(completedReplay.replayed,true,'completed receipt remains idempotent after terminal status');
+    assert.equal(Number((await db.queryOne('SELECT stock_on_hand FROM products WHERE id=?',[productId])).stock_on_hand),9,'final receipt replay does not double stock');
   });
 
   test('Phase 07 customer registration, authentication, address ownership and cart merge use MySQL', async () => {

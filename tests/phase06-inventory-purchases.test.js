@@ -258,10 +258,25 @@ describe('Phase 06 — Product, Inventory Ledger, Supplier & Purchase Receiving'
     const replay = await repo.receivePurchase(po.id, { idempotency_key: 'p06-receipt-part-1', lines: [{ purchase_item_id: item.id, received_qty: 3 }] }, { id: 7 });
     assert.equal(replay.replayed, true);
     assert.equal(db.get('SELECT stock FROM products WHERE id=?', product.id).stock, 5, 'duplicate receipt must not double stock');
+    assert.equal(Number(db.get("SELECT COUNT(*) AS n FROM audit_logs WHERE action='purchase.receive' AND entity_id=?",String(po.id)).n),2,'accepted receipt and replay each leave an audit record');
     await assert.rejects(() => repo.receivePurchase(po.id, { idempotency_key: 'p06-receipt-part-1', lines: [{ purchase_item_id: item.id, received_qty: 2 }] }), (err) => err.code === 'IDEMPOTENCY_PAYLOAD_MISMATCH');
+    const ledgerBeforeFailedReceipt=Number(db.get('SELECT COUNT(*) AS n FROM stock_ledger WHERE product_id=?',product.id).n);
+    const receiptRowsBeforeFailedReceipt=Number(db.get('SELECT COUNT(*) AS n FROM purchase_receipts WHERE purchase_id=?',po.id).n);
+    const auditRowsBeforeFailedReceipt=Number(db.get("SELECT COUNT(*) AS n FROM audit_logs WHERE action='purchase.receive' AND entity_id=?",String(po.id)).n);
+    db.rawDb.exec("CREATE TRIGGER p06_fail_purchase_receipt_audit BEFORE INSERT ON audit_logs WHEN NEW.action='purchase.receive' BEGIN SELECT RAISE(ABORT,'fixture receipt audit failure'); END");
+    try { await assert.rejects(()=>repo.receivePurchase(po.id,{idempotency_key:'p06-receipt-part-2',lines:[{purchase_item_id:item.id,received_qty:2}]},{id:7})); }
+    finally { db.rawDb.exec('DROP TRIGGER IF EXISTS p06_fail_purchase_receipt_audit'); }
+    assert.equal(Number(db.get('SELECT stock FROM products WHERE id=?',product.id).stock),5,'audit failure rolls receipt stock back');
+    assert.equal(Number(db.get('SELECT received_qty FROM purchase_items WHERE id=?',item.id).received_qty),3,'audit failure rolls received quantity back');
+    assert.equal(Number(db.get('SELECT COUNT(*) AS n FROM stock_ledger WHERE product_id=?',product.id).n),ledgerBeforeFailedReceipt,'audit failure rolls receipt ledger back');
+    assert.equal(Number(db.get('SELECT COUNT(*) AS n FROM purchase_receipts WHERE purchase_id=?',po.id).n),receiptRowsBeforeFailedReceipt,'audit failure rolls receipt record back');
+    assert.equal(Number(db.get("SELECT COUNT(*) AS n FROM audit_logs WHERE action='purchase.receive' AND entity_id=?",String(po.id)).n),auditRowsBeforeFailedReceipt,'failed receipt does not leave an audit row');
     const final = await repo.receivePurchase(po.id, { idempotency_key: 'p06-receipt-part-2', lines: [{ purchase_item_id: item.id, received_qty: 2 }] }, { id: 7 });
     assert.equal(final.status, 'received');
     assert.equal(db.get('SELECT stock FROM products WHERE id=?', product.id).stock, 7);
+    const finalReplay=await repo.receivePurchase(po.id,{idempotency_key:'p06-receipt-part-2',lines:[{purchase_item_id:item.id,received_qty:2}]},{id:7});
+    assert.equal(finalReplay.replayed,true,'a final receipt replays after the PO reaches received state');
+    assert.equal(db.get('SELECT stock FROM products WHERE id=?',product.id).stock,7,'final receipt replay cannot add stock again');
 
     const stockBefore=Number(db.get('SELECT stock FROM products WHERE id=?',product.id).stock);
     const ledgerBefore=Number(db.get('SELECT COUNT(*) AS n FROM stock_ledger WHERE product_id=?',product.id).n);

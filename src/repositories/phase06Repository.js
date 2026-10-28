@@ -823,12 +823,14 @@ async function receivePurchase(purchaseIdInput, input, actor = {}) {
     const result = await withTransaction(async (tx) => {
       const po = await tx.queryOne('SELECT * FROM purchases WHERE id=? FOR UPDATE',[purchaseId]);
       if (!po) throw new NotFoundError('Purchase order not found.');
-      if (['cancelled','received'].includes(po.receive_status)) throw new AppError('PURCHASE_STATE_INVALID','Purchase is cancelled or fully received.',409);
       const exists = await tx.queryOne('SELECT id,request_hash FROM purchase_receipts WHERE idempotency_key=? FOR UPDATE',[idem]);
       if (exists) {
         if (exists.request_hash !== requestHash) throw new AppError('IDEMPOTENCY_PAYLOAD_MISMATCH','Receipt idempotency key was reused with different receipt lines.',409);
-        return {id:exists.id,replayed:true};
+        const replayResult={id:exists.id,supplierId:Number(po.supplier_id),replayed:true};
+        await recordAuditLog({actorType:'admin',actorId:actor.id||null,action:'purchase.receive',entityType:'purchase',entityId:purchaseId,afterState:replayResult,ipAddress:actor.ip||'',userAgent:actor.userAgent||''},tx);
+        return replayResult;
       }
+      if (['cancelled','received'].includes(po.receive_status)) throw new AppError('PURCHASE_STATE_INVALID','Purchase is cancelled or fully received.',409);
       let totalQty=0,totalValue=0;
       for (const line of received) {
         const item = await tx.queryOne('SELECT * FROM purchase_items WHERE id=? AND purchase_id=? FOR UPDATE',[line.itemId,purchaseId]);
@@ -852,21 +854,26 @@ async function receivePurchase(purchaseIdInput, input, actor = {}) {
       const receiptNo=`RCV-${require('crypto').randomUUID().slice(0,12).toUpperCase()}`;
       const r=await tx.execute(`INSERT INTO purchase_receipts (purchase_id,receipt_no,idempotency_key,request_hash,event_type,total_qty,total_value_paisa,note,received_by_user_id)
         VALUES (?,?,?,?,'receipt',?,?,?,?)`,[purchaseId,receiptNo,idem,requestHash,totalQty,totalValue,cleanText(input.note,255,'Receipt note'),actor.id||null]);
-      return {id:r.insertId,receiptNo,totalQty,totalValuePaisa:totalValue,status,replayed:false};
+      const result={id:r.insertId,receiptNo,totalQty,totalValuePaisa:totalValue,status,supplierId:Number(po.supplier_id),replayed:false};
+      await recordAuditLog({actorType:'admin',actorId:actor.id||null,action:'purchase.receive',entityType:'purchase',entityId:purchaseId,afterState:result,ipAddress:actor.ip||'',userAgent:actor.userAgent||''},tx);
+      return result;
     },{pool});
-    await recordAuditLog({actorType:'admin',actorId:actor.id||null,action:'purchase.receive',entityType:'purchase',entityId:purchaseId,afterState:result,ipAddress:actor.ip||'',userAgent:actor.userAgent||''});
     return result;
   }
+  const auditReceipt=(result)=>sqlite.run(`INSERT INTO audit_logs (actor_type,actor_id,action,entity_type,entity_id,after_json,ip_address,user_agent)
+    VALUES ('admin',?,'purchase.receive','purchase',?,?,?,?)`,actor.id||null,String(purchaseId),JSON.stringify(result),String(actor.ip||'').slice(0,64),String(actor.userAgent||'').slice(0,255));
   sqlite.rawDb.exec('BEGIN IMMEDIATE');
   try {
     const po=sqlite.get('SELECT * FROM purchases WHERE id=?',purchaseId);
     if(!po) throw new NotFoundError('Purchase order not found.');
-    if(['cancelled','received'].includes(po.status)) throw new AppError('PURCHASE_STATE_INVALID','Purchase is cancelled or fully received.',409);
     const prior=sqlite.get('SELECT * FROM purchase_receipts WHERE idempotency_key=?',idem);
     if(prior){
       if(prior.request_hash!==requestHash) throw new AppError('IDEMPOTENCY_PAYLOAD_MISMATCH','Receipt idempotency key was reused with different receipt lines.',409);
-      sqlite.rawDb.exec('COMMIT');return {id:prior.id,replayed:true};
+      const replayResult={id:prior.id,supplierId:Number(po.supplier_id),replayed:true};
+      auditReceipt(replayResult);
+      sqlite.rawDb.exec('COMMIT');return replayResult;
     }
+    if(['cancelled','received'].includes(po.status)) throw new AppError('PURCHASE_STATE_INVALID','Purchase is cancelled or fully received.',409);
     let totalQty=0,totalValue=0;
     for(const line of received){
       const item=sqlite.get('SELECT * FROM purchase_items WHERE id=? AND purchase_id=?',line.itemId,purchaseId);
@@ -889,8 +896,10 @@ async function receivePurchase(purchaseIdInput, input, actor = {}) {
     const receiptNo=`RCV-${require('crypto').randomUUID().slice(0,12).toUpperCase()}`;
     const r=sqlite.run(`INSERT INTO purchase_receipts (purchase_id,receipt_no,idempotency_key,request_hash,event_type,total_qty,total_value,note,received_by_user_id)
       VALUES (?,?,?,?,'receipt',?,?,?,?)`,purchaseId,receiptNo,idem,requestHash,totalQty,totalValue,cleanText(input.note,255,'Receipt note'),actor.id||null);
+    const result={id:Number(r.lastInsertRowid),receiptNo,totalQty,totalValuePaisa:Math.round(totalValue*100),status,supplierId:Number(po.supplier_id),replayed:false};
+    auditReceipt(result);
     sqlite.rawDb.exec('COMMIT');
-    return {id:Number(r.lastInsertRowid),receiptNo,totalQty,totalValuePaisa:Math.round(totalValue*100),status,replayed:false};
+    return result;
   }catch(err){try{sqlite.rawDb.exec('ROLLBACK');}catch(_e){}throw err;}
 }
 
