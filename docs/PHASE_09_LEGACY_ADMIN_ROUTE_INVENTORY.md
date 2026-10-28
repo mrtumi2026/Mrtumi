@@ -4,6 +4,8 @@ Generated from route registrations in `src/routes/{adminAuth,adminAccess,adminDa
 
 **Inventory:** 252 unique active method/path endpoints from 261 route registrations (9 duplicate method/path registrations, resolved by actual mount order); 139 state-changing endpoints; GET 113, POST 135, PUT 2, PATCH 2. 0 unmapped. The HTTP integration test sends each non-exempt listed method/path as a logged-in zero-grant user and requires 403; login/root/self-logout endpoints are exempt by design. A unit policy matrix tests allow/deny for each mapped entry. Representative full-stack allowed behavior is tested for dashboard, access lifecycle, blog content CRUD, polling, popup, assistant and audit. It does not claim successful business-operation coverage for every legacy handler.
 
+**Hosting scope note (2026-10-28):** the cPanel compatibility assessment and production startup/configuration guards do not add or alter admin routes. This route inventory was regenerated from the current registrations; Phase 09 remains incomplete and route-by-route MySQL migration continues separately in the master execution queue.
+
 ## Enforcement and limits
 
 - Phase 08 reservation expiry is exposed only as a one-shot application/CLI runner (`npm run reservations:expire`), not as an HTTP endpoint; apply mode requires explicit `--apply` and remains a separately gated operational action.

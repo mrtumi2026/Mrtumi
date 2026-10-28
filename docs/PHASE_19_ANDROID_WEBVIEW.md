@@ -2,6 +2,8 @@
 
 **Status: `NOT STARTED` / environment-blocked for build verification.** The acceptance scope is defined in `MASTER_CHECKLIST.md` (`P19-01`–`P19-03`), but no Android project, Kotlin/Java source, Gradle build, or Android tests exist in this repository. No Java runtime, Gradle executable, `ANDROID_HOME`, or Android SDK is installed in the current execution environment.
 
+**Scope clarification (2026-10-28):** cPanel/Node/MySQL hosting compatibility is a Phase 20 deployment-preparation gate (`P20-03`), not a replacement for canonical Phase 19 Android acceptance. This assessment does not change Phase 19 status.
+
 ## Acceptance scope (from master checklist)
 
 - **P19-01:** Customer Android WebView project with safe deep links/payment redirects and offline UI.

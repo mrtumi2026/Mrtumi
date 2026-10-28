@@ -26,14 +26,17 @@ A static scan of `/home/user/Mrtumi/src/` identified **50 existing SQLite tables
 
 ---
 
-## 1. Schema Mapping & Version-Portable MySQL DDL
+## 1. Schema Mapping & Verified Dialect Scope
 
-### 1.1 MySQL Version Portability Rules (`MySQL 5.7+` / `MySQL 8.0+` / `MariaDB 10.3+`)
-Because BestWebHostBD's exact MySQL/MariaDB server version is currently `UNVERIFIED`:
-1. Every table explicitly declares `ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`.
-2. Indexed `VARCHAR` columns are capped at **`VARCHAR(191)`** where unique/composite indexes could ever encounter older `InnoDB` 767-byte key-prefix configurations, or `VARCHAR(255)` on standard modern `innodb_large_prefix=ON` setups (using `191` on `email`, `slug`, `code`, `invoice_id`, `sid`, `setting_key` guarantees 100% compatibility on **every** MySQL 5.7/8.0 and MariaDB 10.x installation!).
-3. `LONGTEXT` is used for JSON payloads (`permissions_json`, `gallery_json`, `before_json`, `after_json`) with strict server-side `JSON.parse`/`JSON.stringify` validation, avoiding MySQL 5.7 vs MariaDB `JSON` column type discrepancies.
-4. No MySQL-8.0.13+ expression defaults or MySQL-8.0.16+ `CHECK` constraints are required for correctness; invariants are enforced by server validators + transactions.
+### 1.1 Current database compatibility evidence
+The application production contract is MySQL/InnoDB. **MySQL 8.0 is the only database dialect currently exercised by the real-MySQL CI workflow.** The exact owner hosting account/server version is unknown. The choices below may reduce dialect-specific coupling, but do not constitute certification for MySQL 5.7 or any MariaDB release.
+
+1. The migration set declares InnoDB and `utf8mb4`/`utf8mb4_unicode_ci`; verify actual engine, charset/collation, SQL mode and constraints on the target dialect.
+2. Indexed `VARCHAR` lengths are chosen to constrain index sizes, but do not guarantee compatibility with every server/configuration. Run the complete migration lifecycle on the exact proposed MySQL/MariaDB version.
+3. `LONGTEXT` JSON payloads with application `JSON.parse`/`JSON.stringify` validation avoid relying on a native JSON column in selected areas; this alone does not establish dialect compatibility.
+4. Server-side validation and transactions enforce application invariants. Differences in defaults, constraints, locking and SQL syntax still require exact-version migration and integration tests.
+
+If a host offers MariaDB or MySQL 5.7 rather than the CI-tested MySQL 8.0, do not describe it as supported based on this plan. Record its exact server version, run up/status/down/reapply and all relevant application tests against it on disposable data, review failures and SQL-mode differences, and obtain acceptance before release. See `DEPLOYMENT.md` and `docs/CPANEL_COMPATIBILITY.md`.
 
 ### 1.2 Complete Inventory Mapping (50 Existing Tables + Phase 03–18 Mandatory Additions)
 
@@ -265,35 +268,19 @@ Every order placement (Storefront, Landing Page, POS, Reseller, Wholesale) will 
 
 ---
 
-## 7. Backup & Rollback Procedures
+## 7. Backup & Rollback Gates (No Production Procedure Authorized)
 
-### 7.1 Pre-Migration / Pre-Release Backup
-```bash
-mkdir -p ~/mrtumi_storage/backups
-TIMESTAMP=$(date -u +"%Y%m%dT%H%M%SZ")
-mysqldump --single-transaction --quick --routines --triggers \
-  --default-character-set=utf8mb4 \
-  -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" \
-  | gzip -9 > "~/mrtumi_storage/backups/mysql_${DB_NAME}_${TIMESTAMP}.sql.gz"
-```
+No backup command or restore destination is verified for the target host. Do not copy credentials onto command lines (`-pPASSWORD` can expose them in process listings), run a destructive down migration, or restore over a database with newer writes. `scripts/backup.sh` and `scripts/backup-mysql.sh` are absent. Define secure credential delivery, encrypted/off-host storage, upload/config coverage, owner-approved retention/RPO/RTO, and a recovery operator before implementation. Rehearse only against an isolated disposable database and storage path, then document checksum and restore validation. See the preparation-only `DEPLOYMENT.md`.
 
-### 7.2 Rollback Procedure
-1. **Single-Step Schema Rollback (if latest migration fails validation before live traffic):**
-   - Run `npm run migrate:down` to execute the paired `.down.sql` script and remove its row from `schema_migrations`.
-2. **Full Snapshot Restore (if data-transforming migration requires full revert):**
-   - Put app in maintenance mode → restore the pre-migration `.sql.gz` dump into MySQL (`gunzip < backup.sql.gz | mysql ...`) → checkout previous verified Git commit → `touch tmp/restart.txt`.
-3. **Prototype Safety:** Because `data/pholbazar.db` is never deleted in Phase 02 or Phase 03, local fallback inspection remains available until the owner explicitly retires prototype artifacts.
+A code-only rollback may redeploy a previous exact verified release only where its schema remains backward compatible and the confirmed process manager supports that operation. Any schema rollback, data restore, maintenance mode, or production write interruption requires an exact, separately approved change/incident procedure and a tested isolated rehearsal. Do not infer that `npm run migrate:down`, a shell restore pipeline or a Passenger `tmp/restart.txt` file is safe or available on the target.
 
 ---
 
-## 8. Test Database Setup Strategy (Phase 03 Onward)
+## 8. Test Database Strategy
 
-1. **GitHub Actions CI (`.github/workflows/ci.yml` in Phase 03):**
-   - Adds an official **MySQL `8.0` service container** (`--character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci`) alongside Node 22 so every push/PR runs:
-     - `migrate:up` → `migrate:down` → `migrate:up` round-trip verification
-     - Transactional stock/order/money reconciliation tests against **real MySQL `InnoDB`**.
-2. **Local Sandbox Execution (When Local MySQL Daemon Is Absent):**
-   - Because this Cloud/Arena coding sandbox does not have a local `mysqld` binary installed, Phase 03's database adapter will support running unit/integration tests against an isolated test harness while running full MySQL `InnoDB` verification in GitHub Actions CI and BestWebHostBD staging!
+1. **GitHub Actions CI:** the workflow provisions MySQL 8.0 with `utf8mb4`/`utf8mb4_unicode_ci` and runs the migration lifecycle and live-MySQL integration suites. This is the current database dialect evidence; a CI pass does not establish compatibility with a hosting provider's MariaDB or another MySQL release.
+2. **Local sandbox:** SQLite-compatible/unit tests may run locally, but any MySQL-dependent tests skipped due to no local MySQL/Docker are skips, not passes. Require exact-final-SHA MySQL 8.0 CI for changes; run the full suite against another proposed dialect separately before claiming support.
+3. **Staging:** no cPanel account or staging database has been accessed or verified. When owner-provided host facts are available, use an isolated disposable database matching the exact target version; do not use customer/production data for compatibility testing.
 
 ---
 

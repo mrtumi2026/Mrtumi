@@ -3,6 +3,9 @@
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
+const net = require('net');
+const os = require('os');
+const { spawn, spawnSync } = require('child_process');
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -13,6 +16,24 @@ process.env.SEED_DEMO_DATA = 'true';
 process.env.BOOTSTRAP_ADMIN_EMAIL = 'admin@mrtumi.test';
 
 const { buildConfig } = require('../src/config/env');
+
+function validProductionEnv(overrides = {}) {
+  return {
+    NODE_ENV: 'production',
+    DB_CLIENT: 'mysql',
+    DB_HOST: 'mysql.example.test',
+    DB_PORT: '3306',
+    DB_NAME: 'mrtumi_test',
+    DB_USER: 'mrtumi_runtime',
+    DB_PASSWORD: 'non-production-test-password',
+    APP_URL: 'https://shop.example.test',
+    SESSION_SECRET: 's'.repeat(48),
+    CSRF_SECRET: 'c'.repeat(48),
+    TRUST_PROXY: '1',
+    UPLOAD_DIR: path.join(os.tmpdir(), `mrtumi-uploads-${process.pid}`),
+    ...overrides,
+  };
+}
 
 function cleanupTestDb() {
   for (const suffix of ['', '-wal', '-shm']) {
@@ -40,6 +61,32 @@ function httpGet(baseUrl, urlPath) {
   });
 }
 
+function reserveTcpPort() {
+  return new Promise((resolve, reject) => {
+    const listener = net.createServer();
+    listener.once('error', reject);
+    listener.listen(0, '127.0.0.1', () => {
+      const { port } = listener.address();
+      listener.close((err) => (err ? reject(err) : resolve(port)));
+    });
+  });
+}
+
+async function waitForHttp(baseUrl, urlPath, child, timeoutMs = 8000) {
+  const deadline = Date.now() + timeoutMs;
+  let lastError;
+  while (Date.now() < deadline) {
+    if (child.exitCode !== null) throw new Error(`Startup process exited early (${child.exitCode}).`);
+    try {
+      return await httpGet(baseUrl, urlPath);
+    } catch (err) {
+      lastError = err;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+  throw lastError || new Error('Timed out waiting for the application startup path.');
+}
+
 test('env.js enforces Bangladesh defaults (Asia/Dhaka, BDT, bn/en) and rejects weak production secrets', () => {
   const devCfg = buildConfig({
     NODE_ENV: 'development',
@@ -64,14 +111,81 @@ test('env.js enforces Bangladesh defaults (Asia/Dhaka, BDT, bn/en) and rejects w
     /SESSION_SECRET must be set/
   );
 
-  const prodCfg = buildConfig({
-    NODE_ENV: 'production',
-    DB_CLIENT: 'mysql',
-    SESSION_SECRET: 'a'.repeat(48),
-  });
+  const prodCfg = buildConfig(validProductionEnv());
   assert.equal(prodCfg.isProduction, true);
   assert.equal(prodCfg.db.client, 'mysql');
   assert.equal(prodCfg.seedDemoData, false);
+  assert.equal(prodCfg.trustProxy, 1);
+  assert.equal(prodCfg.uploadDir, validProductionEnv().UPLOAD_DIR);
+
+  assert.throws(
+    () => buildConfig(validProductionEnv({ DB_HOST: undefined, APP_URL: 'http://localhost' })),
+    (err) => {
+      assert.match(err.message, /DB_HOST/);
+      assert.match(err.message, /APP_URL/);
+      assert.doesNotMatch(err.message, /non-production-test-password|s{48}|c{48}/);
+      return true;
+    },
+    'missing/unsafe production configuration fails without echoing values'
+  );
+
+  assert.throws(
+    () => buildConfig(validProductionEnv({ CSRF_SECRET: 's'.repeat(48) })),
+    /CSRF_SECRET \(must differ from SESSION_SECRET\)/
+  );
+
+  assert.throws(
+    () => buildConfig(validProductionEnv({ TRUST_PROXY: undefined })),
+    /TRUST_PROXY \(set to the verified proxy-hop count\)/
+  );
+
+  assert.throws(
+    () => buildConfig(validProductionEnv({ UPLOAD_DIR: path.join(__dirname, '..', 'public', 'uploads') })),
+    /UPLOAD_DIR \(must be outside the application root\)/
+  );
+
+  const startupSecret = 'startup-only-secret-do-not-print-123456';
+  const failedProductionStartup = spawnSync(process.execPath, ['--no-warnings', 'app.js'], {
+    cwd: path.join(__dirname, '..'),
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      NODE_ENV: 'production',
+      DB_CLIENT: 'mysql',
+      DB_HOST: '',
+      DB_PORT: '',
+      DB_NAME: '',
+      DB_USER: '',
+      DB_PASSWORD: '',
+      APP_URL: '',
+      SESSION_SECRET: startupSecret,
+      CSRF_SECRET: '',
+      TRUST_PROXY: '',
+      UPLOAD_DIR: '',
+    },
+  });
+  assert.notEqual(failedProductionStartup.status, 0, 'production startup must fail closed with missing config');
+  assert.match(failedProductionStartup.stderr, /PRODUCTION CONFIGURATION ERROR/);
+  assert.doesNotMatch(failedProductionStartup.stderr, new RegExp(startupSecret));
+  assert.doesNotMatch(failedProductionStartup.stderr, /SQLite/);
+
+  const directServerDbPath = path.join(os.tmpdir(), `mrtumi-direct-server-${process.pid}.db`);
+  const rejectedDevelopmentServerEntry = spawnSync(process.execPath, ['--no-warnings', 'server.js'], {
+    cwd: path.join(__dirname, '..'),
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      NODE_ENV: 'development',
+      DB_CLIENT: 'sqlite',
+      SQLITE_PATH: directServerDbPath,
+      SEED_DEMO_DATA: 'false',
+    },
+  });
+  for (const suffix of ['', '-wal', '-shm']) {
+    try { fs.unlinkSync(`${directServerDbPath}${suffix}`); } catch (_err) {}
+  }
+  assert.notEqual(rejectedDevelopmentServerEntry.status, 0);
+  assert.match(rejectedDevelopmentServerEntry.stderr, /direct server\.js startup refuses development defaults/);
 
   assert.throws(
     () =>
@@ -111,6 +225,47 @@ function describeServerBoot() {
       await new Promise((resolve) => server.close(resolve));
     }
     cleanupTestDb();
+  });
+
+  test('app.js startup honors assigned host/port and serves files from a persistent upload root', async () => {
+    const storageRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'mrtumi-cpanel-upload-'));
+    const customDir = path.join(storageRoot, 'custom');
+    fs.mkdirSync(customDir, { recursive: true });
+    fs.writeFileSync(path.join(customDir, 'startup-check.txt'), 'persistent-upload-ok');
+    const port = await reserveTcpPort();
+    const child = spawn(process.execPath, ['--no-warnings', 'app.js'], {
+      cwd: path.join(__dirname, '..'),
+      env: {
+        ...process.env,
+        NODE_ENV: 'test',
+        APP_ALLOW_TEST_STARTUP: 'true',
+        DB_CLIENT: 'sqlite',
+        SQLITE_PATH: path.join(storageRoot, 'startup-test.db'),
+        UPLOAD_DIR: storageRoot,
+        HOST: '127.0.0.1',
+        PORT: String(port),
+        SEED_DEMO_DATA: 'false',
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let childOutput = '';
+    child.stdout.setEncoding('utf8').on('data', (chunk) => { childOutput += chunk; });
+    child.stderr.setEncoding('utf8').on('data', (chunk) => { childOutput += chunk; });
+    const childBaseUrl = `http://127.0.0.1:${port}`;
+
+    try {
+      const health = await waitForHttp(childBaseUrl, '/health', child);
+      assert.equal(health.statusCode, 200, childOutput);
+      const uploaded = await httpGet(childBaseUrl, '/uploads/custom/startup-check.txt');
+      assert.equal(uploaded.statusCode, 200, childOutput);
+      assert.equal(uploaded.body, 'persistent-upload-ok');
+    } finally {
+      if (child.exitCode === null) {
+        child.kill('SIGTERM');
+        await new Promise((resolve) => child.once('exit', resolve));
+      }
+      fs.rmSync(storageRoot, { recursive: true, force: true });
+    }
   });
 
   test('Storefront, Admin, Vendor, and Reseller routes respond cleanly with zero hardcoded passwords', async () => {

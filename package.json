@@ -8,8 +8,8 @@
     "node": ">=22.5.0"
   },
   "scripts": {
-    "start": "test -d node_modules/express || npm install --no-audit --no-fund; node --no-warnings server.js",
-    "dev": "node --no-warnings server.js",
+    "start": "node --no-warnings app.js",
+    "dev": "node --no-warnings scripts/dev-server.js",
     "migrate:status": "node scripts/migrate.js status",
     "migrate:up": "node scripts/migrate.js up",
     "migrate:down": "node scripts/migrate.js down",

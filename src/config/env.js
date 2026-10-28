@@ -33,6 +33,26 @@ function loadDotEnvFile(envFilePath = path.join(ROOT_DIR, '.env')) {
   }
 }
 
+function isHttpsOrigin(value) {
+  try {
+    const url = new URL(String(value));
+    const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+    return (
+      url.protocol === 'https:' &&
+      Boolean(hostname) &&
+      !['localhost', '127.0.0.1', '::1'].includes(hostname) &&
+      !hostname.endsWith('.localhost') &&
+      !url.username &&
+      !url.password &&
+      (url.pathname === '/' || url.pathname === '') &&
+      !url.search &&
+      !url.hash
+    );
+  } catch (_err) {
+    return false;
+  }
+}
+
 function buildConfig(overrides = {}) {
   loadDotEnvFile();
   const raw = { ...process.env, ...overrides };
@@ -98,6 +118,49 @@ function buildConfig(overrides = {}) {
     );
   }
 
+  const uploadDir = raw.UPLOAD_DIR
+    ? path.resolve(ROOT_DIR, String(raw.UPLOAD_DIR))
+    : path.join(ROOT_DIR, 'public', 'uploads');
+
+  if (nodeEnv === 'production') {
+    const missing = [];
+    for (const key of ['DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASSWORD']) {
+      if (raw[key] === undefined || String(raw[key]).trim() === '' || String(raw[key]).trim().startsWith('REPLACE_WITH_')) {
+        missing.push(key);
+      }
+    }
+    if (raw.DB_CLIENT === undefined || String(raw.DB_CLIENT).trim().toLowerCase() !== 'mysql') {
+      missing.push('DB_CLIENT=mysql');
+    }
+    if (raw.CSRF_SECRET === undefined || !csrfSecret || csrfSecret.startsWith('REPLACE_WITH_')) {
+      missing.push('CSRF_SECRET');
+    } else if (csrfSecret === sessionSecret) {
+      missing.push('CSRF_SECRET (must differ from SESSION_SECRET)');
+    }
+    if (raw.TRUST_PROXY === undefined || String(raw.TRUST_PROXY).trim() === '') {
+      missing.push('TRUST_PROXY (set to the verified proxy-hop count)');
+    } else if (!Number.isSafeInteger(Number(raw.TRUST_PROXY)) || Number(raw.TRUST_PROXY) < 0) {
+      missing.push('TRUST_PROXY (must be a non-negative integer)');
+    }
+    if (!raw.APP_URL || !isHttpsOrigin(raw.APP_URL)) {
+      missing.push('APP_URL (must be the approved HTTPS origin)');
+    }
+    if (!raw.UPLOAD_DIR || !path.isAbsolute(String(raw.UPLOAD_DIR).trim())) {
+      missing.push('UPLOAD_DIR (must be an absolute persistent path outside the application root)');
+    } else {
+      const relativeUploadPath = path.relative(ROOT_DIR, uploadDir);
+      if (relativeUploadPath === '' || (!relativeUploadPath.startsWith('..') && !path.isAbsolute(relativeUploadPath))) {
+        missing.push('UPLOAD_DIR (must be outside the application root)');
+      }
+    }
+    if (missing.length > 0) {
+      throw new Error(`PRODUCTION CONFIGURATION ERROR: configure valid values for ${missing.join(', ')}. Values are intentionally not shown.`);
+    }
+    if (!Number.isInteger(Number(raw.DB_PORT)) || Number(raw.DB_PORT) < 1 || Number(raw.DB_PORT) > 65535) {
+      throw new Error('PRODUCTION CONFIGURATION ERROR: DB_PORT must be an integer from 1 to 65535.');
+    }
+  }
+
   const defaultSqliteFile =
     nodeEnv === 'test'
       ? path.join(ROOT_DIR, 'data', 'mrtumi.test.db')
@@ -106,10 +169,6 @@ function buildConfig(overrides = {}) {
   const sqlitePath = raw.SQLITE_PATH
     ? path.resolve(ROOT_DIR, String(raw.SQLITE_PATH))
     : defaultSqliteFile;
-
-  const uploadDir = raw.UPLOAD_DIR
-    ? path.resolve(ROOT_DIR, String(raw.UPLOAD_DIR))
-    : path.join(ROOT_DIR, 'public', 'uploads');
 
   const seedDemoData =
     nodeEnv === 'production'

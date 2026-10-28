@@ -48,6 +48,8 @@ out.push('Generated from route registrations in `src/routes/{adminAuth,adminAcce
 out.push('');
 out.push(`**Inventory:** ${routes.length} unique active method/path endpoints from ${registrations.length} route registrations (${duplicateRegistrations} duplicate method/path registrations, resolved by actual mount order); ${routes.filter(r=>!['GET','HEAD','OPTIONS'].includes(r.method)).length} state-changing endpoints; ${Object.entries(methods).map(([m,n])=>`${m} ${n}`).join(', ')}. ${unmapped.length} unmapped. The HTTP integration test sends each non-exempt listed method/path as a logged-in zero-grant user and requires 403; login/root/self-logout endpoints are exempt by design. A unit policy matrix tests allow/deny for each mapped entry. Representative full-stack allowed behavior is tested for dashboard, access lifecycle, blog content CRUD, polling, popup, assistant and audit. It does not claim successful business-operation coverage for every legacy handler.`);
 out.push('');
+out.push('**Hosting scope note (2026-10-28):** the cPanel compatibility assessment and production startup/configuration guards do not add or alter admin routes. This route inventory was regenerated from the current registrations; Phase 09 remains incomplete and route-by-route MySQL migration continues separately in the master execution queue.');
+out.push('');
 out.push('## Enforcement and limits');
 out.push('');
 out.push('- Phase 08 reservation expiry is exposed only as a one-shot application/CLI runner (`npm run reservations:expire`), not as an HTTP endpoint; apply mode requires explicit `--apply` and remains a separately gated operational action.');

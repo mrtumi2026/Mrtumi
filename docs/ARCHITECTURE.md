@@ -29,7 +29,7 @@ Based on BestWebHostBD support confirmation (**Node.js supported**, **SSH availa
   - Storage engine: **`InnoDB`** (mandatory for ACID transactions, row-level locking `SELECT ... FOR UPDATE`, and foreign-key enforcement).
   - Character set & collation: **`utf8mb4` / `utf8mb4_unicode_ci`** (mandatory for full Bangla Unicode script, `৳` symbol, and emojis without 3-byte `utf8` truncation).
   - SQL Mode: `STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION`.
-- **Compatibility Guardrail:** All Phase 03+ migrations avoid MySQL-8.0.16-only or MariaDB-only syntax (no expression column defaults like `DEFAULT (CURRENT_DATE)`, no reliance on `CHECK` constraints for business safety without server-side validation, and `LONGTEXT` with application JSON validation rather than version-fragile `JSON` column defaults), guaranteeing compatibility across **MySQL 5.7+, MySQL 8.0+, and MariaDB 10.3+**.
+- **Database Compatibility Evidence:** MySQL 8.0 is the only dialect currently exercised by the real-MySQL CI workflow. Migration choices such as InnoDB, `utf8mb4`, application validation and selected `LONGTEXT` JSON payloads are not a certification for MySQL 5.7 or MariaDB. Test the full migration and integration suites against the exact proposed server version before considering it supported; see `DEPLOYMENT.md` and `docs/MYSQL_MIGRATION_PLAN.md`.
 
 ### 2.3 Database Connection & Pooling Strategy
 - Managed via a singleton **`mysql2/promise` pool** (`src/db/mysqlPool.js` in Phase 03):
@@ -42,7 +42,7 @@ Based on BestWebHostBD support confirmation (**Node.js supported**, **SSH availa
 ### 2.4 Versioned, Reversible Schema Migrations
 - Stored in `src/db/migrations/` as sequential pairs (`0001_initial_core.up.sql` / `0001_initial_core.down.sql`, etc.).
 - Tracked in MySQL table `schema_migrations` (`version VARCHAR(64) PRIMARY KEY`, `name VARCHAR(255)`, `checksum CHAR(64)`, `applied_at DATETIME`, `execution_ms INT UNSIGNED`).
-- Executed via CLI (`npm run migrate:up`, `npm run migrate:down`, `npm run migrate:status`) over SSH before restarting the Passenger Node process. Checksum verification blocks accidental editing of already-applied migrations.
+- Executed via CLI (`npm run migrate:up`, `npm run migrate:down`, `npm run migrate:status`) only through an owner-approved migration procedure. The actual host shell, app runtime, process manager and restart method must be confirmed first; no Passenger/SSH setup is assumed. Checksum verification blocks accidental editing of already-applied migrations.
 
 ### 2.5 Transaction Strategy (Orders, Stock, Payments, Refunds & Settlements)
 - Every multi-table state transition executes inside an explicit helper `withTransaction(async (tx) => { ... })`:
@@ -83,7 +83,7 @@ Based on BestWebHostBD support confirmation (**Node.js supported**, **SSH availa
 
 ### 2.10 File Upload & Persistent Storage Strategy
 - Validated via `multer` + magic-byte signature inspection (`JPEG`, `PNG`, `WEBP`, `GIF` only; executable `.php`, `.js`, `.html`, `.svg` user uploads rejected; random UUID/timestamp filenames preventing path traversal).
-- Stored in `env.uploadDir`: defaults to `./public/uploads` locally and points to `/home/<cpanel_user>/mrtumi_storage/uploads` (outside Git release directory, symlinked to `public/uploads/custom`) on BestWebHostBD so uploaded product/banner images survive every Git deployment.
+- Stored under `env.uploadDir/custom`; local default is under `public/uploads/custom`. Production validation now requires an absolute upload root outside the application root, and Express maps that custom directory to `/uploads/custom/`. The actual account's durable path, permissions, quotas, URL exposure and backup coverage are unverified; no BestWebHostBD path or symlink behavior is assumed.
 
 ### 2.11 Scheduled Jobs & Background Tasks (cPanel-Compatible)
 - Some cPanel Passenger environments may suspend idle Node.js processes; production background work must not rely solely on `setInterval()`.
@@ -92,18 +92,8 @@ Based on BestWebHostBD support confirmation (**Node.js supported**, **SSH availa
 ### 2.12 Local Development, Test & Production Configuration (`src/config/env.js`)
 - **`development`:** Reads local untracked `.env`; supports local MySQL (`DB_CLIENT=mysql`) or local sandbox preview (`DB_CLIENT=sqlite` during transition before Phase 03 cutover).
 - **`test`:** Isolated test database (`mrtumi_test` on MySQL in CI/staging, plus fast ephemeral harness where applicable); deterministic seeds; zero external network calls.
-- **`production`:** Enforces `DB_CLIENT=mysql`, mandatory `>=32`-char `SESSION_SECRET` & `CSRF_SECRET`, `SEED_DEMO_DATA=false`, secure `HttpOnly` cookies over HTTPS (`TRUST_PROXY=1`), and disabled stack traces in HTTP error responses.
+- **`production`:** requires MySQL explicitly (SQLite prohibited), complete database connection settings, approved HTTPS `APP_URL`, distinct random `SESSION_SECRET` and `CSRF_SECRET` (each at least 32 characters), explicit verified `TRUST_PROXY`, and an absolute `UPLOAD_DIR` outside the app root. Configuration errors list missing keys but never print supplied values. Production demo seed remains disabled by default; secure `HttpOnly`, `SameSite=Lax`, `Secure` cookies and safe HTTP error responses are retained.
 
-### 2.13 GitHub-Based Deployment Workflow (SSH + cPanel)
-1. Develop & test on `arena/8689c974-mrtumi` → verify GitHub Actions CI passes (`npm run lint && npm test`).
-2. Merge owner-approved release PR to `main` (only when authorized in Phase 20).
-3. On BestWebHostBD via SSH (never deploying directly inside `public_html`):
-   ```bash
-   cd ~/mrtumi_app
-   bash scripts/backup-mysql.sh          # Pre-deploy MySQL snapshot
-   git fetch origin && git checkout <approved-tag-or-commit>
-   source ~/nodevenv/mrtumi_app/<node_ver>/bin/activate
-   npm ci --omit=dev --no-audit --no-fund
-   npm run migrate:up                    # Apply versioned MySQL migrations
-   mkdir -p tmp && touch tmp/restart.txt # Graceful Phusion Passenger / lsnode reload
-   ```
+### 2.13 Conditional Deployment Workflow — See `DEPLOYMENT.md`
+
+No cPanel/Passenger workflow is assumed or executed. `scripts/backup-mysql.sh` is absent, as are `scripts/backup.sh` and `scripts/cron-runner.js`; do not copy historic deployment commands that invoke them. The actual account's cPanel/CloudLinux version, startup-field contract, runtime, process port, proxy, storage, cron, logs and backup tooling must be verified before selecting a host procedure. `DEPLOYMENT.md` is the current preparation-only runbook; production deploy/migration remains blocked pending exact host evidence, staging and action-specific owner approval.

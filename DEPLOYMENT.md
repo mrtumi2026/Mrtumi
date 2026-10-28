@@ -1,100 +1,99 @@
-# Production Hosting & Deployment Runbook (Preparation Only)
+# Production Hosting & Deployment Runbook — Preparation Only
 
 **Project:** Mr. Tumi Grocery & Gift
-**Status:** deployment is **NOT READY / NOT AUTHORIZED**. This document is a conditional runbook, not a deployment instruction executed against a live system. Phase 20 acceptance, disposable backup/restore rehearsal, target facts, and action-specific owner approval remain outstanding.
-**Repository runtime contract:** `package.json` currently requires Node.js `>=22.5.0`; use a supported maintained Node release that satisfies this engine range and verify native/runtime compatibility on the selected host before release. Do not rely on older `18.x`/`20.x` assumptions in historical docs.
-**Database contract:** production MySQL/InnoDB only; SQLite is prohibited.
-**Secrets:** never commit, paste into chat, or place production values in this document.
+**Status:** **NOT READY / NOT AUTHORIZED.** This is a conditional preparation runbook, not deployment approval. No production cPanel account, domain, database or customer data was accessed. No production code upload, DNS change, migration, provider operation or destructive command was performed.
+**Canonical phase:** Hosting and release gates are tracked under **Phase 20** (`P20-03`), not Phase 19. The master backlog defines Phase 19 as the customer/admin Android WebView apps; it remains `NOT STARTED`.
+**Repository runtime contract:** Node.js `>=22.5.0` (`package.json`). This preparation environment reports Node `22.22.3` and npm `10.9.8`; the project does not pin an npm engine/version, and `package-lock.json` is lockfile v3. Production persistence is MySQL/InnoDB; SQLite is non-production only.
+**Secrets:** never commit, paste into chat, log, or place production secrets in this document.
 
----
+## 1. Verified project facts versus hosting facts still unknown
 
-## 1. What is known—and what is not
+**Owner-provided capability claims** recorded in `docs/CPANEL_COMPATIBILITY.md`: BestWebHostBD support was reported to offer Node.js, SSH and MySQL. These claims do not establish the customer's plan, control-panel build, features, runtime selector, startup lifecycle or limits.
 
-Prior owner-provided information recorded in `docs/CPANEL_COMPATIBILITY.md` says BestWebHostBD supports Node.js, SSH, and MySQL. This does **not** verify a particular account/plan, Node selector version, MySQL server version, Passenger/LiteSpeed mode, domain, TLS termination, backup retention, or available resource limits. No target hosting account was accessed during this work.
+**Verified from repository source:** `server.js` constructs the Express/EJS app and `startServer()` listens using configured `HOST`/`PORT` (defaults `0.0.0.0:3000`). `app.js` is the candidate deployment wrapper and exports the Express app; its direct/Passenger-indicated startup calls `startServer()` only after production config validation. Direct `server.js` development startup is rejected; `scripts/dev-server.js` is the explicit local development entry. `package.json` has `main: server.js`, `start: node --no-warnings app.js`, `dev: node --no-warnings scripts/dev-server.js`, and Node `>=22.5.0`. The startup script no longer installs packages. `package-lock.json` uses lockfile version 3. A non-production regression test exercises `app.js` with an assigned host/port and an external persistent upload root. These are code facts, not proof that a particular cPanel account launches the app in this way.
 
-Before choosing the release procedure, record these facts and evidence (without sharing secrets):
+**Not verified on the host:** cPanel/CloudLinux version; whether “Setup Node.js App” is present and which Passenger/LiteSpeed integration it uses; supported Node/npm binaries; startup-file field semantics; port/socket injection; environment editor; application-root restrictions; restart/log behavior; MariaDB availability; database version, SQL mode, connection cap and grants; HTTPS/proxy topology; cron; storage/symlinks; backup/restore and resource limits. Obtain the actual cPanel screen/version and non-secret runtime output from the owner/host before selecting final settings. Do not infer these details from provider name or generic Passenger examples.
 
-| Fact | Required evidence before deployment |
+| Required fact | Non-destructive evidence to record before staging/release |
 |---|---|
-| Provider, plan, account owner, staging/production targets | Owner-confirmed service/account details and approved target names |
-| Node executable and version | `node -v`, `npm -v`, cPanel selector/runtime or service unit; verify Node `>=22.5.0` |
-| Process manager/startup behavior | Confirm cPanel Passenger/LiteSpeed, or approved VPS systemd/reverse-proxy design; identify assigned port and restart/log behavior |
-| MySQL server/version and limits | `SELECT VERSION()`, InnoDB/utf8mb4 availability, connection cap, database host/network policy |
-| Domain and TLS | Exact canonical HTTPS origin, certificate/renewal operator, proxy path and trusted proxy-hop count |
-| Persistent uploads | Writable durable path, symlink/alias rules, static URL mapping, quota and backup coverage |
-| Cron/scheduled tasks | Availability, minimum interval, run-as user, working directory, absolute Node path, log destination |
-| Resource/operations | RAM, CPU/process/entry-process, inode, storage and transfer limits; maintenance window and contacts |
-| Backup and restore | Backup destination/access separation, retention/RPO/RTO decisions, restore destination and tested procedure |
+| Provider, plan, target account and cPanel/CloudLinux version | Owner-confirmed plan plus exact control-panel version/features; staging target identified |
+| Node and npm | `node -v`, `npm -v` from the same selected application runtime; Node must satisfy `>=22.5.0` |
+| Startup/process manager | Exact panel option and startup-file behavior; assigned port or socket, environment injection, restart and log behavior |
+| Database dialect | `SELECT VERSION()`, InnoDB, `utf8mb4`, collation/SQL mode, connection limit and host/network reachability |
+| Domain, TLS, proxy | Approved HTTPS origin, TLS termination, exact trusted proxy-hop topology and forwarding headers |
+| App/storage paths | Application-root location, writable durable upload path, URL mapping/permissions/quota and backup coverage |
+| Operations | Cron availability/minimum interval/run-as user; process, memory, inode/storage limits; logging/alerts |
+| Recovery | Backup tool/destination/access separation, owner-approved retention/RPO/RTO and an isolated restore rehearsal |
 
-Do not assume cPanel or Passenger merely from the provider name. The two supported deployment patterns below are options pending these facts.
+## 2. Conditional cPanel configuration (confirm interface first)
 
-## 2. Hosting patterns to evaluate
+If the target account actually provides cPanel **Setup Node.js App** (or its documented equivalent), evaluate these values in the real panel only after confirming its version and behavior:
 
-### Option A — Managed cPanel/CloudLinux Node application
+- **Application root:** use a private directory outside `public_html` when supported, for example a non-public home-directory release path. Keep `.env`, `node_modules`, source, logs and backups out of the document root. Do not assume a symlink or alias is permitted.
+- **Startup file:** source identifies `app.js` as the deployment wrapper; it requires `NODE_ENV=production` and valid production configuration before listening. `server.js` contains Express setup and exports `startServer()`. Select `app.js` only if the actual panel expects a Node entry file with these semantics; verify the panel's contract first. `package.json` `main` remains `server.js` and `npm start` invokes `app.js`.
+- **Runtime:** select a maintained Node release meeting `>=22.5.0`; run `npm -v` in the same app environment and record it. The repo does not set an npm engine/version. The lockfile is version 3, so use the Node-bundled npm that supports it and prove `npm ci` works there; do not guess an npm major version.
+- **Port and host:** app code reads `PORT` and `HOST`, defaulting to `3000` and `0.0.0.0`. Do not assume cPanel assigns `PORT`, expects a TCP listener, injects a Passenger global, or accepts these defaults. Confirm the panel contract; test the configured listener and restart on isolated staging.
+- **Environment:** provide `NODE_ENV=production` and required settings through the panel's protected environment mechanism where available. If only a root `.env` is supported, keep it outside `public_html`, owner-controlled, mode `0600`, and outside tracked releases where feasible; the dotenv loader gives process environment precedence. Never place secrets in source, logs, URLs or a public path.
+- **Restart:** use only the panel-documented graceful restart/redeploy method after verifying it. Do not assume `tmp/restart.txt`, Passenger commands, SSH process managers or a restart button without confirming the installed integration.
 
-Use only if this account confirms the Node selector supports the package engine and confirms the startup mechanism. `app.js` is the repository's Passenger/LiteSpeed-oriented entry point, but the actual panel configuration and process lifecycle must be verified. Preserve `public/` static serving; map custom uploads to durable storage using the host's confirmed symlink/alias support. Do not assume the default port or `tmp/restart.txt` behavior until confirmed.
+`app.js` has a guard against ordinary development startup; it allows test-mode import for tests, with explicit opt-in required if a test process actually starts it. Production entry starts only after configuration validation. This protects against silently treating an unset/default development mode as a production startup through `app.js`; it does not prove the panel selects `app.js` correctly.
 
-### Option B — VPS/container with a reverse proxy
+## 3. Dependency installation and application configuration
 
-Use only if the owner selects and operates this platform. Run the app as a dedicated unprivileged service account, bind Node only to a private interface/socket behind a maintained HTTPS proxy, keep MySQL private, and use a supervised service manager. The exact proxy, service unit, firewall, certificates, backup destination, and monitoring are host-specific and are not created here.
+Install from the repository root using the same Node/npm runtime selected for the application:
 
-If neither option is confirmed to meet the runtime and database contract, deployment remains blocked; select an alternate Node `>=22.5.0` + MySQL host through the owner rather than lowering the engine requirement or adding SQLite fallback.
+```sh
+node -v                 # must be >= 22.5.0
+npm -v                  # record actual version; no npm engine is declared
+npm ci --omit=dev --no-audit --no-fund
+```
 
-## 3. Release configuration inventory
+Use the committed lockfile; do not run `npm install` in a production release or rely on automatic installation at app startup. For local development use `npm ci` then `npm run dev`; `npm start` runs the deployment entry `app.js` and is not a substitute for setting production configuration.
 
-Set environment values through the host's protected environment facility where available. If a root `.env` file is the only supported mechanism, keep it outside tracked releases when possible, owner-controlled, mode `0600`, unreadable by the web root, and never copy it into a public directory. The repository's dotenv loader reads the application-root `.env`; process environment takes precedence.
+The production validator now fails before serving when required or unsafe settings are missing. It reports variable names only, not supplied values. Required production configuration:
 
-Required/important production values from `src/config/env.js` and `.env.example`:
+- `NODE_ENV=production`; `DB_CLIENT=mysql` explicitly (production SQLite is prohibited).
+- `APP_URL` must be the approved HTTPS origin, not localhost or a path-bearing URL.
+- `DB_HOST`, `DB_PORT` (integer 1–65535), `DB_NAME`, `DB_USER`, and non-placeholder `DB_PASSWORD` must be explicitly supplied. Charset defaults to `utf8mb4`; timezone defaults to `+00:00`. Set `DB_CONNECTION_LIMIT` conservatively from the verified host cap (repository default is 10; pool is capped at 50).
+- `SESSION_SECRET` and `CSRF_SECRET`: distinct random secrets, each at least 32 characters; provide both explicitly. Never expose values in diagnostics.
+- `TRUST_PROXY`: explicit non-negative integer matching the verified proxy hops/topology. No host topology is assumed.
+- `UPLOAD_DIR`: absolute path outside the application root; uploaded files are written to `<UPLOAD_DIR>/custom` and served at `/uploads/custom/`. Provide a durable writable location and verify its URL/read behavior, permissions, quota and backup coverage on staging.
+- `TZ=Asia/Dhaka`, `DEFAULT_LOCALE=bn`, `SUPPORTED_LOCALES=bn,en`, `CURRENCY_CODE=BDT`, `CURRENCY_SYMBOL=৳` as project defaults/configuration.
+- `ALLOW_PRODUCTION_DEMO_SEED=false`; keep demo/bootstrap data disabled. Keep `ANALYTICS_ATTRIBUTION_ENABLED=false` unless the relevant owner decisions are recorded. Do not set unapproved provider credentials.
 
-- `NODE_ENV=production`
-- `APP_URL=https://<owner-approved-canonical-origin>` — the exact origin is currently unknown; do not use localhost or a placeholder in a release.
-- `HOST` and `PORT` according to the confirmed process manager. The app defaults to `0.0.0.0:3000`; Passenger/VPS may require a host-assigned port or private bind.
-- `DB_CLIENT=mysql`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_CHARSET=utf8mb4`, `DB_TIMEZONE=+00:00`, and a conservatively sized `DB_CONNECTION_LIMIT` based on the host's actual user-connection cap.
-- `SESSION_SECRET`: independently generated random value, at least 32 characters. `CSRF_SECRET`: explicitly set to a separate random value of at least 32 characters (the application can derive one from the session secret when absent, but production provisioning should set both separately).
-- `TRUST_PROXY`: explicitly set to the verified number/topology of trusted proxy hops. The current default is `1`; do not retain it without verifying that the app is only reachable through that trusted proxy.
-- `UPLOAD_DIR`: absolute durable storage base outside disposable release directories. The upload middleware writes under `<UPLOAD_DIR>/custom`; confirm a safe mapping from `public/uploads/custom` to that durable directory before enabling uploads. Do not store customer uploads in a release directory.
-- `TZ=Asia/Dhaka`, `DEFAULT_LOCALE=bn`, `SUPPORTED_LOCALES=bn,en`, `CURRENCY_CODE=BDT`, `CURRENCY_SYMBOL=৳`.
-- `ALLOW_PRODUCTION_DEMO_SEED=false` (production seed guard); do not enable demo/bootstrap data for a live shop.
-- `ANALYTICS_ATTRIBUTION_ENABLED=false` unless D6/D8 approvals are separately recorded; provider secrets/IDs stay unset until approved and integrated.
-- Configure only approved integrations. Empty/unconfigured provider values must remain fail-closed; do not copy sample credentials from `.env.example`.
+Other values in `.env.example` are templates, not host facts or credentials. The repository's cookie middleware uses `HttpOnly`, `SameSite=Lax` and `Secure` in production. Confirm HTTPS is enforced at the edge and that Express `trust proxy` is set only to the verified proxy configuration; CSRF remains required for admin/customer state-changing requests. Do not disable CSRF or secure-cookie behavior to work around proxy misconfiguration.
 
-Production configuration validation must be performed without echoing environment values or secrets. Confirm session cookies are `Secure`, `HttpOnly`, and correctly proxy-aware over HTTPS. Bangla remains the default locale; verify the English toggle separately.
+## 4. MySQL/MariaDB and migrations
 
-## 4. Database and privilege plan (not executed)
+- MySQL 8.0 is the verified project CI database and is the production contract. Migrations target InnoDB and `utf8mb4`; the repository does not certify MariaDB compatibility. A MariaDB server is **not interchangeable evidence**: if the host offers MariaDB, record its exact version and dialect, run the complete migration lifecycle and application integration suite against that exact MariaDB release in non-production, inspect SQL differences, and obtain acceptance before treating it as supported.
+- Do not lower engine/database requirements based on a generic cPanel label. If the actual account cannot provide a verified compatible MySQL target, deployment remains blocked; obtain owner authorization for another host or an explicit compatibility project.
+- Use separate accounts where the service supports it: narrowly scoped runtime DML/SELECT account, a controlled migration account with only reviewed schema privileges, and a separate backup operator/account. Derive exact grants from actual queries/session storage on a disposable DB; do not grant global privileges or use the migration account for web traffic.
+- Use `npm run migrate:status` for inspection. `npm run migrate:up` is only for reviewed non-production/staging or an explicitly approved production change. `npm run migrate:down` can destroy schema/data; never use it as a routine production rollback. No production migration or data access is authorized here.
 
-1. Provision an empty **staging/disposable** MySQL database matching the verified production dialect, charset/collation, SQL mode, and InnoDB requirements. Confirm grants and connection limits in that disposable target first.
-2. Separate principals where supported:
-   - **Runtime account:** only required DML/SELECT privileges on the application's own schema; no global privileges, user creation, or routine administrative access. Derive and test exact privileges from repository queries and session-storage behavior before any production grant.
-   - **Migration account:** temporary, owner-controlled schema DDL/index/trigger privileges needed for the reviewed migration set; never use it as the web process account. Revoke/disable after a migration if the host's controls allow.
-   - **Backup account/operator:** read/backup privileges only, isolated from the web process and protected backup storage.
-3. Run the complete migration up/status/down/re-apply lifecycle only on disposable CI/staging data. Review the exact pending migrations and checksums before release. Production migration requires its own explicit approval and backup/recovery plan; this runbook does not authorize it.
-4. Never use destructive production `migrate:down` as a routine code rollback: down migrations can remove schema/data. Prefer backward-compatible expand/release/contract changes. Any restore or destructive schema operation requires explicit scoped approval and a tested, isolated rehearsal.
+## 5. Sessions, health, logs, storage and scheduled tasks
 
-## 5. Conditional release procedure (owner approval required for every production change)
+- Sessions are persisted in the application database (`web_sessions`), not an in-memory process store. Production session cookies are `HttpOnly`, `Secure`, `SameSite=Lax`; session and CSRF secrets are validated. Verify proxy-aware HTTPS and login/session renewal on staging. Health responses report operational status but no secrets; `/health` and `/api/v1/health` check database reachability, not full business readiness or external integrations.
+- Express serves `public/` static assets. The configured `UPLOAD_DIR/custom` root has an explicit `/uploads/custom/` static fallback so an external durable upload root can be used without requiring the upload files to live in a disposable release. Test upload-write then HTTP-read on staging; ensure uploads are not exposed through an unintended broader directory mapping.
+- Structured, redacted application logs are emitted to stdout/stderr. Confirm where the selected cPanel/process integration captures them, access controls, rotation, retention, and alerts. Never log env values or customer payloads. No production log destination or retention is verified.
+- `scripts/cron-runner.js` and `scripts/backup.sh` are absent. Do not configure either nonexistent command. `npm run reservations:expire` is a separate one-shot CLI, dry-run by default; it has not been scheduled or run against production. Before relying on reservation cleanup or scheduled backup, implement and verify a dedicated idempotent runner/backup procedure, then confirm cron availability, minimum interval, working directory, absolute Node path, run-as account, locking, logs and failure alerts. Do not add in-memory timers to a Passenger-managed web process.
+- Backups must include MySQL data, durable uploads, and owner-controlled configuration needed for recovery, stored encrypted/access-controlled outside the web root. No backup script, backup service, restore drill, retention period, RPO/RTO or provider capability is verified. Those policies require owner input; do not invent them. Restore rehearsal must target an isolated disposable database/storage location and prove the documented restore/health procedure before release.
 
-1. **Release candidate:** use an exact commit SHA, clean tree, exact-SHA passing GitHub Actions (including MySQL 8.0 suite), dependency/security checks, reviewed diff, and named approver. Do not deploy an Arena work branch directly unless the owner explicitly authorizes that exact target/commit; normal release branch/PR policy remains in force.
-2. **Staging first:** configure staging with non-production secrets and isolated MySQL. Apply reviewed migrations there, verify migration status, run smoke/regression checks, test login/session/CSRF, storefront locale and representative cart/checkout (without a live payment provider), admin RBAC, uploads, logs, and restart behavior.
-3. **Pre-release recovery point:** take a dated, access-controlled MySQL backup using a host-approved tool, and archive persistent uploads/configuration needed for recovery. Use encrypted storage and verify the file is readable/non-empty and checksum it. Do not put backups in Git or in a public web directory. Retention/RPO are still owner decisions; do not invent durations.
-4. **Deploy code:** create a versioned release directory or atomic release pointer where the host supports it; install lockfile dependencies with `npm ci --omit=dev` under the correct Node runtime; protect environment configuration; keep writable uploads and logs outside disposable releases. Do not run `npm install` without the lockfile in production.
-5. **Migration gate:** only after separate explicit authorization for the exact database and reviewed migration set, execute the repository's guarded migrator under the migration principal, then verify `migrate:status`. No migration was run as part of preparing this document.
-6. **Restart and observe:** use the confirmed manager's graceful restart. Check process health, database reachability, startup/runtime logs, memory/process/connection limits, and host error logs. Never expose secrets or customer data in diagnostics.
-7. **Smoke tests:** `/health` and `/api/v1/health` must return healthy MySQL status; check HTTPS redirect/canonical origin, certificate, secure session cookies, CSRF rejection, Bangla default + English switch, product/category pages, cart update/stock cap, customer/account boundaries, admin permission denial, and safe error responses. Place no live provider, payment, SMS, courier or refund calls during smoke tests.
-8. **Go/no-go:** monitor error rates, DB pool saturation, latency, process restarts and upload write/read behavior against owner-approved thresholds. No thresholds or alert destination are currently supplied, so an operator must define these before production go-live.
+## 6. Staging smoke tests and release/rollback gates
 
-## 6. Logs, health checks, uploads, cron and backup readiness
+On isolated staging only, with non-production secrets and disposable MySQL data:
 
-- The application emits structured, PII-redacting logs to stdout/stderr. Verify where the selected process manager captures them, log access controls, rotation, retention and alerting. No production log sink/retention choice is verified.
-- Health endpoints are implemented; they check database health and report the configured client. External provider health and end-to-end business readiness are not implied by a healthy database result.
-- `public/` is served by Express. Uploads are written under the configured `UPLOAD_DIR/custom`; validate the URL mapping, permissions, backup coverage, quota and malware/content handling on staging.
-- Checkout inventory was rechecked on 2026-10-27: `scripts/cron-runner.js` and `scripts/backup.sh` are absent. Do not configure those nonexistent commands. `npm run reservations:expire` is a separate one-shot CLI, dry-run by default; its expected output, batch/partial-commit behavior, failure recovery and manual monitoring guidance are in [`docs/PHASE_08_ORDER_LIFECYCLE_OTP_ADVANCE.md`](docs/PHASE_08_ORDER_LIFECYCLE_OTP_ADVANCE.md). It has not been scheduled or run against production. Before relying on reservation/recovery cleanup or scheduled backups, implement and verify the needed runner/backup tooling, then confirm the host's cron facility and service account. No target hosting account, cron capability or backup service was accessed or verified for this review.
-- No automated restore drill, backup script, production monitoring destination, or target-host smoke test is currently verified. These are Phase 20 release blockers.
+1. Record `node -v`, `npm -v`, host/cPanel version, startup settings, actual process port behavior, MySQL `SELECT VERSION()`, storage path and proxy topology. Verify `npm ci --omit=dev --no-audit --no-fund` from the lockfile.
+2. Run `npm run migrate:status`; review and apply migrations only to the isolated staging database. Verify the resulting schema and application startup; do not use production data.
+3. Check `/health` and `/api/v1/health` return healthy MySQL status; verify app logs contain no secrets. Confirm process restart/redeploy and failure/recovery behavior via the actual host UI.
+4. Verify canonical HTTPS/TLS, secure session cookie flags, login/logout/session renewal, CSRF rejection and admin RBAC denial. Verify Bangla default and English switch, product/category pages, cart stock cap and customer/admin route boundaries.
+5. Test a non-sensitive raster upload to the configured durable path, HTTP read-back through `/uploads/custom/`, and persistence across an app restart/release replacement. Do not upload real customer content during preparation.
+6. Exercise only mock/no-op payment, courier, SMS and notification behavior. No live provider calls, payments, refunds, bookings or sends.
+7. Rehearse backup and restore into isolated disposable targets; verify checksums, migration state, upload read-back and health. Define and approve monitoring thresholds and go/no-go owner before any production plan.
 
-## 7. Rollback and recovery (not a destructive database recipe)
+A release requires an exact commit SHA, clean worktree, passing exact-SHA CI with MySQL 8.0 (and MariaDB CI if MariaDB is proposed), security/dependency review, all owner-dependent policies, host-specific staging evidence, tested backup/restore, and action-specific written approval. Deploy only via the confirmed cPanel/process procedure with versioned code and a verified rollback plan. Prefer reverting code to a prior verified release when schema-compatible; never overwrite a newer database with an old backup or run destructive down-migrations without separate scoped authorization.
 
-- If code-only regression occurs and schema changes are backward compatible, switch/redeploy to the previous exact, verified release and restart using the confirmed manager; preserve logs and the failed release for diagnosis.
-- If a schema/data incompatibility occurs, stop writes only under the approved incident procedure. Do not blindly run down migrations or restore an old database over new orders. Recovery must be based on the specific approved RPO/RTO, backup point, data reconciliation/loss analysis, and exact owner authorization.
-- Restore rehearsals must use an isolated disposable destination first, verify schema/data counts and application health, and demonstrate the actual runbook. Production restore is a separately approved operation.
+## 7. Outstanding inputs and no-deploy gate
 
-## 8. Owner inputs needed to convert this plan to deployment-ready
+Before cPanel staging can be configured, provide/record (without credentials): exact provider plan and cPanel/CloudLinux version; screenshots or documentation for its Node app UI/startup field; selected Node/npm versions; assigned port/start command/environment mechanism/restart/log behavior; exact MySQL or MariaDB server/version and limits; canonical HTTPS origin and proxy-hop count; persistent upload path and URL mapping; cron facts; backup/restore facilities and owner-approved retention/RPO/RTO; monitoring destination/resource limits; and named staging approver.
 
-Provide/record, without sharing credentials: exact provider and plan/account; staging and production target; Node runtime >=22.5.0; MySQL flavor/version/charset/limits; process manager/startup/restart and proxy hop count; canonical HTTPS domain/TLS operator; durable upload path/URL mapping; cron availability and schedule limits; log/alert destination; backup storage/retention/RPO/RTO and restore operator; least-privilege account provisioning capability; migration window/approver; and explicit approval for each production operation. Until then, deployment preparation is complete only at the documentation level and **no live deployment is authorized or performed**.
+All production targets, credentials, migrations, DNS, customer data, provider integrations and irreversible operations remain unauthorized. Phase 20 remains `IN PROGRESS` until these facts and every end-to-end/security/recovery gate are independently evidenced and owner-approved. Phase 19 remains the separate Android WebView phase and `NOT STARTED`.

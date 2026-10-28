@@ -15,6 +15,10 @@ const { legacyAdminRbac, legacyAdminCsrf } = require('./src/middleware/legacyAdm
 const { legacyAdminAudit } = require('./src/middleware/legacyAdminAudit');
 const { recordErrorLog } = require('./src/repositories/auditLogRepository');
 
+if (require.main === module && env.isDevelopment) {
+  throw new Error('DEPLOYMENT STARTUP ERROR: direct server.js startup refuses development defaults; use `npm run dev` locally or configure production and use app.js.');
+}
+
 const localeRoutes = require('./src/routes/locale');
 const apiFoundationRoutes = require('./src/routes/apiFoundation');
 const adminAuthRoutes = require('./src/routes/adminAuth');
@@ -56,6 +60,9 @@ app.use(attachRequestId);
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
+// Keep uploaded admin images reachable when UPLOAD_DIR points outside the disposable app release.
+// The default local path is also under public/, so this is only a fallback there.
+app.use('/uploads/custom', express.static(path.join(env.uploadDir, 'custom'), { index: false }));
 
 // Database-backed sessions + CSRF token binding + Bilingual i18n (`bn` default, `en` switch)
 app.use(sessionManager);
