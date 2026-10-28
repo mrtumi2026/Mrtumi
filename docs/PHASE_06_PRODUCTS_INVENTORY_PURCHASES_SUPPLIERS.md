@@ -32,11 +32,11 @@
 - Supplier profile/status updates lock the supplier row and commit before/after `supplier.update` audit data in the same MySQL transaction; SQLite tests use a write transaction. Uniqueness conflicts, invalid email/status and missing suppliers are rejected. The update does not touch `balance_due_paisa`, purchase states, purchase items, receipts, stock, or ledger rows. Supplier and purchase records are never hard-deleted.
 - Local repository tests cover edit, deactivate/reactivate, blocked new PO while inactive, retained PO relationship and balance invariance, invalid input, duplicate code, and audit-failure rollback. Authenticated MySQL HTTP coverage for persistence, role denial, CSRF, validation, missing record, duplicate supplier code, inactive-PO denial, reactivation, historical references, draft PO stock invariance, audit state and rollback passed exact-SHA MySQL 8.0 and MariaDB 10.11 CI run [`40680576004`](https://github.com/mrtumi2026/Mrtumi/actions/runs/40680576004) on `15cb6c26f24a7e061204bffca72c58e40fb1607b`. This verifies CI compatibility on that SHA, not the actual production host. Supplier purchase-history detail is not part of this slice and remains queued.
 
-## Per-variant warehouse stock adjustment (implementation pending live CI)
+## Per-variant warehouse stock adjustment (verified implementation slice)
 
 - Product edit now offers a bilingual, CSRF-protected reasoned adjustment form per variant. `inventory.manage` is enforced by the existing `/admin/phase06` RBAC boundary. The operation changes only `product_variants.stock_on_hand`, does not change parent aggregate stock, and rejects reductions below `stock_reserved`.
 - MySQL locks parent then variant row inside `withTransaction`, writes the variant-linked `stock_ledger` movement and audit through the same transaction client, and rolls all three writes back together. SQLite uses `BEGIN IMMEDIATE` and direct audit insertion in its compatibility path. Audit failure, invalid quantity/reason, cross-product/missing variant and reservation-floor behavior are covered in local repository tests; authenticated MySQL HTTP coverage exercises grant denial, CSRF, validation, success, reservation floor, ledger, audit and injected audit rollback.
-- Local lint/tests passed; the MySQL-dependent tests are skipped locally. Do not report this feature as database-verified until exact-final-SHA MySQL 8.0 and MariaDB 10.11 CI pass.
+- Local lint/tests passed; the MySQL-dependent tests are skipped locally. Authenticated MySQL HTTP verification passed exact-SHA MySQL 8.0 and MariaDB 10.11 CI run [`40687427992`](https://github.com/mrtumi2026/Mrtumi/actions/runs/40687427992) on `4e3361c30a1b5e0c0a09337701c3d2f1f0327857`.
 
 ## Tests and evidence
 
