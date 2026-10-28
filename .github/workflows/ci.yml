@@ -1,4 +1,4 @@
-name: CI — Lint, Security Scan, Portal & Real MySQL 8.0 Tests
+name: CI — Lint, Security, Portal, MySQL 8.0 & MariaDB 10.11 Compatibility
 
 on:
   push:
@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   verify:
-    name: Verify Foundation, MySQL 8.0 Migrations & Tests (Node 22)
+    name: Verify Foundation, MySQL 8.0 Migrations & Tests (Node 22.23.4)
     runs-on: ubuntu-latest
     services:
       mysql:
@@ -44,10 +44,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js 22
+      - name: Setup Node.js 22.23.4
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "22.23.4"
           cache: "npm"
 
       - name: Install clean dependencies
@@ -125,6 +125,118 @@ jobs:
           run_and_report 'MySQL migrate down 10 (leave schema clean for tests)' npm run migrate:down -- 10
 
       - name: Run automated unit, portal regression & live MySQL 8.0 test suites
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee /tmp/test-output.log || {
+            awk '/^[[:space:]]*not ok / { remaining=40; print; next } remaining>0 { print; remaining-- }' /tmp/test-output.log | head -n 240 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            exit 1
+          }
+
+  mariadb-compatibility:
+    name: MariaDB 10.11 Migrations & Integration Tests (Node 22.23.4)
+    runs-on: ubuntu-latest
+    services:
+      mariadb:
+        image: mariadb:10.11
+        env:
+          MARIADB_ROOT_PASSWORD: root_ci_password
+          MARIADB_DATABASE: mrtumi_test
+          MARIADB_USER: mrtumi_test
+          MARIADB_PASSWORD: mrtumi_test_pw
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    env:
+      TZ: Asia/Dhaka
+      NODE_ENV: test
+      MYSQL_TEST_REQUIRED: "true"
+      MYSQL_TEST_HOST: 127.0.0.1
+      MYSQL_TEST_PORT: "3306"
+      MYSQL_TEST_DB: mrtumi_test
+      MYSQL_TEST_USER: mrtumi_test
+      MYSQL_TEST_PASSWORD: mrtumi_test_pw
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22.23.4
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.23.4"
+          cache: "npm"
+
+      - name: Install clean dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Report exact MariaDB and Node runtime versions
+        run: |
+          node --version
+          npm --version
+          node -e "require('mysql2/promise').createConnection({host:'127.0.0.1',user:'root',password:'root_ci_password'}).then(async c => { const [rows] = await c.query('SELECT VERSION() AS version, @@version_comment AS version_comment, @@sql_mode AS sql_mode'); console.log(JSON.stringify(rows[0])); await c.end(); }).catch(e => { console.error(e.code || 'ERROR', e.message); process.exitCode = 1; })"
+
+      - name: Verify production dependency audit
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Run foundation lint, EJS compile, migration SQL & secret scan
+        run: npm run lint
+
+      - name: Configure disposable MariaDB trigger policy
+        run: |
+          node <<'NODE'
+          const mysql = require('mysql2/promise');
+          (async () => {
+            const connection = await mysql.createConnection({
+              host: '127.0.0.1', user: 'root', password: 'root_ci_password',
+            });
+            try {
+              await connection.query('SET GLOBAL log_bin_trust_function_creators = 1');
+              console.log('Configured only the disposable MariaDB CI service for migration trigger creation.');
+            } finally {
+              await connection.end();
+            }
+          })().catch((error) => {
+            console.error(`Unable to configure disposable MariaDB trigger policy: ${error.code || 'ERROR'}: ${error.message}`);
+            process.exitCode = 1;
+          });
+          NODE
+
+      - name: Diagnose MariaDB migrations individually on a fresh schema
+        env:
+          DB_CLIENT: mysql
+          DB_HOST: 127.0.0.1
+          DB_PORT: "3306"
+          DB_NAME: mrtumi_test
+          DB_USER: mrtumi_test
+          DB_PASSWORD: mrtumi_test_pw
+        run: node scripts/diagnose-migrations.js
+
+      - name: Verify MariaDB CLI migration lifecycle (up -> status -> down -> up)
+        env:
+          DB_CLIENT: mysql
+          DB_HOST: 127.0.0.1
+          DB_PORT: "3306"
+          DB_NAME: mrtumi_test
+          DB_USER: mrtumi_test
+          DB_PASSWORD: mrtumi_test_pw
+        run: |
+          set -euo pipefail
+          npm run migrate:up
+          npm run migrate:status
+          npm run migrate:status
+          npm run migrate:down -- 10
+          npm run migrate:up
+          npm run migrate:status
+          npm run migrate:down -- 10
+
+      - name: Run automated unit, portal regression & live MariaDB 10.11 test suites
         run: |
           set -o pipefail
           npm test 2>&1 | tee /tmp/test-output.log || {
