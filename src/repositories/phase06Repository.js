@@ -725,6 +725,50 @@ async function adjustStock(input, actor = {}) {
   }
 }
 
+async function adjustVariantStock(productIdInput, variantIdInput, input, actor = {}) {
+  const productId=positiveId(productIdInput,'Product');
+  const variantId=positiveId(variantIdInput,'Variant');
+  const delta=Number(input.qty_delta);
+  if(!Number.isSafeInteger(delta)||delta===0)throw new ValidationError('Stock movement must be a non-zero whole number.');
+  const reason=cleanText(input.reason,255,'Reason',true);
+  if(isMysql()){
+    const pool=require('../db/mysqlPool').getPool();
+    return withTransaction(async(tx)=>{
+      const product=await tx.queryOne('SELECT id,is_archived FROM products WHERE id=? FOR UPDATE',[productId]);
+      if(!product)throw new NotFoundError('Product not found.');
+      if(Number(product.is_archived))throw new ValidationError('Archived products cannot have variant stock adjustments.');
+      const variant=await tx.queryOne('SELECT id,product_id,stock_on_hand,stock_reserved FROM product_variants WHERE id=? AND product_id=? FOR UPDATE',[variantId,productId]);
+      if(!variant)throw new NotFoundError('Variant not found for this product.');
+      const before=Number(variant.stock_on_hand),reserved=Number(variant.stock_reserved),after=before+delta;
+      if(!Number.isSafeInteger(after)||after<reserved)throw new AppError('INSUFFICIENT_STOCK','Adjustment cannot reduce variant stock below its reserved quantity.',409);
+      await tx.execute('UPDATE product_variants SET stock_on_hand=? WHERE id=? AND product_id=?',[after,variantId,productId]);
+      await tx.execute(`INSERT INTO stock_ledger (product_id,variant_id,stock_pool,movement_type,qty_delta,balance_after,reason,actor_user_id)
+        VALUES (?,?,'warehouse','adjustment',?,?,?,?)`,[productId,variantId,delta,after,reason,actor.id||null]);
+      const movement={productId,variantId,previousBalance:before,reservedBalance:reserved,qtyDelta:delta,balanceAfter:after,stockPool:'warehouse'};
+      await recordAuditLog({actorType:'admin',actorId:actor.id||null,action:'inventory.variant.adjust',entityType:'product_variant',entityId:variantId,afterState:{...movement,reason},ipAddress:actor.ip||'',userAgent:actor.userAgent||''},tx);
+      return movement;
+    },{pool});
+  }
+  sqlite.rawDb.exec('BEGIN IMMEDIATE');
+  try{
+    const product=sqlite.get('SELECT id,is_archived FROM products WHERE id=?',productId);
+    if(!product)throw new NotFoundError('Product not found.');
+    if(Number(product.is_archived))throw new ValidationError('Archived products cannot have variant stock adjustments.');
+    const variant=sqlite.get('SELECT id,product_id,stock_on_hand,stock_reserved FROM product_variants WHERE id=? AND product_id=?',variantId,productId);
+    if(!variant)throw new NotFoundError('Variant not found for this product.');
+    const before=Number(variant.stock_on_hand),reserved=Number(variant.stock_reserved),after=before+delta;
+    if(!Number.isSafeInteger(after)||after<reserved)throw new AppError('INSUFFICIENT_STOCK','Adjustment cannot reduce variant stock below its reserved quantity.',409);
+    sqlite.run('UPDATE product_variants SET stock_on_hand=? WHERE id=? AND product_id=?',after,variantId,productId);
+    sqlite.run(`INSERT INTO stock_ledger (product_id,variant_id,stock_pool,movement_type,qty_delta,balance_after,reason,actor_user_id)
+      VALUES (?,?,'warehouse','adjustment',?,?,?,?)`,productId,variantId,delta,after,reason,actor.id||null);
+    const movement={productId,variantId,previousBalance:before,reservedBalance:reserved,qtyDelta:delta,balanceAfter:after,stockPool:'warehouse'};
+    sqlite.run(`INSERT INTO audit_logs (actor_type,actor_id,action,entity_type,entity_id,after_json,ip_address,user_agent)
+      VALUES ('admin',?,'inventory.variant.adjust','product_variant',?,?,?,?)`,actor.id||null,String(variantId),JSON.stringify({...movement,reason}),String(actor.ip||'').slice(0,64),String(actor.userAgent||'').slice(0,255));
+    sqlite.rawDb.exec('COMMIT');
+    return movement;
+  }catch(err){try{sqlite.rawDb.exec('ROLLBACK');}catch(_e){}throw err;}
+}
+
 async function listInventory() {
   if (isMysql()) return require('../db/mysqlPool').queryAll(`SELECT p.id,p.sku,p.name_bn,p.name_en,p.unit_label,p.low_stock_threshold,
     p.stock_on_hand,p.stock_reserved,(p.stock_on_hand-p.stock_reserved) AS warehouse_available,
@@ -927,4 +971,4 @@ async function archiveProduct(idInput, archive, actor = {}) {
   return {id,archived:Boolean(archive)};
 }
 
-module.exports = { createSupplier,listSuppliers,getSupplierForEdit,updateSupplier,getSupplierPurchaseHistory,createProduct,normalizeProductEditInput,listProducts,getProductForEdit,listProductEditOptions,updateProduct,getProductGalleryForEdit,updateProductGallery,listProductVariants,createProductVariant,updateProductVariant,adjustStock,listInventory,listStockLedger,createPurchase,listPurchases,receivePurchase,archiveProduct };
+module.exports = { createSupplier,listSuppliers,getSupplierForEdit,updateSupplier,getSupplierPurchaseHistory,createProduct,normalizeProductEditInput,listProducts,getProductForEdit,listProductEditOptions,updateProduct,getProductGalleryForEdit,updateProductGallery,listProductVariants,createProductVariant,updateProductVariant,adjustStock,adjustVariantStock,listInventory,listStockLedger,createPurchase,listPurchases,receivePurchase,archiveProduct };

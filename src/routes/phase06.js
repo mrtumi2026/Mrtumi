@@ -144,6 +144,13 @@ router.post('/admin/phase06/products/:id/restore', requireCsrf, asyncRoute(async
   return res.redirect('/admin/phase06');
 }));
 
+router.post('/admin/phase06/products/:id/variants/:variantId/stock', requireCsrf, asyncRoute(async (req,res) => {
+  const movement=await repo.adjustVariantStock(req.params.id,req.params.variantId,req.body,actor(req));
+  if(wantsJson(req))return res.json({success:true,movement});
+  req.flash('success',req.locale==='en'?`Variant stock updated: ${movement.previousBalance} → ${movement.balanceAfter}.`:`ভ্যারিয়েন্ট স্টক সমন্বয় হয়েছে: ${movement.previousBalance} → ${movement.balanceAfter}।`);
+  return res.redirect(`/admin/phase06/products/${movement.productId}/edit#variants`);
+}));
+
 router.post('/admin/phase06/inventory/adjust', requireCsrf, asyncRoute(async (req,res) => {
   const movement = await repo.adjustStock(req.body, actor(req));
   if (wantsJson(req)) return res.json({ success:true, movement });

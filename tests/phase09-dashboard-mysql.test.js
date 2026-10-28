@@ -346,6 +346,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     t.after(async()=>{
       await db.execute('DROP TRIGGER IF EXISTS p09_http_fail_variant_update');
       await db.execute('DROP TRIGGER IF EXISTS p09_http_fail_variant_create');
+      await db.execute('DROP TRIGGER IF EXISTS p09_http_fail_variant_stock_audit');
       if(cartId)await db.execute('DELETE FROM customer_cart_items WHERE id=?',[cartId]);
       if(orderLineId)await db.execute('DELETE FROM order_items WHERE id=?',[orderLineId]);
       if(reservationId)await db.execute('DELETE FROM stock_reservations WHERE id=?',[reservationId]);
@@ -418,6 +419,33 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     } finally { await db.execute('DROP TRIGGER IF EXISTS p09_http_fail_variant_create'); }
     assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM product_variants WHERE variant_sku=?',[`${sku}-ROLLBACK`])).n),0,'audit failure rolls variant create back');
     assert.ok(cartId&&orderLineId&&reservationId&&ledgerId);
+
+    const stockPath=`${base}/variants/${variantId}/stock`;
+    assert.equal((await request(stockPath,{method:'POST',token:'',body:{qty_delta:'2',reason:'HTTP stock adjustment'}})).status,403,'variant stock write requires CSRF');
+    assert.equal((await request(stockPath,{method:'POST',cookie:noGrantCookie,token:noGrantToken,body:{qty_delta:'2',reason:'Denied'}})).status,403,'variant stock write requires inventory.manage');
+    assert.equal((await request(stockPath,{method:'POST',body:{qty_delta:'1.5',reason:'Fraction'}})).status,400,'variant stock movement must be a whole quantity');
+    assert.equal((await request(stockPath,{method:'POST',body:{qty_delta:'2',reason:''}})).status,400,'variant stock adjustment requires a reason');
+    const parentStockBefore=Number((await db.queryOne('SELECT stock_on_hand FROM products WHERE id=?',[productId])).stock_on_hand);
+    const adjusted=await request(stockPath,{method:'POST',body:{qty_delta:'2',reason:'HTTP count correction'}});
+    assert.equal(adjusted.status,200,adjusted.text.slice(0,250));
+    assert.equal(adjusted.json.movement.balanceAfter,7);
+    assert.equal(Number((await db.queryOne('SELECT stock_on_hand FROM product_variants WHERE id=?',[variantId])).stock_on_hand),7);
+    assert.equal(Number((await db.queryOne('SELECT stock_on_hand FROM products WHERE id=?',[productId])).stock_on_hand),parentStockBefore,'variant movement must not change aggregate parent stock');
+    const variantMovement=await db.queryOne("SELECT product_id,variant_id,qty_delta,balance_after,reason FROM stock_ledger WHERE variant_id=? AND movement_type='adjustment' ORDER BY id DESC LIMIT 1",[variantId]);
+    assert.deepEqual([Number(variantMovement.product_id),Number(variantMovement.variant_id),Number(variantMovement.qty_delta),Number(variantMovement.balance_after),variantMovement.reason],
+      [productId,variantId,2,7,'HTTP count correction']);
+    assert.equal(JSON.parse((await db.queryOne("SELECT after_json FROM audit_logs WHERE action='inventory.variant.adjust' AND entity_id=? ORDER BY id DESC LIMIT 1",[String(variantId)])).after_json).balanceAfter,7);
+    assert.equal((await request(stockPath,{method:'POST',body:{qty_delta:'-7',reason:'Below reservation'}})).status,409,'variant stock cannot be reduced below its held reservation');
+    const movementCount=Number((await db.queryOne("SELECT COUNT(*) AS n FROM stock_ledger WHERE variant_id=? AND movement_type='adjustment'",[variantId])).n);
+    const auditCount=Number((await db.queryOne("SELECT COUNT(*) AS n FROM audit_logs WHERE action='inventory.variant.adjust' AND entity_id=?",[String(variantId)])).n);
+    await db.execute("CREATE TRIGGER p09_http_fail_variant_stock_audit BEFORE INSERT ON audit_logs FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture variant stock audit failure'");
+    let failedMovement;
+    try{failedMovement=await request(stockPath,{method:'POST',body:{qty_delta:'1',reason:'Audit rollback'}});}
+    finally{await db.execute('DROP TRIGGER IF EXISTS p09_http_fail_variant_stock_audit');}
+    assert.equal(failedMovement.status,500,'audit failure is not reported as successful variant adjustment');
+    assert.equal(Number((await db.queryOne('SELECT stock_on_hand FROM product_variants WHERE id=?',[variantId])).stock_on_hand),7,'audit failure rolls variant balance back');
+    assert.equal(Number((await db.queryOne("SELECT COUNT(*) AS n FROM stock_ledger WHERE variant_id=? AND movement_type='adjustment'",[variantId])).n),movementCount,'audit failure rolls variant ledger movement back');
+    assert.equal(Number((await db.queryOne("SELECT COUNT(*) AS n FROM audit_logs WHERE action='inventory.variant.adjust' AND entity_id=?",[String(variantId)])).n),auditCount,'failed adjustment leaves no audit row');
   });
 
   test('legacy blog admin routes use MySQL persistence, permission/CSRF checks, and transactional audit',async(t)=>{

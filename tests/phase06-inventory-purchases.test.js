@@ -218,6 +218,28 @@ describe('Phase 06 — Product, Inventory Ledger, Supplier & Purchase Receiving'
     assert.equal(db.get('SELECT id FROM purchases WHERE id=? AND supplier_id=?',purchase.id,supplier.id).id,purchase.id);
   });
 
+  test('per-variant stock adjustments preserve reservations and atomically couple ledger and audit',async()=>{
+    const product=db.get("SELECT id FROM products WHERE code='P06-TEST-001'");
+    const variant=await repo.createProductVariant(product.id,{variant_sku:`P06-VAR-STOCK-${process.pid}-${Date.now()}`,size_label:'500 g',color_label:'',price_bdt:'5.00'},{id:7});
+    db.run('UPDATE product_variants SET stock_on_hand=5,stock_reserved=2 WHERE id=?',variant.id);
+    const movement=await repo.adjustVariantStock(product.id,variant.id,{qty_delta:3,reason:'Verified variant count'},{id:7});
+    assert.deepEqual(movement,{productId:product.id,variantId:variant.id,previousBalance:5,reservedBalance:2,qtyDelta:3,balanceAfter:8,stockPool:'warehouse'});
+    assert.equal(Number(db.get('SELECT stock_on_hand FROM product_variants WHERE id=?',variant.id).stock_on_hand),8);
+    assert.deepEqual(db.get("SELECT product_id,variant_id,qty_delta,balance_after,reason FROM stock_ledger WHERE variant_id=? ORDER BY id DESC LIMIT 1",variant.id),
+      {product_id:product.id,variant_id:variant.id,qty_delta:3,balance_after:8,reason:'Verified variant count'});
+    assert.deepEqual(JSON.parse(db.get("SELECT after_json FROM audit_logs WHERE action='inventory.variant.adjust' AND entity_id=? ORDER BY id DESC LIMIT 1",String(variant.id)).after_json),{...movement,reason:'Verified variant count'});
+    await assert.rejects(()=>repo.adjustVariantStock(product.id,variant.id,{qty_delta:-7,reason:'Would break reservation'}),(err)=>err.statusCode===409);
+    await assert.rejects(()=>repo.adjustVariantStock(product.id+1,variant.id,{qty_delta:1,reason:'Wrong owner'}),(err)=>err.statusCode===404);
+    const ledgerBefore=Number(db.get('SELECT COUNT(*) AS n FROM stock_ledger WHERE variant_id=?',variant.id).n);
+    const auditBefore=Number(db.get("SELECT COUNT(*) AS n FROM audit_logs WHERE action='inventory.variant.adjust' AND entity_id=?",String(variant.id)).n);
+    db.rawDb.exec("CREATE TRIGGER p06_fail_variant_stock_audit BEFORE INSERT ON audit_logs WHEN NEW.action='inventory.variant.adjust' BEGIN SELECT RAISE(ABORT,'fixture variant stock audit failure'); END");
+    try{await assert.rejects(()=>repo.adjustVariantStock(product.id,variant.id,{qty_delta:1,reason:'Audit rollback fixture'},{id:7}));}
+    finally{db.rawDb.exec('DROP TRIGGER IF EXISTS p06_fail_variant_stock_audit');}
+    assert.equal(Number(db.get('SELECT stock_on_hand FROM product_variants WHERE id=?',variant.id).stock_on_hand),8);
+    assert.equal(Number(db.get('SELECT COUNT(*) AS n FROM stock_ledger WHERE variant_id=?',variant.id).n),ledgerBefore);
+    assert.equal(Number(db.get("SELECT COUNT(*) AS n FROM audit_logs WHERE action='inventory.variant.adjust' AND entity_id=?",String(variant.id)).n),auditBefore);
+  });
+
   test('authorized adjustments are reasoned, ledger-backed, audited atomically and cannot make stock negative', async () => {
     const product = db.get("SELECT id FROM products WHERE code='P06-TEST-001'");
     const result = await repo.adjustStock({ product_id: product.id, stock_pool: 'warehouse', qty_delta: -2, reason: 'Damaged during count' }, { id: 7, ip:'192.0.2.2' });
