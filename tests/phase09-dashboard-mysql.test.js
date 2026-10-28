@@ -121,7 +121,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
   test('Phase 06 catalog edit UI and HTTP update enforce grants/CSRF and preserve inventory/variant state',async(t)=>{
     if(!MYSQL_HOST)return t.skip(SKIP);
     const path=`/admin/phase06/products/${productId}/edit`;
-    assert.equal((await request(path,{cookie:'',accept:'text/html'})).status,401,'catalog edit requires admin authentication');
+    assert.equal((await request(path,{cookie:'',accept:'text/html'})).status,302,'unauthenticated catalog edit redirects through the existing admin login flow');
     const noGrantCookie=await login(noGrantEmail); const noGrantToken=await fetchCsrf(noGrantCookie);
     assert.equal((await request(path,{cookie:noGrantCookie,accept:'text/html'})).status,403,'inventory.manage is required');
     dashboardCookie=await login(fullEmail); csrfToken=await fetchCsrf(dashboardCookie);
