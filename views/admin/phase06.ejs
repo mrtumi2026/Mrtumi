@@ -4,9 +4,20 @@
 <div class="content-page"><div class="content container-fluid py-3">
   <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
     <div><h1 class="h3 mb-1"><%= pageTitle %></h1><p class="text-muted mb-0"><%= locale === 'en' ? 'MySQL-first product, stock ledger, supplier and purchase order workflows.' : 'MySQL-first পণ্য, স্টক লেজার, সরবরাহকারী ও পারচেজ অর্ডার ব্যবস্থাপনা।' %></p></div>
-    <a href="/admin/phase06/inventory.json" class="btn btn-outline-success">Inventory JSON</a>
+    <div class="d-flex gap-2"><a href="/admin/phase06/products/export.csv" class="btn btn-outline-success"><%= locale === 'en' ? 'Export product CSV' : 'পণ্য CSV রপ্তানি' %></a><a href="/admin/phase06/inventory.json" class="btn btn-outline-success">Inventory JSON</a></div>
   </div>
   <div class="alert alert-info"><strong><%= locale === 'en' ? 'Stock integrity:' : 'স্টক অখণ্ডতা:' %></strong> <%= locale === 'en' ? 'Product edits do not directly overwrite stock. Only opening stock (new products), ledger adjustments and confirmed purchase receipts change on-hand quantities. New purchase orders never add stock.' : 'পণ্য সম্পাদনা সরাসরি স্টক পরিবর্তন করে না। শুধু নতুন পণ্যের opening stock, লেজার adjustment ও নিশ্চিত purchase receipt স্টক পরিবর্তন করে। নতুন purchase order স্টক বাড়ায় না।' %></div>
+
+  <section class="card shadow-sm mb-4" id="product-csv"><div class="card-header"><h2 class="h5 mb-0"><%= locale === 'en' ? 'Bulk product CSV update' : 'একাধিক পণ্যের CSV আপডেট' %></h2></div><div class="card-body">
+    <p class="text-muted"><%= locale === 'en' ? 'Import updates existing products by unique SKU only. SKU and barcode are identity checks; barcode is read-only. Pricing/cost and catalog fields follow the existing product-edit validation. Stock, reservations, variants, image/media, approval and archive/status are never imported. Every row must be valid; one invalid row blocks the entire commit. Maximum 100 data rows and 1 MiB.' : 'ইমপোর্টে শুধু অনন্য SKU দিয়ে বিদ্যমান পণ্য আপডেট হয়। SKU ও বারকোড পরিচয় যাচাই; বারকোড পরিবর্তনযোগ্য নয়। মূল্য/ক্রয়মূল্য ও ক্যাটালগ ফিল্ড বিদ্যমান পণ্য-সম্পাদনার যাচাই অনুসরণ করে। স্টক, রিজার্ভেশন, ভ্যারিয়েন্ট, ছবি/মিডিয়া, অনুমোদন, আর্কাইভ/স্ট্যাটাস কখনো ইমপোর্ট হয় না। সব সারি বৈধ হতে হবে; একটি অবৈধ সারি সম্পূর্ণ কমিট আটকে দেয়। সর্বোচ্চ ১০০টি ডেটা সারি ও ১ MiB।' %></p>
+    <form method="post" action="/admin/phase06/products/import/preview" class="vstack gap-2">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <label class="form-label" for="product-csv-text"><%= locale === 'en' ? 'Paste exported product CSV' : 'রপ্তানি করা পণ্য CSV পেস্ট করুন' %></label>
+      <textarea class="form-control font-monospace" id="product-csv-text" name="csv_text" rows="10" maxlength="1048576" required></textarea>
+      <small class="text-muted"><%= locale === 'en' ? 'Required header: sku, barcode, name_bn, name_en, slug, product_type, category_id, brand_id, unit_label, regular_price_bdt, sale_price_bdt, cost_price_bdt, wholesale_price_bdt, wholesale_min_qty, low_stock_threshold, short_desc_bn, short_desc_en, description_bn, description_en. Preview is read-only; a separate confirmation is required to write.' : 'আবশ্যিক হেডার: sku, barcode, name_bn, name_en, slug, product_type, category_id, brand_id, unit_label, regular_price_bdt, sale_price_bdt, cost_price_bdt, wholesale_price_bdt, wholesale_min_qty, low_stock_threshold, short_desc_bn, short_desc_en, description_bn, description_en। প্রিভিউ শুধু যাচাই করে; লেখার জন্য আলাদা নিশ্চিতকরণ দরকার।' %></small>
+      <div><button class="btn btn-outline-primary" type="submit"><%= locale === 'en' ? 'Validate and preview (no product changes)' : 'যাচাই ও প্রিভিউ (পণ্য পরিবর্তন হবে না)' %></button></div>
+    </form>
+  </div></section>
 
   <section class="card shadow-sm mb-4" id="products"><div class="card-header"><h2 class="h5 mb-0"><%= locale === 'en' ? 'Create Product' : 'নতুন পণ্য' %></h2></div><div class="card-body">
     <form method="post" action="/admin/phase06/products" class="row g-3" enctype="application/x-www-form-urlencoded">

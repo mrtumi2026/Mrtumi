@@ -147,8 +147,7 @@ async function listProductEditOptions() {
   };
 }
 
-async function updateProduct(idInput, input, actor = {}) {
-  const id = positiveId(idInput, 'Product');
+function normalizeProductEditInput(input) {
   const product = {
     nameBn: cleanText(input.name_bn, 255, 'Bangla product name', true),
     nameEn: cleanText(input.name_en, 255, 'English product name'),
@@ -171,6 +170,12 @@ async function updateProduct(idInput, input, actor = {}) {
   };
   if (product.sale > product.regular && product.regular > 0) throw new ValidationError('Sale price cannot exceed regular price.');
   if (product.wholesale > 0 && (!product.minQty || product.wholesale >= (product.sale || product.regular))) throw new ValidationError('Wholesale price requires a minimum quantity and must be lower than selling price.');
+  return product;
+}
+
+async function updateProduct(idInput, input, actor = {}) {
+  const id = positiveId(idInput, 'Product');
+  const product = normalizeProductEditInput(input);
   const snapshot = { ...product };
   if (isMysql()) {
     const pool = require('../db/mysqlPool').getPool();
@@ -769,4 +774,4 @@ async function archiveProduct(idInput, archive, actor = {}) {
   return {id,archived:Boolean(archive)};
 }
 
-module.exports = { createSupplier,listSuppliers,createProduct,listProducts,getProductForEdit,listProductEditOptions,updateProduct,getProductGalleryForEdit,updateProductGallery,listProductVariants,createProductVariant,updateProductVariant,adjustStock,listInventory,listStockLedger,createPurchase,listPurchases,receivePurchase,archiveProduct };
+module.exports = { createSupplier,listSuppliers,createProduct,normalizeProductEditInput,listProducts,getProductForEdit,listProductEditOptions,updateProduct,getProductGalleryForEdit,updateProductGallery,listProductVariants,createProductVariant,updateProductVariant,adjustStock,listInventory,listStockLedger,createPurchase,listPurchases,receivePurchase,archiveProduct };

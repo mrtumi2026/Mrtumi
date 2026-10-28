@@ -21,6 +21,7 @@ const dashboardRepo = require('../src/repositories/adminDashboardRepository');
 const { policyForAdminRoute } = require('../src/middleware/legacyAdminRbac');
 const { collectAdminRoutes,concretePath } = require('./helpers/adminRouteInventory');
 const { startServer } = require('../server');
+const { PRODUCT_CSV_COLUMNS,serializeCsv,parseCsv } = require('../src/utils/productCsv');
 
 describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audit HTTP', { skip: !MYSQL_HOST && !REQUIRED ? SKIP : false }, () => {
   let pool, db, server, baseUrl, dashboardCookie, csrfToken, productId, invoiceOrderId, dashboardUserId, limitedUserId, managerUserId, noGrantUserId, fullEmail='', limitedEmail='', managerEmail='', noGrantEmail='';
@@ -218,6 +219,115 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     assert.equal(blocked.status,200);
     assert.doesNotMatch(blocked.text,/token=hidden/,'unsupported legacy URLs and query secrets are not rendered');
     assert.equal((await request(`${base}/gallery`,{method:'POST',body:{gallery_paths:[first]}})).status,400,'legacy or missing entries fail closed without overwriting them');
+  });
+
+  test('Phase 06 product CSV preview/commit/export is authorized, row-validated, atomic and spreadsheet-safe',async(t)=>{
+    if(!MYSQL_HOST)return t.skip(SKIP);
+    dashboardCookie=await login(fullEmail); csrfToken=await fetchCsrf(dashboardCookie);
+    const noGrantCookie=await login(noGrantEmail); const noGrantToken=await fetchCsrf(noGrantCookie);
+    const suffix=Date.now(),skuA=`P09-CSV-A-${suffix}`,skuB=`P09-CSV-B-${suffix}`;
+    const categoryId=Number((await db.queryOne('SELECT category_id FROM products WHERE id=?',[productId])).category_id);
+    let productA=null,productB=null,productAmbiguous=null,variantId=null;
+    await db.execute('DROP TRIGGER IF EXISTS p09_http_fail_product_csv_update');
+    t.after(async()=>{
+      await db.execute('DROP TRIGGER IF EXISTS p09_http_fail_product_csv_update');
+      if(variantId)await db.execute('DELETE FROM product_variants WHERE id=?',[variantId]);
+      for(const id of [productAmbiguous,productA,productB])if(id)await db.execute('DELETE FROM products WHERE id=?',[id]);
+    });
+    productA=Number((await db.execute(`INSERT INTO products(sku,barcode,slug,name_bn,name_en,category_id,regular_price_paisa,sale_price_paisa,cost_price_paisa,
+      stock_on_hand,stock_reserved,vendor_stock_on_hand,vendor_stock_reserved,image_url,is_flash_sale,approval_status,status,is_archived)
+      VALUES(?,?,?,?,?,?,10000,9000,6000,12,3,4,1,'/uploads/product/lychee-fresh.jpg',1,'pending',0,0)`,
+      [skuA,`P09-BAR-A-${suffix}`,`p09-csv-a-${suffix}`,'CSV, "quoted"\nand line','=SUM(1,1)',categoryId])).insertId);
+    productB=Number((await db.execute(`INSERT INTO products(sku,barcode,slug,name_bn,name_en,category_id,regular_price_paisa,sale_price_paisa,cost_price_paisa,
+      stock_on_hand,stock_reserved,vendor_stock_on_hand,vendor_stock_reserved,image_url,approval_status,status,is_archived)
+      VALUES(?,?,?,?,?,?,20000,18000,12000,8,2,0,0,'/uploads/product/mango-organic.jpg','approved',1,0)`,
+      [skuB,`P09-BAR-B-${suffix}`,`p09-csv-b-${suffix}`,'পুরোনো দুই','Old B',categoryId])).insertId);
+    const variant=await db.execute('INSERT INTO product_variants(product_id,variant_sku,size_label,color_label,price_paisa,stock_on_hand,stock_reserved,status) VALUES(?,?,\'500 g\',\'Green\',5000,6,2,1)',[productA,`P09-CSV-V-${suffix}`]);
+    variantId=Number(variant.insertId);
+    const base=`/admin/phase06/products/import`;
+    assert.equal((await request('/admin/phase06/products/export.csv',{cookie:'',token:''})).status,401,'CSV export requires admin authentication');
+    assert.equal((await request('/admin/phase06/products/export.csv',{cookie:noGrantCookie,token:noGrantToken})).status,403,'CSV export requires inventory.manage');
+    const exportResponse=await request('/admin/phase06/products/export.csv');
+    assert.equal(exportResponse.status,200,exportResponse.text.slice(0,200));
+    assert.match(exportResponse.headers.get('content-type'),/text\/csv/i);
+    assert.match(exportResponse.headers.get('content-disposition'),/attachment; filename="products\.csv"/);
+    const exportedRecords=parseCsv(exportResponse.text);
+    const exportHeaders=exportedRecords[0].cells;
+    assert.deepEqual(exportHeaders,PRODUCT_CSV_COLUMNS);
+    assert.equal(exportHeaders.some((column)=>['image_url','gallery_json','stock_on_hand','stock_reserved','vendor_stock_on_hand','vendor_stock_reserved','approval_status','is_archived','status','variant_sku'].includes(column)),false,'export contains no media, stock, variants or state');
+    const exportSkuIndex=exportHeaders.indexOf('sku'),exportBnIndex=exportHeaders.indexOf('name_bn'),exportEnIndex=exportHeaders.indexOf('name_en');
+    const exportedA=exportedRecords.slice(1).find((record)=>record.cells[exportSkuIndex]===skuA);
+    assert.ok(exportedA);
+    assert.equal(exportedA.cells[exportEnIndex],"'=SUM(1,1)",'spreadsheet formula-leading text gets a safe apostrophe prefix');
+    assert.equal(exportedA.cells[exportBnIndex],'CSV, "quoted"\nand line','CSV commas, quotes, and embedded newlines are quoted correctly');
+    assert.ok(Number((await db.queryOne("SELECT COUNT(*) AS n FROM audit_logs WHERE action='product.csv.export'")).n)>=1,'sensitive export is audited without logging cells');
+
+    const makeRow=(sku,barcode,extra={})=>({sku,barcode,name_bn:'Imported name',name_en:'Imported English',slug:`${sku.toLowerCase()}-new`,product_type:'grocery',
+      category_id:String(categoryId),brand_id:'',unit_label:'1 pc',regular_price_bdt:'125.50',sale_price_bdt:'110.25',cost_price_bdt:'70.00',wholesale_price_bdt:'0.00',
+      wholesale_min_qty:'0',low_stock_threshold:'4',short_desc_bn:'',short_desc_en:'',description_bn:'',description_en:'',...extra});
+    const csv=(rows)=>serializeCsv(PRODUCT_CSV_COLUMNS,rows);
+    const path=`${base}/preview`,commitPath=`${base}/commit`;
+    const initial=[makeRow(skuA,`P09-BAR-A-${suffix}`,{name_bn:'প্রিভিউ এক'}),makeRow(skuB,`P09-BAR-B-${suffix}`,{name_bn:'প্রিভিউ দুই'})];
+    assert.equal((await request(path,{method:'POST',cookie:'',token:'',body:{csv_text:csv(initial)}})).status,401,'preview requires admin authentication');
+    assert.equal((await request(path,{method:'POST',token:'',body:{csv_text:csv(initial)}})).status,403,'preview requires CSRF');
+    assert.equal((await request(path,{method:'POST',cookie:noGrantCookie,token:noGrantToken,body:{csv_text:csv(initial)}})).status,403,'preview requires inventory.manage');
+    const initialRows=await db.queryAll('SELECT id,name_bn,slug,regular_price_paisa,sale_price_paisa,cost_price_paisa,stock_on_hand,stock_reserved,vendor_stock_on_hand,vendor_stock_reserved,image_url,is_flash_sale,approval_status,status,is_archived FROM products WHERE id IN (?,?) ORDER BY id',[productA,productB]);
+    const preview=await request(path,{method:'POST',body:{csv_text:csv(initial)}});
+    assert.equal(preview.status,200,preview.text.slice(0,300));
+    assert.equal(preview.json.preview.valid,true,JSON.stringify(preview.json.preview.errors));
+    assert.ok(preview.json.previewId);
+    assert.deepEqual(await db.queryAll('SELECT id,name_bn,slug,regular_price_paisa,sale_price_paisa,cost_price_paisa,stock_on_hand,stock_reserved,vendor_stock_on_hand,vendor_stock_reserved,image_url,is_flash_sale,approval_status,status,is_archived FROM products WHERE id IN (?,?) ORDER BY id',[productA,productB]),initialRows,'preview has no catalog mutations');
+    const alteredCsv=csv([makeRow(skuA,`P09-BAR-A-${suffix}`,{name_bn:'Changed after preview'}),initial[1]]);
+    assert.equal((await request(commitPath,{method:'POST',body:{preview_id:preview.json.previewId,csv_text:alteredCsv}})).status,409,'commit is bound to the exact previewed CSV');
+
+    const mixed=csv([initial[0],makeRow(skuB,`P09-BAR-B-${suffix}`,{category_id:'999999'})]);
+    const invalid=await request(path,{method:'POST',body:{csv_text:mixed}});
+    assert.equal(invalid.json.preview.valid,false);
+    assert.equal(invalid.json.previewId,null);
+    assert.ok(invalid.json.preview.errors.some((item)=>item.row===3&&item.errors.some((message)=>message.includes('active category'))));
+    assert.equal((await request(commitPath,{method:'POST',body:{preview_id:'',csv_text:mixed}})).status,409,'invalid mixed CSV cannot be committed');
+    assert.deepEqual(await db.queryAll('SELECT id,name_bn,slug,regular_price_paisa,sale_price_paisa,cost_price_paisa,stock_on_hand,stock_reserved,vendor_stock_on_hand,vendor_stock_reserved,image_url,is_flash_sale,approval_status,status,is_archived FROM products WHERE id IN (?,?) ORDER BY id',[productA,productB]),initialRows,'one invalid row blocks every otherwise valid row');
+
+    const duplicateSku=await request(path,{method:'POST',body:{csv_text:csv([initial[0],makeRow(skuA.toLowerCase(),`P09-BAR-A2-${suffix}`)])}});
+    assert.equal(duplicateSku.json.preview.valid,false);
+    assert.ok(duplicateSku.json.preview.errors.some((item)=>item.errors.some((message)=>message.includes('Duplicate SKU'))));
+    const duplicateBarcode=await request(path,{method:'POST',body:{csv_text:csv([makeRow(skuA,'SAME-BAR'),makeRow(skuB,'SAME-BAR')])}});
+    assert.equal(duplicateBarcode.json.preview.valid,false);
+    assert.ok(duplicateBarcode.json.preview.errors.some((item)=>item.errors.some((message)=>message.includes('Duplicate Barcode'))));
+    productAmbiguous=Number((await db.execute(`INSERT INTO products(sku,barcode,slug,name_bn,name_en,category_id,regular_price_paisa,sale_price_paisa)
+      VALUES(?,?,?, 'Ambiguous barcode fixture','Ambiguous',?,10000,9000)`,[`P09-CSV-AMB-${suffix}`,`P09-BAR-A-${suffix}`,`p09-csv-amb-${suffix}`,categoryId])).insertId);
+    const ambiguousBarcode=await request(path,{method:'POST',body:{csv_text:csv([initial[0]])}});
+    assert.equal(ambiguousBarcode.json.preview.valid,false);
+    assert.ok(ambiguousBarcode.json.preview.errors.some((item)=>item.errors.some((message)=>message.includes('ambiguous'))));
+    await db.execute('UPDATE products SET barcode=? WHERE id=?',[`P09-BAR-C-${suffix}`,productAmbiguous]);
+
+    const valid=await request(path,{method:'POST',body:{csv_text:csv(initial)}});
+    assert.equal(valid.status,200);
+    assert.equal(valid.json.preview.valid,true);
+    const saved=await request(commitPath,{method:'POST',body:{preview_id:valid.json.previewId,csv_text:csv(initial)}});
+    assert.equal(saved.status,200,saved.text.slice(0,300));
+    assert.equal(saved.json.updatedCount,2);
+    const afterRows=await db.queryAll('SELECT id,sku,name_bn,slug,regular_price_paisa,sale_price_paisa,cost_price_paisa,stock_on_hand,stock_reserved,vendor_stock_on_hand,vendor_stock_reserved,image_url,is_flash_sale,approval_status,status,is_archived FROM products WHERE id IN (?,?) ORDER BY id',[productA,productB]);
+    assert.deepEqual(afterRows.map((row)=>[row.name_bn,row.regular_price_paisa,row.sale_price_paisa,row.cost_price_paisa]),[['প্রিভিউ এক',12550,11025,7000],['প্রিভিউ দুই',12550,11025,7000]]);
+    assert.deepEqual(afterRows.map((row)=>[Number(row.stock_on_hand),Number(row.stock_reserved),Number(row.vendor_stock_on_hand),Number(row.vendor_stock_reserved),row.image_url,Number(row.is_flash_sale),row.approval_status,Number(row.status),Number(row.is_archived)]),
+      [[12,3,4,1,'/uploads/product/lychee-fresh.jpg',1,'pending',0,0],[8,2,0,0,'/uploads/product/mango-organic.jpg',0,'approved',1,0]],'CSV preserves stock, reservations, media, approval, archive and status');
+    assert.deepEqual(await db.queryOne('SELECT variant_sku,stock_on_hand,stock_reserved,status FROM product_variants WHERE id=?',[variantId]),
+      {variant_sku:`P09-CSV-V-${suffix}`,stock_on_hand:6,stock_reserved:2,status:1},'variant records are untouched');
+    assert.equal(Number((await db.queryOne("SELECT COUNT(*) AS n FROM audit_logs WHERE action='product.csv_import.update' AND entity_id IN (?,?)",[String(productA),String(productB)])).n),2);
+    assert.equal(Number((await db.queryOne("SELECT COUNT(*) AS n FROM audit_logs WHERE action='product.csv_import.commit'")).n)>=1,true);
+
+    const rollbackCsv=csv([makeRow(skuA,`P09-BAR-A-${suffix}`,{name_bn:'Rollback A',slug:`${skuA.toLowerCase()}-rollback`}),
+      makeRow(skuB,`P09-BAR-B-${suffix}`,{name_bn:'Rollback B',slug:`${skuB.toLowerCase()}-rollback`})]);
+    const rollbackPreview=await request(path,{method:'POST',body:{csv_text:rollbackCsv}});
+    assert.equal(rollbackPreview.json.preview.valid,true,JSON.stringify(rollbackPreview.json.preview.errors));
+    await db.execute(`CREATE TRIGGER p09_http_fail_product_csv_update BEFORE INSERT ON audit_logs FOR EACH ROW
+      BEGIN IF NEW.action='product.csv_import.update' AND NEW.entity_id='${productB}' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture CSV audit failure'; END IF; END`);
+    try{
+      const failed=await request(commitPath,{method:'POST',body:{preview_id:rollbackPreview.json.previewId,csv_text:rollbackCsv}});
+      assert.equal(failed.status,500,failed.text.slice(0,300));
+    }finally{await db.execute('DROP TRIGGER IF EXISTS p09_http_fail_product_csv_update');}
+    const rolledBack=await db.queryAll('SELECT id,name_bn,slug FROM products WHERE id IN (?,?) ORDER BY id',[productA,productB]);
+    assert.deepEqual(rolledBack.map((row)=>[row.name_bn,row.slug]),[['প্রিভিউ এক',`${skuA.toLowerCase()}-new`],['প্রিভিউ দুই',`${skuB.toLowerCase()}-new`]],'later-row audit failure rolls back the entire batch');
   });
 
   test('Phase 06 variant HTTP management validates, audits, and preserves carts/orders/reservations/ledger',async(t)=>{
