@@ -170,6 +170,56 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     await db.execute('DELETE FROM product_variants WHERE id=?',[variant.insertId]);
   });
 
+  test('Phase 06 gallery reorder enforces product-local complete lists, safe paths, auth/CSRF, persistence and audit rollback',async(t)=>{
+    if(!MYSQL_HOST)return t.skip(SKIP);
+    dashboardCookie=await login(fullEmail); csrfToken=await fetchCsrf(dashboardCookie);
+    const noGrantCookie=await login(noGrantEmail); const noGrantToken=await fetchCsrf(noGrantCookie);
+    const base=`/admin/phase06/products/${productId}`;
+    const first='/uploads/product/lychee-fresh.jpg', second='/uploads/product/lychee-box.jpg';
+    const original=await db.queryOne('SELECT image_url,gallery_json FROM products WHERE id=?',[productId]);
+    t.after(async()=>{
+      await db.execute('DROP TRIGGER IF EXISTS p09_http_fail_gallery_update');
+      await db.execute('UPDATE products SET image_url=?,gallery_json=? WHERE id=?',[original.image_url,original.gallery_json,productId]);
+    });
+    await db.execute('UPDATE products SET image_url=?,gallery_json=? WHERE id=?',[first,JSON.stringify([first,second]),productId]);
+    const imageFiles=[first,second].map((image)=>require('path').join(__dirname,'..','public',image.slice(1)));
+    assert.ok(imageFiles.every((file)=>require('fs').existsSync(file)));
+    assert.equal((await request(`${base}/gallery`,{method:'POST',cookie:'',token:'',body:{gallery_paths:[second,first]}})).status,302,'unauthenticated gallery changes use existing login flow');
+    assert.equal((await request(`${base}/gallery`,{method:'POST',token:'',body:{gallery_paths:[second,first]}})).status,403,'gallery changes require session-bound CSRF');
+    assert.equal((await request(`${base}/gallery`,{method:'POST',cookie:noGrantCookie,token:noGrantToken,body:{gallery_paths:[second,first]}})).status,403,'gallery changes require inventory.manage');
+    const form=await request(`${base}/edit`,{accept:'text/html'});
+    assert.equal(form.status,200);
+    assert.match(form.text,/id="gallery-paths"/);
+    assert.ok(form.text.includes(first)&&form.text.includes(second),'only the current product public image paths are shown');
+    assert.equal((await request('/admin/phase06/products/999999999/gallery',{method:'POST',body:{gallery_paths:[first]}})).status,404,'missing product is not created or mutated');
+    assert.equal((await request(`${base}/gallery`,{method:'POST',body:{gallery_paths:[first,'/uploads/product/../secret.jpg']}})).status,400,'traversal paths are rejected');
+    assert.equal((await request(`${base}/gallery`,{method:'POST',body:{gallery_paths:[first,'/uploads/product/mango-organic.jpg']}})).status,400,'safe but unassigned/cross-product paths are rejected');
+    assert.equal((await request(`${base}/gallery`,{method:'POST',body:{gallery_paths:[first]}})).status,400,'reorder requires every current item exactly once');
+    const saved=await request(`${base}/gallery`,{method:'POST',body:{gallery_paths:[second,first]}});
+    assert.equal(saved.status,200,saved.text.slice(0,300));
+    assert.deepEqual(saved.json.gallery.galleryPaths,[second,first]);
+    assert.deepEqual(await db.queryOne('SELECT image_url,gallery_json FROM products WHERE id=?',[productId]),
+      {image_url:second,gallery_json:JSON.stringify([second,first])});
+    const audit=await db.queryOne("SELECT before_json,after_json FROM audit_logs WHERE action='product.gallery.reorder' AND entity_id=? ORDER BY id DESC LIMIT 1",[String(productId)]);
+    assert.deepEqual(JSON.parse(audit.before_json).galleryPaths,[first,second]);
+    assert.deepEqual(JSON.parse(audit.after_json).galleryPaths,[second,first]);
+    assert.ok(imageFiles.every((file)=>require('fs').existsSync(file)),'reorder never removes files');
+
+    await db.execute("CREATE TRIGGER p09_http_fail_gallery_update BEFORE INSERT ON audit_logs FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture gallery audit failure'");
+    try {
+      const failed=await request(`${base}/gallery`,{method:'POST',body:{gallery_paths:[first,second]}});
+      assert.equal(failed.status,500,failed.text.slice(0,300));
+    } finally { await db.execute('DROP TRIGGER IF EXISTS p09_http_fail_gallery_update'); }
+    assert.deepEqual(await db.queryOne('SELECT image_url,gallery_json FROM products WHERE id=?',[productId]),
+      {image_url:second,gallery_json:JSON.stringify([second,first])},'audit failure rolls both gallery columns back');
+
+    await db.execute('UPDATE products SET gallery_json=? WHERE id=?',[JSON.stringify(['https://example.invalid/private?token=hidden']),productId]);
+    const blocked=await request(`${base}/edit`,{accept:'text/html'});
+    assert.equal(blocked.status,200);
+    assert.doesNotMatch(blocked.text,/token=hidden/,'unsupported legacy URLs and query secrets are not rendered');
+    assert.equal((await request(`${base}/gallery`,{method:'POST',body:{gallery_paths:[first]}})).status,400,'legacy or missing entries fail closed without overwriting them');
+  });
+
   test('Phase 06 variant HTTP management validates, audits, and preserves carts/orders/reservations/ledger',async(t)=>{
     if(!MYSQL_HOST)return t.skip(SKIP);
     dashboardCookie=await login(fullEmail); csrfToken=await fetchCsrf(dashboardCookie);

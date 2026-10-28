@@ -1,5 +1,7 @@
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
 const { env } = require('../config/env');
 const sqlite = require('../db/database');
 const { withTransaction } = require('../db/mysqlPool');
@@ -220,6 +222,124 @@ async function updateProduct(idInput, input, actor = {}) {
       String(actor.ip||'').slice(0,64),String(actor.userAgent||'').slice(0,255));
     sqlite.rawDb.exec('COMMIT');
     return { id, sku:before.sku, product:snapshot };
+  } catch (err) {
+    try { sqlite.rawDb.exec('ROLLBACK'); } catch (_e) {}
+    throw err;
+  }
+}
+
+const GALLERY_IMAGE_EXTENSIONS = new Set(['.jpg','.jpeg','.png','.webp','.gif']);
+
+function isApprovedGalleryPath(rawPath) {
+  const value = String(rawPath ?? '');
+  const match = value.match(/^\/uploads\/(custom|product)\/([A-Za-z0-9][A-Za-z0-9._-]{0,249})$/);
+  if (!match || value.includes('..') || value.includes('\\') || value.includes('%') || /[?#\u0000-\u001f]/.test(value)) return false;
+  const [, kind, basename] = match;
+  if (!GALLERY_IMAGE_EXTENSIONS.has(path.extname(basename).toLowerCase())) return false;
+  const root = kind === 'product'
+    ? path.resolve(__dirname, '../../public/uploads/product')
+    : path.resolve(env.uploadDir, 'custom');
+  try {
+    const realRoot = fs.realpathSync(root);
+    const realFile = fs.realpathSync(path.join(realRoot, basename));
+    if (path.relative(realRoot, realFile) !== basename || !fs.statSync(realFile).isFile()) return false;
+    return require('../middleware/upload').hasValidRasterMagicBytes(realFile);
+  } catch (_err) {
+    return false;
+  }
+}
+
+function collectEditableGallery(row) {
+  const galleryField = row.gallery_json ?? row.gallery;
+  let rawItems = [];
+  let blockedCount = 0;
+  if (galleryField !== null && galleryField !== undefined && String(galleryField).trim() !== '') {
+    try {
+      rawItems = typeof galleryField === 'string' ? JSON.parse(galleryField) : galleryField;
+      if (!Array.isArray(rawItems)) { rawItems = []; blockedCount += 1; }
+    } catch (_err) { rawItems = []; blockedCount += 1; }
+  }
+  const paths = [];
+  for (const item of rawItems) {
+    const candidate = typeof item === 'string' ? item : item && typeof item === 'object' ? (item.url || item.image) : '';
+    if (!isApprovedGalleryPath(candidate)) { blockedCount += 1; continue; }
+    if (!paths.includes(candidate)) paths.push(candidate);
+  }
+  const primary = String(row.image_url ?? row.image ?? '').trim();
+  if (primary) {
+    if (!isApprovedGalleryPath(primary)) blockedCount += 1;
+    else if (!paths.includes(primary)) paths.unshift(primary);
+    else {
+      paths.splice(paths.indexOf(primary), 1);
+      paths.unshift(primary);
+    }
+  }
+  return { paths, blockedCount };
+}
+
+function parseGalleryOrder(input) {
+  let values;
+  if (Array.isArray(input)) values = input;
+  else if (typeof input === 'string') values = input.split(/\r?\n/);
+  else throw new ValidationError('Gallery order must be a list of image paths.');
+  const paths = values.map((value) => String(value ?? '').trim()).filter(Boolean);
+  if (!paths.length) throw new ValidationError('At least one existing gallery image is required.');
+  if (paths.some((item) => !isApprovedGalleryPath(item))) throw new ValidationError('Gallery entries must be existing safe raster images under the approved upload paths.');
+  if (new Set(paths).size !== paths.length) throw new ValidationError('Each gallery image must appear exactly once.');
+  return paths;
+}
+
+async function getProductGalleryForEdit(productIdInput) {
+  const productId = positiveId(productIdInput, 'Product');
+  const row = isMysql()
+    ? await require('../db/mysqlPool').queryOne('SELECT id,image_url,gallery_json,is_archived FROM products WHERE id=?', [productId])
+    : sqlite.get('SELECT id,image AS image_url,gallery AS gallery_json,is_archived FROM products WHERE id=?', productId);
+  if (!row) throw new NotFoundError('Product not found.');
+  return { productId, ...collectEditableGallery(row), isArchived:Boolean(Number(row.is_archived)) };
+}
+
+async function updateProductGallery(productIdInput, input, actor = {}) {
+  const productId = positiveId(productIdInput, 'Product');
+  const submitted = parseGalleryOrder(input.gallery_paths);
+  if (isMysql()) {
+    const pool = require('../db/mysqlPool').getPool();
+    return withTransaction(async (tx) => {
+      const row = await tx.queryOne('SELECT id,image_url,gallery_json,is_archived FROM products WHERE id=? FOR UPDATE', [productId]);
+      if (!row) throw new NotFoundError('Product not found.');
+      if (Number(row.is_archived)) throw new ValidationError('Archived products must be restored before managing galleries.');
+      const current = collectEditableGallery(row);
+      if (current.blockedCount) throw new ValidationError('This product has legacy or missing gallery entries; no gallery changes were applied. Review those references before retrying.');
+      const allowed = new Set(current.paths);
+      if (submitted.length !== current.paths.length || submitted.some((item) => !allowed.has(item))) {
+        throw new ValidationError('Gallery order must include every current image exactly once; new or cross-product paths are not accepted.');
+      }
+      const beforeState = { imageUrl:current.paths[0] || '', galleryPaths:current.paths };
+      await tx.execute('UPDATE products SET image_url=?,gallery_json=? WHERE id=?', [submitted[0],JSON.stringify(submitted),productId]);
+      const afterState = { imageUrl:submitted[0],galleryPaths:submitted };
+      await recordAuditLog({ actorType:'admin',actorId:actor.id||null,action:'product.gallery.reorder',entityType:'product',entityId:productId,
+        beforeState,afterState,ipAddress:actor.ip||'',userAgent:actor.userAgent||'' }, tx);
+      return { productId,imageUrl:submitted[0],galleryPaths:submitted };
+    }, { pool });
+  }
+  sqlite.rawDb.exec('BEGIN IMMEDIATE');
+  try {
+    const row = sqlite.get('SELECT id,image AS image_url,gallery AS gallery_json,is_archived FROM products WHERE id=?', productId);
+    if (!row) throw new NotFoundError('Product not found.');
+    if (Number(row.is_archived)) throw new ValidationError('Archived products must be restored before managing galleries.');
+    const current = collectEditableGallery(row);
+    if (current.blockedCount) throw new ValidationError('This product has legacy or missing gallery entries; no gallery changes were applied. Review those references before retrying.');
+    const allowed = new Set(current.paths);
+    if (submitted.length !== current.paths.length || submitted.some((item) => !allowed.has(item))) {
+      throw new ValidationError('Gallery order must include every current image exactly once; new or cross-product paths are not accepted.');
+    }
+    const beforeState = { imageUrl:current.paths[0] || '',galleryPaths:current.paths };
+    sqlite.run('UPDATE products SET image=?,gallery=? WHERE id=?', submitted[0],JSON.stringify(submitted),productId);
+    const afterState = { imageUrl:submitted[0],galleryPaths:submitted };
+    sqlite.run(`INSERT INTO audit_logs (actor_type,actor_id,action,entity_type,entity_id,before_json,after_json,ip_address,user_agent)
+      VALUES ('admin',?,'product.gallery.reorder','product',?,?,?,?,?)`, actor.id||null,String(productId),JSON.stringify(beforeState),JSON.stringify(afterState),
+      String(actor.ip||'').slice(0,64),String(actor.userAgent||'').slice(0,255));
+    sqlite.rawDb.exec('COMMIT');
+    return { productId,imageUrl:submitted[0],galleryPaths:submitted };
   } catch (err) {
     try { sqlite.rawDb.exec('ROLLBACK'); } catch (_e) {}
     throw err;
@@ -649,4 +769,4 @@ async function archiveProduct(idInput, archive, actor = {}) {
   return {id,archived:Boolean(archive)};
 }
 
-module.exports = { createSupplier,listSuppliers,createProduct,listProducts,getProductForEdit,listProductEditOptions,updateProduct,listProductVariants,createProductVariant,updateProductVariant,adjustStock,listInventory,listStockLedger,createPurchase,listPurchases,receivePurchase,archiveProduct };
+module.exports = { createSupplier,listSuppliers,createProduct,listProducts,getProductForEdit,listProductEditOptions,updateProduct,getProductGalleryForEdit,updateProductGallery,listProductVariants,createProductVariant,updateProductVariant,adjustStock,listInventory,listStockLedger,createPurchase,listPurchases,receivePurchase,archiveProduct };

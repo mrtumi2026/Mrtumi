@@ -126,6 +126,42 @@ describe('Phase 06 — Product, Inventory Ledger, Supplier & Purchase Receiving'
     assert.equal(Number(db.get("SELECT COUNT(*) AS n FROM product_variants WHERE variant_sku='P06-TEST-ROLLBACK'").n),0);
   });
 
+  test('gallery reorder accepts only the complete current product image set and rolls back with audit failures', async () => {
+    const product = db.get("SELECT id FROM products WHERE code='P06-TEST-001'");
+    const first='/uploads/product/lychee-fresh.jpg';
+    const second='/uploads/product/lychee-box.jpg';
+    db.run('UPDATE products SET image=?,gallery=? WHERE id=?',first,JSON.stringify([first,second]),product.id);
+    const beforeFiles=[first,second].map((image)=>path.join(__dirname,'..','public',image.slice(1)));
+    assert.ok(beforeFiles.every((file)=>fs.existsSync(file)));
+    assert.deepEqual((await repo.getProductGalleryForEdit(product.id)).paths,[first,second]);
+    await assert.rejects(()=>repo.updateProductGallery(999999,{gallery_paths:[first]}),(err)=>err.code==='NOT_FOUND');
+    await assert.rejects(()=>repo.updateProductGallery(product.id,{gallery_paths:[first,'/uploads/product/../secret.jpg']}),ValidationError);
+    await assert.rejects(()=>repo.updateProductGallery(product.id,{gallery_paths:[first,'/uploads/product/mango-organic.jpg']}),ValidationError,'a valid image not assigned to this product is rejected');
+    await assert.rejects(()=>repo.updateProductGallery(product.id,{gallery_paths:[first]}),ValidationError,'reorder must be a complete list');
+
+    const updated=await repo.updateProductGallery(product.id,{gallery_paths:[second,first]},{id:7,ip:'192.0.2.7'});
+    assert.deepEqual(updated.galleryPaths,[second,first]);
+    assert.deepEqual(db.get('SELECT image AS image_url,gallery AS gallery_json FROM products WHERE id=?',product.id),
+      {image_url:second,gallery_json:JSON.stringify([second,first])});
+    const audit=db.get("SELECT actor_id,before_json,after_json FROM audit_logs WHERE action='product.gallery.reorder' AND entity_id=? ORDER BY id DESC LIMIT 1",String(product.id));
+    assert.equal(audit.actor_id,7);
+    assert.deepEqual(JSON.parse(audit.before_json).galleryPaths,[first,second]);
+    assert.deepEqual(JSON.parse(audit.after_json).galleryPaths,[second,first]);
+    assert.ok(beforeFiles.every((file)=>fs.existsSync(file)),'gallery reorder never removes shared image files');
+
+    db.rawDb.exec("CREATE TRIGGER p06_fail_gallery_audit BEFORE INSERT ON audit_logs WHEN NEW.action='product.gallery.reorder' BEGIN SELECT RAISE(ABORT,'fixture gallery audit failure'); END");
+    try { await assert.rejects(()=>repo.updateProductGallery(product.id,{gallery_paths:[first,second]})); }
+    finally { db.rawDb.exec('DROP TRIGGER IF EXISTS p06_fail_gallery_audit'); }
+    assert.deepEqual(db.get('SELECT image AS image_url,gallery AS gallery_json FROM products WHERE id=?',product.id),
+      {image_url:second,gallery_json:JSON.stringify([second,first])},'audit failure rolls gallery fields back atomically');
+    db.run('UPDATE products SET gallery=? WHERE id=?',JSON.stringify(['https://example.invalid/private?token=hidden']),product.id);
+    const blocked=await repo.getProductGalleryForEdit(product.id);
+    assert.equal(blocked.blockedCount,1);
+    assert.deepEqual(blocked.paths,[second],'only independently validated current paths are returned; the unsafe legacy URL itself is not exposed');
+    await assert.rejects(()=>repo.updateProductGallery(product.id,{gallery_paths:[first]}),ValidationError);
+    db.run('UPDATE products SET image=?,gallery=? WHERE id=?',first,JSON.stringify([first,second]),product.id);
+  });
+
   test('supplier creation validates fields and atomically records its audit event', async () => {
     const input = { name:'Verified supplier', supplier_code:'P06-SUP-AUDIT', phone:'+8801712345678', email:'supplier-audit@example.com', tax_or_trade_id:'BD-TIN-123' };
     const created = await repo.createSupplier(input, { id:7, ip:'192.0.2.8' });

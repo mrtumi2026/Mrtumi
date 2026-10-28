@@ -22,10 +22,10 @@ router.get('/admin/phase06', asyncRoute(async (req,res) => {
 }));
 
 router.get('/admin/phase06/products/:id/edit', asyncRoute(async (req,res) => {
-  const [product, options, variants] = await Promise.all([repo.getProductForEdit(req.params.id), repo.listProductEditOptions(), repo.listProductVariants(req.params.id)]);
+  const [product, options, variants, gallery] = await Promise.all([repo.getProductForEdit(req.params.id), repo.listProductEditOptions(), repo.listProductVariants(req.params.id), repo.getProductGalleryForEdit(req.params.id)]);
   const { paisaToBdtString } = require('../utils/money');
   res.render('admin/phase06-product-edit', {
-    product, categories:options.categories, brands:options.brands, variants, paisaToBdtString,
+    product, categories:options.categories, brands:options.brands, variants, galleryPaths:gallery.paths, galleryBlockedCount:gallery.blockedCount, paisaToBdtString,
     pageTitle: req.locale === 'en' ? `Edit ${product.sku}` : `${product.sku} সম্পাদনা`, csrfToken:req.csrfToken(), locale:req.locale,
   });
 }));
@@ -35,6 +35,13 @@ router.post('/admin/phase06/products/:id', requireCsrf, asyncRoute(async (req,re
   if (wantsJson(req)) return res.json({ success:true, product:result });
   req.flash('success', req.locale === 'en' ? `Product ${result.sku} updated. Stock and variant records were not changed.` : `পণ্য ${result.sku} আপডেট হয়েছে। স্টক ও ভ্যারিয়েন্ট অপরিবর্তিত আছে।`);
   return res.redirect('/admin/phase06');
+}));
+
+router.post('/admin/phase06/products/:id/gallery', requireCsrf, asyncRoute(async (req,res) => {
+  const gallery = await repo.updateProductGallery(req.params.id, req.body, actor(req));
+  if (wantsJson(req)) return res.json({ success:true, gallery });
+  req.flash('success', req.locale === 'en' ? 'Gallery order saved. Image files were not changed or deleted.' : 'গ্যালারির ক্রম সংরক্ষিত হয়েছে। কোনো ছবি ফাইল বদলানো বা মুছে ফেলা হয়নি।');
+  return res.redirect(`/admin/phase06/products/${req.params.id}/edit#gallery`);
 }));
 
 router.post('/admin/phase06/products/:id/variants', requireCsrf, asyncRoute(async (req,res) => {
