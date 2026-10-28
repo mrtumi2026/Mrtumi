@@ -48,6 +48,47 @@ describe('Phase 06 — Product, Inventory Ledger, Supplier & Purchase Receiving'
     }), ValidationError);
   });
 
+  test('product catalog edits preserve stock and are transactionally audited with validation and rollback', async () => {
+    const product = db.get("SELECT id FROM products WHERE code='P06-TEST-001'");
+    const stockBefore = db.get('SELECT stock,stock_reserved,vendor_stock_on_hand FROM products WHERE id=?', product.id);
+    const ledgerBefore = Number(db.get('SELECT COUNT(*) AS n FROM stock_ledger WHERE product_id=?', product.id).n);
+    const input = {
+      name_bn:'সম্পাদিত পণ্য', name_en:'Edited product', slug:'phase06-test-product-edited', product_type:'grocery',
+      category_id:1, brand_id:'', unit_label:'500 g', regular_price_bdt:'130.00', sale_price_bdt:'115.25', cost_price_bdt:'70.25',
+      wholesale_price_bdt:'90.00', wholesale_min_qty:'5', low_stock_threshold:'4', image_url:'/uploads/custom/edited.webp',
+      short_desc_bn:'নতুন সংক্ষিপ্ত বিবরণ', short_desc_en:'New short description', description_bn:'বাংলা বিবরণ', description_en:'English description',
+    };
+    const updated = await repo.updateProduct(product.id, input, { id:7, ip:'192.0.2.10' });
+    assert.equal(updated.sku, 'P06-TEST-001', 'SKU remains a stable product identifier');
+    const persisted = db.get('SELECT name,name_en,slug,old_price,new_price,purchase_price,stock,stock_reserved,vendor_stock_on_hand,unit FROM products WHERE id=?', product.id);
+    assert.deepEqual(persisted, {
+      name:'সম্পাদিত পণ্য', name_en:'Edited product', slug:'phase06-test-product-edited', old_price:130, new_price:115.25,
+      purchase_price:70.25, stock:stockBefore.stock, stock_reserved:stockBefore.stock_reserved,
+      vendor_stock_on_hand:stockBefore.vendor_stock_on_hand, unit:'500 g',
+    });
+    assert.equal(Number(db.get('SELECT COUNT(*) AS n FROM stock_ledger WHERE product_id=?', product.id).n), ledgerBefore, 'catalog edit must not append or overwrite stock movements');
+    const audit = db.get("SELECT actor_id,before_json,after_json FROM audit_logs WHERE action='product.update' AND entity_id=? ORDER BY id DESC LIMIT 1", String(product.id));
+    assert.equal(audit.actor_id, 7);
+    assert.equal(JSON.parse(audit.before_json).name_bn, 'পরীক্ষা পণ্য');
+    assert.equal(JSON.parse(audit.after_json).nameBn, 'সম্পাদিত পণ্য');
+
+    await assert.rejects(() => repo.updateProduct(product.id, { ...input, slug:'phase06-test-product-edited', regular_price_bdt:'10', sale_price_bdt:'12' }), ValidationError);
+    await assert.rejects(() => repo.updateProduct(product.id, { ...input, slug:'!!!' }), ValidationError);
+    await assert.rejects(() => repo.updateProduct(999999, input), (err) => err.code === 'NOT_FOUND');
+    const second = await repo.createProduct({ sku:'P06-EDIT-OTHER', name_bn:'অন্য পণ্য', slug:'phase06-edit-other', category_id:1,
+      regular_price_bdt:'20', sale_price_bdt:'20', cost_price_bdt:'10' });
+    await assert.rejects(() => repo.updateProduct(product.id, { ...input, slug:'phase06-edit-other' }), (err) => err.code === 'DUPLICATE_PRODUCT_SLUG');
+    assert.ok(second.id > 0);
+
+    db.rawDb.exec("CREATE TRIGGER p06_fail_product_update BEFORE INSERT ON audit_logs WHEN NEW.action='product.update' BEGIN SELECT RAISE(ABORT,'fixture product audit failure'); END");
+    try {
+      await assert.rejects(() => repo.updateProduct(product.id, { ...input, name_en:'Must roll back' }));
+    } finally {
+      db.rawDb.exec('DROP TRIGGER IF EXISTS p06_fail_product_update');
+    }
+    assert.equal(db.get('SELECT name_en FROM products WHERE id=?', product.id).name_en, 'Edited product', 'audit failure must roll product changes back');
+  });
+
   test('supplier creation validates fields and atomically records its audit event', async () => {
     const input = { name:'Verified supplier', supplier_code:'P06-SUP-AUDIT', phone:'+8801712345678', email:'supplier-audit@example.com', tax_or_trade_id:'BD-TIN-123' };
     const created = await repo.createSupplier(input, { id:7, ip:'192.0.2.8' });

@@ -40,7 +40,9 @@ function toPaisa(value, label, allowZero = true) {
 }
 
 function slugify(text) {
-  return cleanText(text, 191, 'Slug', true).toLowerCase().replace(/\s+/g, '-').replace(/[^\p{L}\p{N}-]+/gu, '').replace(/^-+|-+$/g, '');
+  const slug = cleanText(text, 191, 'Slug', true).toLowerCase().replace(/\s+/g, '-').replace(/[^\p{L}\p{N}-]+/gu, '').replace(/^-+|-+$/g, '');
+  if (!slug) throw new ValidationError('Slug must contain at least one letter or number.');
+  return slug;
 }
 
 async function createSupplier(input, actor = {}) {
@@ -107,6 +109,121 @@ async function listProducts() {
     FROM products WHERE is_archived=0 ORDER BY id DESC LIMIT 1000`);
   return sqlite.all(`SELECT id, code AS sku, name AS name_bn, name AS name_en, stock AS stock_on_hand, vendor_stock_on_hand,
     low_stock_threshold, old_price, new_price, purchase_price, vendor_id, is_archived FROM products WHERE is_archived=0 ORDER BY id DESC LIMIT 1000`);
+}
+
+async function getProductForEdit(idInput) {
+  const id = positiveId(idInput, 'Product');
+  if (isMysql()) {
+    const product = await require('../db/mysqlPool').queryOne(`SELECT id,sku,barcode,slug,product_type,name_bn,name_en,category_id,brand_id,
+      regular_price_paisa,sale_price_paisa,cost_price_paisa,wholesale_price_paisa,wholesale_min_qty,low_stock_threshold,unit_label,
+      image_url,short_desc_bn,short_desc_en,description_bn,description_en,stock_on_hand,vendor_stock_on_hand,is_archived,status
+      FROM products WHERE id=?`, [id]);
+    if (!product) throw new NotFoundError('Product not found.');
+    return product;
+  }
+  const product = sqlite.get(`SELECT id,code AS sku,barcode,slug,product_type,name AS name_bn,name_en,category_id,brand_id,
+    ROUND(old_price*100) AS regular_price_paisa,ROUND(new_price*100) AS sale_price_paisa,ROUND(purchase_price*100) AS cost_price_paisa,
+    ROUND(wholesale_price*100) AS wholesale_price_paisa,wholesale_min_qty,low_stock_threshold,unit AS unit_label,image AS image_url,
+    short_desc AS short_desc_bn,short_desc_en,description AS description_bn,description_en,stock AS stock_on_hand,
+    vendor_stock_on_hand,is_archived,status FROM products WHERE id=?`, id);
+  if (!product) throw new NotFoundError('Product not found.');
+  return product;
+}
+
+async function listProductEditOptions() {
+  if (isMysql()) {
+    const pool = require('../db/mysqlPool');
+    const [categories, brands] = await Promise.all([
+      pool.queryAll('SELECT id,name_bn,name_en FROM categories WHERE status=1 ORDER BY sort_order,name_bn LIMIT 500'),
+      pool.queryAll('SELECT id,name_bn,name_en FROM brands WHERE status=1 ORDER BY name_bn LIMIT 500'),
+    ]);
+    return { categories, brands };
+  }
+  return {
+    categories: sqlite.all('SELECT id,name AS name_bn,name_en FROM categories WHERE status=1 ORDER BY sort_order,name LIMIT 500'),
+    brands: sqlite.all('SELECT id,name AS name_bn,name_en FROM brands WHERE status=1 ORDER BY name LIMIT 500'),
+  };
+}
+
+async function updateProduct(idInput, input, actor = {}) {
+  const id = positiveId(idInput, 'Product');
+  const product = {
+    nameBn: cleanText(input.name_bn, 255, 'Bangla product name', true),
+    nameEn: cleanText(input.name_en, 255, 'English product name'),
+    slug: slugify(input.slug),
+    type: cleanText(input.product_type || 'grocery', 32, 'Product type', true),
+    categoryId: positiveId(input.category_id, 'Category'),
+    brandId: input.brand_id ? positiveId(input.brand_id, 'Brand') : null,
+    unit: cleanText(input.unit_label, 50, 'Unit', true),
+    regular: toPaisa(input.regular_price_bdt, 'Regular price'),
+    sale: toPaisa(input.sale_price_bdt, 'Sale price'),
+    cost: toPaisa(input.cost_price_bdt, 'Cost price'),
+    wholesale: toPaisa(input.wholesale_price_bdt ?? '0', 'Wholesale price'),
+    minQty: positiveInteger(input.wholesale_min_qty ?? 0, 'Wholesale minimum quantity', true),
+    threshold: positiveInteger(input.low_stock_threshold ?? 0, 'Low-stock threshold', true),
+    image: cleanText(input.image_url, 500, 'Image URL'),
+    shortBn: cleanText(input.short_desc_bn, 2000, 'Short description'),
+    shortEn: cleanText(input.short_desc_en, 2000, 'English short description'),
+    descriptionBn: cleanText(input.description_bn, 20000, 'Description'),
+    descriptionEn: cleanText(input.description_en, 20000, 'English description'),
+  };
+  if (product.sale > product.regular && product.regular > 0) throw new ValidationError('Sale price cannot exceed regular price.');
+  if (product.wholesale > 0 && (!product.minQty || product.wholesale >= (product.sale || product.regular))) throw new ValidationError('Wholesale price requires a minimum quantity and must be lower than selling price.');
+  const snapshot = { ...product };
+  if (isMysql()) {
+    const pool = require('../db/mysqlPool').getPool();
+    return withTransaction(async (tx) => {
+      const before = await tx.queryOne(`SELECT id,sku,barcode,slug,product_type,name_bn,name_en,category_id,brand_id,
+        regular_price_paisa,sale_price_paisa,cost_price_paisa,wholesale_price_paisa,wholesale_min_qty,low_stock_threshold,unit_label,
+        image_url,short_desc_bn,short_desc_en,description_bn,description_en,stock_on_hand,vendor_stock_on_hand,is_archived,status
+        FROM products WHERE id=? FOR UPDATE`, [id]);
+      if (!before) throw new NotFoundError('Product not found.');
+      if (Number(before.is_archived)) throw new ValidationError('Archived products must be restored before editing.');
+      const category = await tx.queryOne('SELECT id FROM categories WHERE id=? AND status=1 FOR UPDATE', [product.categoryId]);
+      if (!category) throw new ValidationError('Selected category does not exist or is inactive.');
+      if (product.brandId) {
+        const brand = await tx.queryOne('SELECT id FROM brands WHERE id=? AND status=1 FOR UPDATE', [product.brandId]);
+        if (!brand) throw new ValidationError('Selected brand does not exist or is inactive.');
+      }
+      const duplicate = await tx.queryOne('SELECT id FROM products WHERE slug=? AND id<>? FOR UPDATE', [product.slug, id]);
+      if (duplicate) throw new AppError('DUPLICATE_PRODUCT_SLUG', 'Product slug is already in use.', 409);
+      await tx.execute(`UPDATE products SET slug=?,product_type=?,name_bn=?,name_en=?,category_id=?,brand_id=?,regular_price_paisa=?,
+        sale_price_paisa=?,cost_price_paisa=?,wholesale_price_paisa=?,wholesale_min_qty=?,low_stock_threshold=?,unit_label=?,image_url=?,
+        short_desc_bn=?,short_desc_en=?,description_bn=?,description_en=? WHERE id=?`,
+        [product.slug,product.type,product.nameBn,product.nameEn,product.categoryId,product.brandId,product.regular,product.sale,
+          product.cost,product.wholesale,product.minQty,product.threshold,product.unit,product.image,product.shortBn,product.shortEn,
+          product.descriptionBn,product.descriptionEn,id]);
+      await recordAuditLog({ actorType:'admin',actorId:actor.id||null,action:'product.update',entityType:'product',entityId:id,
+        beforeState:before,afterState:snapshot,ipAddress:actor.ip||'',userAgent:actor.userAgent||'' }, tx);
+      return { id, sku:before.sku, product:snapshot };
+    }, { pool });
+  }
+  sqlite.rawDb.exec('BEGIN IMMEDIATE');
+  try {
+    const before = sqlite.get(`SELECT id,code AS sku,barcode,slug,product_type,name AS name_bn,name_en,category_id,brand_id,
+      ROUND(old_price*100) AS regular_price_paisa,ROUND(new_price*100) AS sale_price_paisa,ROUND(purchase_price*100) AS cost_price_paisa,
+      ROUND(wholesale_price*100) AS wholesale_price_paisa,wholesale_min_qty,low_stock_threshold,unit AS unit_label,image AS image_url,
+      short_desc AS short_desc_bn,short_desc_en,description AS description_bn,description_en,stock AS stock_on_hand,
+      vendor_stock_on_hand,is_archived,status FROM products WHERE id=?`, id);
+    if (!before) throw new NotFoundError('Product not found.');
+    if (Number(before.is_archived)) throw new ValidationError('Archived products must be restored before editing.');
+    if (!sqlite.get('SELECT id FROM categories WHERE id=? AND status=1', product.categoryId)) throw new ValidationError('Selected category does not exist or is inactive.');
+    if (product.brandId && !sqlite.get('SELECT id FROM brands WHERE id=? AND status=1', product.brandId)) throw new ValidationError('Selected brand does not exist or is inactive.');
+    if (sqlite.get('SELECT id FROM products WHERE slug=? AND id<>?', product.slug, id)) throw new AppError('DUPLICATE_PRODUCT_SLUG', 'Product slug is already in use.', 409);
+    sqlite.run(`UPDATE products SET slug=?,product_type=?,name=?,name_en=?,category_id=?,brand_id=?,old_price=?,new_price=?,purchase_price=?,
+      wholesale_price=?,wholesale_min_qty=?,low_stock_threshold=?,unit=?,image=?,short_desc=?,short_desc_en=?,description=?,description_en=? WHERE id=?`,
+      product.slug,product.type,product.nameBn,product.nameEn,product.categoryId,product.brandId,product.regular/100,product.sale/100,
+      product.cost/100,product.wholesale/100,product.minQty,product.threshold,product.unit,product.image,product.shortBn,product.shortEn,
+      product.descriptionBn,product.descriptionEn,id);
+    sqlite.run(`INSERT INTO audit_logs (actor_type,actor_id,action,entity_type,entity_id,before_json,after_json,ip_address,user_agent)
+      VALUES ('admin',?,'product.update','product',?,?,?,?,?)`, actor.id||null,String(id),JSON.stringify(before),JSON.stringify(snapshot),
+      String(actor.ip||'').slice(0,64),String(actor.userAgent||'').slice(0,255));
+    sqlite.rawDb.exec('COMMIT');
+    return { id, sku:before.sku, product:snapshot };
+  } catch (err) {
+    try { sqlite.rawDb.exec('ROLLBACK'); } catch (_e) {}
+    throw err;
+  }
 }
 
 async function createProduct(input, actor = {}) {
@@ -410,4 +527,4 @@ async function archiveProduct(idInput, archive, actor = {}) {
   return {id,archived:Boolean(archive)};
 }
 
-module.exports = { createSupplier,listSuppliers,createProduct,listProducts,adjustStock,listInventory,listStockLedger,createPurchase,listPurchases,receivePurchase,archiveProduct };
+module.exports = { createSupplier,listSuppliers,createProduct,listProducts,getProductForEdit,listProductEditOptions,updateProduct,adjustStock,listInventory,listStockLedger,createPurchase,listPurchases,receivePurchase,archiveProduct };

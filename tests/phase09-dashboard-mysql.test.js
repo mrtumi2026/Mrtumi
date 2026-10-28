@@ -118,6 +118,51 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     assert.ok(data.todayExpenses>=5); assert.ok(data.totalExpenses>=data.todayExpenses);
   });
 
+  test('Phase 06 catalog edit UI and HTTP update enforce grants/CSRF and preserve inventory/variant state',async(t)=>{
+    if(!MYSQL_HOST)return t.skip(SKIP);
+    const path=`/admin/phase06/products/${productId}/edit`;
+    assert.equal((await request(path,{cookie:'',accept:'text/html'})).status,401,'catalog edit requires admin authentication');
+    const noGrantCookie=await login(noGrantEmail); const noGrantToken=await fetchCsrf(noGrantCookie);
+    assert.equal((await request(path,{cookie:noGrantCookie,accept:'text/html'})).status,403,'inventory.manage is required');
+    dashboardCookie=await login(fullEmail); csrfToken=await fetchCsrf(dashboardCookie);
+    const form=await request(path,{accept:'text/html'});
+    assert.equal(form.status,200,form.text.slice(0,300));
+    assert.match(form.text,/Catalog details|ক্যাটালগের বিবরণ/);
+    const category=await db.queryOne('SELECT category_id FROM products WHERE id=?',[productId]);
+    const variantSku=`P09-EDIT-V-${Date.now()}`;
+    const variant=await db.execute('INSERT INTO product_variants (product_id,variant_sku,size_label,color_label,price_paisa,stock_on_hand,stock_reserved,status) VALUES (?,?,?,?,?,?,?,1)',[productId,variantSku,'250 g','Red',7654,5,1]);
+    const before=await db.queryOne('SELECT stock_on_hand,stock_reserved,vendor_stock_on_hand FROM products WHERE id=?',[productId]);
+    const ledgerBefore=Number((await db.queryOne('SELECT COUNT(*) AS n FROM stock_ledger WHERE product_id=?',[productId])).n);
+    const input={name_bn:'পরিবর্তিত ড্যাশবোর্ড পণ্য',name_en:'Updated dashboard product',slug:`p09-edited-${productId}`,product_type:'grocery',
+      category_id:Number(category.category_id),brand_id:'',unit_label:'250 g',regular_price_bdt:'125.00',sale_price_bdt:'105.00',
+      cost_price_bdt:'55.00',wholesale_price_bdt:'0',wholesale_min_qty:'0',low_stock_threshold:'2',image_url:'/uploads/custom/p09-edited.webp',
+      short_desc_bn:'বাংলা বিবরণ',short_desc_en:'Short English',description_bn:'বিস্তারিত বাংলা',description_en:'Full English'};
+    assert.equal((await request(`/admin/phase06/products/${productId}`,{method:'POST',token:'',body:input})).status,403,'catalog update requires CSRF');
+    assert.equal((await request(`/admin/phase06/products/${productId}`,{method:'POST',cookie:noGrantCookie,token:noGrantToken,body:input})).status,403,'catalog update requires inventory.manage');
+    assert.equal((await request(`/admin/phase06/products/${productId}`,{method:'POST',body:{...input,sale_price_bdt:'126'}})).status,400,'sale price above regular price is rejected');
+    const updated=await request(`/admin/phase06/products/${productId}`,{method:'POST',body:input});
+    assert.equal(updated.status,200,updated.text.slice(0,300));
+    assert.equal(updated.json.product.sku,`P09-${suffix}`);
+    const after=await db.queryOne('SELECT name_bn,name_en,slug,sale_price_paisa,stock_on_hand,stock_reserved,vendor_stock_on_hand FROM products WHERE id=?',[productId]);
+    assert.deepEqual([after.name_bn,after.name_en,after.slug,Number(after.sale_price_paisa)],[input.name_bn,input.name_en,input.slug,10500]);
+    assert.deepEqual([Number(after.stock_on_hand),Number(after.stock_reserved),Number(after.vendor_stock_on_hand)],[Number(before.stock_on_hand),Number(before.stock_reserved),Number(before.vendor_stock_on_hand)]);
+    assert.equal(Number((await db.queryOne('SELECT price_paisa FROM product_variants WHERE id=?',[variant.insertId])).price_paisa),7654,'variant-level price is not overwritten by parent edit');
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM stock_ledger WHERE product_id=?',[productId])).n),ledgerBefore,'catalog edit must not alter stock ledger');
+    const audit=await db.queryOne("SELECT before_json,after_json FROM audit_logs WHERE action='product.update' AND entity_id=? ORDER BY id DESC LIMIT 1",[String(productId)]);
+    assert.equal(JSON.parse(audit.before_json).sku,`P09-${suffix}`);
+    assert.equal(JSON.parse(audit.after_json).nameBn,input.name_bn);
+    const auditBefore=Number((await db.queryOne("SELECT COUNT(*) AS n FROM audit_logs WHERE action='product.update' AND entity_id=?",[String(productId)])).n);
+    await db.execute("CREATE TRIGGER p09_http_fail_product_update BEFORE INSERT ON audit_logs FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture product audit failure'");
+    try {
+      const failure=await request(`/admin/phase06/products/${productId}`,{method:'POST',body:{...input,name_en:'Must roll back'}});
+      assert.equal(failure.status,500,failure.text.slice(0,300));
+    } finally {
+      await db.execute('DROP TRIGGER IF EXISTS p09_http_fail_product_update');
+    }
+    assert.equal((await db.queryOne('SELECT name_en FROM products WHERE id=?',[productId])).name_en,input.name_en,'audit failure must roll metadata back');
+    assert.equal(Number((await db.queryOne("SELECT COUNT(*) AS n FROM audit_logs WHERE action='product.update' AND entity_id=?",[String(productId)])).n),auditBefore);
+  });
+
   test('legacy blog admin routes use MySQL persistence, permission/CSRF checks, and transactional audit',async(t)=>{
     if(!MYSQL_HOST)return t.skip(SKIP);
     dashboardCookie=await login(fullEmail); csrfToken=await fetchCsrf(dashboardCookie);

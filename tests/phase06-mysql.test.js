@@ -248,4 +248,36 @@ describe('Phase 06 — Live MySQL 8.0 schema, product, stock ledger & purchase r
     assert.ok(adjustmentAudit.every(row=>Number(JSON.parse(row.after_json).balanceAfter)<=9));
     assert.ok(supplierId && purchaseId);
   });
+
+  test('product catalog update validates relationships, audits atomically and leaves stock and variants untouched', async () => {
+    if (!MYSQL_HOST) return;
+    const before = await db.queryOne('SELECT sku,category_id,stock_on_hand,stock_reserved,vendor_stock_on_hand FROM products WHERE id=?',[productId]);
+    const ledgerBefore = Number((await db.queryOne('SELECT COUNT(*) AS n FROM stock_ledger WHERE product_id=?',[productId])).n);
+    const variantSku = `P06-MYSQL-V-${Date.now()}`;
+    const variant = await db.execute('INSERT INTO product_variants (product_id,variant_sku,size_label,color_label,price_paisa,stock_on_hand,stock_reserved,status) VALUES (?,?,?,?,?,?,?,1)',
+      [productId,variantSku,'500 g','Green',12345,6,1]);
+    const input = { name_bn:'আপডেট পণ্য',name_en:'Updated product',slug:'phase06-mysql-product-updated',product_type:'grocery',
+      category_id:Number(before.category_id),brand_id:'',unit_label:'500 g',regular_price_bdt:'135.99',sale_price_bdt:'119.25',
+      cost_price_bdt:'55.00',wholesale_price_bdt:'90.00',wholesale_min_qty:'5',low_stock_threshold:'3',image_url:'/uploads/custom/updated.webp',
+      short_desc_bn:'বাংলা',short_desc_en:'English',description_bn:'বিস্তারিত',description_en:'Details' };
+    const updated = await repo.updateProduct(productId,input,{id:null});
+    assert.equal(updated.sku,before.sku);
+    const persisted = await db.queryOne('SELECT name_bn,name_en,slug,regular_price_paisa,sale_price_paisa,cost_price_paisa,stock_on_hand,stock_reserved,vendor_stock_on_hand FROM products WHERE id=?',[productId]);
+    assert.deepEqual(persisted,{name_bn:'আপডেট পণ্য',name_en:'Updated product',slug:'phase06-mysql-product-updated',regular_price_paisa:13599,
+      sale_price_paisa:11925,cost_price_paisa:5500,stock_on_hand:Number(before.stock_on_hand),stock_reserved:Number(before.stock_reserved),vendor_stock_on_hand:Number(before.vendor_stock_on_hand)});
+    assert.equal(Number((await db.queryOne('SELECT price_paisa FROM product_variants WHERE id=?',[variant.insertId])).price_paisa),12345,'parent price update does not change a variant price');
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM stock_ledger WHERE product_id=?',[productId])).n),ledgerBefore,'catalog metadata update does not alter inventory ledger');
+    const audit = await db.queryOne("SELECT before_json,after_json FROM audit_logs WHERE action='product.update' AND entity_id=? ORDER BY id DESC LIMIT 1",[String(productId)]);
+    assert.equal(JSON.parse(audit.before_json).sku,before.sku);
+    assert.equal(JSON.parse(audit.after_json).nameBn,'আপডেট পণ্য');
+    await assert.rejects(()=>repo.updateProduct(productId,{...input,category_id:999999}),(err)=>err.code==='VALIDATION_ERROR');
+
+    await db.execute("CREATE TRIGGER p06_mysql_fail_product_update BEFORE INSERT ON audit_logs FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture product audit failure'");
+    try {
+      await assert.rejects(()=>repo.updateProduct(productId,{...input,name_en:'Must roll back'}));
+    } finally {
+      await db.execute('DROP TRIGGER IF EXISTS p06_mysql_fail_product_update');
+    }
+    assert.equal((await db.queryOne('SELECT name_en FROM products WHERE id=?',[productId])).name_en,'Updated product','failed audit insert rolls back metadata update');
+  });
 });

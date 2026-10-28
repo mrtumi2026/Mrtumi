@@ -20,6 +20,22 @@ router.get('/admin/phase06', asyncRoute(async (req,res) => {
   res.render('admin/phase06', { products, inventory, suppliers, purchases, ledger, pageTitle: req.locale === 'en' ? 'Products, Inventory & Purchasing' : 'পণ্য, ইনভেন্টরি ও পারচেজ', csrfToken: req.csrfToken() });
 }));
 
+router.get('/admin/phase06/products/:id/edit', asyncRoute(async (req,res) => {
+  const [product, options] = await Promise.all([repo.getProductForEdit(req.params.id), repo.listProductEditOptions()]);
+  const { paisaToBdtString } = require('../utils/money');
+  res.render('admin/phase06-product-edit', {
+    product, categories:options.categories, brands:options.brands, paisaToBdtString,
+    pageTitle: req.locale === 'en' ? `Edit ${product.sku}` : `${product.sku} সম্পাদনা`, csrfToken:req.csrfToken(), locale:req.locale,
+  });
+}));
+
+router.post('/admin/phase06/products/:id', requireCsrf, asyncRoute(async (req,res) => {
+  const result = await repo.updateProduct(req.params.id, req.body, actor(req));
+  if (wantsJson(req)) return res.json({ success:true, product:result });
+  req.flash('success', req.locale === 'en' ? `Product ${result.sku} updated. Stock and variant records were not changed.` : `পণ্য ${result.sku} আপডেট হয়েছে। স্টক ও ভ্যারিয়েন্ট অপরিবর্তিত আছে।`);
+  return res.redirect('/admin/phase06');
+}));
+
 router.post('/admin/phase06/products', requireCsrf, asyncRoute(async (req,res) => {
   const created = await repo.createProduct(req.body, actor(req));
   if (wantsJson(req)) return res.status(201).json({ success:true, product:created });
