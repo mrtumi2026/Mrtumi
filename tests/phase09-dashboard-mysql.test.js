@@ -131,7 +131,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     const category=await db.queryOne('SELECT category_id FROM products WHERE id=?',[productId]);
     const variantSku=`P09-EDIT-V-${Date.now()}`;
     const variant=await db.execute('INSERT INTO product_variants (product_id,variant_sku,size_label,color_label,price_paisa,stock_on_hand,stock_reserved,status) VALUES (?,?,?,?,?,?,?,1)',[productId,variantSku,'250 g','Red',7654,5,1]);
-    const before=await db.queryOne('SELECT stock_on_hand,stock_reserved,vendor_stock_on_hand FROM products WHERE id=?',[productId]);
+    const before=await db.queryOne('SELECT sku,stock_on_hand,stock_reserved,vendor_stock_on_hand FROM products WHERE id=?',[productId]);
     const ledgerBefore=Number((await db.queryOne('SELECT COUNT(*) AS n FROM stock_ledger WHERE product_id=?',[productId])).n);
     const input={name_bn:'পরিবর্তিত ড্যাশবোর্ড পণ্য',name_en:'Updated dashboard product',slug:`p09-edited-${productId}`,product_type:'grocery',
       category_id:Number(category.category_id),brand_id:'',unit_label:'250 g',regular_price_bdt:'125.00',sale_price_bdt:'105.00',
@@ -142,14 +142,14 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     assert.equal((await request(`/admin/phase06/products/${productId}`,{method:'POST',body:{...input,sale_price_bdt:'126'}})).status,400,'sale price above regular price is rejected');
     const updated=await request(`/admin/phase06/products/${productId}`,{method:'POST',body:input});
     assert.equal(updated.status,200,updated.text.slice(0,300));
-    assert.equal(updated.json.product.sku,`P09-${suffix}`);
+    assert.equal(updated.json.product.sku,before.sku,'catalog edit preserves the immutable SKU');
     const after=await db.queryOne('SELECT name_bn,name_en,slug,sale_price_paisa,stock_on_hand,stock_reserved,vendor_stock_on_hand FROM products WHERE id=?',[productId]);
     assert.deepEqual([after.name_bn,after.name_en,after.slug,Number(after.sale_price_paisa)],[input.name_bn,input.name_en,input.slug,10500]);
     assert.deepEqual([Number(after.stock_on_hand),Number(after.stock_reserved),Number(after.vendor_stock_on_hand)],[Number(before.stock_on_hand),Number(before.stock_reserved),Number(before.vendor_stock_on_hand)]);
     assert.equal(Number((await db.queryOne('SELECT price_paisa FROM product_variants WHERE id=?',[variant.insertId])).price_paisa),7654,'variant-level price is not overwritten by parent edit');
     assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM stock_ledger WHERE product_id=?',[productId])).n),ledgerBefore,'catalog edit must not alter stock ledger');
     const audit=await db.queryOne("SELECT before_json,after_json FROM audit_logs WHERE action='product.update' AND entity_id=? ORDER BY id DESC LIMIT 1",[String(productId)]);
-    assert.equal(JSON.parse(audit.before_json).sku,`P09-${suffix}`);
+    assert.equal(JSON.parse(audit.before_json).sku,before.sku);
     assert.equal(JSON.parse(audit.after_json).nameBn,input.name_bn);
     const auditBefore=Number((await db.queryOne("SELECT COUNT(*) AS n FROM audit_logs WHERE action='product.update' AND entity_id=?",[String(productId)])).n);
     await db.execute("CREATE TRIGGER p09_http_fail_product_update BEFORE INSERT ON audit_logs FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture product audit failure'");
