@@ -184,7 +184,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     await db.execute('UPDATE products SET image_url=?,gallery_json=? WHERE id=?',[first,JSON.stringify([first,second]),productId]);
     const imageFiles=[first,second].map((image)=>require('path').join(__dirname,'..','public',image.slice(1)));
     assert.ok(imageFiles.every((file)=>require('fs').existsSync(file)));
-    assert.equal((await request(`${base}/gallery`,{method:'POST',cookie:'',token:'',body:{gallery_paths:[second,first]}})).status,302,'unauthenticated gallery changes use existing login flow');
+    assert.equal((await request(`${base}/gallery`,{method:'POST',cookie:'',token:'',body:{gallery_paths:[second,first]}})).status,401,'unauthenticated JSON gallery changes are rejected by the existing admin authentication gate');
     assert.equal((await request(`${base}/gallery`,{method:'POST',token:'',body:{gallery_paths:[second,first]}})).status,403,'gallery changes require session-bound CSRF');
     assert.equal((await request(`${base}/gallery`,{method:'POST',cookie:noGrantCookie,token:noGrantToken,body:{gallery_paths:[second,first]}})).status,403,'gallery changes require inventory.manage');
     const form=await request(`${base}/edit`,{accept:'text/html'});
