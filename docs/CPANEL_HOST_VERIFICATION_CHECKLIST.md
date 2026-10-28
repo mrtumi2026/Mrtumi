@@ -31,7 +31,7 @@
 
 - [ ] Determine actual offered database engine and exact server/version. Read-only identification query on a designated test/staging DB: `SELECT VERSION(), @@version_comment, @@sql_mode;`.
 - [ ] Confirm InnoDB availability, `utf8mb4`, collation, timezone behavior, connection cap, network host/port and allowed connection settings.
-- [ ] MySQL 8.0 is CI-verified. MariaDB 10.11 is a separate compatibility target and is **not** certified by MySQL 8.0 results; wait for the MariaDB-specific CI result and compare against the actual host version/configuration.
+- [ ] MySQL 8.0 and MariaDB 10.11 have separate migration/integration CI jobs, both passed in run [`40666166310`](https://github.com/mrtumi2026/Mrtumi/actions/runs/40666166310) on Node.js 22.23.4 at SHA `8486479496bbf1d2f6cf32ba805db903ffbae4d4`. This does not establish the real host engine/version/settings; compare the target and repeat isolated staging validation.
 - [ ] Create a new empty disposable staging schema and a staging-only DB user. Do not import production/customer data. Keep runtime and migration credentials separate where the panel allows.
 - [ ] Apply/check migrations only on that disposable schema. Never run `migrate:down`, import, restore or migration commands against production under this checklist.
 
