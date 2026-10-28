@@ -4,7 +4,7 @@ const { env } = require('../config/env');
 const sqlite = require('../db/database');
 const { withTransaction } = require('../db/mysqlPool');
 const { recordAuditLog } = require('./auditLogRepository');
-const { ValidationError, NotFoundError, AppError } = require('../utils/errors');
+const { ValidationError, NotFoundError, AppError, ConflictError } = require('../utils/errors');
 const { bdtToPaisa } = require('../utils/money');
 
 function isMysql() {
@@ -220,6 +220,128 @@ async function updateProduct(idInput, input, actor = {}) {
       String(actor.ip||'').slice(0,64),String(actor.userAgent||'').slice(0,255));
     sqlite.rawDb.exec('COMMIT');
     return { id, sku:before.sku, product:snapshot };
+  } catch (err) {
+    try { sqlite.rawDb.exec('ROLLBACK'); } catch (_e) {}
+    throw err;
+  }
+}
+
+async function listProductVariants(productIdInput) {
+  const productId = positiveId(productIdInput, 'Product');
+  if (isMysql()) {
+    const pool = require('../db/mysqlPool');
+    if (!await pool.queryOne('SELECT id FROM products WHERE id=?', [productId])) throw new NotFoundError('Product not found.');
+    return pool.queryAll(`SELECT id,product_id,variant_sku,size_label,color_label,price_paisa,stock_on_hand,stock_reserved,status,created_at
+      FROM product_variants WHERE product_id=? ORDER BY id`, [productId]);
+  }
+  if (!sqlite.get('SELECT id FROM products WHERE id=?', productId)) throw new NotFoundError('Product not found.');
+  return sqlite.all(`SELECT id,product_id,variant_sku,size_label,color_label,ROUND(price*100) AS price_paisa,
+    stock_on_hand,stock_reserved,status,created_at FROM product_variants WHERE product_id=? ORDER BY id`, productId);
+}
+
+function normalizeVariantInput(input) {
+  return {
+    sku: cleanText(input.variant_sku, 80, 'Variant SKU', true),
+    size: cleanText(input.size_label, 80, 'Size label'),
+    color: cleanText(input.color_label, 80, 'Color label'),
+    price: toPaisa(input.price_bdt ?? '0', 'Variant price'),
+  };
+}
+
+function duplicateVariantSku(err) {
+  if (err?.code === 'DB_DUPLICATE_ENTRY' || /UNIQUE constraint failed: product_variants\.variant_sku/i.test(String(err?.message || ''))) {
+    throw new ConflictError('Variant SKU is already in use.');
+  }
+  throw err;
+}
+
+async function createProductVariant(productIdInput, input, actor = {}) {
+  const productId = positiveId(productIdInput, 'Product');
+  const variant = normalizeVariantInput(input);
+  if (isMysql()) {
+    const pool = require('../db/mysqlPool').getPool();
+    try {
+      return await withTransaction(async (tx) => {
+        const product = await tx.queryOne('SELECT id,is_archived FROM products WHERE id=? FOR UPDATE', [productId]);
+        if (!product) throw new NotFoundError('Product not found.');
+        if (Number(product.is_archived)) throw new ValidationError('Archived products must be restored before managing variants.');
+        const inserted = await tx.execute(`INSERT INTO product_variants (product_id,variant_sku,size_label,color_label,price_paisa,status)
+          VALUES (?,?,?,?,?,1)`, [productId,variant.sku,variant.size,variant.color,variant.price]);
+        const after = { id:Number(inserted.insertId),productId,variantSku:variant.sku,sizeLabel:variant.size,colorLabel:variant.color,pricePaisa:variant.price,status:1,stockOnHand:0,stockReserved:0 };
+        await recordAuditLog({ actorType:'admin',actorId:actor.id||null,action:'product.variant.create',entityType:'product_variant',entityId:inserted.insertId,
+          beforeState:null,afterState:after,ipAddress:actor.ip||'',userAgent:actor.userAgent||'' }, tx);
+        return after;
+      }, { pool });
+    } catch (err) { duplicateVariantSku(err); }
+  }
+  sqlite.rawDb.exec('BEGIN IMMEDIATE');
+  try {
+    const product = sqlite.get('SELECT id,is_archived FROM products WHERE id=?', productId);
+    if (!product) throw new NotFoundError('Product not found.');
+    if (Number(product.is_archived)) throw new ValidationError('Archived products must be restored before managing variants.');
+    const inserted = sqlite.run('INSERT INTO product_variants (product_id,variant_sku,size_label,color_label,price,status) VALUES (?,?,?,?,?,1)',
+      productId,variant.sku,variant.size,variant.color,variant.price/100);
+    const after = { id:Number(inserted.lastInsertRowid),productId,variantSku:variant.sku,sizeLabel:variant.size,colorLabel:variant.color,pricePaisa:variant.price,status:1,stockOnHand:0,stockReserved:0 };
+    sqlite.run(`INSERT INTO audit_logs (actor_type,actor_id,action,entity_type,entity_id,before_json,after_json,ip_address,user_agent)
+      VALUES ('admin',?,'product.variant.create','product_variant',?,NULL,?,?,?)`, actor.id||null,String(after.id),JSON.stringify(after),
+      String(actor.ip||'').slice(0,64),String(actor.userAgent||'').slice(0,255));
+    sqlite.rawDb.exec('COMMIT');
+    return after;
+  } catch (err) {
+    try { sqlite.rawDb.exec('ROLLBACK'); } catch (_e) {}
+    duplicateVariantSku(err);
+  }
+}
+
+async function updateProductVariant(productIdInput, variantIdInput, input, actor = {}) {
+  const productId = positiveId(productIdInput, 'Product');
+  const variantId = positiveId(variantIdInput, 'Variant');
+  for (const field of ['size_label','color_label','price_bdt','status']) {
+    if (!Object.prototype.hasOwnProperty.call(input, field)) throw new ValidationError(`Variant update requires ${field}.`);
+  }
+  const variant = {
+    size: cleanText(input.size_label, 80, 'Size label'),
+    color: cleanText(input.color_label, 80, 'Color label'),
+    price: toPaisa(input.price_bdt, 'Variant price'),
+  };
+  const statusText = String(input.status);
+  if (!['0','1'].includes(statusText)) throw new ValidationError('Variant status must be active or inactive.');
+  const status = Number(statusText);
+  if (isMysql()) {
+    const pool = require('../db/mysqlPool').getPool();
+    return withTransaction(async (tx) => {
+      const product = await tx.queryOne('SELECT id,is_archived FROM products WHERE id=? FOR UPDATE', [productId]);
+      if (!product) throw new NotFoundError('Product not found.');
+      if (Number(product.is_archived)) throw new ValidationError('Archived products must be restored before managing variants.');
+      const before = await tx.queryOne(`SELECT id,product_id,variant_sku,size_label,color_label,price_paisa,stock_on_hand,stock_reserved,status
+        FROM product_variants WHERE id=? AND product_id=? FOR UPDATE`, [variantId,productId]);
+      if (!before) throw new NotFoundError('Variant not found for this product.');
+      await tx.execute('UPDATE product_variants SET size_label=?,color_label=?,price_paisa=?,status=? WHERE id=? AND product_id=?',
+        [variant.size,variant.color,variant.price,status,variantId,productId]);
+      const after = { id:variantId,productId,variantSku:before.variant_sku,sizeLabel:variant.size,colorLabel:variant.color,pricePaisa:variant.price,
+        stockOnHand:Number(before.stock_on_hand),stockReserved:Number(before.stock_reserved),status };
+      await recordAuditLog({ actorType:'admin',actorId:actor.id||null,action:'product.variant.update',entityType:'product_variant',entityId:variantId,
+        beforeState:before,afterState:after,ipAddress:actor.ip||'',userAgent:actor.userAgent||'' }, tx);
+      return after;
+    }, { pool });
+  }
+  sqlite.rawDb.exec('BEGIN IMMEDIATE');
+  try {
+    const product = sqlite.get('SELECT id,is_archived FROM products WHERE id=?', productId);
+    if (!product) throw new NotFoundError('Product not found.');
+    if (Number(product.is_archived)) throw new ValidationError('Archived products must be restored before managing variants.');
+    const before = sqlite.get(`SELECT id,product_id,variant_sku,size_label,color_label,ROUND(price*100) AS price_paisa,stock_on_hand,stock_reserved,status
+      FROM product_variants WHERE id=? AND product_id=?`, variantId,productId);
+    if (!before) throw new NotFoundError('Variant not found for this product.');
+    sqlite.run('UPDATE product_variants SET size_label=?,color_label=?,price=?,status=? WHERE id=? AND product_id=?',
+      variant.size,variant.color,variant.price/100,status,variantId,productId);
+    const after = { id:variantId,productId,variantSku:before.variant_sku,sizeLabel:variant.size,colorLabel:variant.color,pricePaisa:variant.price,
+      stockOnHand:Number(before.stock_on_hand),stockReserved:Number(before.stock_reserved),status };
+    sqlite.run(`INSERT INTO audit_logs (actor_type,actor_id,action,entity_type,entity_id,before_json,after_json,ip_address,user_agent)
+      VALUES ('admin',?,'product.variant.update','product_variant',?,?,?,?,?)`, actor.id||null,String(variantId),JSON.stringify(before),JSON.stringify(after),
+      String(actor.ip||'').slice(0,64),String(actor.userAgent||'').slice(0,255));
+    sqlite.rawDb.exec('COMMIT');
+    return after;
   } catch (err) {
     try { sqlite.rawDb.exec('ROLLBACK'); } catch (_e) {}
     throw err;
@@ -527,4 +649,4 @@ async function archiveProduct(idInput, archive, actor = {}) {
   return {id,archived:Boolean(archive)};
 }
 
-module.exports = { createSupplier,listSuppliers,createProduct,listProducts,getProductForEdit,listProductEditOptions,updateProduct,adjustStock,listInventory,listStockLedger,createPurchase,listPurchases,receivePurchase,archiveProduct };
+module.exports = { createSupplier,listSuppliers,createProduct,listProducts,getProductForEdit,listProductEditOptions,updateProduct,listProductVariants,createProductVariant,updateProductVariant,adjustStock,listInventory,listStockLedger,createPurchase,listPurchases,receivePurchase,archiveProduct };

@@ -170,6 +170,88 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     await db.execute('DELETE FROM product_variants WHERE id=?',[variant.insertId]);
   });
 
+  test('Phase 06 variant HTTP management validates, audits, and preserves carts/orders/reservations/ledger',async(t)=>{
+    if(!MYSQL_HOST)return t.skip(SKIP);
+    dashboardCookie=await login(fullEmail); csrfToken=await fetchCsrf(dashboardCookie);
+    const noGrantCookie=await login(noGrantEmail); const noGrantToken=await fetchCsrf(noGrantCookie);
+    let variantId=null,customerId=null,cartId=null,orderLineId=null,reservationId=null,ledgerId=null;
+    t.after(async()=>{
+      await db.execute('DROP TRIGGER IF EXISTS p09_http_fail_variant_update');
+      await db.execute('DROP TRIGGER IF EXISTS p09_http_fail_variant_create');
+      if(cartId)await db.execute('DELETE FROM customer_cart_items WHERE id=?',[cartId]);
+      if(orderLineId)await db.execute('DELETE FROM order_items WHERE id=?',[orderLineId]);
+      if(reservationId)await db.execute('DELETE FROM stock_reservations WHERE id=?',[reservationId]);
+      if(ledgerId)await db.execute('DELETE FROM stock_ledger WHERE id=?',[ledgerId]);
+      if(customerId)await db.execute('DELETE FROM customers WHERE id=?',[customerId]);
+      if(variantId)await db.execute('DELETE FROM product_variants WHERE id=?',[variantId]);
+    });
+    const base=`/admin/phase06/products/${productId}`;
+    const createPage=await request('/admin/phase06',{accept:'text/html'});
+    assert.equal(createPage.status,200,createPage.text.slice(0,300));
+    const categoryId=Number((await db.queryOne('SELECT category_id FROM products WHERE id=?',[productId])).category_id);
+    assert.match(createPage.text,/id="p-category" name="category_id"/);
+    assert.match(createPage.text,new RegExp(`<option value="${categoryId}">`),'product creation form offers the active existing category by ID');
+    assert.match(createPage.text,/id="p-brand" name="brand_id"/);
+    const sku=`P09-VAR-${Date.now()}`;
+    const createInput={variant_sku:sku,size_label:'500 g',color_label:'Green',price_bdt:'87.65'};
+    assert.equal((await request(`${base}/variants`,{method:'POST',token:'',body:createInput})).status,403,'variant create requires CSRF');
+    assert.equal((await request(`${base}/variants`,{method:'POST',cookie:noGrantCookie,token:noGrantToken,body:createInput})).status,403,'variant management requires inventory.manage');
+    assert.equal((await request(`${base}/variants`,{method:'POST',body:{...createInput,price_bdt:'87.651'}})).status,400,'variant price must be integer paisa');
+    const created=await request(`${base}/variants`,{method:'POST',body:createInput});
+    assert.equal(created.status,201,created.text.slice(0,300));
+    variantId=Number(created.json.variant.id);
+    const createdRow=await db.queryOne('SELECT variant_sku,size_label,color_label,price_paisa,stock_on_hand,stock_reserved,status FROM product_variants WHERE id=?',[variantId]);
+    assert.deepEqual({...createdRow,price_paisa:Number(createdRow.price_paisa),stock_on_hand:Number(createdRow.stock_on_hand),stock_reserved:Number(createdRow.stock_reserved),status:Number(createdRow.status)},
+      {variant_sku:sku,size_label:'500 g',color_label:'Green',price_paisa:8765,stock_on_hand:0,stock_reserved:0,status:1});
+    const duplicate=await request(`${base}/variants`,{method:'POST',body:{...createInput,size_label:'1 kg'}});
+    assert.equal(duplicate.status,409,'database unique index rejects a duplicate global variant SKU');
+
+    customerId=Number((await db.execute("INSERT INTO customers(name,phone,status) VALUES('P09 variant fixture',?,1)",[`017${String(Date.now()).slice(-8)}`])).insertId);
+    const cart=await db.execute('INSERT INTO customer_cart_items(customer_id,product_id,variant_id,quantity) VALUES(?,?,?,1)',[customerId,productId,variantId]); cartId=Number(cart.insertId);
+    const orderLine=await db.execute('INSERT INTO order_items(order_id,product_id,variant_id,product_name,unit_price_paisa,qty,line_total_paisa,size_label,color_label) VALUES(?,?,?,?,?,?,?, ?,?)',
+      [invoiceOrderId,productId,variantId,'Dashboard product (500 g)',8765,1,8765,'500 g','Green']); orderLineId=Number(orderLine.insertId);
+    const reservationKey=`p09-variant-${Date.now()}`;
+    const reservation=await db.execute('INSERT INTO stock_reservations(product_id,variant_id,stock_pool,qty,reservation_key,request_hash,status,expires_at) VALUES(?,?,\'warehouse\',1,?,?,\'active\',DATE_ADD(UTC_TIMESTAMP(),INTERVAL 1 DAY))',
+      [productId,variantId,reservationKey,'a'.repeat(64)]); reservationId=Number(reservation.insertId);
+    await db.execute('UPDATE product_variants SET stock_on_hand=5,stock_reserved=1 WHERE id=?',[variantId]);
+    const ledger=await db.execute("INSERT INTO stock_ledger(product_id,variant_id,stock_pool,movement_type,qty_delta,balance_after,reason) VALUES(?,?,'warehouse','opening',5,5,'P09 integration fixture')",[productId,variantId]); ledgerId=Number(ledger.insertId);
+    const updateInput={size_label:'1 kg',color_label:'Blue',price_bdt:'0.00',status:'0'};
+    const deniedUpdate=await request(`${base}/variants/${variantId}`,{method:'POST',cookie:noGrantCookie,token:noGrantToken,body:updateInput});
+    assert.equal(deniedUpdate.status,403);
+    const updated=await request(`${base}/variants/${variantId}`,{method:'POST',body:updateInput});
+    assert.equal(updated.status,200,updated.text.slice(0,300));
+    assert.deepEqual([updated.json.variant.variantSku,updated.json.variant.sizeLabel,updated.json.variant.colorLabel,updated.json.variant.pricePaisa,updated.json.variant.status],
+      [sku,'1 kg','Blue',0,0]);
+    const refs=await db.queryOne(`SELECT v.variant_sku,v.size_label,v.color_label,v.price_paisa,v.stock_on_hand,v.stock_reserved,v.status,
+        (SELECT COUNT(*) FROM customer_cart_items c WHERE c.variant_id=v.id) AS cart_refs,
+        (SELECT COUNT(*) FROM order_items oi WHERE oi.variant_id=v.id) AS order_refs,
+        (SELECT COUNT(*) FROM stock_reservations sr WHERE sr.variant_id=v.id AND sr.status='active') AS reservation_refs,
+        (SELECT COUNT(*) FROM stock_ledger sl WHERE sl.variant_id=v.id) AS ledger_refs
+      FROM product_variants v WHERE v.id=?`,[variantId]);
+    assert.deepEqual([refs.variant_sku,refs.size_label,refs.color_label,Number(refs.price_paisa),Number(refs.stock_on_hand),Number(refs.stock_reserved),Number(refs.status),
+      Number(refs.cart_refs),Number(refs.order_refs),Number(refs.reservation_refs),Number(refs.ledger_refs)],
+      [sku,'1 kg','Blue',0,5,1,0,1,1,1,1],'metadata edit and soft deactivation preserve all inventory and historical references');
+    const audit=await db.queryOne("SELECT before_json,after_json FROM audit_logs WHERE action='product.variant.update' AND entity_id=? ORDER BY id DESC LIMIT 1",[String(variantId)]);
+    assert.equal(JSON.parse(audit.before_json).variant_sku,sku);
+    assert.equal(JSON.parse(audit.after_json).stockReserved,1);
+
+    await db.execute("CREATE TRIGGER p09_http_fail_variant_update BEFORE INSERT ON audit_logs FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture variant update audit failure'");
+    try {
+      const failed=await request(`${base}/variants/${variantId}`,{method:'POST',body:{...updateInput,size_label:'Must roll back',status:'1'}});
+      assert.equal(failed.status,500,failed.text.slice(0,300));
+    } finally { await db.execute('DROP TRIGGER IF EXISTS p09_http_fail_variant_update'); }
+    assert.deepEqual(await db.queryOne('SELECT size_label,status,stock_on_hand,stock_reserved FROM product_variants WHERE id=?',[variantId]),
+      {size_label:'1 kg',status:0,stock_on_hand:5,stock_reserved:1},'audit failure rolls variant edit back');
+
+    await db.execute("CREATE TRIGGER p09_http_fail_variant_create BEFORE INSERT ON audit_logs FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture variant create audit failure'");
+    try {
+      const failed=await request(`${base}/variants`,{method:'POST',body:{...createInput,variant_sku:`${sku}-ROLLBACK`}});
+      assert.equal(failed.status,500,failed.text.slice(0,300));
+    } finally { await db.execute('DROP TRIGGER IF EXISTS p09_http_fail_variant_create'); }
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM product_variants WHERE variant_sku=?',[`${sku}-ROLLBACK`])).n),0,'audit failure rolls variant create back');
+    assert.ok(cartId&&orderLineId&&reservationId&&ledgerId);
+  });
+
   test('legacy blog admin routes use MySQL persistence, permission/CSRF checks, and transactional audit',async(t)=>{
     if(!MYSQL_HOST)return t.skip(SKIP);
     dashboardCookie=await login(fullEmail); csrfToken=await fetchCsrf(dashboardCookie);

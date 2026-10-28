@@ -14,17 +14,18 @@ function wantsJson(req) { return req.accepts(['html','json']) === 'json' || req.
 function asyncRoute(fn) { return (req,res,next) => Promise.resolve(fn(req,res,next)).catch(next); }
 
 router.get('/admin/phase06', asyncRoute(async (req,res) => {
-  const [products, inventory, suppliers, purchases, ledger] = await Promise.all([
-    repo.listProducts(), repo.listInventory(), repo.listSuppliers(), repo.listPurchases(), repo.listStockLedger(req.query.product_id || null),
+  const [products, inventory, suppliers, purchases, ledger, taxonomy] = await Promise.all([
+    repo.listProducts(), repo.listInventory(), repo.listSuppliers(), repo.listPurchases(), repo.listStockLedger(req.query.product_id || null), repo.listProductEditOptions(),
   ]);
-  res.render('admin/phase06', { products, inventory, suppliers, purchases, ledger, pageTitle: req.locale === 'en' ? 'Products, Inventory & Purchasing' : 'পণ্য, ইনভেন্টরি ও পারচেজ', csrfToken: req.csrfToken() });
+  res.render('admin/phase06', { products, inventory, suppliers, purchases, ledger, categories:taxonomy.categories, brands:taxonomy.brands,
+    pageTitle: req.locale === 'en' ? 'Products, Inventory & Purchasing' : 'পণ্য, ইনভেন্টরি ও পারচেজ', csrfToken: req.csrfToken() });
 }));
 
 router.get('/admin/phase06/products/:id/edit', asyncRoute(async (req,res) => {
-  const [product, options] = await Promise.all([repo.getProductForEdit(req.params.id), repo.listProductEditOptions()]);
+  const [product, options, variants] = await Promise.all([repo.getProductForEdit(req.params.id), repo.listProductEditOptions(), repo.listProductVariants(req.params.id)]);
   const { paisaToBdtString } = require('../utils/money');
   res.render('admin/phase06-product-edit', {
-    product, categories:options.categories, brands:options.brands, paisaToBdtString,
+    product, categories:options.categories, brands:options.brands, variants, paisaToBdtString,
     pageTitle: req.locale === 'en' ? `Edit ${product.sku}` : `${product.sku} সম্পাদনা`, csrfToken:req.csrfToken(), locale:req.locale,
   });
 }));
@@ -34,6 +35,20 @@ router.post('/admin/phase06/products/:id', requireCsrf, asyncRoute(async (req,re
   if (wantsJson(req)) return res.json({ success:true, product:result });
   req.flash('success', req.locale === 'en' ? `Product ${result.sku} updated. Stock and variant records were not changed.` : `পণ্য ${result.sku} আপডেট হয়েছে। স্টক ও ভ্যারিয়েন্ট অপরিবর্তিত আছে।`);
   return res.redirect('/admin/phase06');
+}));
+
+router.post('/admin/phase06/products/:id/variants', requireCsrf, asyncRoute(async (req,res) => {
+  const variant = await repo.createProductVariant(req.params.id, req.body, actor(req));
+  if (wantsJson(req)) return res.status(201).json({ success:true, variant });
+  req.flash('success', req.locale === 'en' ? `Variant ${variant.variantSku} created with zero stock.` : `ভ্যারিয়েন্ট ${variant.variantSku} তৈরি হয়েছে; স্টক শূন্য।`);
+  return res.redirect(`/admin/phase06/products/${req.params.id}/edit#variants`);
+}));
+
+router.post('/admin/phase06/products/:id/variants/:variantId', requireCsrf, asyncRoute(async (req,res) => {
+  const variant = await repo.updateProductVariant(req.params.id, req.params.variantId, req.body, actor(req));
+  if (wantsJson(req)) return res.json({ success:true, variant });
+  req.flash('success', req.locale === 'en' ? `Variant ${variant.variantSku} updated; inventory references were preserved.` : `ভ্যারিয়েন্ট ${variant.variantSku} আপডেট হয়েছে; ইনভেন্টরি রেফারেন্স অক্ষত আছে।`);
+  return res.redirect(`/admin/phase06/products/${req.params.id}/edit#variants`);
 }));
 
 router.post('/admin/phase06/products', requireCsrf, asyncRoute(async (req,res) => {

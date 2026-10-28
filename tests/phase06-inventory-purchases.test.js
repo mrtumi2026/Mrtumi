@@ -89,6 +89,43 @@ describe('Phase 06 — Product, Inventory Ledger, Supplier & Purchase Receiving'
     assert.equal(db.get('SELECT name_en FROM products WHERE id=?', product.id).name_en, 'Edited product', 'audit failure must roll product changes back');
   });
 
+  test('variant catalog create/update preserves SKU and inventory, uses paisa, soft-disables without deleting, and rolls audit failures back', async () => {
+    const product = db.get("SELECT id FROM products WHERE code='P06-TEST-001'");
+    const created = await repo.createProductVariant(product.id, { variant_sku:'P06-TEST-001-500G',size_label:'500 g',color_label:'Green',price_bdt:'123.45' }, { id:7 });
+    assert.ok(created.id > 0);
+    assert.equal(created.pricePaisa,12345);
+    assert.equal(created.stockOnHand,0);
+    assert.equal(Number(db.get('SELECT price FROM product_variants WHERE id=?',created.id).price),123.45);
+    const auditCreate = db.get("SELECT actor_id,after_json FROM audit_logs WHERE action='product.variant.create' AND entity_id=?",String(created.id));
+    assert.equal(auditCreate.actor_id,7);
+    assert.equal(JSON.parse(auditCreate.after_json).variantSku,'P06-TEST-001-500G');
+    await assert.rejects(() => repo.createProductVariant(product.id,{variant_sku:'P06-TEST-001-500G',size_label:'1 kg',price_bdt:'1.00'}),(err)=>err.code==='CONFLICT');
+    await assert.rejects(() => repo.createProductVariant(product.id,{variant_sku:'P06-TEST-INVALID',price_bdt:'1.001'}),ValidationError);
+    await assert.rejects(() => repo.updateProductVariant(product.id,created.id,{size_label:'1 kg',color_label:'Blue',price_bdt:'0.00'}),ValidationError,'partial updates cannot silently activate or reset omitted fields');
+
+    db.run('UPDATE product_variants SET stock_on_hand=?,stock_reserved=? WHERE id=?',8,3,created.id);
+    const updated = await repo.updateProductVariant(product.id,created.id,{size_label:'1 kg',color_label:'Blue',price_bdt:'0.00',status:'0'},{id:7});
+    assert.deepEqual([updated.variantSku,updated.sizeLabel,updated.colorLabel,updated.pricePaisa,updated.stockOnHand,updated.stockReserved,updated.status],
+      ['P06-TEST-001-500G','1 kg','Blue',0,8,3,0]);
+    const persisted = db.get('SELECT variant_sku,size_label,color_label,ROUND(price*100) AS price_paisa,stock_on_hand,stock_reserved,status FROM product_variants WHERE id=?',created.id);
+    assert.deepEqual(persisted,{variant_sku:'P06-TEST-001-500G',size_label:'1 kg',color_label:'Blue',price_paisa:0,stock_on_hand:8,stock_reserved:3,status:0});
+    const auditUpdate = db.get("SELECT before_json,after_json FROM audit_logs WHERE action='product.variant.update' AND entity_id=? ORDER BY id DESC LIMIT 1",String(created.id));
+    assert.equal(JSON.parse(auditUpdate.before_json).variant_sku,'P06-TEST-001-500G');
+    assert.equal(JSON.parse(auditUpdate.after_json).stockReserved,3);
+
+    db.rawDb.exec("CREATE TRIGGER p06_fail_variant_update BEFORE INSERT ON audit_logs WHEN NEW.action='product.variant.update' BEGIN SELECT RAISE(ABORT,'fixture variant audit failure'); END");
+    try {
+      await assert.rejects(() => repo.updateProductVariant(product.id,created.id,{size_label:'Must roll back',color_label:'Blue',price_bdt:'2.00',status:'1'}));
+    } finally { db.rawDb.exec('DROP TRIGGER IF EXISTS p06_fail_variant_update'); }
+    assert.equal(db.get('SELECT size_label FROM product_variants WHERE id=?',created.id).size_label,'1 kg');
+
+    db.rawDb.exec("CREATE TRIGGER p06_fail_variant_create BEFORE INSERT ON audit_logs WHEN NEW.action='product.variant.create' BEGIN SELECT RAISE(ABORT,'fixture variant audit failure'); END");
+    try {
+      await assert.rejects(() => repo.createProductVariant(product.id,{variant_sku:'P06-TEST-ROLLBACK',price_bdt:'2.00'}));
+    } finally { db.rawDb.exec('DROP TRIGGER IF EXISTS p06_fail_variant_create'); }
+    assert.equal(Number(db.get("SELECT COUNT(*) AS n FROM product_variants WHERE variant_sku='P06-TEST-ROLLBACK'").n),0);
+  });
+
   test('supplier creation validates fields and atomically records its audit event', async () => {
     const input = { name:'Verified supplier', supplier_code:'P06-SUP-AUDIT', phone:'+8801712345678', email:'supplier-audit@example.com', tax_or_trade_id:'BD-TIN-123' };
     const created = await repo.createSupplier(input, { id:7, ip:'192.0.2.8' });

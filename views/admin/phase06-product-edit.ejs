@@ -36,5 +36,33 @@
       <div class="col-12 d-flex gap-2"><button class="btn btn-success" type="submit" <%= Number(product.is_archived) ? 'disabled' : '' %>><%= locale === 'en' ? 'Save catalog changes' : 'পরিবর্তন সংরক্ষণ' %></button><a class="btn btn-outline-secondary" href="/admin/phase06"><%= locale === 'en' ? 'Cancel' : 'বাতিল' %></a></div>
     </form>
   </div></section>
+  <section class="card shadow-sm mt-4" id="variants"><div class="card-header"><h2 class="h5 mb-0"><%= locale === 'en' ? 'Product variants' : 'পণ্যের ভ্যারিয়েন্ট' %></h2></div><div class="card-body">
+    <p class="alert alert-info"><%= locale === 'en' ? 'Variant SKU is globally unique and immutable after creation. This schema has no variant barcode field. New variants start with zero stock; stock and reservations are read-only here. Deactivation preserves cart, order, reservation and ledger references; it only prevents new storefront selection.' : 'ভ্যারিয়েন্ট SKU পুরো সিস্টেমে অনন্য এবং তৈরির পর অপরিবর্তনীয়। এই স্কিমায় ভ্যারিয়েন্ট বারকোড ফিল্ড নেই। নতুন ভ্যারিয়েন্টের স্টক শূন্য; স্টক ও রিজার্ভেশন এখানে শুধু দেখা যাবে। নিষ্ক্রিয় করলেও কার্ট, অর্ডার, রিজার্ভেশন ও লেজার রেফারেন্স অক্ষত থাকে; শুধু নতুন storefront নির্বাচন বন্ধ হয়।' %></p>
+    <% if (!Number(product.is_archived)) { %>
+    <form method="post" action="/admin/phase06/products/<%= product.id %>/variants" class="row g-2 align-items-end border rounded p-3 mb-4">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="col-md-3"><label class="form-label" for="new-variant-sku"><%= locale === 'en' ? 'Variant SKU' : 'ভ্যারিয়েন্ট SKU' %> *</label><input class="form-control" id="new-variant-sku" name="variant_sku" maxlength="80" required></div>
+      <div class="col-md-2"><label class="form-label" for="new-variant-size"><%= locale === 'en' ? 'Size / option' : 'সাইজ / অপশন' %></label><input class="form-control" id="new-variant-size" name="size_label" maxlength="80"></div>
+      <div class="col-md-2"><label class="form-label" for="new-variant-color"><%= locale === 'en' ? 'Color / option' : 'রং / অপশন' %></label><input class="form-control" id="new-variant-color" name="color_label" maxlength="80"></div>
+      <div class="col-md-2"><label class="form-label" for="new-variant-price"><%= locale === 'en' ? 'Price override (BDT; zero uses product price)' : 'দামের বিকল্প (টাকা; শূন্য হলে পণ্যের দাম)' %></label><input class="form-control" id="new-variant-price" name="price_bdt" type="number" min="0" step="0.01" value="0.00" required></div>
+      <div class="col-md-3"><button class="btn btn-success" type="submit"><%= locale === 'en' ? 'Add variant (zero stock)' : 'ভ্যারিয়েন্ট যোগ করুন (স্টক শূন্য)' %></button></div>
+    </form>
+    <% } %>
+    <% if (!variants.length) { %><p class="text-muted"><%= locale === 'en' ? 'No variants have been created.' : 'এখনো কোনো ভ্যারিয়েন্ট তৈরি হয়নি।' %></p><% } else { %>
+    <div class="table-responsive"><table class="table table-striped align-middle"><thead><tr>
+      <th><%= locale === 'en' ? 'SKU' : 'SKU' %></th><th><%= locale === 'en' ? 'Size / option' : 'সাইজ / অপশন' %></th><th><%= locale === 'en' ? 'Color / option' : 'রং / অপশন' %></th>
+      <th><%= locale === 'en' ? 'Price override (BDT)' : 'দামের বিকল্প (টাকা)' %></th><th><%= locale === 'en' ? 'On hand / reserved' : 'মজুত / রিজার্ভ' %></th><th><%= locale === 'en' ? 'Status' : 'অবস্থা' %></th><th><%= locale === 'en' ? 'Action' : 'কাজ' %></th>
+    </tr></thead><tbody><% variants.forEach(function(v) { %><tr><td colspan="7"><form method="post" action="/admin/phase06/products/<%= product.id %>/variants/<%= v.id %>" class="row g-2 align-items-center">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <div class="col-md-2"><input class="form-control" value="<%= v.variant_sku %>" readonly aria-label="Variant SKU"></div>
+        <div class="col-md-2"><input class="form-control" name="size_label" maxlength="80" value="<%= v.size_label || '' %>" aria-label="Size or option" <%= Number(product.is_archived) ? 'disabled' : '' %>></div>
+        <div class="col-md-2"><input class="form-control" name="color_label" maxlength="80" value="<%= v.color_label || '' %>" aria-label="Color or option" <%= Number(product.is_archived) ? 'disabled' : '' %>></div>
+        <div class="col-md-2"><input class="form-control" name="price_bdt" type="number" min="0" step="0.01" value="<%= paisaToBdtString(Number(v.price_paisa || 0)) %>" aria-label="Variant price in BDT" <%= Number(product.is_archived) ? 'disabled' : '' %>></div>
+        <div class="col-md-1 small"><%= Number(v.stock_on_hand || 0) %> / <%= Number(v.stock_reserved || 0) %></div>
+        <div class="col-md-1"><select class="form-select" name="status" aria-label="Variant status" <%= Number(product.is_archived) ? 'disabled' : '' %>><option value="1" <%= Number(v.status) ? 'selected' : '' %>><%= locale === 'en' ? 'Active' : 'সক্রিয়' %></option><option value="0" <%= !Number(v.status) ? 'selected' : '' %>><%= locale === 'en' ? 'Inactive' : 'নিষ্ক্রিয়' %></option></select></div>
+        <div class="col-md-2"><button class="btn btn-outline-success btn-sm" type="submit" <%= Number(product.is_archived) ? 'disabled' : '' %>><%= locale === 'en' ? 'Save' : 'সংরক্ষণ' %></button></div>
+      </form></td></tr><% }) %></tbody></table></div>
+    <% } %>
+  </div></section>
 </main></div>
 <%- include('partials/footer') %>

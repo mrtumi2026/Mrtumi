@@ -24,6 +24,6 @@ function collectAdminRoutes(){
   return collectAdminRouteRegistrations().filter(route=>{const key=`${route.method}\0${route.path}`;if(seen.has(key))return false;seen.add(key);return true;});
 }
 function concretePath(routePath){
-  return routePath.replace(/:id\b/g,'1').replace(/:itemId\b/g,'1').replace(/:status\b/g,'pending').replace(/:type\b/g,'deposit').replace(/:channel\b/g,'facebook').replace(/:lang\b/g,'en');
+  return routePath.replace(/:id\b/g,'1').replace(/:variantId\b/g,'1').replace(/:itemId\b/g,'1').replace(/:status\b/g,'pending').replace(/:type\b/g,'deposit').replace(/:channel\b/g,'facebook').replace(/:lang\b/g,'en');
 }
 module.exports={collectAdminRoutes,collectAdminRouteRegistrations,concretePath,FILES};
