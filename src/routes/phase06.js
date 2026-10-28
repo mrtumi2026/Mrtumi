@@ -158,6 +158,20 @@ router.post('/admin/phase06/suppliers', requireCsrf, asyncRoute(async (req,res) 
   return res.redirect('/admin/phase06#suppliers');
 }));
 
+router.get('/admin/phase06/suppliers/:id/edit', asyncRoute(async (req,res) => {
+  const supplier=await repo.getSupplierForEdit(req.params.id);
+  if(wantsJson(req))return res.json({success:true,supplier});
+  return res.render('admin/phase06-supplier-edit',{supplier,csrfToken:req.csrfToken(),locale:req.locale,
+    pageTitle:req.locale==='en'?`Edit supplier ${supplier.name}`:`সরবরাহকারী সম্পাদনা: ${supplier.name}`});
+}));
+
+router.post('/admin/phase06/suppliers/:id', requireCsrf, asyncRoute(async (req,res) => {
+  const supplier=await repo.updateSupplier(req.params.id,req.body,actor(req));
+  if(wantsJson(req))return res.json({success:true,supplier});
+  req.flash('success',req.locale==='en'?'Supplier details and active status saved. Purchase history and balances were preserved.':'সরবরাহকারীর তথ্য ও সক্রিয় অবস্থা সংরক্ষিত। ক্রয় ইতিহাস ও ব্যালেন্স অপরিবর্তিত।');
+  return res.redirect('/admin/phase06#suppliers');
+}));
+
 router.post('/admin/phase06/purchases', requireCsrf, asyncRoute(async (req,res) => {
   const purchase = await repo.createPurchase(req.body, actor(req));
   if (wantsJson(req)) return res.status(201).json({ success:true, purchase });

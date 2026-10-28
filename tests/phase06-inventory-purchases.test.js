@@ -183,6 +183,41 @@ describe('Phase 06 — Product, Inventory Ledger, Supplier & Purchase Receiving'
     assert.equal(db.get("SELECT COUNT(*) AS n FROM suppliers WHERE supplier_code='P06-SUP-ROLLBACK'").n,0,'audit failure must roll back supplier insert');
   });
 
+  test('supplier edit and activation lifecycle preserves purchase history and balances with atomic audit rollback', async () => {
+    const suffix=`${process.pid}-${Date.now()}`;
+    const supplier=await repo.createSupplier({name:'Lifecycle supplier',supplier_code:`P06-LIFE-${suffix}`,phone:'+8801712345678',email:'lifecycle@example.com'}, {id:7});
+    const product=db.get("SELECT id FROM products WHERE code='P06-TEST-001'");
+    const purchase=await repo.createPurchase({supplier_id:supplier.id,reference_no:`P06-LIFE-PO-${suffix}`,lines:[{product_id:product.id,ordered_qty:2,unit_cost_bdt:'4.25'}]},{id:7});
+    const balanceBefore=db.get('SELECT balance_due FROM suppliers WHERE id=?',supplier.id).balance_due;
+    const fields={supplier_code:`P06-LIFE-${suffix}`,name:'Lifecycle supplier updated',company:'Updated company',contact_person:'Buyer',phone:'+8801712345679',
+      email:'updated@example.com',address:'New address',tax_or_trade_id:'BD-LIFE-1',notes:'Contact note',status:'0'};
+    const inactive=await repo.updateSupplier(supplier.id,fields,{id:7,ip:'192.0.2.10'});
+    assert.equal(inactive.status,0);
+    assert.equal(db.get('SELECT status FROM suppliers WHERE id=?',supplier.id).status,0);
+    assert.equal(db.get('SELECT id FROM purchases WHERE id=? AND supplier_id=?',purchase.id,supplier.id).id,purchase.id,'deactivation retains purchase FK/history');
+    assert.equal(db.get('SELECT balance_due FROM suppliers WHERE id=?',supplier.id).balance_due,balanceBefore,'supplier availability does not mutate financial balance');
+    await assert.rejects(()=>repo.createPurchase({supplier_id:supplier.id,lines:[{product_id:product.id,ordered_qty:1,unit_cost_bdt:'1.00'}]}),(err)=>err.statusCode===404,'inactive suppliers cannot be used for new orders');
+    const active=await repo.updateSupplier(supplier.id,{...fields,status:'1'},{id:7});
+    assert.equal(active.status,1,'supplier can be reactivated without changing linked history');
+    assert.equal(db.get('SELECT status FROM suppliers WHERE id=?',supplier.id).status,1);
+    const events=db.all("SELECT actor_id,before_json,after_json FROM audit_logs WHERE action='supplier.update' AND entity_id=? ORDER BY id",String(supplier.id));
+    assert.equal(events.length,2);
+    assert.equal(JSON.parse(events[0].before_json).status,1);
+    assert.equal(JSON.parse(events[0].after_json).status,0);
+    assert.equal(JSON.parse(events[1].before_json).status,0);
+    assert.equal(JSON.parse(events[1].after_json).status,1);
+    await assert.rejects(()=>repo.updateSupplier(supplier.id,{...fields,email:'invalid'}, {id:7}),ValidationError);
+    await assert.rejects(()=>repo.updateSupplier(supplier.id,{...fields,status:'2'}, {id:7}),ValidationError);
+    const duplicate=await repo.createSupplier({name:'Second lifecycle supplier',supplier_code:`P06-OTHER-${suffix}`,phone:'+8801712345680'});
+    await assert.rejects(()=>repo.updateSupplier(duplicate.id,{...fields,supplier_code:`P06-LIFE-${suffix}`,status:'1'}),(err)=>err.statusCode===409);
+
+    db.rawDb.exec("CREATE TRIGGER p06_fail_supplier_update_audit BEFORE INSERT ON audit_logs WHEN NEW.action='supplier.update' BEGIN SELECT RAISE(ABORT,'fixture supplier update audit failure'); END");
+    try { await assert.rejects(()=>repo.updateSupplier(supplier.id,{...fields,name:'Must roll back',status:'0'},{id:7})); }
+    finally { db.rawDb.exec('DROP TRIGGER IF EXISTS p06_fail_supplier_update_audit'); }
+    assert.deepEqual(db.get('SELECT name,status FROM suppliers WHERE id=?',supplier.id),{name:'Lifecycle supplier updated',status:1},'audit failure rolls supplier edit/status back');
+    assert.equal(db.get('SELECT id FROM purchases WHERE id=? AND supplier_id=?',purchase.id,supplier.id).id,purchase.id);
+  });
+
   test('authorized adjustments are reasoned, ledger-backed, audited atomically and cannot make stock negative', async () => {
     const product = db.get("SELECT id FROM products WHERE code='P06-TEST-001'");
     const result = await repo.adjustStock({ product_id: product.id, stock_pool: 'warehouse', qty_delta: -2, reason: 'Damaged during count' }, { id: 7, ip:'192.0.2.2' });

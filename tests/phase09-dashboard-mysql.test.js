@@ -527,6 +527,76 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM suppliers WHERE supplier_code=?',[rollbackCode])).n),0,'audit failure must roll back supplier persistence');
   });
 
+  test('Phase 06 supplier edit and activation HTTP preserves purchase history/balance and audits atomically',async(t)=>{
+    if(!MYSQL_HOST)return t.skip(SKIP);
+    const suffix=Date.now();
+    const createPath='/admin/phase06/suppliers';
+    const supplierInput={name:'Phase 06 Lifecycle Supplier',supplier_code:`P06-LIFE-${suffix}`,phone:'+8801712345678',email:`life-${suffix}@example.invalid`,company:'Lifecycle fixture'};
+    const created=await request(createPath,{method:'POST',body:supplierInput});
+    assert.equal(created.status,201,created.text.slice(0,250));
+    const supplierId=Number(created.json.supplier.id);
+    const editPath=`/admin/phase06/suppliers/${supplierId}`;
+    const pagePath=`${editPath}/edit`;
+    const editInput={...supplierInput,name:'Phase 06 Lifecycle Supplier Updated',company:'Updated company',contact_person:'Buyer',phone:'+8801712345679',
+      email:`updated-${suffix}@example.invalid`,address:'Updated address',tax_or_trade_id:'BD-LIFECYCLE',notes:'Contact details only',status:'0'};
+    assert.equal((await request(pagePath,{cookie:''})).status,401,'supplier editor requires admin authentication');
+    const noGrantCookie=await login(noGrantEmail); const noGrantToken=await fetchCsrf(noGrantCookie);
+    assert.equal((await request(pagePath,{cookie:noGrantCookie,token:noGrantToken})).status,403,'supplier editor requires inventory.manage');
+    const editor=await request(pagePath,{accept:'text/html'}); assert.equal(editor.status,200,editor.text.slice(0,250));
+    assert.doesNotMatch(editor.text,/balance_due_paisa|balance_due/,'supplier editor does not expose payable balance fields');
+    assert.match(editor.text,new RegExp(supplierInput.supplier_code));
+    assert.equal((await request(editPath,{method:'POST',token:'',body:editInput})).status,403,'supplier update requires CSRF');
+    assert.equal((await request(editPath,{method:'POST',body:{...editInput,email:'invalid'}})).status,400,'invalid email is rejected');
+    assert.equal((await request(editPath,{method:'POST',body:{...editInput,status:'2'}})).status,400,'unsupported supplier status is rejected');
+    const otherSupplier=await request(createPath,{method:'POST',body:{name:'Other lifecycle supplier',supplier_code:`P06-OTHER-${suffix}`,phone:'+8801712345680'}});
+    assert.equal(otherSupplier.status,201,otherSupplier.text.slice(0,200));
+    assert.equal((await request(editPath,{method:'POST',body:{...editInput,supplier_code:`P06-OTHER-${suffix}`}})).status,409,'supplier code conflict is rejected');
+    assert.equal((await request(`/admin/phase06/suppliers/999999999`,{method:'POST',body:editInput})).status,404,'unknown supplier cannot be created implicitly');
+
+    const ref=`P06-LIFE-PO-${suffix}`;
+    await db.execute('INSERT INTO purchases(reference_no,supplier_id,purchase_date) VALUES(?,?,CURRENT_DATE())',[ref,supplierId]);
+    const balanceBefore=Number((await db.queryOne('SELECT balance_due_paisa FROM suppliers WHERE id=?',[supplierId])).balance_due_paisa);
+    const changed=await request(editPath,{method:'POST',body:editInput});
+    assert.equal(changed.status,200,changed.text.slice(0,300));
+    assert.equal(Number(changed.json.supplier.status),0);
+    const saved=await db.queryOne('SELECT supplier_code,name,company,contact_person,phone,email,address,tax_or_trade_id,notes,status,balance_due_paisa FROM suppliers WHERE id=?',[supplierId]);
+    assert.deepEqual({name:saved.name,company:saved.company,contact_person:saved.contact_person,phone:saved.phone,email:saved.email,address:saved.address,tax_or_trade_id:saved.tax_or_trade_id,notes:saved.notes,status:Number(saved.status)},
+      {name:editInput.name,company:editInput.company,contact_person:editInput.contact_person,phone:editInput.phone,email:editInput.email,address:editInput.address,tax_or_trade_id:editInput.tax_or_trade_id,notes:editInput.notes,status:0});
+    assert.equal(Number(saved.balance_due_paisa),balanceBefore,'supplier profile/status update preserves payable balance');
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM purchases WHERE supplier_id=?',[supplierId])).n),1,'linked purchase history is retained');
+    const updateAudit=await db.queryOne("SELECT actor_id,before_json,after_json FROM audit_logs WHERE action='supplier.update' AND entity_id=? ORDER BY id DESC LIMIT 1",[String(supplierId)]);
+    assert.equal(Number(updateAudit.actor_id),dashboardUserId);
+    assert.equal(JSON.parse(updateAudit.before_json).status,1);
+    assert.equal(JSON.parse(updateAudit.after_json).status,0);
+    assert.equal(JSON.stringify(updateAudit.after_json).includes('balance_due'),false,'audit excludes financial balance fields');
+
+    const purchaseInput={supplier_id:supplierId,reference_no:`P06-INACTIVE-${suffix}`,lines:JSON.stringify([{product_id:productId,ordered_qty:1,unit_cost_bdt:'1.00'}]),discount_bdt:'0',shipping_charge_bdt:'0',paid_amount_bdt:'0'};
+    assert.equal((await request('/admin/phase06/purchases',{method:'POST',body:purchaseInput})).status,404,'inactive supplier cannot be used for a new PO');
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM purchases WHERE reference_no=?',[purchaseInput.reference_no])).n),0,'blocked PO creates no purchase row');
+
+    const active=await request(editPath,{method:'POST',body:{...editInput,status:'1'}});
+    assert.equal(active.status,200,active.text.slice(0,250));
+    assert.equal(Number(active.json.supplier.status),1,'supplier may be reactivated');
+    const stockBefore=Number((await db.queryOne('SELECT stock_on_hand FROM products WHERE id=?',[productId])).stock_on_hand);
+    const newPo=await request('/admin/phase06/purchases',{method:'POST',body:purchaseInput});
+    assert.equal(newPo.status,201,newPo.text.slice(0,300));
+    assert.equal(newPo.json.purchase.status,'draft');
+    assert.equal(Number((await db.queryOne('SELECT stock_on_hand FROM products WHERE id=?',[productId])).stock_on_hand),stockBefore,'PO creation does not mutate stock');
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM purchases WHERE supplier_id=?',[supplierId])).n),2,'both historical and new purchase references remain linked');
+
+    const nameBefore=String((await db.queryOne('SELECT name FROM suppliers WHERE id=?',[supplierId])).name);
+    const auditCount=Number((await db.queryOne("SELECT COUNT(*) AS n FROM audit_logs WHERE action='supplier.update' AND entity_id=?",[String(supplierId)])).n);
+    await db.execute("CREATE TRIGGER p06_http_fail_supplier_update_audit BEFORE INSERT ON audit_logs FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture supplier update audit failure'");
+    try {
+      const failed=await request(editPath,{method:'POST',body:{...editInput,name:'Must roll back',status:'0'}});
+      assert.equal(failed.status,500,failed.text.slice(0,300));
+    } finally { await db.execute('DROP TRIGGER IF EXISTS p06_http_fail_supplier_update_audit'); }
+    assert.equal(String((await db.queryOne('SELECT name FROM suppliers WHERE id=?',[supplierId])).name),nameBefore,'audit failure rolls supplier edits back');
+    assert.equal(Number((await db.queryOne('SELECT status FROM suppliers WHERE id=?',[supplierId])).status),1,'audit failure rolls activation state back');
+    assert.equal(Number((await db.queryOne("SELECT COUNT(*) AS n FROM audit_logs WHERE action='supplier.update' AND entity_id=?",[String(supplierId)])).n),auditCount,'failed audit is not persisted');
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM purchases WHERE supplier_id=?',[supplierId])).n),2,'supplier rollback does not disturb purchase history');
+  });
+
   test('real application routes enforce role grants, CSRF, safe errors, provider unavailable, popup audit and assistant audit',async(t)=>{
     if(!MYSQL_HOST)return t.skip(SKIP);
     assert.equal((await request('/admin/dashboard',{cookie:''})).status,401);

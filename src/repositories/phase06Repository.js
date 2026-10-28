@@ -105,6 +105,88 @@ async function listSuppliers() {
     GROUP BY s.id ORDER BY s.id DESC LIMIT 500`);
 }
 
+async function getSupplierForEdit(idInput) {
+  const id=positiveId(idInput,'Supplier');
+  const supplier=isMysql()
+    ? await require('../db/mysqlPool').queryOne(`SELECT id,supplier_code,name,company,contact_person,phone,email,address,tax_or_trade_id,notes,status FROM suppliers WHERE id=?`,[id])
+    : sqlite.get(`SELECT id,supplier_code,name,company,contact_person,phone,email,address,tax_or_trade_id,notes,status FROM suppliers WHERE id=?`,id);
+  if(!supplier)throw new NotFoundError('Supplier not found.');
+  return supplier;
+}
+
+function normalizeSupplierEditInput(input) {
+  const supplier={
+    code:cleanText(input.supplier_code||'',48,'Supplier code'),
+    name:cleanText(input.name,191,'Supplier name',true),
+    company:cleanText(input.company,191,'Company'),
+    contact:cleanText(input.contact_person,191,'Contact person'),
+    phone:cleanText(input.phone,32,'Phone',true),
+    email:cleanText(input.email,191,'Email'),
+    address:cleanText(input.address,4000,'Address'),
+    businessId:cleanText(input.tax_or_trade_id,100,'Business identifier'),
+    notes:cleanText(input.notes,4000,'Notes'),
+  };
+  if(supplier.email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(supplier.email))throw new ValidationError('Email address is invalid.');
+  const status=String(input.status??'');
+  if(status!=='0'&&status!=='1')throw new ValidationError('Supplier status must be active or inactive.');
+  supplier.status=Number(status);
+  return supplier;
+}
+
+function supplierAuditState(supplier) {
+  return {supplierCode:supplier.supplier_code||null,name:supplier.name,company:supplier.company||'',contactPerson:supplier.contact_person||'',
+    phone:supplier.phone,email:supplier.email||'',address:supplier.address||'',businessIdentifier:supplier.tax_or_trade_id||'',notes:supplier.notes||'',status:Number(supplier.status)};
+}
+
+async function updateSupplier(idInput,input,actor={}) {
+  const id=positiveId(idInput,'Supplier');
+  const supplier=normalizeSupplierEditInput(input);
+  const params=[supplier.code||null,supplier.name,supplier.company,supplier.contact,supplier.phone,supplier.email||null,supplier.address||null,
+    supplier.businessId,supplier.notes||null,supplier.status,id];
+  if(isMysql()){
+    const pool=require('../db/mysqlPool').getPool();
+    try {
+      return await withTransaction(async(tx)=>{
+        const current=await tx.queryOne('SELECT id,supplier_code,name,company,contact_person,phone,email,address,tax_or_trade_id,notes,status FROM suppliers WHERE id=? FOR UPDATE',[id]);
+        if(!current)throw new NotFoundError('Supplier not found.');
+        if(supplier.code){
+          const duplicate=await tx.queryOne('SELECT id FROM suppliers WHERE supplier_code=? AND id<>? FOR UPDATE',[supplier.code,id]);
+          if(duplicate)throw new ConflictError('Supplier code is already assigned to another supplier.');
+        }
+        const before=supplierAuditState(current);
+        await tx.execute(`UPDATE suppliers SET supplier_code=?,name=?,company=?,contact_person=?,phone=?,email=?,address=?,tax_or_trade_id=?,notes=?,status=? WHERE id=?`,params);
+        const after={supplierCode:supplier.code||null,name:supplier.name,company:supplier.company,contactPerson:supplier.contact,phone:supplier.phone,
+          email:supplier.email,address:supplier.address,businessIdentifier:supplier.businessId,notes:supplier.notes,status:supplier.status};
+        await recordAuditLog({actorType:'admin',actorId:actor.id||null,action:'supplier.update',entityType:'supplier',entityId:id,
+          beforeState:before,afterState:after,ipAddress:actor.ip||'',userAgent:actor.userAgent||''},tx);
+        return {id,...supplier};
+      },{pool});
+    }catch(err){
+      if(err?.code==='ER_DUP_ENTRY'||err?.code==='SQLITE_CONSTRAINT_UNIQUE')throw new ConflictError('Supplier code is already assigned to another supplier.');
+      throw err;
+    }
+  }
+  sqlite.rawDb.exec('BEGIN IMMEDIATE');
+  try {
+    const current=sqlite.get('SELECT id,supplier_code,name,company,contact_person,phone,email,address,tax_or_trade_id,notes,status FROM suppliers WHERE id=?',id);
+    if(!current)throw new NotFoundError('Supplier not found.');
+    if(supplier.code&&sqlite.get('SELECT id FROM suppliers WHERE supplier_code=? AND id<>?',supplier.code,id))throw new ConflictError('Supplier code is already assigned to another supplier.');
+    const before=supplierAuditState(current);
+    sqlite.run(`UPDATE suppliers SET supplier_code=?,name=?,company=?,contact_person=?,phone=?,email=?,address=?,tax_or_trade_id=?,notes=?,status=? WHERE id=?`,...params);
+    const after={supplierCode:supplier.code||null,name:supplier.name,company:supplier.company,contactPerson:supplier.contact,phone:supplier.phone,
+      email:supplier.email,address:supplier.address,businessIdentifier:supplier.businessId,notes:supplier.notes,status:supplier.status};
+    sqlite.run(`INSERT INTO audit_logs(actor_type,actor_id,action,entity_type,entity_id,before_json,after_json,ip_address,user_agent)
+      VALUES('admin',?,'supplier.update','supplier',?,?,?,?,?)`,actor.id||null,String(id),JSON.stringify(before),JSON.stringify(after),
+      String(actor.ip||'').slice(0,64),String(actor.userAgent||'').slice(0,255));
+    sqlite.rawDb.exec('COMMIT');
+    return {id,...supplier};
+  }catch(err){
+    try{sqlite.rawDb.exec('ROLLBACK');}catch(_e){}
+    if(err?.code==='SQLITE_CONSTRAINT_UNIQUE')throw new ConflictError('Supplier code is already assigned to another supplier.');
+    throw err;
+  }
+}
+
 async function listProducts() {
   if (isMysql()) return require('../db/mysqlPool').queryAll(`SELECT id, sku, name_bn, name_en, stock_on_hand, vendor_stock_on_hand, low_stock_threshold,
     regular_price_paisa, sale_price_paisa, cost_price_paisa, vendor_id, is_archived
@@ -774,4 +856,4 @@ async function archiveProduct(idInput, archive, actor = {}) {
   return {id,archived:Boolean(archive)};
 }
 
-module.exports = { createSupplier,listSuppliers,createProduct,normalizeProductEditInput,listProducts,getProductForEdit,listProductEditOptions,updateProduct,getProductGalleryForEdit,updateProductGallery,listProductVariants,createProductVariant,updateProductVariant,adjustStock,listInventory,listStockLedger,createPurchase,listPurchases,receivePurchase,archiveProduct };
+module.exports = { createSupplier,listSuppliers,getSupplierForEdit,updateSupplier,createProduct,normalizeProductEditInput,listProducts,getProductForEdit,listProductEditOptions,updateProduct,getProductGalleryForEdit,updateProductGallery,listProductVariants,createProductVariant,updateProductVariant,adjustStock,listInventory,listStockLedger,createPurchase,listPurchases,receivePurchase,archiveProduct };
