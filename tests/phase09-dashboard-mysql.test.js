@@ -129,11 +129,12 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     assert.equal(form.status,200,form.text.slice(0,300));
     assert.match(form.text,/Catalog details|ক্যাটালগের বিবরণ/);
     const category=await db.queryOne('SELECT category_id FROM products WHERE id=?',[productId]);
+    const original=await db.queryOne('SELECT * FROM products WHERE id=?',[productId]);
     const variantSku=`P09-EDIT-V-${Date.now()}`;
     const variant=await db.execute('INSERT INTO product_variants (product_id,variant_sku,size_label,color_label,price_paisa,stock_on_hand,stock_reserved,status) VALUES (?,?,?,?,?,?,?,1)',[productId,variantSku,'250 g','Red',7654,5,1]);
     const before=await db.queryOne('SELECT sku,stock_on_hand,stock_reserved,vendor_stock_on_hand FROM products WHERE id=?',[productId]);
     const ledgerBefore=Number((await db.queryOne('SELECT COUNT(*) AS n FROM stock_ledger WHERE product_id=?',[productId])).n);
-    const input={name_bn:'পরিবর্তিত ড্যাশবোর্ড পণ্য',name_en:'Updated dashboard product',slug:`p09-edited-${productId}`,product_type:'grocery',
+    const input={name_bn:'পরীক্ষা পরিবর্তিত ড্যাশবোর্ড পণ্য',name_en:'Updated dashboard product',slug:`p09-edited-${productId}`,product_type:'grocery',
       category_id:Number(category.category_id),brand_id:'',unit_label:'250 g',regular_price_bdt:'125.00',sale_price_bdt:'105.00',
       cost_price_bdt:'55.00',wholesale_price_bdt:'0',wholesale_min_qty:'0',low_stock_threshold:'2',image_url:'/uploads/custom/p09-edited.webp',
       short_desc_bn:'বাংলা বিবরণ',short_desc_en:'Short English',description_bn:'বিস্তারিত বাংলা',description_en:'Full English'};
@@ -161,6 +162,12 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     }
     assert.equal((await db.queryOne('SELECT name_en FROM products WHERE id=?',[productId])).name_en,input.name_en,'audit failure must roll metadata back');
     assert.equal(Number((await db.queryOne("SELECT COUNT(*) AS n FROM audit_logs WHERE action='product.update' AND entity_id=?",[String(productId)])).n),auditBefore);
+    await db.execute(`UPDATE products SET name_bn=?,name_en=?,slug=?,product_type=?,category_id=?,brand_id=?,regular_price_paisa=?,sale_price_paisa=?,cost_price_paisa=?,
+      wholesale_price_paisa=?,wholesale_min_qty=?,low_stock_threshold=?,unit_label=?,image_url=?,short_desc_bn=?,short_desc_en=?,description_bn=?,description_en=? WHERE id=?`,
+      [original.name_bn,original.name_en,original.slug,original.product_type,original.category_id,original.brand_id,original.regular_price_paisa,
+        original.sale_price_paisa,original.cost_price_paisa,original.wholesale_price_paisa,original.wholesale_min_qty,original.low_stock_threshold,
+        original.unit_label,original.image_url,original.short_desc_bn,original.short_desc_en,original.description_bn,original.description_en,productId]);
+    await db.execute('DELETE FROM product_variants WHERE id=?',[variant.insertId]);
   });
 
   test('legacy blog admin routes use MySQL persistence, permission/CSRF checks, and transactional audit',async(t)=>{
