@@ -25,6 +25,7 @@ const { PRODUCT_CSV_COLUMNS,serializeCsv,parseCsv } = require('../src/utils/prod
 
 describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audit HTTP', { skip: !MYSQL_HOST && !REQUIRED ? SKIP : false }, () => {
   let pool, db, server, baseUrl, dashboardCookie, csrfToken, productId, invoiceOrderId, dashboardUserId, limitedUserId, managerUserId, noGrantUserId, fullEmail='', limitedEmail='', managerEmail='', noGrantEmail='';
+  let cachedNoGrantSession=null;
   const password = 'Phase09IntegrationPassword!2026';
   const roleIds = {};
   const permissionNames = ['dashboard.view','orders.poll','orders.popup.view','orders.popup.dismiss','assistant.report','staff.manage','staff.assign_role','roles.manage','roles.grants.manage','audit_logs.view','orders.manage','refunds.review','checkout.recovery.view','checkout.recovery.manage','catalog.view','catalog.manage','inventory.manage','content.manage','customers.manage','security.manage','hr.manage','finance.view','finance.manage','vendors.manage','resellers.manage','delivery.manage','settings.manage','integrations.manage','communications.send','analytics.view','reports.view','error_logs.view','error_logs.manage'];
@@ -106,6 +107,13 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     const cookie=(response.headers.get('set-cookie')||'').split(';')[0]; assert.ok(cookie); return cookie;
   }
   async function fetchCsrf(cookie){const r=await request('/api/v1/csrf-token',{cookie});assert.equal(r.status,200);return r.json.data.csrfToken;}
+  async function noGrantSession(){
+    if(!cachedNoGrantSession){
+      const cookie=await login(noGrantEmail);
+      cachedNoGrantSession={cookie,token:await fetchCsrf(cookie)};
+    }
+    return cachedNoGrantSession;
+  }
 
   test('live repository preserves MySQL summaries, Dhaka boundaries, statuses, limits and paisa',async(t)=>{
     if(!MYSQL_HOST)return t.skip(SKIP);
@@ -123,7 +131,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     if(!MYSQL_HOST)return t.skip(SKIP);
     const path=`/admin/phase06/products/${productId}/edit`;
     assert.equal((await request(path,{cookie:'',accept:'text/html'})).status,302,'unauthenticated catalog edit redirects through the existing admin login flow');
-    const noGrantCookie=await login(noGrantEmail); const noGrantToken=await fetchCsrf(noGrantCookie);
+    const {cookie:noGrantCookie,token:noGrantToken}=await noGrantSession();
     assert.equal((await request(path,{cookie:noGrantCookie,accept:'text/html'})).status,403,'inventory.manage is required');
     dashboardCookie=await login(fullEmail); csrfToken=await fetchCsrf(dashboardCookie);
     const form=await request(path,{accept:'text/html'});
@@ -174,7 +182,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
   test('Phase 06 gallery reorder enforces product-local complete lists, safe paths, auth/CSRF, persistence and audit rollback',async(t)=>{
     if(!MYSQL_HOST)return t.skip(SKIP);
     dashboardCookie=await login(fullEmail); csrfToken=await fetchCsrf(dashboardCookie);
-    const noGrantCookie=await login(noGrantEmail); const noGrantToken=await fetchCsrf(noGrantCookie);
+    const {cookie:noGrantCookie,token:noGrantToken}=await noGrantSession();
     const base=`/admin/phase06/products/${productId}`;
     const first='/uploads/product/lychee-fresh.jpg', second='/uploads/product/lychee-box.jpg';
     const original=await db.queryOne('SELECT image_url,gallery_json FROM products WHERE id=?',[productId]);
@@ -224,7 +232,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
   test('Phase 06 product CSV preview/commit/export is authorized, row-validated, atomic and spreadsheet-safe',async(t)=>{
     if(!MYSQL_HOST)return t.skip(SKIP);
     dashboardCookie=await login(fullEmail); csrfToken=await fetchCsrf(dashboardCookie);
-    const noGrantCookie=await login(noGrantEmail); const noGrantToken=await fetchCsrf(noGrantCookie);
+    const {cookie:noGrantCookie,token:noGrantToken}=await noGrantSession();
     const suffix=Date.now(),skuA=`P09-CSV-A-${suffix}`,skuB=`P09-CSV-B-${suffix}`;
     const categoryId=Number((await db.queryOne('SELECT category_id FROM products WHERE id=?',[productId])).category_id);
     let productA=null,productB=null,productAmbiguous=null,variantId=null;
@@ -333,7 +341,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
   test('Phase 06 variant HTTP management validates, audits, and preserves carts/orders/reservations/ledger',async(t)=>{
     if(!MYSQL_HOST)return t.skip(SKIP);
     dashboardCookie=await login(fullEmail); csrfToken=await fetchCsrf(dashboardCookie);
-    const noGrantCookie=await login(noGrantEmail); const noGrantToken=await fetchCsrf(noGrantCookie);
+    const {cookie:noGrantCookie,token:noGrantToken}=await noGrantSession();
     let variantId=null,customerId=null,cartId=null,orderLineId=null,reservationId=null,ledgerId=null;
     t.after(async()=>{
       await db.execute('DROP TRIGGER IF EXISTS p09_http_fail_variant_update');
@@ -415,7 +423,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
   test('legacy blog admin routes use MySQL persistence, permission/CSRF checks, and transactional audit',async(t)=>{
     if(!MYSQL_HOST)return t.skip(SKIP);
     dashboardCookie=await login(fullEmail); csrfToken=await fetchCsrf(dashboardCookie);
-    const noGrantCookie=await login(noGrantEmail); const noGrantToken=await fetchCsrf(noGrantCookie);
+    const {cookie:noGrantCookie,token:noGrantToken}=await noGrantSession();
     assert.equal((await request('/admin/blogs',{cookie:noGrantCookie,accept:'text/html'})).status,403,'content.manage is required to read blogs');
     assert.equal((await request('/admin/blog/create',{accept:'text/html'})).status,200,'authorized content managers can load the create form');
     assert.equal((await request('/admin/blog/create',{method:'POST',token:'',body:{title:'CSRF denied',content:'No write'}})).status,403,'blog mutations require CSRF');
@@ -464,7 +472,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     const path='/admin/phase06/inventory/adjust';
     const base={product_id:productId,stock_pool:'warehouse',qty_delta:2,reason:'Phase 06 HTTP count correction'};
     assert.equal((await request(path,{method:'POST',cookie:'',token:'',body:base})).status,401,'inventory adjustment requires an authenticated admin');
-    const noGrantCookie=await login(noGrantEmail); const noGrantToken=await fetchCsrf(noGrantCookie);
+    const {cookie:noGrantCookie,token:noGrantToken}=await noGrantSession();
     assert.equal((await request(path,{method:'POST',cookie:noGrantCookie,token:noGrantToken,body:base})).status,403,'inventory.manage is required');
     dashboardCookie=await login(fullEmail); csrfToken=await fetchCsrf(dashboardCookie);
     assert.equal((await request(path,{method:'POST',token:'',body:base})).status,403,'inventory adjustment requires CSRF');
@@ -502,7 +510,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     const suffix=Date.now();
     const input={name:'Phase 06 HTTP Supplier',supplier_code:`P06-HTTP-${suffix}`,phone:'+8801712345678',email:`supplier-${suffix}@example.invalid`,company:'Fixture supplier'};
     assert.equal((await request(path,{method:'POST',cookie:'',token:'',body:input})).status,401,'supplier create requires authentication');
-    const noGrantCookie=await login(noGrantEmail); const noGrantToken=await fetchCsrf(noGrantCookie);
+    const {cookie:noGrantCookie,token:noGrantToken}=await noGrantSession();
     assert.equal((await request(path,{method:'POST',cookie:noGrantCookie,token:noGrantToken,body:input})).status,403,'inventory.manage is required');
     dashboardCookie=await login(fullEmail); csrfToken=await fetchCsrf(dashboardCookie);
     assert.equal((await request(path,{method:'POST',token:'',body:input})).status,403,'supplier create requires CSRF');
@@ -540,7 +548,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     const editInput={...supplierInput,name:'Phase 06 Lifecycle Supplier Updated',company:'Updated company',contact_person:'Buyer',phone:'+8801712345679',
       email:`updated-${suffix}@example.invalid`,address:'Updated address',tax_or_trade_id:'BD-LIFECYCLE',notes:'Contact details only',status:'0'};
     assert.equal((await request(pagePath,{cookie:''})).status,401,'supplier editor requires admin authentication');
-    const noGrantCookie=await login(noGrantEmail); const noGrantToken=await fetchCsrf(noGrantCookie);
+    const {cookie:noGrantCookie,token:noGrantToken}=await noGrantSession();
     assert.equal((await request(pagePath,{cookie:noGrantCookie,token:noGrantToken})).status,403,'supplier editor requires inventory.manage');
     const editor=await request(pagePath,{accept:'text/html'}); assert.equal(editor.status,200,editor.text.slice(0,250));
     assert.doesNotMatch(editor.text,/balance_due_paisa|balance_due/,'supplier editor does not expose payable balance fields');
@@ -652,7 +660,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
   test('legacy printable order invoice reads canonical MySQL rows with existing auth and redirect contracts',async(t)=>{
     if(!MYSQL_HOST)return t.skip(SKIP);
     assert.equal((await request(`/admin/order/invoice/${invoiceOrderId}`,{cookie:''})).status,401,'invoice requires an authenticated admin');
-    const noGrantCookie=await login(noGrantEmail);
+    const {cookie:noGrantCookie}=await noGrantSession();
     assert.equal((await request(`/admin/order/invoice/${invoiceOrderId}`,{cookie:noGrantCookie})).status,403,'invoice requires orders.manage');
     const persisted=await db.queryOne('SELECT invoice_no,customer_name,customer_phone,total_paisa FROM orders WHERE id=?',[invoiceOrderId]);
     const response=await request(`/admin/order/invoice/${invoiceOrderId}`,{accept:'text/html'});
@@ -677,7 +685,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     const before=await db.queryOne('SELECT invoice_no,is_seen,updated_at FROM orders WHERE id=?',[invoiceOrderId]);
     assert.equal(Number(before.is_seen),0,'detail fixture begins unseen');
     assert.equal((await request(`/admin/order/view/${invoiceOrderId}`,{cookie:''})).status,401,'order detail requires an authenticated admin');
-    const noGrantCookie=await login(noGrantEmail);
+    const {cookie:noGrantCookie}=await noGrantSession();
     assert.equal((await request(`/admin/order/view/${invoiceOrderId}`,{cookie:noGrantCookie,accept:'text/html'})).status,403,'order detail requires orders.manage');
     const deniedSeen=await db.queryOne('SELECT is_seen FROM orders WHERE id=?',[invoiceOrderId]);
     assert.equal(Number(deniedSeen.is_seen),0,'authentication and permission denials do not acknowledge the order');
@@ -742,7 +750,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     const invoice=await db.queryOne('SELECT invoice_no FROM orders WHERE id=?',[invoiceOrderId]);
     const encodedInvoice=encodeURIComponent(invoice.invoice_no);
     assert.equal((await request(`/admin/order/completed?q=${encodedInvoice}`,{cookie:''})).status,401,'order list requires authentication');
-    const noGrantCookie=await login(noGrantEmail);
+    const {cookie:noGrantCookie}=await noGrantSession();
     assert.equal((await request(`/admin/order/completed?q=${encodedInvoice}`,{cookie:noGrantCookie})).status,403,'order list requires orders.manage');
 
     const completed=await request(`/admin/order/completed?q=${encodedInvoice}`,{accept:'text/html'});
@@ -804,7 +812,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     const key=`p09_route_setting_${Date.now()}`;
     const secret='phase09-sensitive-test-value';
     assert.equal((await request('/admin/settings/save',{method:'POST',cookie:dashboardCookie,token:'',body:{[key]:secret,_redirect:'/admin/settings/manage'}})).status,403,'settings writes require CSRF');
-    const noGrantCookie=await login(noGrantEmail); const noGrantCsrf=await fetchCsrf(noGrantCookie);
+    const {cookie:noGrantCookie}=await noGrantSession(); const noGrantCsrf=await fetchCsrf(noGrantCookie);
     assert.equal((await request('/admin/settings/save',{method:'POST',cookie:noGrantCookie,token:noGrantCsrf,body:{[key]:secret}})).status,403,'settings writes require settings.manage');
     try {
       const response=await request('/admin/settings/save',{method:'POST',body:{[key]:secret,_redirect:'/admin/settings/manage'}});
@@ -822,7 +830,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
 
   test('all unique non-exempt legacy admin method/path pairs deny a logged-in zero-grant staff account',async(t)=>{
     if(!MYSQL_HOST)return t.skip(SKIP);
-    const deniedCookie=await login(noGrantEmail);
+    const {cookie:deniedCookie}=await noGrantSession();
     const routes=collectAdminRoutes().filter(r=>!policyForAdminRoute(r.method,r.path).exempt);
     assert.ok(routes.length>=240,'inventory covers every unique non-exempt active admin endpoint plus dynamic settings pages');
     const unmapped=routes.filter(r=>policyForAdminRoute(r.method,r.path).unmapped);
