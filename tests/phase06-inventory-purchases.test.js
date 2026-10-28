@@ -249,6 +249,13 @@ describe('Phase 06 — Product, Inventory Ledger, Supplier & Purchase Receiving'
       sku: 'P06-TEST-002', name_bn: 'পারচেজ পরীক্ষার পণ্য', name_en: 'Receipt Test', slug: 'phase06-receipt-product',
       category_id: 1, regular_price_bdt: '10', sale_price_bdt: '10', cost_price_bdt: '5', opening_stock: '2'
     });
+    const failedReference=`P06-PO-AUDIT-ROLLBACK-${process.pid}-${Date.now()}`;
+    const purchaseAuditBefore=Number(db.get("SELECT COUNT(*) AS n FROM audit_logs WHERE action='purchase.create'").n);
+    db.rawDb.exec("CREATE TRIGGER p06_fail_purchase_create_audit BEFORE INSERT ON audit_logs WHEN NEW.action='purchase.create' BEGIN SELECT RAISE(ABORT,'fixture purchase create audit failure'); END");
+    try { await assert.rejects(()=>repo.createPurchase({supplier_id:supplier.id,reference_no:failedReference,lines:[{product_id:product.id,ordered_qty:2,unit_cost_bdt:'4.50'}]},{id:7})); }
+    finally { db.rawDb.exec('DROP TRIGGER IF EXISTS p06_fail_purchase_create_audit'); }
+    assert.equal(Number(db.get('SELECT COUNT(*) AS n FROM purchases WHERE reference_no=?',failedReference).n),0,'purchase audit failure rolls draft order back');
+    assert.equal(Number(db.get("SELECT COUNT(*) AS n FROM audit_logs WHERE action='purchase.create'").n),purchaseAuditBefore,'failed draft leaves no purchase audit row');
     const po = await repo.createPurchase({ supplier_id: supplier.id, lines: [{ product_id: product.id, ordered_qty: 5, unit_cost_bdt: '4.50' }] }, { id: 7 });
     assert.equal(db.get('SELECT stock FROM products WHERE id=?', product.id).stock, 2, 'draft PO must not increase stock');
     const item = db.get('SELECT id FROM purchase_items WHERE purchase_id=?', po.id);

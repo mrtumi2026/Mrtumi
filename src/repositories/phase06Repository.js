@@ -778,9 +778,10 @@ async function createPurchase(input, actor = {}) {
         if (!product) throw new NotFoundError(`Product #${line.productId} not found or archived.`);
         await tx.execute('INSERT INTO purchase_items (purchase_id,product_id,ordered_qty,unit_cost_paisa,line_total_paisa) VALUES (?,?,?,?,?)', [po.insertId,line.productId,line.qty,line.unitCost,line.qty*line.unitCost]);
       }
-      return { id: po.insertId, referenceNo: ref, totalPaisa: total, status: 'draft' };
+      const result={ id: po.insertId, referenceNo: ref, totalPaisa: total, status: 'draft' };
+      await recordAuditLog({ actorType:'admin',actorId:actor.id||null,action:'purchase.create',entityType:'purchase',entityId:result.id,afterState:{supplierId,lines:cooked,totalPaisa:total},ipAddress:actor.ip||'',userAgent:actor.userAgent||'' },tx);
+      return result;
     }, { pool });
-    await recordAuditLog({ actorType:'admin',actorId:actor.id||null,action:'purchase.create',entityType:'purchase',entityId:result.id,afterState:{supplierId,lines:cooked,totalPaisa:total},ipAddress:actor.ip||'',userAgent:actor.userAgent||'' });
     return result;
   }
   const supplier = sqlite.get('SELECT id FROM suppliers WHERE id=? AND status=1', supplierId);
@@ -795,8 +796,11 @@ async function createPurchase(input, actor = {}) {
       if (!sqlite.get('SELECT id FROM products WHERE id=? AND is_archived=0', line.productId)) throw new NotFoundError(`Product #${line.productId} not found or archived.`);
       sqlite.run('INSERT INTO purchase_items (purchase_id,product_id,ordered_qty,unit_cost,line_total) VALUES (?,?,?,?,?)',Number(po.lastInsertRowid),line.productId,line.qty,line.unitCost/100,line.qty*line.unitCost/100);
     }
+    const result={id:Number(po.lastInsertRowid),referenceNo:ref,totalPaisa:total,status:'draft'};
+    sqlite.run(`INSERT INTO audit_logs (actor_type,actor_id,action,entity_type,entity_id,after_json,ip_address,user_agent)
+      VALUES ('admin',?,'purchase.create','purchase',?,?,?,?)`,actor.id||null,String(result.id),JSON.stringify({supplierId,lines:cooked,totalPaisa:total}),String(actor.ip||'').slice(0,64),String(actor.userAgent||'').slice(0,255));
     sqlite.rawDb.exec('COMMIT');
-    return {id:Number(po.lastInsertRowid),referenceNo:ref,totalPaisa:total,status:'draft'};
+    return result;
   } catch (err) { try{sqlite.rawDb.exec('ROLLBACK');}catch(_e){} throw err; }
 }
 

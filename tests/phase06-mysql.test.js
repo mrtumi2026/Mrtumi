@@ -62,7 +62,14 @@ describe('Phase 06 — Live MySQL 8.0 schema, product, stock ledger & purchase r
     await assert.rejects(() => repo.receivePurchase(purchaseId,{idempotency_key:'p06-mysql-receipt-1',lines:[{purchase_item_id:purchaseItemId,received_qty:2}]}),(err)=>err.code==='IDEMPOTENCY_PAYLOAD_MISMATCH');
     const category=await db.queryOne("SELECT id FROM categories WHERE slug='phase06-mysql-test'");
     const rollbackProduct=await repo.createProduct({sku:'P06-MYSQL-AUDIT-ROLLBACK',name_bn:'রোলব্যাক পণ্য',name_en:'Receipt Rollback Product',slug:'phase06-mysql-audit-rollback-product',category_id:Number(category.id),regular_price_bdt:'20.00',sale_price_bdt:'20.00',cost_price_bdt:'5.00',opening_stock:0,low_stock_threshold:0});
-    const rollbackPurchase=await repo.createPurchase({supplier_id:supplierId,lines:[{product_id:rollbackProduct.id,ordered_qty:2,unit_cost_bdt:'5.00'}]});
+    const failedPoReference='P06-MYSQL-PO-AUDIT-FAIL';
+    const purchaseAuditBefore=Number((await db.queryOne("SELECT COUNT(*) AS n FROM audit_logs WHERE action='purchase.create'")).n);
+    await db.execute("CREATE TRIGGER p06_fail_purchase_create_audit BEFORE INSERT ON audit_logs FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture purchase create audit failure'");
+    try { await assert.rejects(()=>repo.createPurchase({supplier_id:supplierId,reference_no:failedPoReference,lines:[{product_id:rollbackProduct.id,ordered_qty:1,unit_cost_bdt:'5.00'}]})); }
+    finally { await db.execute('DROP TRIGGER IF EXISTS p06_fail_purchase_create_audit'); }
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM purchases WHERE reference_no=?',[failedPoReference])).n),0,'purchase audit failure rolls draft/lines back');
+    assert.equal(Number((await db.queryOne("SELECT COUNT(*) AS n FROM audit_logs WHERE action='purchase.create'")).n),purchaseAuditBefore,'failed draft leaves no purchase audit row');
+    const rollbackPurchase=await repo.createPurchase({supplier_id:supplierId,reference_no:'P06-MYSQL-PO-AUDIT-ROLLBACK',lines:[{product_id:rollbackProduct.id,ordered_qty:2,unit_cost_bdt:'5.00'}]});
     const rollbackItem=await db.queryOne('SELECT id FROM purchase_items WHERE purchase_id=?',[rollbackPurchase.id]);
     const rollbackKey='p06-mysql-audit-failure-receipt';
     const ledgerBefore=Number((await db.queryOne("SELECT COUNT(*) AS n FROM stock_ledger WHERE product_id=? AND movement_type='purchase_receipt'",[rollbackProduct.id])).n);
