@@ -1,0 +1,30 @@
+<%- include('partials/head', { title: pageTitle }) %>
+<%- include('partials/topbar') %>
+<%- include('partials/sidebar') %>
+<div class="content-page"><main class="content container-fluid py-3" id="mainContent">
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <div><h1 class="h3 mb-1"><%= pageTitle %></h1><p class="text-muted mb-0"><%= supplier.supplierCode ? `${supplier.supplierCode} · ` : '' %><%= supplier.company ? `${supplier.company} · ` : '' %><%= supplier.phone %></p></div>
+    <div class="d-flex gap-2"><a class="btn btn-outline-primary" href="/admin/phase06/suppliers/<%= supplier.id %>/edit"><%= locale==='en'?'Edit supplier':'সরবরাহকারী সম্পাদনা' %></a><a class="btn btn-outline-secondary" href="/admin/phase06#suppliers"><%= locale==='en'?'Back to suppliers':'সরবরাহকারী তালিকায় ফিরুন' %></a></div>
+  </div>
+  <div class="alert alert-info" role="note"><%= locale==='en'?'Read-only purchase, line and receipt history. This view does not calculate or change payables, settlements, returns, stock or supplier balances. Product names are current catalog names; recorded quantities and dates are shown as stored.':'এটি শুধু-পঠন ক্রয়, পণ্য-সারি ও রিসিপ্টের ইতিহাস। এই পাতায় পাওনা, নিষ্পত্তি, ফেরত, স্টক বা সরবরাহকারীর ব্যালেন্স হিসাব বা পরিবর্তন করা হয় না। পণ্যের নাম বর্তমান ক্যাটালগ থেকে; পরিমাণ ও তারিখ সংরক্ষিত রেকর্ড অনুযায়ী দেখানো হয়।' %></div>
+  <section class="card shadow-sm" aria-labelledby="supplier-purchase-heading">
+    <div class="card-header d-flex justify-content-between align-items-center"><h2 id="supplier-purchase-heading" class="h5 mb-0"><%= locale==='en'?'Purchase orders':'ক্রয় অর্ডার' %></h2><span class="badge text-bg-secondary"><%= purchases.length %><%= hasMorePurchases ? '+' : '' %></span></div>
+    <% if (!purchases.length) { %><div class="card-body"><p class="mb-0 text-muted"><%= locale==='en'?'No purchase orders are recorded for this supplier.':'এই সরবরাহকারীর কোনো ক্রয় অর্ডার রেকর্ড নেই।' %></p></div><% } else { %>
+    <div class="table-responsive"><table class="table table-striped align-middle mb-0"><thead><tr><th scope="col"><%= locale==='en'?'Reference':'রেফারেন্স' %></th><th scope="col"><%= locale==='en'?'Date':'তারিখ' %></th><th scope="col"><%= locale==='en'?'Status':'অবস্থা' %></th><th scope="col"><%= locale==='en'?'Lines':'পণ্যের সারি' %></th><th scope="col"><%= locale==='en'?'Ordered units':'অর্ডারকৃত ইউনিট' %></th><th scope="col"><%= locale==='en'?'Received units':'গ্রহণকৃত ইউনিট' %></th><th scope="col"><%= locale==='en'?'Details':'বিস্তারিত' %></th></tr></thead><tbody>
+      <% purchases.forEach((purchase) => { %><tr>
+        <th scope="row"><%= purchase.referenceNo %></th><td><%= purchase.purchaseDate||purchase.createdAt||'—' %></td><td><span class="badge text-bg-light border"><%= purchase.status %></span></td>
+        <td><%= purchase.lineCount %></td><td><%= purchase.orderedQty %></td><td><%= purchase.receivedQty %></td>
+        <td><details><summary class="text-primary"><%= locale==='en'?'View lines and receipts':'সারি ও রিসিপ্ট দেখুন' %></summary>
+          <div class="pt-2"><h3 class="h6"><%= locale==='en'?'Purchase lines':'ক্রয় পণ্যের সারি' %></h3>
+            <% if (purchase.lines.length) { %><div class="table-responsive"><table class="table table-sm mb-3"><thead><tr><th scope="col">SKU</th><th scope="col"><%= locale==='en'?'Product':'পণ্য' %></th><th scope="col"><%= locale==='en'?'Ordered':'অর্ডারকৃত' %></th><th scope="col"><%= locale==='en'?'Received':'গ্রহণকৃত' %></th></tr></thead><tbody><% purchase.lines.forEach((line) => { %><tr><td><%= line.sku %></td><td><%= locale==='en'?(line.nameEn||line.nameBn):(line.nameBn||line.nameEn) %></td><td><%= line.orderedQty %></td><td><%= line.receivedQty %></td></tr><% }) %></tbody></table></div><% } else { %><p class="text-muted"><%= locale==='en'?'No line details were found.':'পণ্যের সারির বিস্তারিত পাওয়া যায়নি।' %></p><% } %>
+            <h3 class="h6"><%= locale==='en'?'Receipts':'রিসিপ্ট' %></h3>
+            <% if (purchase.receipts.length) { %><div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th scope="col"><%= locale==='en'?'Receipt reference':'রিসিপ্ট রেফারেন্স' %></th><th scope="col"><%= locale==='en'?'Type':'ধরন' %></th><th scope="col"><%= locale==='en'?'Units':'ইউনিট' %></th><th scope="col"><%= locale==='en'?'Note':'নোট' %></th><th scope="col"><%= locale==='en'?'Recorded':'রেকর্ডের সময়' %></th></tr></thead><tbody><% purchase.receipts.forEach((receipt) => { %><tr><td><%= receipt.receiptNo %></td><td><%= receipt.eventType %></td><td><%= receipt.totalQty %></td><td><%= receipt.note||'—' %></td><td><%= receipt.createdAt %></td></tr><% }) %></tbody></table></div><% } else { %><p class="text-muted mb-0"><%= locale==='en'?'No receipt events are recorded.':'কোনো রিসিপ্ট ইভেন্ট রেকর্ড নেই।' %></p><% } %>
+          </div>
+        </details></td>
+      </tr><% }) %>
+    </tbody></table></div>
+    <% if (hasPreviousPurchases || hasMorePurchases) { %><nav class="card-footer d-flex justify-content-between align-items-center" aria-label="<%= locale==='en'?'Purchase history pages':'ক্রয় ইতিহাসের পৃষ্ঠা' %>"><% if (hasPreviousPurchases) { %><a class="btn btn-sm btn-outline-secondary" href="/admin/phase06/suppliers/<%= supplier.id %>/purchases?page=<%= page-1 %>"><%= locale==='en'?'Previous':'আগের' %></a><% } else { %><span></span><% } %><span class="small text-muted"><%= locale==='en'?`Page ${page}`:`পৃষ্ঠা ${page}` %></span><% if (hasMorePurchases) { %><a class="btn btn-sm btn-outline-secondary" href="/admin/phase06/suppliers/<%= supplier.id %>/purchases?page=<%= page+1 %>"><%= locale==='en'?'Next':'পরের' %></a><% } else { %><span></span><% } %></nav><% } %>
+    <% } %>
+  </section>
+</main></div>
+<%- include('partials/footer') %>

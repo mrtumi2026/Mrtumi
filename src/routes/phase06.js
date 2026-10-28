@@ -158,6 +158,14 @@ router.post('/admin/phase06/suppliers', requireCsrf, asyncRoute(async (req,res) 
   return res.redirect('/admin/phase06#suppliers');
 }));
 
+router.get('/admin/phase06/suppliers/:id/purchases', asyncRoute(async (req,res) => {
+  const history=await repo.getSupplierPurchaseHistory(req.params.id,req.query.page||1);
+  res.setHeader('Cache-Control','no-store');
+  if(wantsJson(req))return res.json({success:true,...history});
+  return res.render('admin/phase06-supplier-purchases',{...history,csrfToken:req.csrfToken(),locale:req.locale,
+    pageTitle:req.locale==='en'?`Purchase history — ${history.supplier.name}`:`ক্রয় ইতিহাস — ${history.supplier.name}`});
+}));
+
 router.get('/admin/phase06/suppliers/:id/edit', asyncRoute(async (req,res) => {
   const supplier=await repo.getSupplierForEdit(req.params.id);
   if(wantsJson(req))return res.json({success:true,supplier});

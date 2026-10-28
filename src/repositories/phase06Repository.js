@@ -187,6 +187,64 @@ async function updateSupplier(idInput,input,actor={}) {
   }
 }
 
+async function getSupplierPurchaseHistory(idInput,pageInput=1) {
+  const supplierId=positiveId(idInput,'Supplier');
+  const page=positiveInteger(pageInput,'Page');
+  if(page>1000000)throw new ValidationError('Page is outside the supported range.');
+  const offset=(page-1)*100;
+  const db=isMysql()?require('../db/mysqlPool'):null;
+  const supplier=isMysql()
+    ? await db.queryOne('SELECT id,supplier_code,name,company,phone,status FROM suppliers WHERE id=?',[supplierId])
+    : sqlite.get('SELECT id,supplier_code,name,company,phone,status FROM suppliers WHERE id=?',supplierId);
+  if(!supplier)throw new NotFoundError('Supplier not found.');
+
+  const rawPurchases=isMysql()
+    ? await db.queryAll(`SELECT p.id,p.reference_no,p.purchase_date,p.receive_status AS status,p.created_at,COUNT(DISTINCT pi.id) AS line_count,
+        COALESCE(SUM(pi.ordered_qty),0) AS ordered_qty,COALESCE(SUM(pi.received_qty),0) AS received_qty
+      FROM purchases p LEFT JOIN purchase_items pi ON pi.purchase_id=p.id WHERE p.supplier_id=?
+      GROUP BY p.id ORDER BY p.id DESC LIMIT 101 OFFSET ?`,[supplierId,offset])
+    : await sqlite.all(`SELECT p.id,p.reference_no,p.purchase_date,p.status,p.created_at,COUNT(DISTINCT pi.id) AS line_count,
+        COALESCE(SUM(pi.ordered_qty),0) AS ordered_qty,COALESCE(SUM(pi.received_qty),0) AS received_qty
+      FROM purchases p LEFT JOIN purchase_items pi ON pi.purchase_id=p.id WHERE p.supplier_id=?
+      GROUP BY p.id ORDER BY p.id DESC LIMIT 101 OFFSET ?`,supplierId,offset);
+  const hasMorePurchases=rawPurchases.length>100;
+  const purchases=rawPurchases.slice(0,100).map((row)=>({
+    id:Number(row.id),referenceNo:row.reference_no,purchaseDate:row.purchase_date,status:row.status,createdAt:row.created_at,
+    lineCount:Number(row.line_count||0),orderedQty:Number(row.ordered_qty||0),receivedQty:Number(row.received_qty||0),lines:[],receipts:[],
+  }));
+  const purchaseIds=purchases.map((row)=>row.id);
+  if(purchaseIds.length){
+    const marks=purchaseIds.map(()=>'?').join(',');
+    const lines=isMysql()
+      ? await db.queryAll(`SELECT pi.id,pi.purchase_id,pi.product_id,p.sku,p.name_bn,p.name_en,pi.ordered_qty,pi.received_qty
+          FROM purchase_items pi JOIN purchases po ON po.id=pi.purchase_id JOIN products p ON p.id=pi.product_id
+          WHERE po.supplier_id=? AND pi.purchase_id IN (${marks}) ORDER BY pi.purchase_id DESC,pi.id LIMIT 2000`,[supplierId,...purchaseIds])
+      : await sqlite.all(`SELECT pi.id,pi.purchase_id,pi.product_id,p.code AS sku,p.name AS name_bn,p.name_en,pi.ordered_qty,pi.received_qty
+          FROM purchase_items pi JOIN purchases po ON po.id=pi.purchase_id JOIN products p ON p.id=pi.product_id
+          WHERE po.supplier_id=? AND pi.purchase_id IN (${marks}) ORDER BY pi.purchase_id DESC,pi.id LIMIT 2000`,supplierId,...purchaseIds);
+    const purchaseById=new Map(purchases.map((row)=>[row.id,row]));
+    for(const line of lines){
+      const parent=purchaseById.get(Number(line.purchase_id));
+      if(parent)parent.lines.push({id:Number(line.id),productId:Number(line.product_id),sku:line.sku,nameBn:line.name_bn,nameEn:line.name_en,
+        orderedQty:Number(line.ordered_qty),receivedQty:Number(line.received_qty)});
+    }
+    const receipts=isMysql()
+      ? await db.queryAll(`SELECT r.id,r.purchase_id,r.receipt_no,r.event_type,r.total_qty,r.note,r.created_at
+          FROM purchase_receipts r JOIN purchases p ON p.id=r.purchase_id
+          WHERE p.supplier_id=? AND r.purchase_id IN (${marks}) ORDER BY r.id DESC LIMIT 500`,[supplierId,...purchaseIds])
+      : await sqlite.all(`SELECT r.id,r.purchase_id,r.receipt_no,r.event_type,r.total_qty,r.note,r.created_at
+          FROM purchase_receipts r JOIN purchases p ON p.id=r.purchase_id
+          WHERE p.supplier_id=? AND r.purchase_id IN (${marks}) ORDER BY r.id DESC LIMIT 500`,supplierId,...purchaseIds);
+    for(const receipt of receipts){
+      const parent=purchaseById.get(Number(receipt.purchase_id));
+      if(parent)parent.receipts.push({id:Number(receipt.id),receiptNo:receipt.receipt_no,eventType:receipt.event_type,
+        totalQty:Number(receipt.total_qty),note:receipt.note,createdAt:receipt.created_at});
+    }
+  }
+  return {supplier:{id:Number(supplier.id),supplierCode:supplier.supplier_code||null,name:supplier.name,company:supplier.company||'',phone:supplier.phone,status:Number(supplier.status)},
+    purchases,page,hasPreviousPurchases:page>1,hasMorePurchases};
+}
+
 async function listProducts() {
   if (isMysql()) return require('../db/mysqlPool').queryAll(`SELECT id, sku, name_bn, name_en, stock_on_hand, vendor_stock_on_hand, low_stock_threshold,
     regular_price_paisa, sale_price_paisa, cost_price_paisa, vendor_id, is_archived
@@ -856,4 +914,4 @@ async function archiveProduct(idInput, archive, actor = {}) {
   return {id,archived:Boolean(archive)};
 }
 
-module.exports = { createSupplier,listSuppliers,getSupplierForEdit,updateSupplier,createProduct,normalizeProductEditInput,listProducts,getProductForEdit,listProductEditOptions,updateProduct,getProductGalleryForEdit,updateProductGallery,listProductVariants,createProductVariant,updateProductVariant,adjustStock,listInventory,listStockLedger,createPurchase,listPurchases,receivePurchase,archiveProduct };
+module.exports = { createSupplier,listSuppliers,getSupplierForEdit,updateSupplier,getSupplierPurchaseHistory,createProduct,normalizeProductEditInput,listProducts,getProductForEdit,listProductEditOptions,updateProduct,getProductGalleryForEdit,updateProductGallery,listProductVariants,createProductVariant,updateProductVariant,adjustStock,listInventory,listStockLedger,createPurchase,listPurchases,receivePurchase,archiveProduct };

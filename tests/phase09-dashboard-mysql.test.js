@@ -563,6 +563,25 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
 
     const ref=`P06-LIFE-PO-${suffix}`;
     await db.execute('INSERT INTO purchases(reference_no,supplier_id,purchase_date) VALUES(?,?,CURRENT_DATE())',[ref,supplierId]);
+    const historyPath=`/admin/phase06/suppliers/${supplierId}/purchases`;
+    assert.equal((await request(historyPath,{cookie:''})).status,401,'supplier purchase history requires admin authentication');
+    assert.equal((await request(historyPath,{cookie:noGrantCookie,token:noGrantToken})).status,403,'supplier purchase history requires inventory.manage');
+    assert.equal((await request('/admin/phase06/suppliers/999999999/purchases')).status,404,'unknown supplier history is not exposed');
+    assert.equal((await request(`${historyPath}?page=0`)).status,400,'invalid purchase-history page is rejected');
+    const historyLedgerBefore=Number((await db.queryOne('SELECT COUNT(*) AS n FROM stock_ledger')).n);
+    const historyAuditBefore=Number((await db.queryOne('SELECT COUNT(*) AS n FROM audit_logs')).n);
+    const history=await request(historyPath);
+    assert.equal(history.status,200,history.text.slice(0,250));
+    assert.equal(history.json.supplier.id,supplierId);
+    assert.equal(history.json.purchases.length,1);
+    assert.equal(history.json.purchases[0].referenceNo,ref);
+    assert.equal(history.json.purchases[0].lineCount,0);
+    assert.doesNotMatch(JSON.stringify(history.json),/balance_due|payable|settlement|paid_amount|total_cost/,'history response excludes financial settlement data');
+    const historyHtml=await request(historyPath,{accept:'text/html'});
+    assert.equal(historyHtml.status,200,historyHtml.text.slice(0,250));
+    assert.match(historyHtml.text,/Read-only purchase, line and receipt history/);
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM stock_ledger')).n),historyLedgerBefore,'history GET cannot mutate the stock ledger');
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM audit_logs')).n),historyAuditBefore,'history GET cannot mutate audit records');
     const balanceBefore=Number((await db.queryOne('SELECT balance_due_paisa FROM suppliers WHERE id=?',[supplierId])).balance_due_paisa);
     const changed=await request(editPath,{method:'POST',body:editInput});
     assert.equal(changed.status,200,changed.text.slice(0,300));

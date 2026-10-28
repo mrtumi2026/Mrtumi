@@ -262,6 +262,33 @@ describe('Phase 06 — Product, Inventory Ledger, Supplier & Purchase Receiving'
     const final = await repo.receivePurchase(po.id, { idempotency_key: 'p06-receipt-part-2', lines: [{ purchase_item_id: item.id, received_qty: 2 }] }, { id: 7 });
     assert.equal(final.status, 'received');
     assert.equal(db.get('SELECT stock FROM products WHERE id=?', product.id).stock, 7);
+
+    const stockBefore=Number(db.get('SELECT stock FROM products WHERE id=?',product.id).stock);
+    const ledgerBefore=Number(db.get('SELECT COUNT(*) AS n FROM stock_ledger WHERE product_id=?',product.id).n);
+    const auditBefore=Number(db.get("SELECT COUNT(*) AS n FROM audit_logs WHERE entity_type IN ('purchase','supplier') AND entity_id IN (?,?)",String(po.id),String(supplier.id)).n);
+    const history=await repo.getSupplierPurchaseHistory(supplier.id);
+    assert.equal(history.supplier.id,supplier.id);
+    assert.equal(history.purchases.length,1);
+    assert.equal(history.purchases[0].referenceNo,po.referenceNo);
+    assert.equal(history.purchases[0].status,'received');
+    assert.equal(history.purchases[0].lineCount,1);
+    assert.equal(history.purchases[0].orderedQty,5);
+    assert.equal(history.purchases[0].receivedQty,5);
+    assert.deepEqual(history.purchases[0].lines.map(({sku,orderedQty,receivedQty})=>({sku,orderedQty,receivedQty})),[
+      {sku:'P06-TEST-002',orderedQty:5,receivedQty:5},
+    ]);
+    assert.equal(history.purchases[0].receipts.length,2);
+    assert.deepEqual(history.purchases[0].receipts.map((row)=>row.totalQty).sort(),[2,3]);
+    assert.equal(Object.keys(history.purchases[0]).some((key)=>/payable|balance|paid|cost|amount/i.test(key)),false,'history API does not invent or expose supplier settlement calculations');
+    assert.equal(Number(db.get('SELECT stock FROM products WHERE id=?',product.id).stock),stockBefore,'read-only history cannot change stock');
+    assert.equal(Number(db.get('SELECT COUNT(*) AS n FROM stock_ledger WHERE product_id=?',product.id).n),ledgerBefore,'read-only history cannot add ledger events');
+    assert.equal(Number(db.get("SELECT COUNT(*) AS n FROM audit_logs WHERE entity_type IN ('purchase','supplier') AND entity_id IN (?,?)",String(po.id),String(supplier.id)).n),auditBefore,'read-only history cannot add audit events');
+    const laterPage=await repo.getSupplierPurchaseHistory(supplier.id,2);
+    assert.deepEqual(laterPage.purchases,[]);
+    assert.equal(laterPage.hasPreviousPurchases,true);
+    assert.equal(laterPage.page,2);
+    await assert.rejects(()=>repo.getSupplierPurchaseHistory(supplier.id,'0'),ValidationError,'invalid history pages are rejected');
+    await assert.rejects(()=>repo.getSupplierPurchaseHistory(999999999),(err)=>err.statusCode===404,'missing suppliers return not found');
   });
 
   test('archiving preserves product identity and safe upload rejects SVG signatures', async () => {
