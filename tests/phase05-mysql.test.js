@@ -741,6 +741,10 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
     assert.equal(missing.statusCode, 404, 'well-formed but missing address ID is rejected');
     const malformed = await httpRequest(baseUrl, '/customer/account/addresses', { method: 'POST', headers: { Cookie: one.cookie, 'Content-Type': 'application/json', 'x-csrf-token': one.csrf }, body: 'null' });
     assert.equal(malformed.statusCode, 400, 'malformed address body is a client validation error');
+    const addressCountBeforeMalformedField = Number((await client.queryOne('SELECT COUNT(*) AS n FROM customer_addresses WHERE customer_id=?', [first.id])).n);
+    const malformedField = await httpRequest(baseUrl, '/customer/account/addresses', { method: 'POST', headers: { Cookie: one.cookie, 'Content-Type': 'application/json', 'x-csrf-token': one.csrf }, body: JSON.stringify({ label: 'Home', recipient_name: 'Owner One', recipient_phone: firstPhone, division: 'Dhaka', district: 'Dhaka', upazila: 'Dhanmondi', street_address: { hidden: 'structured value' } }) });
+    assert.equal(malformedField.statusCode, 400, 'structured text fields are rejected');
+    assert.equal(Number((await client.queryOne('SELECT COUNT(*) AS n FROM customer_addresses WHERE customer_id=?', [first.id])).n), addressCountBeforeMalformedField, 'malformed field does not persist an address');
     const unsupportedUpdate = await httpRequest(baseUrl, `/customer/account/addresses/${firstAddress.insertId}`, { method: 'POST', headers: { Cookie: one.cookie, 'Content-Type': 'application/x-www-form-urlencoded', 'x-csrf-token': one.csrf }, body: new URLSearchParams({ _csrf: one.csrf, recipient_name: 'Changed' }).toString() });
     assert.equal(unsupportedUpdate.statusCode, 404, 'no address-update route exists, so an ID cannot be used to update another owner address');
 

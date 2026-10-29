@@ -25,13 +25,23 @@ test('Phase 07 checkout rejects malformed server-cart entries as validation erro
   }
 });
 
-test('Phase 07 malformed address payloads fail as validation errors before database access', async () => {
+test('Phase 07 malformed address payloads and structured text fields fail before database access', async () => {
   for (const malformed of [null, undefined]) {
     await assert.rejects(
       () => saveAddress(1, malformed),
       (err) => err.code === 'VALIDATION_ERROR' && err.statusCode === 400,
       'malformed address payloads must not leak a TypeError or become a server error'
     );
+  }
+  const valid = { label: 'Home', recipient_name: 'Owner', recipient_phone: '01712345678', division: 'Dhaka', district: 'Dhaka', upazila: 'Dhanmondi', street_address: 'House 1, Road 2' };
+  for (const field of Object.keys(valid)) {
+    for (const malformed of [{ unexpected: true }, ['unexpected'], true]) {
+      await assert.rejects(
+        () => saveAddress(1, { ...valid, [field]: malformed }),
+        (err) => err.code === 'VALIDATION_ERROR' && err.statusCode === 400 && err.message === 'Address fields must be text.',
+        `structured ${field} value must fail field validation before database access`
+      );
+    }
   }
 });
 

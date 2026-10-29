@@ -51,7 +51,11 @@ async function listAddresses(customerId) {
 async function saveAddress(customerId, input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new ValidationError('Enter a valid address.');
   const fields = ['label', 'recipient_name', 'recipient_phone', 'division', 'district', 'upazila', 'street_address'];
-  const values = Object.fromEntries(fields.map((key) => [key, String(input[key] || '').trim()]));
+  const values = Object.fromEntries(fields.map((key) => {
+    const raw = input[key];
+    if (raw !== undefined && raw !== null && typeof raw !== 'string') throw new ValidationError('Address fields must be text.');
+    return [key, String(raw || '').trim()];
+  }));
   if (!values.recipient_name || values.recipient_name.length > 191 || !values.street_address || values.street_address.length > 2000 || !values.division || !values.district) throw new ValidationError('Recipient, division, district and street address are required.');
   values.recipient_phone = normalizeBdPhone(values.recipient_phone);
   if (values.label.length > 64 || values.division.length > 80 || values.district.length > 80 || values.upazila.length > 80) throw new ValidationError('Address fields exceed their allowed length.');
