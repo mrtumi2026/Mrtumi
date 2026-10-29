@@ -526,4 +526,118 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
       await client.execute("UPDATE settings SET setting_value='off' WHERE setting_key='advance_payment_mode'");
     }
   );
+
+  test('4. Phase 07 authenticated cart ownership and login guest-cart merge', { skip: !MYSQL_HOST ? SKIP_REASON : false }, async () => {
+    const suffix = String(Date.now()).slice(-7);
+    const customerA = await customerRepo.registerCustomer({ name: 'Cart owner A', phone: `017${suffix}1`, password: 'SecureCartPassword!2026' });
+    const customerB = await customerRepo.registerCustomer({ name: 'Cart owner B', phone: `017${suffix}2`, password: 'SecureCartPassword!2026' });
+    await client.execute('UPDATE products SET stock_on_hand=100,stock_reserved=0 WHERE id=?', [inhouseProdId]);
+    await client.execute('UPDATE product_variants SET stock_on_hand=100,stock_reserved=0 WHERE id=?', [variant5KgId]);
+    const login = async (phone, guestAdd = false) => {
+      const initial = await httpRequest(baseUrl, '/api/v1/csrf-token');
+      let cookie = (Array.isArray(initial.headers['set-cookie']) ? initial.headers['set-cookie'] : [initial.headers['set-cookie']]).filter(Boolean).map((value) => value.split(';')[0]).join('; ');
+      const csrf = JSON.parse(initial.body).data.csrfToken;
+      if (guestAdd) {
+        const added = await httpRequest(baseUrl, '/cart/add', { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/json', Accept: 'application/json', 'x-csrf-token': csrf }, body: JSON.stringify({ product_id: inhouseProdId, variant_id: variant5KgId, qty: 1 }) });
+        assert.equal(added.statusCode, 200, `guest cart add failed: ${added.body.slice(0, 300)}`);
+        cookie = (Array.isArray(added.headers['set-cookie']) ? added.headers['set-cookie'] : [added.headers['set-cookie']]).filter(Boolean).map((value) => value.split(';')[0]).join('; ') || cookie;
+      }
+      const authenticated = await httpRequest(baseUrl, '/customer/login', { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded', 'x-csrf-token': csrf }, body: new URLSearchParams({ phone, password: 'SecureCartPassword!2026' }).toString() });
+      assert.equal(authenticated.statusCode, 302, `login failed: ${authenticated.body.slice(0, 300)}`);
+      cookie = (Array.isArray(authenticated.headers['set-cookie']) ? authenticated.headers['set-cookie'] : [authenticated.headers['set-cookie']]).filter(Boolean).map((value) => value.split(';')[0]).join('; ') || cookie;
+      const tokenResponse = await httpRequest(baseUrl, '/api/v1/csrf-token', { headers: { Cookie: cookie } });
+      return { cookie, csrf: JSON.parse(tokenResponse.body).data.csrfToken };
+    };
+
+    await client.execute('INSERT INTO customer_cart_items (customer_id,product_id,variant_id,quantity) VALUES (?,?,?,?)', [customerA.id, inhouseProdId, variant5KgId, 1]);
+    await client.execute('INSERT INTO customer_cart_items (customer_id,product_id,variant_id,quantity) VALUES (?,?,?,?)', [customerB.id, inhouseProdId, variant5KgId, 4]);
+    const sessionA = await login(customerA.phone);
+    const sessionB = await login(customerB.phone);
+    const cartA = await httpRequest(baseUrl, '/cart/json', { headers: { Cookie: sessionA.cookie, Accept: 'application/json' } });
+    assert.equal(JSON.parse(cartA.body).cart[0].qty, 1, 'customer A reads only A-owned persistent quantity');
+    const clearA = await httpRequest(baseUrl, '/cart/clear', { method: 'POST', headers: { Cookie: sessionA.cookie, 'Content-Type': 'application/json', Accept: 'application/json', 'x-csrf-token': sessionA.csrf }, body: '{}' });
+    assert.equal(clearA.statusCode, 200);
+    assert.equal(Number((await client.queryOne('SELECT quantity FROM customer_cart_items WHERE customer_id=? AND product_id=? AND variant_id=?', [customerB.id, inhouseProdId, variant5KgId])).quantity), 4, 'customer A clear cannot mutate customer B data');
+    const cartBAfter = await httpRequest(baseUrl, '/cart/json', { headers: { Cookie: sessionB.cookie, Accept: 'application/json' } });
+    assert.equal(JSON.parse(cartBAfter.body).cart[0].qty, 4, 'customer B still reads its own cart');
+
+    await client.execute('DELETE FROM customer_cart_items WHERE customer_id=?', [customerA.id]);
+    const guestSession = await login(customerA.phone, true);
+    const merged = await httpRequest(baseUrl, '/cart/json', { headers: { Cookie: guestSession.cookie, Accept: 'application/json' } });
+    assert.equal(JSON.parse(merged.body).cartCount, 1, 'login preserves and merges the guest cart into the authenticated persistent cart');
+    assert.equal(Number((await client.queryOne('SELECT quantity FROM customer_cart_items WHERE customer_id=? AND product_id=? AND variant_id=?', [customerA.id, inhouseProdId, variant5KgId])).quantity), 1);
+
+    const registrationStart = await httpRequest(baseUrl, '/api/v1/csrf-token');
+    let registrationCookie = (Array.isArray(registrationStart.headers['set-cookie']) ? registrationStart.headers['set-cookie'] : [registrationStart.headers['set-cookie']]).filter(Boolean).map((value) => value.split(';')[0]).join('; ');
+    const registrationCsrf = JSON.parse(registrationStart.body).data.csrfToken;
+    const registrationAdd = await httpRequest(baseUrl, '/cart/add', { method: 'POST', headers: { Cookie: registrationCookie, 'Content-Type': 'application/json', Accept: 'application/json', 'x-csrf-token': registrationCsrf }, body: JSON.stringify({ product_id: inhouseProdId, variant_id: variant5KgId, qty: 1 }) });
+    assert.equal(registrationAdd.statusCode, 200);
+    registrationCookie = (Array.isArray(registrationAdd.headers['set-cookie']) ? registrationAdd.headers['set-cookie'] : [registrationAdd.headers['set-cookie']]).filter(Boolean).map((value) => value.split(';')[0]).join('; ') || registrationCookie;
+    const registrationPhone = `018${String(Date.now()).slice(-8)}`;
+    const registration = await httpRequest(baseUrl, '/customer/register', { method: 'POST', headers: { Cookie: registrationCookie, 'Content-Type': 'application/x-www-form-urlencoded', 'x-csrf-token': registrationCsrf }, body: new URLSearchParams({ name: 'Guest cart registration', phone: registrationPhone, password: 'SecureCartPassword!2026' }).toString() });
+    assert.equal(registration.statusCode, 302, `registration with guest cart failed: ${registration.body.slice(0, 300)}`);
+    const registeredCustomer = await client.queryOne('SELECT id FROM customers WHERE phone=?', [registrationPhone]);
+    assert.ok(registeredCustomer);
+    assert.equal(Number((await client.queryOne('SELECT quantity FROM customer_cart_items WHERE customer_id=? AND product_id=? AND variant_id=?', [registeredCustomer.id, inhouseProdId, variant5KgId])).quantity), 1, 'registration preserves and merges the guest cart');
+  });
+
+  test('5. Phase 07 deterministic concurrent persistent-cart adds do not lose quantity updates', { skip: !MYSQL_HOST ? SKIP_REASON : false }, async () => {
+    const phone = `016${String(Date.now()).slice(-8)}`;
+    const customer = await customerRepo.registerCustomer({ name: 'Concurrent cart owner', phone, password: 'SecureCartPassword!2026' });
+    const originalProduct = await client.queryOne('SELECT stock_on_hand,stock_reserved FROM products WHERE id=?', [inhouseProdId]);
+    const originalVariant = await client.queryOne('SELECT stock_on_hand,stock_reserved FROM product_variants WHERE id=?', [variant5KgId]);
+    await client.execute('UPDATE products SET stock_on_hand=100,stock_reserved=0 WHERE id=?', [inhouseProdId]);
+    await client.execute('UPDATE product_variants SET stock_on_hand=100,stock_reserved=0 WHERE id=?', [variant5KgId]);
+    try {
+      await client.execute('INSERT INTO customer_cart_items (customer_id,product_id,variant_id,quantity) VALUES (?,?,?,1)', [customer.id, inhouseProdId, variant5KgId]);
+      const makeSession = async () => {
+        const initial = await httpRequest(baseUrl, '/api/v1/csrf-token');
+        let cookie = (Array.isArray(initial.headers['set-cookie']) ? initial.headers['set-cookie'] : [initial.headers['set-cookie']]).filter(Boolean).map((value) => value.split(';')[0]).join('; ');
+        const csrf = JSON.parse(initial.body).data.csrfToken;
+        const auth = await httpRequest(baseUrl, '/customer/login', { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded', 'x-csrf-token': csrf }, body: new URLSearchParams({ phone, password: 'SecureCartPassword!2026' }).toString() });
+        assert.equal(auth.statusCode, 302);
+        cookie = (Array.isArray(auth.headers['set-cookie']) ? auth.headers['set-cookie'] : [auth.headers['set-cookie']]).filter(Boolean).map((value) => value.split(';')[0]).join('; ') || cookie;
+        const token = await httpRequest(baseUrl, '/api/v1/csrf-token', { headers: { Cookie: cookie } });
+        return { cookie, csrf: JSON.parse(token.body).data.csrfToken };
+      };
+      const [first, second] = await Promise.all([makeSession(), makeSession()]);
+      const originalReplace = customerRepo.replaceCart;
+      let arrivals = 0;
+      let openGate;
+      const gate = new Promise((resolve) => { openGate = resolve; });
+      customerRepo.replaceCart = async (...args) => {
+        arrivals += 1;
+        if (arrivals === 2) openGate();
+        await gate;
+        return originalReplace(...args);
+      };
+      let responses;
+      try {
+        responses = await Promise.all([first, second].map((session) => httpRequest(baseUrl, '/cart/add', { method: 'POST', headers: { Cookie: session.cookie, 'Content-Type': 'application/json', Accept: 'application/json', 'x-csrf-token': session.csrf }, body: JSON.stringify({ product_id: inhouseProdId, variant_id: variant5KgId, qty: 1 }) })));
+      } finally {
+        customerRepo.replaceCart = originalReplace;
+      }
+      assert.ok(responses.every((response) => response.statusCode === 200), responses.map((response) => response.body.slice(0, 200)).join('\n'));
+      const finalQuantity = Number((await client.queryOne('SELECT quantity FROM customer_cart_items WHERE customer_id=? AND product_id=? AND variant_id=?', [customer.id, inhouseProdId, variant5KgId])).quantity);
+      assert.equal(finalQuantity, 3, 'two distinct authenticated sessions adding one each to quantity one must persist quantity three');
+    } finally {
+      await client.execute('UPDATE products SET stock_on_hand=?,stock_reserved=? WHERE id=?', [originalProduct.stock_on_hand, originalProduct.stock_reserved, inhouseProdId]);
+      await client.execute('UPDATE product_variants SET stock_on_hand=?,stock_reserved=? WHERE id=?', [originalVariant.stock_on_hand, originalVariant.stock_reserved, variant5KgId]);
+    }
+  });
+
+  test('6. Phase 07 failed persistent-cart replacement rolls back instead of deleting valid saved data', { skip: !MYSQL_HOST ? SKIP_REASON : false }, async () => {
+    const phone = `015${String(Date.now()).slice(-8)}`;
+    const customer = await customerRepo.registerCustomer({ name: 'Cart rollback owner', phone, password: 'SecureCartPassword!2026' });
+    await client.execute('INSERT INTO customer_cart_items (customer_id,product_id,variant_id,quantity) VALUES (?,?,?,2)', [customer.id, inhouseProdId, variant5KgId]);
+    const triggerName = `fail_cart_insert_${process.pid}`;
+    await client.execute(`CREATE TRIGGER \`${triggerName}\` BEFORE INSERT ON customer_cart_items FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='intentional test failure'`);
+    try {
+      await assert.rejects(() => customerRepo.replaceCart(customer.id, [{ product_id: inhouseProdId, variant_id: variant5KgId, qty: 7 }]), 'injected insert failure must be surfaced');
+      const persisted = await client.queryOne('SELECT quantity FROM customer_cart_items WHERE customer_id=? AND product_id=? AND variant_id=?', [customer.id, inhouseProdId, variant5KgId]);
+      assert.equal(Number(persisted.quantity), 2, 'transaction rollback retains the pre-existing valid cart line');
+    } finally {
+      await client.execute(`DROP TRIGGER IF EXISTS \`${triggerName}\``);
+    }
+  });
 });

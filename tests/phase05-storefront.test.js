@@ -341,6 +341,26 @@ describe('Phase 05 — Customer Storefront, Catalogue, Product Detail, Support &
     sqliteDb.run('UPDATE products SET stock=? WHERE id=?',Number(stockBefore.stock),giftProd.id);
   });
 
+  test('Phase 07 guest carts remain isolated by session and persist across cart reloads (SQLite)', async () => {
+    const gift = sqliteDb.get("SELECT id FROM products WHERE slug = 'premium-festive-gift-hamper'");
+    const makeGuestCart = async (qty) => {
+      const start = await httpRequest(baseUrl, '/api/v1/csrf-token');
+      const cookie = mergeCookies(start.headers['set-cookie']);
+      const csrf = JSON.parse(start.body).data.csrfToken;
+      const added = await httpRequest(baseUrl, '/cart/add', { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/json', Accept: 'application/json', 'x-csrf-token': csrf }, body: JSON.stringify({ product_id: gift.id, qty }) });
+      assert.equal(added.statusCode, 200);
+      const savedCookie = mergeCookies(added.headers['set-cookie']) || cookie;
+      return { cookie: savedCookie, csrf };
+    };
+    const [guestA, guestB] = await Promise.all([makeGuestCart(1), makeGuestCart(2)]);
+    const [cartA, cartB] = await Promise.all([
+      httpRequest(baseUrl, '/cart/json', { headers: { Cookie: guestA.cookie, Accept: 'application/json' } }),
+      httpRequest(baseUrl, '/cart/json', { headers: { Cookie: guestB.cookie, Accept: 'application/json' } }),
+    ]);
+    assert.equal(JSON.parse(cartA.body).cart[0].qty, 1, 'guest A reloads the quantity in its own session');
+    assert.equal(JSON.parse(cartB.body).cart[0].qty, 2, 'guest B cannot read or overwrite guest A cart data');
+  });
+
   test('5. About, FAQ, Contact, Blogs, Moderated Reviews & SEO (`/sitemap.xml`, `/robots.txt`) work in `bn` & `en`', async () => {
     for (const route of ['/about', '/faq', '/contact', '/blogs', '/about?lang=en', '/faq?lang=en', '/contact?lang=en']) {
       const res = await httpRequest(baseUrl, route);
