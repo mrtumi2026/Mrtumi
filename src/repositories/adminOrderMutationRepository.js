@@ -259,7 +259,8 @@ async function updateAdminOrder(orderIdInput,input={},actor={}) {
     const oldStatus=String(order.order_status);
     if(status && status!==oldStatus) {
       safeTargetStatus(status);
-      await phase08.transitionOrderTx(tx,orderId,status,'Admin order update',actorData,key);
+      const statusRequestKey=`admin-order-update:${crypto.createHash('sha256').update(key).digest('hex')}`;
+      await phase08.transitionOrderTx(tx,orderId,status,'Admin order update',actorData,statusRequestKey);
     }
     const effectiveAddress=address||String(order.shipping_address||'');
     const effectiveTracking=courierCode===order.courier_code?(trackingId||String(order.courier_tracking_id||'')):(courierCode?trackingId:'');
