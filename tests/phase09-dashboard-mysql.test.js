@@ -654,6 +654,8 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     const bulkB=await makeOrder('bulk-b','pending',1);
     const phase08=require('../src/repositories/phase08Repository');
     await phase08.reserveOrderInventory(target.id,{id:dashboardUserId});
+    // Keep sufficient fixture availability for the later quick and two-order bulk confirmation checks.
+    await db.execute('UPDATE products SET stock_on_hand=stock_on_hand+10 WHERE id=?',[productId]);
     const initial=await db.queryOne('SELECT stock_on_hand,stock_reserved FROM products WHERE id=?',[productId]);
     const add={product_id:productId,qty:1,request_key:`p09-add-${suffix}-0001`};
     assert.equal((await request(`/admin/order/${target.id}/item-add`,{method:'POST',token:'',body:add})).status,403,'item add requires CSRF');
