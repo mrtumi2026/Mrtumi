@@ -249,7 +249,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
         if(fs.existsSync(realFile))fs.unlinkSync(realFile);
       }
     });
-    await db.execute('UPDATE products SET image_url=NULL,gallery_json=NULL WHERE id=?',[productId]);
+    await db.execute("UPDATE products SET image_url='',gallery_json=NULL WHERE id=?",[productId]);
     const uploadRequest=async({files=[],cookie=dashboardCookie,token=csrfToken,fields={}}={})=>{
       const form=new FormData();
       if(token)form.append('_csrf',token);
