@@ -456,6 +456,12 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
       [productId,variantId,reservationKey,'a'.repeat(64)]); reservationId=Number(reservation.insertId);
     await db.execute('UPDATE product_variants SET stock_on_hand=5,stock_reserved=1 WHERE id=?',[variantId]);
     const ledger=await db.execute("INSERT INTO stock_ledger(product_id,variant_id,stock_pool,movement_type,qty_delta,balance_after,reason) VALUES(?,?,'warehouse','opening',5,5,'P09 integration fixture')",[productId,variantId]); ledgerId=Number(ledger.insertId);
+    const movementReport=await request(`/admin/phase06?lang=en&ledger_product_id=${productId}&ledger_page=1`,{accept:'text/html'});
+    assert.equal(movementReport.status,200,movementReport.text.slice(0,300));
+    assert.match(movementReport.text,/Stock movement report/);
+    assert.match(movementReport.text,new RegExp(sku));
+    assert.match(movementReport.text,/P09 integration fixture/);
+    assert.match(movementReport.text,/Scrollable stock movement report/);
     const updateInput={size_label:'1 kg',color_label:'Blue',price_bdt:'0.00',status:'0'};
     const deniedUpdate=await request(`${base}/variants/${variantId}`,{method:'POST',cookie:noGrantCookie,token:noGrantToken,body:updateInput});
     assert.equal(deniedUpdate.status,403);

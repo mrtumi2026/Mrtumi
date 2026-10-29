@@ -56,7 +56,48 @@
   <section class="card shadow-sm mb-4" id="purchases"><div class="card-header"><h2 class="h5 mb-0"><%= t('catalogAdmin.purchasesTitle') %></h2></div><div class="card-body"><div class="alert alert-warning"><%= t('catalogAdmin.poDraftNote') %></div><form method="post" action="/admin/phase06/purchases" id="purchase-form" class="row g-2"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><input type="hidden" name="lines" id="purchase-lines"><div class="col-md-3"><label class="form-label">Supplier *</label><select class="form-select" name="supplier_id" required><% suppliers.forEach(function(s) { if(Number(s.status)===1) { %><option value="<%= s.id %>"><%= s.name %></option><% } }) %></select></div><div class="col-md-3"><label class="form-label">Reference (optional)</label><input class="form-control" name="reference_no" maxlength="64"></div><div class="col-md-2"><label class="form-label">Discount (BDT)</label><input class="form-control" name="discount_bdt" value="0"></div><div class="col-md-2"><label class="form-label">Charges (BDT)</label><input class="form-control" name="shipping_charge_bdt" value="0"></div><div class="col-md-2"><label class="form-label">Paid (BDT)</label><input class="form-control" name="paid_amount_bdt" value="0"></div><div class="col-12"><div class="row g-2 align-items-end"><div class="col-md-5"><label class="form-label">Product</label><select class="form-select" id="po-product"><% products.forEach(function(p) { %><option value="<%= p.id %>"><%= p.sku %> — <%= p.name_bn %></option><% }) %></select></div><div class="col-md-2"><label class="form-label">Ordered qty</label><input class="form-control" id="po-qty" type="number" min="1" step="1" value="1"></div><div class="col-md-2"><label class="form-label">Unit cost (BDT)</label><input class="form-control" id="po-cost" inputmode="decimal" value="0"></div><div class="col-md-3"><button type="button" class="btn btn-outline-secondary" id="po-add-line">Add line</button><span id="po-line-count" class="ms-2 small">0 lines</span></div></div></div><div class="col-12"><button class="btn btn-success" type="submit">Create Draft Purchase Order</button></div></form>
   <div class="table-responsive mt-3"><table class="table"><thead><tr><th>Reference</th><th>Supplier</th><th>State</th><th>Lines</th><th>Outstanding Qty</th><th>Total (paisa)</th></tr></thead><tbody><% if (!purchases.length) { %><tr><td colspan="6" class="text-center text-muted">No purchase orders.</td></tr><% } %><% purchases.forEach(function(p) { %><tr><td><%= p.reference_no %></td><td><%= p.supplier_name %></td><td><%= p.receive_status || p.status %></td><td><%= p.line_count || 0 %></td><td><%= p.outstanding_qty || 0 %></td><td><%= p.total_cost_paisa || Math.round(Number(p.total_cost || 0) * 100) %></td></tr><% }) %></tbody></table></div></div></section>
 
-  <section class="card shadow-sm mb-4"><div class="card-header"><h2 class="h5 mb-0"><%= locale === 'en' ? 'Recent Stock Movement Ledger' : 'সাম্প্রতিক স্টক মুভমেন্ট লেজার' %></h2></div><div class="table-responsive"><table class="table table-sm"><thead><tr><th>When</th><th>SKU</th><th>Pool</th><th>Movement</th><th>Delta</th><th>Balance</th><th>Reason</th></tr></thead><tbody><% ledger.slice(0,100).forEach(function(l) { %><tr><td><%= fmt.dateTime(l.created_at) %></td><td><%= l.sku %></td><td><%= l.stock_pool %></td><td><%= l.movement_type %></td><td><%= l.qty_delta %></td><td><%= l.balance_after %></td><td><%= l.reason %></td></tr><% }) %><% if (!ledger.length) { %><tr><td colspan="7" class="text-center text-muted">No ledger entries.</td></tr><% } %></tbody></table></div></section>
+  <section class="card shadow-sm mb-4" id="ledger">
+    <div class="card-header d-flex flex-wrap align-items-center justify-content-between gap-2">
+      <h2 class="h5 mb-0"><%= locale === 'en' ? 'Stock movement report' : 'স্টক মুভমেন্ট রিপোর্ট' %></h2>
+      <span class="small text-muted"><%= locale === 'en' ? 'Read-only movement history; no valuation is calculated.' : 'শুধু-পঠন মুভমেন্ট ইতিহাস; কোনো মূল্যায়ন গণনা করা হয় না।' %></span>
+    </div>
+    <div class="card-body border-bottom">
+      <form method="get" action="/admin/phase06#ledger" class="row g-2 align-items-end">
+        <div class="col-md-8">
+          <label class="form-label" for="ledger-product"><%= locale === 'en' ? 'Filter by product' : 'পণ্য দিয়ে ফিল্টার' %></label>
+          <select class="form-select" id="ledger-product" name="ledger_product_id">
+            <option value=""><%= locale === 'en' ? 'All products' : 'সব পণ্য' %></option>
+            <% products.forEach(function(p) { %><option value="<%= p.id %>" <%= Number(ledger.productId)===Number(p.id)?'selected':'' %>><%= p.sku %> — <%= locale==='en'?(p.name_en||p.name_bn):(p.name_bn||p.name_en) %></option><% }) %>
+          </select>
+        </div>
+        <div class="col-md-2 d-grid"><button class="btn btn-outline-primary" type="submit"><%= locale === 'en' ? 'Apply filter' : 'ফিল্টার দেখুন' %></button></div>
+        <div class="col-md-2 d-grid"><a class="btn btn-outline-secondary" href="/admin/phase06#ledger"><%= locale === 'en' ? 'Clear filter' : 'ফিল্টার মুছুন' %></a></div>
+      </form>
+      <p class="small text-muted mb-0 mt-2" aria-live="polite"><%= locale==='en'?`${ledger.total} movements · page ${ledger.page} of ${ledger.totalPages}`:`${ledger.total}টি মুভমেন্ট · পৃষ্ঠা ${ledger.page}/${ledger.totalPages}` %></p>
+    </div>
+    <div class="table-responsive" tabindex="0" role="region" aria-label="<%= locale==='en'?'Scrollable stock movement report':'স্ক্রলযোগ্য স্টক মুভমেন্ট রিপোর্ট' %>">
+      <table class="table table-sm table-striped mb-0"><thead><tr>
+        <th><%= locale==='en'?'When':'সময়' %></th><th>SKU / <%= locale==='en'?'Product':'পণ্য' %></th><th><%= locale==='en'?'Variant':'ভ্যারিয়েন্ট' %></th>
+        <th><%= locale==='en'?'Pool':'স্টক পুল' %></th><th><%= locale==='en'?'Movement':'মুভমেন্ট' %></th><th><%= locale==='en'?'Delta':'পরিবর্তন' %></th>
+        <th><%= locale==='en'?'Balance after':'পরবর্তী ব্যালেন্স' %></th><th><%= locale==='en'?'Reference':'রেফারেন্স' %></th><th><%= locale==='en'?'Reason':'কারণ' %></th>
+      </tr></thead><tbody>
+      <% if (!ledger.rows.length) { %><tr><td colspan="9" class="text-center text-muted py-4"><%= locale==='en'?'No stock movements found.':'কোনো স্টক মুভমেন্ট পাওয়া যায়নি।' %></td></tr><% } %>
+      <% ledger.rows.forEach(function(l) { %><tr>
+        <td><%= fmt.dateTime(l.created_at) %></td><td><strong><%= l.sku %></strong><br><span class="small"><%= locale==='en'?(l.name_en||l.name_bn):(l.name_bn||l.name_en) %></span></td>
+        <td><%= l.variant_sku || (l.variant_id ? `#${l.variant_id}` : '—') %><% if(l.size_label||l.color_label){ %><br><span class="small text-muted"><%= [l.size_label,l.color_label].filter(Boolean).join(' / ') %></span><% } %></td>
+        <td><%= l.stock_pool %></td><td><%= l.movement_type %></td><td><%= Number(l.qty_delta)>0?`+${l.qty_delta}`:l.qty_delta %></td><td><%= l.balance_after %></td>
+        <td><%= l.reference_type || '—' %><% if(l.reference_id){ %> #<%= l.reference_id %><% } %></td><td><%= l.reason || '—' %></td>
+      </tr><% }) %>
+      </tbody></table>
+    </div>
+    <div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-2">
+      <span class="small text-muted"><%= ledger.total===0?(locale==='en'?'No movements':'কোনো মুভমেন্ট নেই'):locale==='en'?`Showing ${((ledger.page-1)*ledger.pageSize)+1}–${Math.min(ledger.page*ledger.pageSize,ledger.total)} of ${ledger.total}`:`${((ledger.page-1)*ledger.pageSize)+1}–${Math.min(ledger.page*ledger.pageSize,ledger.total)} / ${ledger.total}` %></span>
+      <nav class="d-flex gap-2" aria-label="<%= locale==='en'?'Stock movement pages':'স্টক মুভমেন্ট পৃষ্ঠা' %>">
+        <% if(ledger.hasPrevious){ %><a class="btn btn-sm btn-outline-secondary" href="/admin/phase06?ledger_product_id=<%= ledger.productId || '' %>&amp;ledger_page=<%= ledger.page-1 %>#ledger"><%= locale==='en'?'Previous':'আগের' %></a><% } %>
+        <% if(ledger.hasNext){ %><a class="btn btn-sm btn-outline-secondary" href="/admin/phase06?ledger_product_id=<%= ledger.productId || '' %>&amp;ledger_page=<%= ledger.page+1 %>#ledger"><%= locale==='en'?'Next':'পরের' %></a><% } %>
+      </nav>
+    </div>
+  </section>
 </div></div>
 <script>
 (function(){var lines=[];var add=document.getElementById('po-add-line');if(!add)return;add.addEventListener('click',function(){var id=document.getElementById('po-product').value;var qty=Number(document.getElementById('po-qty').value);var cost=document.getElementById('po-cost').value;if(!id||!Number.isSafeInteger(qty)||qty<1||!cost)return;lines.push({product_id:Number(id),ordered_qty:qty,unit_cost_bdt:String(cost)});document.getElementById('purchase-lines').value=JSON.stringify(lines);document.getElementById('po-line-count').textContent=lines.length+' line(s)';});document.getElementById('purchase-form').addEventListener('submit',function(e){if(!lines.length){e.preventDefault();alert('Add at least one product line.');}});}());

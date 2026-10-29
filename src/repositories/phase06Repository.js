@@ -879,11 +879,36 @@ async function listInventory() {
     FROM products p WHERE p.is_archived=0 ORDER BY p.id DESC LIMIT 1000`);
 }
 
-async function listStockLedger(productId = null) {
-  if (isMysql()) return require('../db/mysqlPool').queryAll(`SELECT sl.*,p.sku,p.name_bn FROM stock_ledger sl JOIN products p ON p.id=sl.product_id
-    WHERE (? IS NULL OR sl.product_id=?) ORDER BY sl.id DESC LIMIT 500`, [productId, productId]);
-  return sqlite.all(`SELECT sl.*,p.code AS sku,p.name AS name_bn FROM stock_ledger sl JOIN products p ON p.id=sl.product_id
-    WHERE (? IS NULL OR sl.product_id=?) ORDER BY sl.id DESC LIMIT 500`, productId, productId);
+async function listStockLedger(filters = {}) {
+  const input = filters && typeof filters === 'object' ? filters : { ledger_product_id: filters };
+  const rawProductId = String(input.ledger_product_id ?? input.product_id ?? '').trim();
+  const productId = rawProductId ? positiveId(rawProductId, 'Product') : null;
+  const pageSize = 25;
+  const requested = Number.parseInt(input.ledger_page ?? input.page, 10);
+  const requestedPage = Number.isSafeInteger(requested) && requested > 0 ? Math.min(requested, 100000) : 1;
+  const mysql = isMysql();
+  const where = productId ? 'WHERE sl.product_id=?' : '';
+  const params = productId ? [productId] : [];
+  const countSql = `SELECT COUNT(*) AS total FROM stock_ledger sl ${where}`;
+  const total = mysql
+    ? Number((await require('../db/mysqlPool').queryOne(countSql, params)).total)
+    : Number(sqlite.get(countSql, ...params).total);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const page = Math.min(requestedPage, totalPages);
+  const sql = `SELECT sl.id,sl.product_id,sl.variant_id,sl.stock_pool,sl.movement_type,sl.qty_delta,
+      sl.balance_after,sl.reference_type,sl.reference_id,sl.reason,sl.created_at,
+      ${mysql ? 'p.sku' : 'p.code'} AS sku,${mysql ? 'p.name_bn' : 'p.name'} AS name_bn,${mysql ? 'p.name_en' : 'p.name'} AS name_en,
+      v.variant_sku,v.size_label,v.color_label
+    FROM stock_ledger sl
+    JOIN products p ON p.id=sl.product_id
+    LEFT JOIN product_variants v ON v.id=sl.variant_id
+    ${where}
+    ORDER BY sl.id DESC LIMIT ? OFFSET ?`;
+  const values = [...params, pageSize, (page - 1) * pageSize];
+  const rows = mysql
+    ? await require('../db/mysqlPool').queryAll(sql, values)
+    : sqlite.all(sql, ...values);
+  return { rows, total, page, pageSize, totalPages, productId, hasPrevious: page > 1, hasNext: page < totalPages };
 }
 
 async function createPurchase(input, actor = {}) {

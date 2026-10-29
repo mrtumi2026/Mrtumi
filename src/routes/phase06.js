@@ -51,7 +51,7 @@ function renderCsvPreview(req,res,preview,csvText,previewId,status=200) {
 
 router.get('/admin/phase06', asyncRoute(async (req,res) => {
   const [products, inventory, suppliers, purchases, ledger, taxonomy] = await Promise.all([
-    repo.listProducts(), repo.listInventoryPage(req.query), repo.listSuppliers(), repo.listPurchases(), repo.listStockLedger(req.query.product_id || null), repo.listProductEditOptions(),
+    repo.listProducts(), repo.listInventoryPage(req.query), repo.listSuppliers(), repo.listPurchases(), repo.listStockLedger(req.query), repo.listProductEditOptions(),
   ]);
   res.render('admin/phase06', { products, inventory, suppliers, purchases, ledger, categories:taxonomy.categories, brands:taxonomy.brands,
     pageTitle: req.locale === 'en' ? 'Products, Inventory & Purchasing' : 'পণ্য, ইনভেন্টরি ও পারচেজ', csrfToken: req.csrfToken() });

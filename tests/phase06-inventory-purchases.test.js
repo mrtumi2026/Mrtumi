@@ -72,6 +72,29 @@ describe('Phase 06 — Product, Inventory Ledger, Supplier & Purchase Receiving'
     assert.equal(invalid.sort,'newest');assert.equal(invalid.page,1);
   });
 
+  test('stock movement report is read-only, filterable by product and page-bounded', async () => {
+    const ledgerCountBefore = Number(db.get('SELECT COUNT(*) AS n FROM stock_ledger').n);
+    const first = await repo.listStockLedger({ ledger_page: '1' });
+    assert.equal(first.page, 1);
+    assert.equal(first.pageSize, 25);
+    assert.equal(first.rows.length, 25);
+    assert.ok(first.total >= 31, 'opening stock events from the catalog fixture are included');
+    assert.equal(first.hasPrevious, false);
+    assert.equal(first.hasNext, true);
+    assert.ok(first.rows.every((row, index, rows) => index === 0 || Number(rows[index - 1].id) > Number(row.id)), 'movement rows are newest-first with deterministic IDs');
+
+    const product = db.get("SELECT id FROM products WHERE code='P06-PAGE-001'");
+    const filtered = await repo.listStockLedger({ ledger_product_id: String(product.id), ledger_page: '999' });
+    assert.equal(filtered.productId, Number(product.id));
+    assert.equal(filtered.total, 1);
+    assert.equal(filtered.page, 1, 'out-of-range page is clamped to the available movement pages');
+    assert.equal(filtered.rows[0].movement_type, 'opening');
+    assert.equal(filtered.rows[0].sku, 'P06-PAGE-001');
+    assert.equal(filtered.rows[0].unit_cost_paisa, undefined, 'report excludes valuation fields');
+    await assert.rejects(() => repo.listStockLedger({ ledger_product_id: 'bad-id' }), ValidationError);
+    assert.equal(Number(db.get('SELECT COUNT(*) AS n FROM stock_ledger').n), ledgerCountBefore, 'report reads do not write stock ledger rows');
+  });
+
   test('product catalog edits preserve stock and are transactionally audited with validation and rollback', async () => {
     const product = db.get("SELECT id FROM products WHERE code='P06-TEST-001'");
     const stockBefore = db.get('SELECT stock,stock_reserved,vendor_stock_on_hand FROM products WHERE id=?', product.id);
@@ -357,6 +380,10 @@ describe('Phase 06 — Product, Inventory Ledger, Supplier & Purchase Receiving'
     assert.equal(Number(db.get('SELECT stock_on_hand FROM product_variants WHERE id=?',variant.id).stock_on_hand),8);
     assert.deepEqual(db.get("SELECT product_id,variant_id,qty_delta,balance_after,reason FROM stock_ledger WHERE variant_id=? ORDER BY id DESC LIMIT 1",variant.id),
       {product_id:product.id,variant_id:variant.id,qty_delta:3,balance_after:8,reason:'Verified variant count'});
+    const movementReport=await repo.listStockLedger({ledger_product_id:String(product.id)});
+    const reportedVariantMovement=movementReport.rows.find((row)=>Number(row.variant_id)===Number(variant.id));
+    assert.equal(reportedVariantMovement.variant_sku,db.get('SELECT variant_sku FROM product_variants WHERE id=?',variant.id).variant_sku,'movement report resolves the variant SKU');
+    assert.equal(reportedVariantMovement.qty_delta,3);
     assert.deepEqual(JSON.parse(db.get("SELECT after_json FROM audit_logs WHERE action='inventory.variant.adjust' AND entity_id=? ORDER BY id DESC LIMIT 1",String(variant.id)).after_json),{...movement,reason:'Verified variant count'});
     await assert.rejects(()=>repo.adjustVariantStock(product.id,variant.id,{qty_delta:-7,reason:'Would break reservation'}),(err)=>err.statusCode===409);
     await assert.rejects(()=>repo.adjustVariantStock(product.id+1,variant.id,{qty_delta:1,reason:'Wrong owner'}),(err)=>err.statusCode===404);
