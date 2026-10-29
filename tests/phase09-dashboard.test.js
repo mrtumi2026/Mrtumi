@@ -49,6 +49,21 @@ describe('Phase 09 dashboard repository contract', () => {
     assert.equal(unrelatedMultipartError.statusCode,403,'the multipart CSRF exception does not extend to other admin routes');
   });
 
+  test('order-status repository validates definition fields and legacy admin routes delegate MySQL CRUD safely', () => {
+    const orderStatuses = require('../src/repositories/adminOrderStatusRepository');
+    assert.equal(orderStatuses.normalizeSlug({name:'Needs Review'}),'needs-review');
+    assert.equal(orderStatuses.normalizeColor({color:'#AABBCC'}),'#aabbcc');
+    assert.equal(orderStatuses.normalizeSortOrder('0'),0);
+    assert.throws(()=>orderStatuses.normalizeSlug({slug:'---'}),{code:'VALIDATION_ERROR'});
+    assert.throws(()=>orderStatuses.normalizeColor({color:'url(javascript:alert(1))'}),{code:'VALIDATION_ERROR'});
+    assert.throws(()=>orderStatuses.normalizeSortOrder('-1'),{code:'VALIDATION_ERROR'});
+    const source = fs.readFileSync(path.join(__dirname, '../src/routes/adminOrders.js'), 'utf8');
+    assert.match(source, /adminOrderStatusRepository\.listOrderStatuses\(\)/);
+    assert.match(source, /adminOrderStatusRepository\.createOrderStatus\(req\.body/);
+    assert.match(source, /adminOrderStatusRepository\.deactivateOrderStatus\(req\.params\.id/);
+    assert.match(source, /Order-status definitions are retained to preserve historical order labels/);
+  });
+
   test('complaint repository validates before persistence and MySQL admin routes delegate safe actions', async () => {
     const complaints = require('../src/repositories/adminComplaintRepository');
     await assert.rejects(complaints.createComplaint({name:'A',phone:'bad',invoice_id:'',details:'issue'}), { code:'VALIDATION_ERROR', statusCode:400 });

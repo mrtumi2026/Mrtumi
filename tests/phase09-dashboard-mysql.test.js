@@ -18,6 +18,7 @@ if (MYSQL_HOST) {
 const { getPool, createQueryClient, closePool } = require('../src/db/mysqlPool');
 const { migrateUp, migrateDown } = require('../src/db/migrator');
 const dashboardRepo = require('../src/repositories/adminDashboardRepository');
+const adminOrderRepo = require('../src/repositories/adminOrderReadRepository');
 const { policyForAdminRoute } = require('../src/middleware/legacyAdminRbac');
 const { collectAdminRoutes,concretePath } = require('./helpers/adminRouteInventory');
 const { startServer } = require('../server');
@@ -580,6 +581,52 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     assert.equal(Number((await db.queryOne('SELECT stock_on_hand FROM product_variants WHERE id=?',[variantId])).stock_on_hand),7,'audit failure rolls variant balance back');
     assert.equal(Number((await db.queryOne("SELECT COUNT(*) AS n FROM stock_ledger WHERE variant_id=? AND movement_type='adjustment'",[variantId])).n),movementCount,'audit failure rolls variant ledger movement back');
     assert.equal(Number((await db.queryOne("SELECT COUNT(*) AS n FROM audit_logs WHERE action='inventory.variant.adjust' AND entity_id=?",[String(variantId)])).n),auditCount,'failed adjustment leaves no audit row');
+  });
+
+  test('legacy order-status configuration uses MySQL, permission/CSRF, validation, audit and history-preserving deactivation',async(t)=>{
+    if(!MYSQL_HOST)return t.skip(SKIP);
+    csrfToken=await fetchCsrf(dashboardCookie);
+    const {cookie:noGrantCookie,token:noGrantToken}=await noGrantSession();
+    assert.equal((await request('/admin/orderstatus/manage',{cookie:'',accept:'text/html'})).status,302,'order-status management requires authentication');
+    assert.equal((await request('/admin/orderstatus/manage',{cookie:noGrantCookie,token:noGrantToken,accept:'text/html'})).status,403,'orders.manage is required');
+    const page=await request('/admin/orderstatus/manage',{accept:'text/html'});
+    assert.equal(page.status,200,page.text.slice(0,300));
+    assert.equal((await request('/admin/orderstatus/create',{method:'POST',token:'',body:{name:'P09 Missing CSRF',slug:'p09-missing-csrf'}})).status,403,'status creation requires CSRF');
+    assert.equal((await request('/admin/orderstatus/create',{method:'POST',cookie:noGrantCookie,token:noGrantToken,body:{name:'P09 Denied',slug:'p09-denied'}})).status,403,'status creation requires orders.manage');
+    assert.equal((await request('/admin/orderstatus/create',{method:'POST',body:{name:'',slug:'bad'}})).status,400,'status name is required');
+    assert.equal((await request('/admin/orderstatus/create',{method:'POST',body:{name:'Bad Color',slug:'p09-bad-color',color:'url(javascript:alert(1))'}})).status,400,'status colors must be safe hex values');
+    const suffix=Date.now();const slug=`p09-config-${suffix}`;const input={name:'P09 MySQL Test Status',slug,color:'#3b82f6',sort_order:'80'};
+    const rollbackSlug=`p09-status-rollback-${suffix}`;
+    await db.execute("CREATE TRIGGER p09_fail_status_create_audit BEFORE INSERT ON audit_logs FOR EACH ROW BEGIN IF NEW.action='order.status_definition.created' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture status create audit failure'; END IF; END");
+    try { assert.equal((await request('/admin/orderstatus/create',{method:'POST',body:{...input,slug:rollbackSlug}})).status,500,'status creation audit failure is surfaced'); }
+    finally { await db.execute('DROP TRIGGER IF EXISTS p09_fail_status_create_audit'); }
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM order_statuses WHERE slug=?',[rollbackSlug])).n),0,'failed status audit rolls creation back');
+    const created=await request('/admin/orderstatus/create',{method:'POST',body:input});
+    assert.equal(created.status,302,created.text.slice(0,300));
+    const row=await db.queryOne('SELECT id,name,slug,color,sort_order,status FROM order_statuses WHERE slug=?',[slug]);
+    assert.ok(row);assert.equal(row.color,input.color);assert.equal(Number(row.sort_order),80);assert.equal(Number(row.status),1);
+    assert.ok(await db.queryOne("SELECT id FROM audit_logs WHERE action='order.status_definition.created' AND entity_id=?",[String(row.id)]),'creation writes a domain audit row');
+    const rendered=await request('/admin/orderstatus/manage',{accept:'text/html'});
+    assert.equal(rendered.status,200);assert.match(rendered.text,new RegExp(slug));assert.match(rendered.text,new RegExp(`/admin/orderstatus/deactivate/${row.id}`));
+    assert.equal((await request(`/admin/orderstatus/delete/${row.id}`,{method:'POST'})).status,409,'legacy destructive delete endpoint is blocked in MySQL mode');
+    assert.equal(Number((await db.queryOne('SELECT status FROM order_statuses WHERE id=?',[row.id])).status),1,'blocked delete preserves active status');
+    await db.execute("CREATE TRIGGER p09_fail_status_deactivate_audit BEFORE INSERT ON audit_logs FOR EACH ROW BEGIN IF NEW.action='order.status_definition.deactivated' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture status deactivate audit failure'; END IF; END");
+    try { assert.equal((await request(`/admin/orderstatus/deactivate/${row.id}`,{method:'POST'})).status,500,'deactivation audit failure is surfaced'); }
+    finally { await db.execute('DROP TRIGGER IF EXISTS p09_fail_status_deactivate_audit'); }
+    assert.equal(Number((await db.queryOne('SELECT status FROM order_statuses WHERE id=?',[row.id])).status),1,'failed status audit rolls deactivation back');
+    assert.equal((await request(`/admin/orderstatus/deactivate/${row.id}`,{method:'POST'})).status,302,'unused status can be deactivated');
+    assert.equal(Number((await db.queryOne('SELECT status FROM order_statuses WHERE id=?',[row.id])).status),0,'deactivation preserves the status definition');
+    assert.ok(await db.queryOne("SELECT id FROM audit_logs WHERE action='order.status_definition.deactivated' AND entity_id=?",[String(row.id)]),'deactivation writes a domain audit row');
+    const afterDeactivate=await request('/admin/orderstatus/manage',{accept:'text/html'});
+    assert.doesNotMatch(afterDeactivate.text,new RegExp(`/admin/orderstatus/deactivate/${row.id}`),'inactive status has no repeated deactivation control');
+    const usedSlug=`p09-used-${suffix}`;
+    const usedId=Number((await db.execute('INSERT INTO order_statuses(name,slug,color,sort_order,status) VALUES(?,?,?,?,1)', ['P09 Used Status',usedSlug,'#123456',81])).insertId);
+    t.after(async()=>{await db.execute('UPDATE orders SET order_status=\'completed\' WHERE id=?',[invoiceOrderId]);await db.execute('DELETE FROM order_statuses WHERE id=?',[usedId]);await db.execute('DELETE FROM order_statuses WHERE id=?',[row.id]);});
+    await db.execute('UPDATE orders SET order_status=? WHERE id=?',[usedSlug,invoiceOrderId]);
+    assert.equal((await request(`/admin/orderstatus/deactivate/${usedId}`,{method:'POST'})).status,302,'referenced status can be retired without deleting its label');
+    assert.equal(Number((await db.queryOne('SELECT status FROM order_statuses WHERE id=?',[usedId])).status),0,'historically referenced status is retained inactive');
+    const detail=await adminOrderRepo.getAdminOrderDetail(invoiceOrderId);
+    assert.equal(detail.order.status_label,'P09 Used Status','inactive status keeps its historical order label');
   });
 
   test('legacy employee HR routes use MySQL, exact-paisa salary, permission/CSRF, preserved history and atomic audit',async(t)=>{

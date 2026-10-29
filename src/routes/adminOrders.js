@@ -4,6 +4,7 @@ const { requireAdmin } = require('../middleware/auth');
 const { env } = require('../config/env');
 const { asyncHandler } = require('../utils/asyncHandler');
 const adminOrderReadRepository = require('../repositories/adminOrderReadRepository');
+const adminOrderStatusRepository = require('../repositories/adminOrderStatusRepository');
 
 const router = express.Router();
 router.use('/admin', requireAdmin);
@@ -513,13 +514,18 @@ router.post('/admin/incomplete-orders/delete/:id', (req, res) => {
 });
 
 // ─── Order Status Manage ───
-router.get('/admin/orderstatus/manage', (_req, res) => {
-  const rows = db.all('SELECT * FROM order_statuses ORDER BY sort_order ASC');
+router.get('/admin/orderstatus/manage', asyncHandler(async (_req, res) => {
+  const rows = env.db.client === 'mysql'
+    ? await adminOrderStatusRepository.listOrderStatuses()
+    : db.all('SELECT * FROM order_statuses ORDER BY sort_order ASC');
   res.render('admin/crud-module', {
     pageTitle: 'Order Status Management',
     subtitle: 'অর্ডার প্রসেসিং স্ট্যাটাস ও ব্যাজ কালার কাস্টমাইজ করুন',
     createAction: '/admin/orderstatus/create',
-    deletePrefix: '/admin/orderstatus/delete',
+    deletePrefix: env.db.client === 'mysql' ? '' : '/admin/orderstatus/delete',
+    customActionPrefix: env.db.client === 'mysql' ? '/admin/orderstatus/deactivate' : '',
+    customActionLabel: 'Deactivate',
+    customActionHideWhenInactive: env.db.client === 'mysql',
     columns: [
       { key: 'id', label: '#' },
       { key: 'name', label: 'Status Name' },
@@ -536,25 +542,35 @@ router.get('/admin/orderstatus/manage', (_req, res) => {
     ],
     rows,
   });
-});
+}));
 
-router.post('/admin/orderstatus/create', (req, res) => {
-  const { name, slug, color, sort_order } = req.body;
-  const cleanSlug = String(slug || name || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9-]+/g, '-');
-  db.run(
-    'INSERT INTO order_statuses (name, slug, color, sort_order) VALUES (?, ?, ?, ?)',
-    name,
-    cleanSlug,
-    color || '#3b82f6',
-    Number(sort_order || 8)
-  );
+router.post('/admin/orderstatus/create', asyncHandler(async (req, res) => {
+  if (env.db.client === 'mysql') {
+    await adminOrderStatusRepository.createOrderStatus(req.body, {
+      id: req.adminUser?.id ?? null, ip: req.ip, userAgent: req.get('user-agent'),
+    });
+    req.adminDomainAudit = true;
+  } else {
+    const { name, slug, color, sort_order } = req.body;
+    const cleanSlug = String(slug || name || '').toLowerCase().replace(/[^a-z0-9-]+/g, '-');
+    db.run('INSERT INTO order_statuses (name, slug, color, sort_order) VALUES (?, ?, ?, ?)', name, cleanSlug, color || '#3b82f6', Number(sort_order || 8));
+  }
   req.flash('success', 'নতুন অর্ডার স্ট্যাটাস তৈরি হয়েছে।');
   res.redirect('/admin/orderstatus/manage');
-});
+}));
 
-router.post('/admin/orderstatus/delete/:id', (req, res) => {
+router.post('/admin/orderstatus/deactivate/:id', asyncHandler(async (req, res) => {
+  if (env.db.client !== 'mysql') return res.status(404).send('Not found.');
+  await adminOrderStatusRepository.deactivateOrderStatus(req.params.id, {
+    id: req.adminUser?.id ?? null, ip: req.ip, userAgent: req.get('user-agent'),
+  });
+  req.adminDomainAudit = true;
+  req.flash('success', 'অর্ডার স্ট্যাটাস নিষ্ক্রিয় করা হয়েছে; পুরোনো অর্ডারের লেবেল সংরক্ষিত আছে।');
+  res.redirect('/admin/orderstatus/manage');
+}));
+
+router.post('/admin/orderstatus/delete/:id', (req, res, next) => {
+  if (env.db.client === 'mysql') return next(new ConflictError('Order-status definitions are retained to preserve historical order labels; use Deactivate instead.'));
   db.run('DELETE FROM order_statuses WHERE id = ?', req.params.id);
   req.flash('success', 'স্ট্যাটাস ডিলিট হয়েছে।');
   res.redirect('/admin/orderstatus/manage');
