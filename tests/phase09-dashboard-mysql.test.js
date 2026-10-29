@@ -599,7 +599,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     const created=await request('/admin/employees/create',{method:'POST',body:input});
     assert.equal(created.status,302,created.text.slice(0,300));
     const employee=await db.queryOne('SELECT id,name,designation,phone,email,base_salary_paisa,join_date,status FROM employees WHERE phone=?',[phone]);
-    assert.ok(employee);assert.equal(Number(employee.base_salary_paisa),1750025);assert.equal(employee.join_date,'2025-02-03');assert.equal(Number(employee.status),1);
+    assert.ok(employee);assert.equal(Number(employee.base_salary_paisa),1750025);assert.equal(new Date(employee.join_date).toISOString().slice(0,10),'2025-02-03','MySQL DATE round-trips without a day shift');assert.equal(Number(employee.status),1);
     const createdAudit=await db.queryOne("SELECT before_json,after_json FROM audit_logs WHERE action='hr.employee.created' AND entity_id=? ORDER BY id DESC LIMIT 1",[String(employee.id)]);
     assert.ok(createdAudit);assert.doesNotMatch(`${createdAudit.before_json||''}${createdAudit.after_json||''}`,new RegExp(`${phone}|${input.email}|17500`),'employee audit payload excludes phone, email and salary');
     assert.equal((await request('/admin/employees/create',{method:'POST',body:input})).status,409,'duplicate employee phone is reported as conflict');
