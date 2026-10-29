@@ -680,7 +680,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     assert.equal(Number((await db.queryOne('SELECT stock_reserved FROM products WHERE id=?',[productId])).stock_reserved),Number(initial.stock_reserved)+2,'failed item edit rolls reservation back');
     const rider=await db.execute("INSERT INTO delivery_boys(name,phone,status) VALUES('P09 Edit Rider','01711117777',1)");
     const edit={customer_name:`P09 Edited ${suffix}`,phone:`016${String(suffix).slice(-8)}`,address:'Updated fixture address',shipping_charge:'70.50',discount:'5.25',status:'processing',payment_status:'unpaid',courier_name:'',courier_tracking_id:'',delivery_boy_id:String(rider.insertId),admin_note:'Updated by regression test',request_key:`p09-order-edit-${suffix}`};
-    const updated=await request(`/admin/order/update/${target.id}`,{method:'POST',body:edit});assert.equal(updated.status,302);
+    const updated=await request(`/admin/order/update/${target.id}`,{method:'POST',body:edit});assert.equal(updated.status,302,`order update response: ${updated.text.slice(0,500)}`);
     assert.equal((await request(`/admin/order/update/${target.id}`,{method:'POST',body:edit})).status,302,'duplicate order update is idempotent');
     assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM order_status_history WHERE order_id=? AND to_status=\'processing\'',[target.id])).n),1,'generic order update uses a distinct nested status-history key exactly once');
     const order=await db.queryOne('SELECT customer_name,customer_phone,shipping_address,shipping_paisa,discount_paisa,subtotal_paisa,total_paisa,paid_paisa,cod_due_paisa,order_status,payment_status,delivery_boy_id,admin_note FROM orders WHERE id=?',[target.id]);
