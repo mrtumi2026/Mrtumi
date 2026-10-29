@@ -49,6 +49,20 @@ describe('Phase 09 dashboard repository contract', () => {
     assert.equal(unrelatedMultipartError.statusCode,403,'the multipart CSRF exception does not extend to other admin routes');
   });
 
+  test('complaint repository validates before persistence and MySQL admin routes delegate safe actions', async () => {
+    const complaints = require('../src/repositories/adminComplaintRepository');
+    await assert.rejects(complaints.createComplaint({name:'A',phone:'bad',invoice_id:'',details:'issue'}), { code:'VALIDATION_ERROR', statusCode:400 });
+    await assert.rejects(complaints.createComplaint({name:'Valid Name',phone:'01712345678',invoice_id:'',details:'x'}), { code:'VALIDATION_ERROR', statusCode:400 });
+    const source = fs.readFileSync(path.join(__dirname, '../src/routes/adminOperations.js'), 'utf8');
+    assert.match(source, /env\.db\.client === 'mysql'[\s\S]{0,120}adminComplaintRepository\.listComplaints\(\)/);
+    assert.match(source, /adminComplaintRepository\.createComplaint\(req\.body/);
+    assert.match(source, /adminComplaintRepository\.resolveComplaint\(req\.params\.id/);
+    assert.match(source, /router\.post\('\/admin\/complaints\/delete\/:id', \(req, res, next\)/,'complaint deletion is retained only as an explicit guarded route');
+    assert.match(source, /Complaint deletion is disabled pending an approved data-retention policy/);
+    assert.match(source, /adminComplaintRepository\.listContactMessages\(\)/);
+    assert.match(source, /Contact-message deletion is disabled pending an approved data-retention policy/);
+  });
+
   test('HR employee repository validates calendar dates and MySQL admin routes delegate reads and writes', () => {
     const employeeRepository = require('../src/repositories/hrmEmployeeRepository');
     assert.equal(employeeRepository.dateOnly('2024-02-29'), '2024-02-29');

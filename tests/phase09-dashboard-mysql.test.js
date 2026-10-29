@@ -617,6 +617,59 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     assert.deepEqual([JSON.parse(deactivatedAudit.before_json).status,JSON.parse(deactivatedAudit.after_json).status],[1,0]);
   });
 
+  test('legacy complaint routes use MySQL persistence, permission/CSRF, minimized audit and transactional resolution',async(t)=>{
+    if(!MYSQL_HOST)return t.skip(SKIP);
+    dashboardCookie=await login(fullEmail);csrfToken=await fetchCsrf(dashboardCookie);
+    const {cookie:noGrantCookie,token:noGrantToken}=await noGrantSession();
+    assert.equal((await request('/admin/complaints',{cookie:noGrantCookie,token:noGrantToken,accept:'text/html'})).status,403,'customers.manage is required to read complaints');
+    assert.equal((await request('/admin/complaints',{cookie:'',accept:'text/html'})).status,302,'complaint list requires authentication');
+    assert.equal((await request('/admin/complaints/create',{method:'POST',token:'',body:{}})).status,403,'complaint create requires CSRF');
+    const suffix=Date.now();
+    const input={name:`P09 Complaint ${suffix}`,phone:'01712345678',invoice_id:`P09-${suffix}`,details:'A complaint fixture for the MySQL admin route.'};
+    assert.equal((await request('/admin/complaints/create',{method:'POST',cookie:noGrantCookie,token:noGrantToken,body:input})).status,403,'complaint create requires customers.manage');
+    assert.equal((await request('/admin/complaints/create',{method:'POST',body:{...input,phone:'123'}})).status,400,'invalid contact phone is rejected');
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM complaints WHERE name=?',[input.name])).n),0,'invalid complaint creates no row');
+    const created=await request('/admin/complaints/create',{method:'POST',body:input});
+    assert.equal(created.status,302,created.text.slice(0,300));
+    const row=await db.queryOne('SELECT id,name,phone,invoice_no,details,status FROM complaints WHERE name=?',[input.name]);
+    assert.ok(row);assert.equal(row.invoice_no,input.invoice_id,'legacy invoice_id form field maps to MySQL invoice_no');assert.equal(row.status,'pending');
+    assert.equal((await request('/admin/complaints',{accept:'text/html'})).text.includes('/admin/complaints/delete/'),false,'production complaint list does not offer destructive deletion while retention policy is unapproved');
+    const blockedDelete=await request(`/admin/complaints/delete/${row.id}`,{method:'POST'});
+    assert.equal(blockedDelete.status,409,'direct complaint deletion is explicitly blocked pending retention policy');
+    assert.equal((await db.queryOne('SELECT id FROM complaints WHERE id=?',[row.id])).id,row.id,'blocked deletion preserves complaint data');
+    const audit=await db.queryOne("SELECT actor_id,before_json,after_json FROM audit_logs WHERE action='customer.complaint.created' AND entity_id=? ORDER BY id DESC LIMIT 1",[String(row.id)]);
+    assert.ok(audit);assert.equal(Number(audit.actor_id),dashboardUserId);assert.doesNotMatch(`${audit.before_json||''}${audit.after_json||''}`,new RegExp(`${input.name}|${input.phone}|${input.details}`),'audit excludes complaint PII and free text');
+    const page=await request('/admin/complaints',{accept:'text/html'});
+    assert.equal(page.status,200,page.text.slice(0,300));assert.match(page.text,new RegExp(input.name));assert.match(page.text,new RegExp(input.invoice_id));
+    await db.execute("CREATE TRIGGER p09_fail_complaint_resolve_audit BEFORE INSERT ON audit_logs FOR EACH ROW BEGIN IF NEW.action='customer.complaint.resolved' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture complaint audit failure'; END IF; END");
+    try { assert.equal((await request(`/admin/complaints/resolve/${row.id}`,{method:'POST'})).status,500,'audit failure is surfaced'); }
+    finally { await db.execute('DROP TRIGGER IF EXISTS p09_fail_complaint_resolve_audit'); }
+    assert.equal((await db.queryOne('SELECT status FROM complaints WHERE id=?',[row.id])).status,'pending','failed resolution audit rolls the status change back');
+    const resolved=await request(`/admin/complaints/resolve/${row.id}`,{method:'POST'});
+    assert.equal(resolved.status,302,resolved.text.slice(0,300));
+    assert.equal((await db.queryOne('SELECT status FROM complaints WHERE id=?',[row.id])).status,'resolved');
+    const resolution=await db.queryOne("SELECT before_json,after_json FROM audit_logs WHERE action='customer.complaint.resolved' AND entity_id=? ORDER BY id DESC LIMIT 1",[String(row.id)]);
+    assert.deepEqual([JSON.parse(resolution.before_json).status,JSON.parse(resolution.after_json).status],['pending','resolved']);
+  });
+
+  test('legacy contact inbox reads MySQL records and blocks destructive deletion pending retention policy',async(t)=>{
+    if(!MYSQL_HOST)return t.skip(SKIP);
+    dashboardCookie=await login(fullEmail);csrfToken=await fetchCsrf(dashboardCookie);
+    const {cookie:noGrantCookie,token:noGrantToken}=await noGrantSession();
+    const marker=`P09 contact ${Date.now()}`;
+    const email=`${Date.now()}@example.invalid`;
+    const inserted=await db.execute('INSERT INTO contact_messages(name,phone,email,subject,message,status) VALUES(?,?,?,?,?,?)',[marker,'01712345678',email,'MySQL inbox fixture','Contact message body fixture','unread']);
+    const denied=await request('/admin/contact-messages',{cookie:noGrantCookie,token:noGrantToken,accept:'text/html'});
+    assert.equal(denied.status,403,'customers.manage is required to read contact messages');
+    assert.equal((await request('/admin/contact-messages',{cookie:'',accept:'text/html'})).status,302,'contact inbox requires authentication');
+    const page=await request('/admin/contact-messages',{accept:'text/html'});
+    assert.equal(page.status,200,page.text.slice(0,300));assert.match(page.text,new RegExp(marker));assert.match(page.text,new RegExp(email));
+    assert.equal(page.text.includes('/admin/contact-messages/delete/'),false,'production inbox does not offer destructive deletion while retention policy is unapproved');
+    const blocked=await request(`/admin/contact-messages/delete/${inserted.insertId}`,{method:'POST'});
+    assert.equal(blocked.status,409,'direct deletion is explicitly blocked pending retention policy');
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM contact_messages WHERE id=?',[inserted.insertId])).n),1,'blocked deletion preserves contact data');
+  });
+
   test('legacy blog admin routes use MySQL persistence, permission/CSRF checks, and transactional audit',async(t)=>{
     if(!MYSQL_HOST)return t.skip(SKIP);
     dashboardCookie=await login(fullEmail); csrfToken=await fetchCsrf(dashboardCookie);

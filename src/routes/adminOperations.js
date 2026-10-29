@@ -5,8 +5,10 @@ const db = require('../db/database');
 const { env } = require('../config/env');
 const adminBlogRepository = require('../repositories/adminBlogRepository');
 const hrmEmployeeRepository = require('../repositories/hrmEmployeeRepository');
+const adminComplaintRepository = require('../repositories/adminComplaintRepository');
 const { asyncHandler } = require('../utils/asyncHandler');
 const { requireAdmin } = require('../middleware/auth');
+const { ConflictError } = require('../utils/errors');
 
 const router = express.Router();
 router.use('/admin', requireAdmin);
@@ -508,13 +510,15 @@ router.post('/admin/bonuses/delete/:id', (req, res) => {
 });
 
 // ─── Complaints, Contact Messages, Newsletter ───
-router.get('/admin/complaints', (_req, res) => {
-  const rows = db.all('SELECT * FROM complaints ORDER BY id DESC');
+router.get('/admin/complaints', asyncHandler(async (_req, res) => {
+  const rows = env.db.client === 'mysql'
+    ? await adminComplaintRepository.listComplaints()
+    : db.all('SELECT * FROM complaints ORDER BY id DESC');
   res.render('admin/crud-module', {
     pageTitle: 'Customer Complaints',
     subtitle: 'ওয়েবসাইটের লাইভ সাপোর্ট উইজেট থেকে জমা পড়া অভিযোগসমূহ',
     createAction: '/admin/complaints/create',
-    deletePrefix: '/admin/complaints/delete',
+    deletePrefix: env.db.client === 'mysql' ? '' : '/admin/complaints/delete',
     customActionPrefix: '/admin/complaints/resolve',
     customActionLabel: 'Mark Resolved',
     columns: [
@@ -534,37 +538,53 @@ router.get('/admin/complaints', (_req, res) => {
     ],
     rows,
   });
-});
+}));
 
-router.post('/admin/complaints/create', (req, res) => {
-  db.run(
-    'INSERT INTO complaints (name, phone, invoice_id, details) VALUES (?, ?, ?, ?)',
-    req.body.name,
-    req.body.phone,
-    req.body.invoice_id || '',
-    req.body.details
-  );
+router.post('/admin/complaints/create', asyncHandler(async (req, res) => {
+  if (env.db.client === 'mysql') {
+    await adminComplaintRepository.createComplaint(req.body, {
+      id: req.adminUser?.id ?? null, ip: req.ip, userAgent: req.get('user-agent'),
+    });
+    req.adminDomainAudit = true;
+  } else {
+    db.run(
+      'INSERT INTO complaints (name, phone, invoice_id, details) VALUES (?, ?, ?, ?)',
+      req.body.name, req.body.phone, req.body.invoice_id || '', req.body.details
+    );
+  }
   req.flash('success', 'অভিযোগ রেকর্ড করা হয়েছে।');
   res.redirect('/admin/complaints');
-});
+}));
 
-router.post('/admin/complaints/resolve/:id', (req, res) => {
-  db.run("UPDATE complaints SET status = 'resolved' WHERE id = ?", req.params.id);
+router.post('/admin/complaints/resolve/:id', asyncHandler(async (req, res) => {
+  if (env.db.client === 'mysql') {
+    await adminComplaintRepository.resolveComplaint(req.params.id, {
+      id: req.adminUser?.id ?? null, ip: req.ip, userAgent: req.get('user-agent'),
+    });
+    req.adminDomainAudit = true;
+  } else {
+    db.run("UPDATE complaints SET status = 'resolved' WHERE id = ?", req.params.id);
+  }
   req.flash('success', 'অভিযোগ সমাধান (Resolved) হিসেবে মার্ক করা হয়েছে!');
   res.redirect('/admin/complaints');
-});
+}));
 
-router.post('/admin/complaints/delete/:id', (req, res) => {
+router.post('/admin/complaints/delete/:id', (req, res, next) => {
+  if (env.db.client === 'mysql') {
+    return next(new ConflictError('Complaint deletion is disabled pending an approved data-retention policy.'));
+  }
   db.run('DELETE FROM complaints WHERE id = ?', req.params.id);
   res.redirect('/admin/complaints');
 });
 
-router.get('/admin/contact-messages', (_req, res) => {
-  const rows = db.all('SELECT * FROM contact_messages ORDER BY id DESC');
+router.get('/admin/contact-messages', asyncHandler(async (_req, res) => {
+  const rows = env.db.client === 'mysql'
+    ? await adminComplaintRepository.listContactMessages()
+    : db.all('SELECT * FROM contact_messages ORDER BY id DESC');
   res.render('admin/crud-module', {
     pageTitle: 'Contact Messages',
     subtitle: 'কাস্টমারদের পাঠানো যোগাযোগ বার্তাসমূহ',
-    deletePrefix: '/admin/contact-messages/delete',
+    deletePrefix: env.db.client === 'mysql' ? '' : '/admin/contact-messages/delete',
     columns: [
       { key: 'id', label: '#' },
       { key: 'name', label: 'Name' },
@@ -577,9 +597,12 @@ router.get('/admin/contact-messages', (_req, res) => {
     fields: [],
     rows,
   });
-});
+}));
 
-router.post('/admin/contact-messages/delete/:id', (req, res) => {
+router.post('/admin/contact-messages/delete/:id', (req, res, next) => {
+  if (env.db.client === 'mysql') {
+    return next(new ConflictError('Contact-message deletion is disabled pending an approved data-retention policy.'));
+  }
   db.run('DELETE FROM contact_messages WHERE id = ?', req.params.id);
   res.redirect('/admin/contact-messages');
 });
