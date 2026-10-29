@@ -276,6 +276,16 @@ describe('Phase 05 — Customer Storefront, Catalogue, Product Detail, Support &
     const giftProd = sqliteDb.get("SELECT id FROM products WHERE slug = 'premium-festive-gift-hamper'");
     const oosProd = sqliteDb.get("SELECT id FROM products WHERE slug = 'out-of-stock-mini-pack'");
 
+    for (const invalidQty of [0, -1, 1.5, 100, '2tail', [2], { quantity: 2 }]) {
+      const invalidAdd = await httpRequest(baseUrl, '/cart/add', {
+        method: 'POST', headers: mutationHeaders,
+        body: JSON.stringify({ product_id: giftProd.id, qty: invalidQty }),
+      });
+      assert.equal(invalidAdd.statusCode, 400, `invalid add quantity ${JSON.stringify(invalidQty)} is rejected`);
+    }
+    const emptyAfterInvalidAdds = await httpRequest(baseUrl, '/cart/json', { headers: { Cookie: csrfCookie, Accept: 'application/json' } });
+    assert.equal(JSON.parse(emptyAfterInvalidAdds.body).cartCount, 0, 'rejected add quantities do not mutate the cart');
+
     // Out-of-stock add-to-cart is rejected with 400
     const oosAdd = await httpRequest(baseUrl, '/cart/add', {
       method: 'POST',

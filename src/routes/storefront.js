@@ -505,6 +505,14 @@ router.post(
     await refreshCustomerCart(req);
     const t = res.locals.t;
     const { product_id, variant_id, qty, size, color, buy_now } = req.body;
+    const qtyText = qty === undefined || qty === null || String(qty).trim() === '' ? '1' : String(qty).trim();
+    if ((typeof qty !== 'undefined' && qty !== null && typeof qty !== 'string' && typeof qty !== 'number') || !/^\d+$/.test(qtyText)) {
+      throw new (require('../utils/errors').ValidationError)('Quantity must be a whole number from 1 to 99.');
+    }
+    const addQty = Number(qtyText);
+    if (!Number.isSafeInteger(addQty) || addQty < 1 || addQty > 99) {
+      throw new (require('../utils/errors').ValidationError)('Quantity must be a whole number from 1 to 99.');
+    }
     const prod = await storefrontRepo.findProductForCart(product_id, { locale: req.locale });
     if (!prod) {
       const msg = t('store.productNotFoundMsg');
@@ -546,7 +554,6 @@ router.post(
       return res.redirect(req.get('Referrer') || `/product/${prod.slug}`);
     }
 
-    const addQty = Math.max(1, parseInt(String(qty || '1'), 10) || 1);
     const chosenSize = String(
       (matchedVariant && matchedVariant.size_label) ||
         size ||

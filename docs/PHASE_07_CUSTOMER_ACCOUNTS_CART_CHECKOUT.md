@@ -11,7 +11,8 @@
 
 ## Remaining Phase 07 acceptance
 
-- Cart update now validates integer quantities, caps requested quantity to current availability, and removes unavailable/deactivated products or variants instead of forcing a minimum quantity of one. Guest-mode regression and MySQL guest/authenticated HTTP coverage for invalid quantity, stock capping, persistence and zero-stock removal passed exact-SHA CI run `40498016622` on `15f96ea7bdbec7fd02ef62d7f2f91e1d47bf1558`.
+- Cart add now accepts only a scalar whole quantity from 1–99 (defaulting to 1 only when omitted/blank) and rejects zero, negative, fractional, over-limit, trailing-text and structured values before product lookup. Existing valid additions remain capped to current available stock. Regression HTTP coverage confirms invalid requests do not alter session/persisted cart state in SQLite locally and is included in the live MySQL 8.0 route suite.
+- Cart update validates integer quantities, caps requested quantity to current availability, and removes unavailable/deactivated products or variants instead of forcing a minimum quantity of one. Guest-mode regression and MySQL guest/authenticated HTTP coverage for invalid quantity, stock capping, persistence and zero-stock removal passed exact-SHA CI run `40498016622` on `15f96ea7bdbec7fd02ef62d7f2f91e1d47bf1558`. The new cart-add strict-validation MySQL cases await exact-SHA CI on this change.
 - Complete persistent-cart cross-session/concurrency/error recovery and customer/guest merge policy evidence.
 - Owner-configured active `delivery_locations` and COD gateway rows on the actual target database. Empty configuration blocks checkout; do not seed fees or zones from legacy defaults.
 - Owner-approved Bangla/English Terms/Privacy copy and a documented consent version/retention policy. Do not treat the inline recovery opt-in as a substitute for approved legal/privacy policy.

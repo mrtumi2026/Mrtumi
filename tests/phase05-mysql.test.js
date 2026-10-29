@@ -359,6 +359,17 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
       assert.equal(csrfStart.statusCode,200);
       const cartCsrf = JSON.parse(csrfStart.body).data.csrfToken;
       const cartCookie = (Array.isArray(csrfStart.headers['set-cookie']) ? csrfStart.headers['set-cookie'] : [csrfStart.headers['set-cookie']]).filter(Boolean).map((c) => c.split(';')[0]).join('; ');
+      for (const invalidQty of [0, -1, 1.5, 100, '2tail', [2], { quantity: 2 }]) {
+        const invalidAdd = await httpRequest(baseUrl, '/cart/add', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json', Cookie: cartCookie, 'x-csrf-token': cartCsrf },
+          body: JSON.stringify({ product_id: inhouseProdId, variant_id: variant5KgId, qty: invalidQty }),
+        });
+        assert.equal(invalidAdd.statusCode, 400, `invalid MySQL cart-add quantity ${JSON.stringify(invalidQty)} is rejected`);
+      }
+      const emptyAfterInvalidAdds = await httpRequest(baseUrl, '/cart/json', { headers: { Cookie: cartCookie, Accept: 'application/json' } });
+      assert.equal(JSON.parse(emptyAfterInvalidAdds.body).cartCount, 0, 'invalid MySQL cart-add quantities do not persist or enter the session cart');
+
       // Add 5 kg structured variant (`price = 880 BDT`) to cart over HTTP in MySQL mode!
       const cartAdd = await httpRequest(baseUrl, '/cart/add', {
         method: 'POST',
