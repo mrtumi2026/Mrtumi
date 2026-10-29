@@ -201,7 +201,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     const updated=await request(`/admin/phase06/products/${productId}`,{method:'POST',body:input});
     assert.equal(updated.status,200,updated.text.slice(0,300));
     assert.equal(updated.json.product.sku,before.sku,'catalog edit preserves the immutable SKU');
-    assert.deepEqual([Number(updated.json.product.subcategoryId),Number(updated.json.product.childcategoryId)],[Number(sub.insertId),Number(child.insertId)]);
+    assert.deepEqual([Number(updated.json.product.product.subcategoryId),Number(updated.json.product.product.childcategoryId)],[Number(sub.insertId),Number(child.insertId)]);
     const selectedForm=await request(path,{accept:'text/html'});
     assert.match(selectedForm.text,new RegExp(`value=\"${sub.insertId}\"[^>]*selected`),'valid subcategory remains selected on edit');
     assert.match(selectedForm.text,new RegExp(`value=\"${child.insertId}\"[^>]*selected`),'valid child category remains selected on edit');
