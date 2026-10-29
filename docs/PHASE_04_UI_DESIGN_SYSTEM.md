@@ -94,7 +94,13 @@ Before modifying any stylesheet, script, or EJS template, all `48` EJS views, `2
 
 ---
 
-## 4. Items Flagged for Owner Review / Assets Requested
+## 4. Responsive hardening follow-up
+
+- Shared mobile-first CSS now adds breakpoints at `991.98px`, `767.98px`, `575.98px`, and `359.98px`, with a 320px minimum target; it reflows Admin/Vendor/Reseller topbars, tightens storefront header/search and cards, unsticks the checkout summary on phones, bounds dialogs/floating UI, supports table scrolling, and respects reduced-motion preferences. Shared UI adds keyboard-focusable, named regions to horizontal table scrollers.
+- Source-reviewed view groups and current limitations are recorded in [`docs/MOBILE_RESPONSIVE_AUDIT.md`](./MOBILE_RESPONSIVE_AUDIT.md). Existing bilingual route/a11y tests and new responsive source-contract tests pass locally.
+- **This is not browser viewport verification.** No browser engine is available in this workspace; the required actual layout/overflow/interactions check at 320–desktop widths in both locales remains open. P04-03 is therefore `IN PROGRESS` until that matrix has evidence.
+
+## 5. Items Flagged for Owner Review / Assets Requested
 
 1. **Official Brand Logo Files Requested from Owner:**
    - Primary light-background logo (`SVG` or transparent `PNG`, recommended `320×80`)

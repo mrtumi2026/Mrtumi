@@ -423,6 +423,12 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     const base=`/admin/phase06/products/${productId}`;
     const createPage=await request('/admin/phase06',{accept:'text/html'});
     assert.equal(createPage.status,200,createPage.text.slice(0,300));
+    const inventoryPageBn=await request('/admin/phase06?q=P09&sort=sku&page=1',{accept:'text/html'});
+    assert.equal(inventoryPageBn.status,200,inventoryPageBn.text.slice(0,300));
+    assert.match(inventoryPageBn.text,/lang="bn"/);assert.match(inventoryPageBn.text,/স্ক্রলযোগ্য পণ্য ইনভেন্টরি সারণি/);
+    const inventoryPageEn=await request('/admin/phase06?lang=en&q=P09&sort=sku&page=1',{accept:'text/html'});
+    assert.equal(inventoryPageEn.status,200,inventoryPageEn.text.slice(0,300));
+    assert.match(inventoryPageEn.text,/lang="en"/);assert.match(inventoryPageEn.text,/Low stock only/);
     const categoryId=Number((await db.queryOne('SELECT category_id FROM products WHERE id=?',[productId])).category_id);
     assert.match(createPage.text,/id="p-category" name="category_id"/);
     assert.match(createPage.text,new RegExp(`<option value="${categoryId}">`),'product creation form offers the active existing category by ID');

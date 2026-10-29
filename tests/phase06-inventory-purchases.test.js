@@ -48,6 +48,30 @@ describe('Phase 06 — Product, Inventory Ledger, Supplier & Purchase Receiving'
     }), ValidationError);
   });
 
+  test('inventory catalog search, allowlisted sorting, low-stock filter and bounded pagination are deterministic', async () => {
+    for(let index=1;index<=30;index++){
+      const suffix=String(index).padStart(3,'0');
+      await repo.createProduct({sku:`P06-PAGE-${suffix}`,name_bn:`পেজ ${suffix}`,name_en:`Paging ${suffix}`,slug:`p06-page-${suffix}`,
+        category_id:1,regular_price_bdt:'10',sale_price_bdt:'10',cost_price_bdt:'5',opening_stock:String(index),low_stock_threshold:'5'});
+    }
+    const first=await repo.listInventoryPage({q:'P06-PAGE-',sort:'sku',page:'1'});
+    assert.deepEqual([first.total,first.rows.length,first.page,first.totalPages,first.hasPrevious,first.hasNext],[30,25,1,2,false,true]);
+    assert.equal(first.rows[0].sku,'P06-PAGE-001');
+    const second=await repo.listInventoryPage({q:'P06-PAGE-',sort:'sku',page:'2'});
+    assert.deepEqual([second.rows.length,second.page,second.hasNext],[5,2,false]);
+    const low=await repo.listInventoryPage({q:'P06-PAGE-',filter:'low',sort:'available'});
+    assert.equal(low.total,5);
+    assert.ok(low.rows.every((row)=>Number(row.warehouse_available)<=Number(row.low_stock_threshold)));
+    await repo.createProduct({sku:'P06-PAGE-ZERO',name_bn:'শূন্য স্টক',name_en:'Zero stock',slug:'p06-page-zero',category_id:1,
+      regular_price_bdt:'10',sale_price_bdt:'10',cost_price_bdt:'5'});
+    const zeroThreshold=await repo.listInventoryPage({q:'P06-PAGE-ZERO',filter:'low'});
+    assert.equal(zeroThreshold.total,1,'zero stock at a zero threshold preserves the existing admin LOW comparison');
+    const escaped=await repo.listInventoryPage({q:'P06-PAGE-%'});
+    assert.equal(escaped.total,0,'LIKE wildcards in user text are treated literally');
+    const invalid=await repo.listInventoryPage({sort:'name;DROP TABLE products',page:'-3'});
+    assert.equal(invalid.sort,'newest');assert.equal(invalid.page,1);
+  });
+
   test('product catalog edits preserve stock and are transactionally audited with validation and rollback', async () => {
     const product = db.get("SELECT id FROM products WHERE code='P06-TEST-001'");
     const stockBefore = db.get('SELECT stock,stock_reserved,vendor_stock_on_hand FROM products WHERE id=?', product.id);

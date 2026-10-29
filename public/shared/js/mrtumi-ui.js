@@ -75,8 +75,30 @@
     });
   }
 
+  function labelScrollableTables(root) {
+    var scope = root || document;
+    var wrappers = scope.querySelectorAll('.table-responsive, .tbl-card-body');
+    wrappers.forEach(function (wrapper) {
+      if (wrapper.querySelector('.table-responsive, .tbl-card-body')) return;
+      if (!wrapper.querySelector('table')) return;
+      if (!wrapper.hasAttribute('tabindex')) wrapper.setAttribute('tabindex', '0');
+      if (!wrapper.hasAttribute('role')) wrapper.setAttribute('role', 'region');
+      if (!wrapper.hasAttribute('aria-label')) {
+        var table = wrapper.querySelector('table');
+        var caption = table && table.querySelector('caption');
+        var card = wrapper.closest('.card, .tbl-card');
+        var heading = card && card.querySelector('.card-header h1,.card-header h2,.card-header h3,.card-header h4,.tbl-card-head h4');
+        var lang = document.documentElement.lang === 'bn' ? 'bn' : 'en';
+        var label = caption && caption.textContent.trim();
+        if (!label && heading) label = heading.textContent.trim();
+        wrapper.setAttribute('aria-label', label || (lang === 'bn' ? 'অনুভূমিকভাবে স্ক্রলযোগ্য সারণি' : 'Horizontally scrollable table'));
+      }
+    });
+  }
+
   document.addEventListener('DOMContentLoaded', function () {
     injectCsrfIntoForms(document);
+    labelScrollableTables(document);
 
     // Ensure dynamically constructed forms also carry _csrf before submission
     document.addEventListener(

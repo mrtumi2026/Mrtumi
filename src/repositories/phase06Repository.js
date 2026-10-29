@@ -253,6 +253,49 @@ async function listProducts() {
     low_stock_threshold, old_price, new_price, purchase_price, vendor_id, is_archived FROM products WHERE is_archived=0 ORDER BY id DESC LIMIT 1000`);
 }
 
+async function listInventoryPage(filters={}) {
+  const q=String(filters.q||'').trim().slice(0,100);
+  const filter=filters.filter==='low'?'low':'all';
+  const sort=['newest','sku','name','available','threshold'].includes(filters.sort)?filters.sort:'newest';
+  const pageSize=25;
+  const requested=Number.parseInt(filters.page,10);
+  const requestedPage=Number.isSafeInteger(requested)&&requested>0?Math.min(requested,100000):1;
+  const escaped=q.replace(/[!%_]/g,(character)=>`!${character}`);
+  const pattern=`%${escaped}%`;
+  const mysql=isMysql();
+  const table='products';
+  const sku=mysql?'p.sku':'p.code';
+  const nameBn=mysql?'p.name_bn':'p.name';
+  const stock=mysql?'p.stock_on_hand':'p.stock';
+  const reserved='p.stock_reserved';
+  const available=`(${stock}-${reserved})`;
+  const sortSql={
+    newest:'p.id DESC',
+    sku:`${sku} ASC,p.id DESC`,
+    name:`LOWER(COALESCE(NULLIF(p.name_en,''),${nameBn},'')) ASC,p.id DESC`,
+    available:`${available} ASC,p.id DESC`,
+    threshold:`p.low_stock_threshold ASC,p.id DESC`,
+  }[sort];
+  const where=[`p.is_archived=0`];
+  const params=[];
+  if(q){where.push(`(${sku} LIKE ? ESCAPE '!' OR ${nameBn} LIKE ? ESCAPE '!' OR p.name_en LIKE ? ESCAPE '!')`);params.push(pattern,pattern,pattern);}
+  if(filter==='low')where.push(`${available}<=p.low_stock_threshold`);
+  const whereSql=where.join(' AND ');
+  const countSql=`SELECT COUNT(*) AS total FROM ${table} p WHERE ${whereSql}`;
+  const count= mysql
+    ? Number((await require('../db/mysqlPool').queryOne(countSql,params)).total)
+    : Number(sqlite.get(countSql,...params).total);
+  const totalPages=Math.max(1,Math.ceil(count/pageSize));
+  const page=Math.min(requestedPage,totalPages);
+  const sql=`SELECT p.id,${sku} AS sku,${nameBn} AS name_bn,p.name_en,p.low_stock_threshold,
+    ${stock} AS stock_on_hand,${reserved} AS stock_reserved,${available} AS warehouse_available,
+    p.vendor_stock_on_hand,p.vendor_stock_reserved,(p.vendor_stock_on_hand-p.vendor_stock_reserved) AS vendor_available
+    FROM ${table} p WHERE ${whereSql} ORDER BY ${sortSql} LIMIT ? OFFSET ?`;
+  const values=[...params,pageSize,(page-1)*pageSize];
+  const rows=mysql?await require('../db/mysqlPool').queryAll(sql,values):sqlite.all(sql,...values);
+  return {rows,total:count,page,pageSize,totalPages,q,filter,sort,hasPrevious:page>1,hasNext:page<totalPages};
+}
+
 async function getProductForEdit(idInput) {
   const id = positiveId(idInput, 'Product');
   if (isMysql()) {
@@ -1024,4 +1067,4 @@ async function archiveProduct(idInput, archive, actor = {}) {
   return {id,archived:Boolean(archive)};
 }
 
-module.exports = { createSupplier,listSuppliers,getSupplierForEdit,updateSupplier,getSupplierPurchaseHistory,createProduct,normalizeProductEditInput,listProducts,getProductForEdit,listProductEditOptions,updateProduct,getProductGalleryForEdit,updateProductGallery,appendProductGalleryImages,listProductVariants,createProductVariant,updateProductVariant,adjustStock,adjustVariantStock,listInventory,listStockLedger,createPurchase,listPurchases,receivePurchase,archiveProduct };
+module.exports = { createSupplier,listSuppliers,getSupplierForEdit,updateSupplier,getSupplierPurchaseHistory,createProduct,normalizeProductEditInput,listProducts,getProductForEdit,listProductEditOptions,updateProduct,getProductGalleryForEdit,updateProductGallery,appendProductGalleryImages,listProductVariants,createProductVariant,updateProductVariant,adjustStock,adjustVariantStock,listInventory,listInventoryPage,listStockLedger,createPurchase,listPurchases,receivePurchase,archiveProduct };

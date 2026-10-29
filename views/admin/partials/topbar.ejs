@@ -3,7 +3,7 @@
         <div class="container-fluid">
           <ul class="list-unstyled topnav-menu float-end mb-0 d-flex align-items-center">
             <!-- Quick Order Search -->
-            <li class="d-none d-md-flex align-items-center me-2">
+            <li class="admin-top-search d-none d-md-flex align-items-center me-2">
               <form action="/admin/order/all" method="GET" class="d-flex" role="search">
                 <label for="adminTopSearch" class="visually-hidden"><%= t('admin.searchMenuPlaceholder') %></label>
                 <div class="input-group input-group-sm" style="width: 215px;">
@@ -168,7 +168,7 @@
               </button>
             </li>
             <li>
-              <a class="nav-link" href="/" target="_blank" rel="noopener">
+              <a class="nav-link" href="/" target="_blank" rel="noopener" aria-label="<%= t('admin.viewStore') %>">
                 <i data-feather="globe" style="width:16px;height:16px;"></i>
                 <span><%= t('admin.viewStore') %></span>
               </a>

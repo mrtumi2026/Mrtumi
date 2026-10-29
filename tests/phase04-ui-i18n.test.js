@@ -357,7 +357,23 @@ describe('Phase 04 — Branding, Design System, Accessibility & Bilingual UI (`b
     assert.match(dashEn.text, /Mr\. Tumi Operations Dashboard/);
   });
 
-  test('7. Design-system color tokens satisfy WCAG 2.1 AA contrast (`>= 4.5:1`) & Phase 03 SQLite guard remains intact', () => {
+  test('7. Responsive style contract covers phone/tablet breakpoints, portal topbars, checkout, tables and reduced motion', () => {
+    const css=fs.readFileSync(path.join(__dirname,'../public/shared/css/mrtumi-design-system.css'),'utf8');
+    const ui=fs.readFileSync(path.join(__dirname,'../public/shared/js/mrtumi-ui.js'),'utf8');
+    const topbar=fs.readFileSync(path.join(__dirname,'../views/admin/partials/topbar.ejs'),'utf8');
+    const checkout=fs.readFileSync(path.join(__dirname,'../views/store/checkout.ejs'),'utf8');
+    for(const width of ['991.98px','767.98px','575.98px','359.98px'])assert.ok(css.includes(`max-width: ${width}`),`responsive breakpoint ${width} remains explicit`);
+    assert.match(css,/\.navbar-custom \.topnav-menu\.float-end/);
+    assert.match(css,/\.pb-search-box\s*\{\s*flex-basis:\s*100%/);
+    assert.match(css,/\.checkout-order-summary\s*\{\s*position:\s*static/);
+    assert.match(css,/\.table-responsive:focus-visible/);
+    assert.match(css,/prefers-reduced-motion:\s*reduce/);
+    assert.match(ui,/labelScrollableTables/);
+    assert.match(topbar,/admin-top-search/);
+    assert.match(checkout,/checkout-order-summary/);
+  });
+
+  test('8. Design-system color tokens satisfy WCAG 2.1 AA contrast (`>= 4.5:1`) & Phase 03 SQLite guard remains intact', () => {
     const tokenPairs = [
       { name: 'Body text on white surface', fg: '#1e293b', bg: '#ffffff', min: 4.5 },
       { name: 'Muted text on white surface', fg: '#475569', bg: '#ffffff', min: 4.5 },

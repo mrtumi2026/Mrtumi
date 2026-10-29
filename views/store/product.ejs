@@ -140,7 +140,7 @@
         <% if (product.has_valid_wholesale) { %>
           <div class="p-3 rounded-3 bg-light border mb-3" style="max-width: 470px;">
             <h2 class="h6 fw-bold small mb-2">📦 <%= t('store.wholesaleHeading') %></h2>
-            <table class="table table-sm mb-0 small">
+            <div class="table-responsive" tabindex="0" role="region" aria-label="<%= locale==='en'?'Wholesale price tiers':'পাইকারি মূল্যের স্তর' %>"><table class="table table-sm mb-0 small">
               <thead>
                 <tr>
                   <th><%= t('store.wholesaleQtyCol') %></th>
@@ -160,7 +160,7 @@
                   <td><%= t('store.wholesaleTierLabel') %></td>
                 </tr>
               </tbody>
-            </table>
+            </table></div>
           </div>
         <% } %>
 
