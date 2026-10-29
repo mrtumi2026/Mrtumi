@@ -73,30 +73,33 @@ test('category seed refuses SQLite without opening a transaction', async () => {
   assert.equal(transactionCalls, 0);
 });
 
-test('category seed runs twice on disposable MySQL with exact bilingual counts and stable parent relationships', { skip: !MYSQL_HOST && MYSQL_SKIP_REASON }, async () => {
+test('category seed script runs twice on disposable MySQL with exact bilingual counts and stable parent relationships', { skip: !MYSQL_HOST && MYSQL_SKIP_REASON }, async () => {
   assert.equal(MYSQL_TEST_DB, 'mrtumi_test', 'integration test must only target the dedicated disposable test database');
+  const { execFileSync } = require('node:child_process');
   const pool = mysql.getPool();
+  const categorySlugs = CATEGORY_SEEDS.map((category) => category.slug);
+  const subcategorySlugs = CATEGORY_SEEDS.flatMap((category) => category.subcategories.map(([nameEn]) => `${category.slug}-${slugifyEnglish(nameEn)}`));
+  const placeholders = (values) => values.map(() => '?').join(',');
   try {
     await migrateDown(pool, { steps: 10 });
     await migrateUp(pool);
-    const before = await mysql.createQueryClient(pool).queryOne('SELECT (SELECT COUNT(*) FROM categories) AS categories,(SELECT COUNT(*) FROM subcategories) AS subcategories');
+    const db = mysql.createQueryClient(pool);
+    const before = await db.queryOne('SELECT (SELECT COUNT(*) FROM categories) AS categories,(SELECT COUNT(*) FROM subcategories) AS subcategories');
     assert.deepEqual([Number(before.categories), Number(before.subcategories)], [0, 0], 'the disposable schema starts without taxonomy rows');
-    const expectedSubcategoryCount = CATEGORY_SEEDS.reduce((count, category) => count + category.subcategories.length, 0);
-    const rollbackFixture = Object.assign(new Error('rollback category seed fixture'), { isOperational: true, code: 'TEST_FIXTURE_ROLLBACK' });
-
-    await assert.rejects(mysql.withTransaction(async (tx) => {
-      const runSeed = () => seedCategories({ dbClient: 'mysql', transaction: (work) => work(tx) });
-      const first = await runSeed();
-      const snapshot = async () => {
-        const categories = await tx.queryAll('SELECT id,slug,name_en,name_bn,icon,sort_order,front_view,status FROM categories ORDER BY slug');
-        const subcategories = await tx.queryAll('SELECT id,category_id,slug,name_en,name_bn,status FROM subcategories ORDER BY slug');
-        return {
-          categories: categories.map((row) => ({ ...row, id: Number(row.id), sort_order: Number(row.sort_order), front_view: Number(row.front_view), status: Number(row.status) })),
-          subcategories: subcategories.map((row) => ({ ...row, id: Number(row.id), category_id: Number(row.category_id), status: Number(row.status) })),
-        };
+    const expectedSubcategoryCount = subcategorySlugs.length;
+    const runScript = () => execFileSync(process.execPath, ['scripts/seed-categories.js'], { cwd: process.cwd(), env: process.env, encoding: 'utf8', timeout: 120000 });
+    const snapshot = async () => {
+      const categories = await db.queryAll(`SELECT id,slug,name_en,name_bn,icon,sort_order,front_view,status FROM categories ORDER BY slug`);
+      const subcategories = await db.queryAll(`SELECT id,category_id,slug,name_en,name_bn,status FROM subcategories ORDER BY slug`);
+      return {
+        categories: categories.map((row) => ({ ...row, id: Number(row.id), sort_order: Number(row.sort_order), front_view: Number(row.front_view), status: Number(row.status) })),
+        subcategories: subcategories.map((row) => ({ ...row, id: Number(row.id), category_id: Number(row.category_id), status: Number(row.status) })),
       };
+    };
+    try {
+      const firstOutput = runScript();
+      assert.equal(firstOutput.trim(), `Seeded 15 categories and ${expectedSubcategoryCount} subcategories into MySQL.`);
       const firstSnapshot = await snapshot();
-      assert.deepEqual(first, { categoryCount: 15, subcategoryCount: expectedSubcategoryCount });
       assert.equal(firstSnapshot.categories.length, 15);
       assert.equal(firstSnapshot.subcategories.length, expectedSubcategoryCount);
 
@@ -110,12 +113,16 @@ test('category seed runs twice on disposable MySQL with exact bilingual counts a
         assert.deepEqual(actualChildren, expectedChildren.map((row) => ({ ...row, status: 1 })), `subcategory names and category relationship match for ${category.slug}`);
       }
 
-      const second = await runSeed();
+      const secondOutput = runScript();
+      assert.equal(secondOutput.trim(), `Seeded 15 categories and ${expectedSubcategoryCount} subcategories into MySQL.`);
       const secondSnapshot = await snapshot();
-      assert.deepEqual(second, first, 'second run reports the same seeded counts');
-      assert.deepEqual(secondSnapshot, firstSnapshot, 'second run changes neither row counts, identities, names nor parent relationships');
-      throw rollbackFixture;
-    }), (error) => error === rollbackFixture);
+      assert.deepEqual(secondSnapshot, firstSnapshot, 'second script run changes neither row counts, identities, names nor parent relationships');
+    } finally {
+      await mysql.withTransaction(async (tx) => {
+        if (subcategorySlugs.length) await tx.execute(`DELETE FROM subcategories WHERE slug IN (${placeholders(subcategorySlugs)})`, subcategorySlugs);
+        await tx.execute(`DELETE FROM categories WHERE slug IN (${placeholders(categorySlugs)})`, categorySlugs);
+      }, { pool });
+    }
   } finally {
     await mysql.closePool();
   }
