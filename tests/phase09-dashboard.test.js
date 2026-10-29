@@ -41,6 +41,12 @@ describe('Phase 09 dashboard repository contract', () => {
     assert.equal(csrfError.statusCode,403,'authenticated state-changing admin requests require CSRF');
     let safeError=null; legacyAdminCsrf({method:'GET',path:'/admin/order/create',adminUser:{id:1},session:{}},{},err=>{safeError=err||null;});
     assert.equal(safeError,null,'safe methods do not require CSRF');
+    let uploadParseError=null;
+    legacyAdminCsrf({method:'POST',path:'/admin/phase06/products/12/gallery/upload',adminUser:{id:3},session:{},headers:{'content-type':'multipart/form-data; boundary=fixture'}},{},err=>{uploadParseError=err||null;});
+    assert.equal(uploadParseError,null,'the exact multipart gallery endpoint defers CSRF validation until Multer parses its body');
+    let unrelatedMultipartError=null;
+    legacyAdminCsrf({method:'POST',path:'/admin/phase06/products/12/gallery',adminUser:{id:3},session:{},headers:{'content-type':'multipart/form-data; boundary=fixture'}},{},err=>{unrelatedMultipartError=err||null;});
+    assert.equal(unrelatedMultipartError.statusCode,403,'the multipart CSRF exception does not extend to other admin routes');
   });
 
   test('legacy admin audit writer failure does not report a successful mutation', async () => {

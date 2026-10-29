@@ -229,6 +229,72 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     assert.equal((await request(`${base}/gallery`,{method:'POST',body:{gallery_paths:[first]}})).status,400,'legacy or missing entries fail closed without overwriting them');
   });
 
+  test('Phase 06 gallery uploads validate ownership, auth/CSRF, raster signatures and assignment rollback',async(t)=>{
+    if(!MYSQL_HOST)return t.skip(SKIP);
+    dashboardCookie=await login(fullEmail);csrfToken=await fetchCsrf(dashboardCookie);
+    const {cookie:noGrantCookie,token:noGrantToken}=await noGrantSession();
+    const fs=require('fs'),path=require('path'),upload=require('../src/middleware/upload');
+    const root=upload.resolveUploadBase(),productPath=`/admin/phase06/products/${productId}`;
+    const original=await db.queryOne('SELECT image_url,gallery_json FROM products WHERE id=?',[productId]);
+    const initialFiles=new Set(fs.readdirSync(root));
+    const ownedPaths=[];
+    t.after(async()=>{
+      await db.execute('DROP TRIGGER IF EXISTS p09_http_fail_gallery_upload');
+      await db.execute('UPDATE products SET image_url=?,gallery_json=? WHERE id=?',[original.image_url,original.gallery_json,productId]);
+      for(const imagePath of ownedPaths){
+        const basename=path.basename(imagePath),realRoot=fs.realpathSync(root),realFile=path.resolve(realRoot,basename);
+        assert.equal(path.dirname(realFile),realRoot,'cleanup target remains inside the isolated custom upload root');
+        const refs=Number((await db.queryOne('SELECT COUNT(*) AS n FROM products WHERE image_url=? OR CAST(gallery_json AS CHAR) LIKE CONCAT(\'%\',? ,\'%\')',[imagePath,imagePath])).n);
+        assert.equal(refs,0,'test-owned upload is unreferenced before cleanup');
+        if(fs.existsSync(realFile))fs.unlinkSync(realFile);
+      }
+    });
+    await db.execute('UPDATE products SET image_url=NULL,gallery_json=NULL WHERE id=?',[productId]);
+    const uploadRequest=async({files=[],cookie=dashboardCookie,token=csrfToken,fields={}}={})=>{
+      const form=new FormData();
+      if(token)form.append('_csrf',token);
+      for(const [key,value] of Object.entries(fields))form.append(key,String(value));
+      for(const file of files)form.append('gallery_images',new Blob([file.bytes],{type:file.type}),file.name);
+      const headers={accept:'application/json'};if(cookie)headers.cookie=cookie;
+      const response=await fetch(`${baseUrl}${productPath}/gallery/upload`,{method:'POST',headers,body:form,redirect:'manual'});
+      const text=await response.text();let json=null;try{json=JSON.parse(text);}catch{}
+      return {status:response.status,text,json};
+    };
+    const validPng={name:'../../gallery-owned.png',type:'image/png',bytes:Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a,0x00])};
+    const formPage=await request(`${productPath}/edit`,{accept:'text/html'});
+    assert.equal(formPage.status,200);assert.match(formPage.text,/enctype="multipart\/form-data"/);
+    assert.equal((await uploadRequest({files:[validPng],cookie:''})).status,401,'unauthenticated multipart upload is denied before storage');
+    assert.equal((await uploadRequest({files:[validPng],cookie:noGrantCookie,token:noGrantToken})).status,403,'inventory.manage is required for uploads');
+    const deniedCsrf=await uploadRequest({files:[validPng],token:''});
+    assert.equal(deniedCsrf.status,403,'multipart CSRF token is checked after parsing');
+    assert.deepEqual(new Set(fs.readdirSync(root)),initialFiles,'CSRF denial removes its newly stored file');
+    assert.equal((await uploadRequest({files:[{name:'unsafe.svg',type:'image/svg+xml',bytes:Buffer.from('<svg/>')}]})).status,400,'SVG is rejected by extension and MIME policy');
+    assert.deepEqual(new Set(fs.readdirSync(root)),initialFiles,'file-filter rejection leaves no upload artifact');
+    assert.equal((await uploadRequest({files:[{name:'fake.png',type:'image/png',bytes:Buffer.from('not a raster')}]})).status,400,'extension and MIME cannot bypass raster signature validation');
+    assert.deepEqual(new Set(fs.readdirSync(root)),initialFiles,'invalid raster signature is deleted');
+    const success=await uploadRequest({files:[validPng]});
+    assert.equal(success.status,200,success.text.slice(0,300));
+    const added=success.json.gallery.addedPaths;
+    assert.equal(added.length,1);
+    assert.match(added[0],/^\/uploads\/custom\/[A-Za-z0-9][A-Za-z0-9._-]*\.png$/,'client traversal filename is replaced by a generated safe basename');
+    assert.doesNotMatch(added[0],/\.\.|\\|%|[?#]/);
+    ownedPaths.push(added[0]);
+    assert.ok(fs.existsSync(path.join(root,path.basename(added[0]))));
+    assert.deepEqual(await db.queryOne('SELECT image_url,gallery_json FROM products WHERE id=?',[productId]),{image_url:added[0],gallery_json:JSON.stringify([added[0]])});
+    assert.ok(await db.queryOne("SELECT id FROM audit_logs WHERE action='product.gallery.upload' AND entity_id=?",[String(productId)]));
+    const beforeFiles=new Set(fs.readdirSync(root));
+    await db.execute("CREATE TRIGGER p09_http_fail_gallery_upload BEFORE INSERT ON audit_logs FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture gallery upload audit failure'");
+    const failed=await uploadRequest({files:[{...validPng,name:'rollback.png'}]});
+    assert.equal(failed.status,500,'failed audit is not reported as a successful upload');
+    await db.execute('DROP TRIGGER IF EXISTS p09_http_fail_gallery_upload');
+    assert.deepEqual(await db.queryOne('SELECT image_url,gallery_json FROM products WHERE id=?',[productId]),{image_url:added[0],gallery_json:JSON.stringify([added[0]])},'database assignment rolls back on audit failure');
+    assert.deepEqual(new Set(fs.readdirSync(root)),beforeFiles,'failed upload is cleaned without deleting the prior assigned image');
+    const corrupt=await uploadRequest({fields:{gallery_paths:'/uploads/custom/../secret.png'},files:[{...validPng,name:'another.png'}]});
+    assert.equal(corrupt.status,200,'client-supplied path fields are ignored; only request-owned uploaded files are assigned');
+    assert.equal(corrupt.json.gallery.galleryPaths.length,2);
+    ownedPaths.push(corrupt.json.gallery.addedPaths[0]);
+  });
+
   test('Phase 06 product CSV preview/commit/export is authorized, row-validated, atomic and spreadsheet-safe',async(t)=>{
     if(!MYSQL_HOST)return t.skip(SKIP);
     dashboardCookie=await login(fullEmail); csrfToken=await fetchCsrf(dashboardCookie);

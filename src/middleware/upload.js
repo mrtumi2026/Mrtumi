@@ -156,6 +156,7 @@ const upload = multer({
 });
 
 upload.validateUploadedImageFile = validateUploadedImageFile;
+upload.resolveUploadBase = resolveUploadBase;
 upload.hasValidRasterMagicBytes = hasValidRasterMagicBytes;
 upload.safeUnlink = safeUnlink;
 

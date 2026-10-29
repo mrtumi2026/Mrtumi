@@ -5,6 +5,7 @@ const express = require('express');
 const { requireAdmin } = require('../middleware/auth');
 const { requireCsrf } = require('../middleware/csrf');
 const repo = require('../repositories/phase06Repository');
+const upload = require('../middleware/upload');
 const csvRepo = require('../repositories/phase06ProductCsvRepository');
 const { recordAuditLog } = require('../repositories/auditLogRepository');
 const { ConflictError, ValidationError } = require('../utils/errors');
@@ -16,6 +17,22 @@ function actor(req) {
 }
 function wantsJson(req) { return req.accepts(['html','json']) === 'json' || req.is('application/json'); }
 function asyncRoute(fn) { return (req,res,next) => Promise.resolve(fn(req,res,next)).catch(next); }
+function parseGalleryMultipart(req,res,next){
+  upload.array('gallery_images',6)(req,res,(err)=>{
+    if(!err)return next();
+    if(err.name==='MulterError'){
+      const message=err.code==='LIMIT_FILE_SIZE'?'Each gallery image must be within the configured upload size limit.':'Upload no more than 6 gallery images in one request.';
+      return next(new ValidationError(message));
+    }
+    return next(err);
+  });
+}
+function verifyGalleryUploadCsrf(req,res,next){
+  requireCsrf(req,res,(err)=>{
+    if(err){for(const file of req.files||[])upload.safeUnlink(file.path);return next(err);}
+    return next();
+  });
+}
 
 const CSV_PREVIEW_TTL_MS = 15 * 60 * 1000;
 function sha256(value) { return crypto.createHash('sha256').update(String(value),'utf8').digest('hex'); }
@@ -108,6 +125,19 @@ router.post('/admin/phase06/products/:id/gallery', requireCsrf, asyncRoute(async
   if (wantsJson(req)) return res.json({ success:true, gallery });
   req.flash('success', req.locale === 'en' ? 'Gallery order saved. Image files were not changed or deleted.' : 'গ্যালারির ক্রম সংরক্ষিত হয়েছে। কোনো ছবি ফাইল বদলানো বা মুছে ফেলা হয়নি।');
   return res.redirect(`/admin/phase06/products/${req.params.id}/edit#gallery`);
+}));
+
+router.post('/admin/phase06/products/:id/gallery/upload',parseGalleryMultipart,verifyGalleryUploadCsrf,asyncRoute(async(req,res)=>{
+  const files=req.files||[];
+  let gallery;
+  try{
+    if(!files.length)throw new ValidationError('Choose at least one gallery image to upload.');
+    const paths=files.map((file)=>upload.validateUploadedImageFile(file));
+    gallery=await repo.appendProductGalleryImages(req.params.id,paths,actor(req));
+  }catch(err){for(const file of files)upload.safeUnlink(file.path);throw err;}
+  if(wantsJson(req))return res.json({success:true,gallery});
+  req.flash('success',req.locale==='en'?`${gallery.addedPaths.length} gallery image(s) uploaded and assigned. Existing files were not deleted.`:`${gallery.addedPaths.length}টি গ্যালারি ছবি আপলোড ও যুক্ত হয়েছে। পুরোনো ফাইল মুছে ফেলা হয়নি।`);
+  return res.redirect(`/admin/phase06/products/${gallery.productId}/edit#gallery`);
 }));
 
 router.post('/admin/phase06/products/:id/variants', requireCsrf, asyncRoute(async (req,res) => {

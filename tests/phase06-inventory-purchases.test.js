@@ -162,6 +162,112 @@ describe('Phase 06 — Product, Inventory Ledger, Supplier & Purchase Receiving'
     db.run('UPDATE products SET image=?,gallery=? WHERE id=?',first,JSON.stringify([first,second]),product.id);
   });
 
+  test('gallery upload assignment accepts only existing owned-root raster paths and rolls assignment back on audit failure',async()=>{
+    const product=db.get("SELECT id,image,gallery FROM products WHERE code='P06-TEST-001'");
+    const upload=require('../src/middleware/upload');
+    const root=upload.resolveUploadBase();
+    const nonce=`p06-${process.pid}-${Date.now()}`;
+    const imageName=`${nonce}.png`,rollbackName=`${nonce}-rollback.png`;
+    const imageFile=path.join(root,imageName),rollbackFile=path.join(root,rollbackName);
+    const outsideFile=path.join(os.tmpdir(),`${nonce}-outside.png`),symlinkFile=path.join(root,`${nonce}-link.png`);
+    const imagePath=`/uploads/custom/${imageName}`,rollbackPath=`/uploads/custom/${rollbackName}`,symlinkPath=`/uploads/custom/${path.basename(symlinkFile)}`;
+    const pngHeader=Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a,0x00]);
+    db.run("UPDATE products SET image='',gallery='[]' WHERE id=?",product.id);
+    fs.writeFileSync(imageFile,pngHeader); fs.writeFileSync(rollbackFile,pngHeader);fs.writeFileSync(outsideFile,pngHeader);fs.symlinkSync(outsideFile,symlinkFile);
+    try{
+      const result=await repo.appendProductGalleryImages(product.id,[imagePath],{id:7});
+      assert.deepEqual(result,{productId:product.id,imageUrl:imagePath,galleryPaths:[imagePath],addedPaths:[imagePath]});
+      assert.deepEqual(db.get('SELECT image,gallery FROM products WHERE id=?',product.id),{image:imagePath,gallery:JSON.stringify([imagePath])});
+      const audit=db.get("SELECT actor_id,action,after_json FROM audit_logs WHERE action='product.gallery.upload' AND entity_id=? ORDER BY id DESC LIMIT 1",String(product.id));
+      assert.equal(audit.actor_id,7); assert.equal(audit.action,'product.gallery.upload');
+      assert.deepEqual(JSON.parse(audit.after_json).addedPaths,[imagePath]);
+      await assert.rejects(()=>repo.appendProductGalleryImages(product.id,['/uploads/custom/../secret.png']),ValidationError);
+      await assert.rejects(()=>repo.appendProductGalleryImages(product.id,[symlinkPath]),ValidationError,'a symlink escaping the approved root is rejected');
+      await assert.rejects(()=>repo.appendProductGalleryImages(product.id,['/uploads/product/lychee-box.jpg']),ValidationError,'assignment accepts only request-owned uploads under custom root');
+      await assert.rejects(()=>repo.appendProductGalleryImages(product.id,['/uploads/custom/not-found.png']),ValidationError);
+      const galleryBefore=db.get('SELECT image,gallery FROM products WHERE id=?',product.id);
+      db.rawDb.exec("CREATE TRIGGER p06_fail_gallery_upload_audit BEFORE INSERT ON audit_logs WHEN NEW.action='product.gallery.upload' BEGIN SELECT RAISE(ABORT,'fixture gallery upload audit failure'); END");
+      try{await assert.rejects(()=>repo.appendProductGalleryImages(product.id,[rollbackPath]));}
+      finally{db.rawDb.exec('DROP TRIGGER IF EXISTS p06_fail_gallery_upload_audit');}
+      assert.deepEqual(db.get('SELECT image,gallery FROM products WHERE id=?',product.id),galleryBefore,'audit failure leaves gallery assignment unchanged');
+      assert.equal(Number(db.get("SELECT COUNT(*) AS n FROM audit_logs WHERE action='product.gallery.upload' AND entity_id=?",String(product.id)).n),1,'no partial upload audit record is written');
+    }finally{
+      db.run('UPDATE products SET image=?,gallery=? WHERE id=?',product.image,product.gallery,product.id);
+      for(const [file,pathValue] of [[imageFile,imagePath],[rollbackFile,rollbackPath]]){
+        const references=Number(db.get('SELECT COUNT(*) AS n FROM products WHERE image=? OR gallery LIKE ?',pathValue,`%${pathValue}%`).n);
+        assert.equal(references,0,'test-owned image is unreferenced before cleanup');
+        if(fs.existsSync(file))fs.unlinkSync(file);
+      }
+      if(fs.existsSync(symlinkFile))fs.unlinkSync(symlinkFile);
+      if(fs.existsSync(outsideFile))fs.unlinkSync(outsideFile);
+    }
+  });
+
+  test('gallery upload HTTP enforces auth, permission, CSRF, raster checks and file cleanup on rollback in SQLite mode',async()=>{
+    const express=require('express');
+    const {deriveCsrfToken}=require('../src/middleware/csrf');
+    const {legacyAdminRbac,legacyAdminCsrf}=require('../src/middleware/legacyAdminRbac');
+    const {createErrorHandler}=require('../src/middleware/errorHandler');
+    const phase06Routes=require('../src/routes/phase06');
+    const upload=require('../src/middleware/upload');
+    const root=upload.resolveUploadBase(),product=db.get("SELECT id,image,gallery FROM products WHERE code='P06-TEST-001'");
+    const original={image:product.image,gallery:product.gallery};
+    const initialFiles=new Set(fs.readdirSync(root));
+    const assigned=[];
+    const nonce='phase06-gallery-http-test-nonce';
+    const token=deriveCsrfToken('phase06-gallery-http-session',nonce);
+    const app=express();
+    app.use(express.urlencoded({extended:false}));app.use(express.json());
+    app.use((req,_res,next)=>{
+      req.sessionID='phase06-gallery-http-session';
+      const identity=String(req.headers['x-test-auth']||'granted');
+      req.session=identity==='anonymous'?{}:{_csrfNonce:nonce,adminUser:{id:7}};
+      req.adminUser=identity==='anonymous'?null:{id:7,role_slug:'phase06_test',permissions:identity==='no-grant'?[]:['inventory.manage']};
+      req.locale='en';req.csrfToken=()=>token;req.flash=()=>{};next();
+    });
+    app.use(legacyAdminRbac);app.use(legacyAdminCsrf);app.use(phase06Routes);app.use(createErrorHandler());
+    const server=await new Promise((resolve)=>{const instance=app.listen(0,'127.0.0.1',()=>resolve(instance));});
+    const send=async({auth='granted',csrf=true,file={name:'../unsafe.png',type:'image/png',bytes:Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a,0x00])}}={})=>{
+      const form=new FormData();if(csrf)form.append('_csrf',token);
+      if(file)form.append('gallery_images',new Blob([file.bytes],{type:file.type}),file.name);
+      const response=await fetch(`http://127.0.0.1:${server.address().port}/admin/phase06/products/${product.id}/gallery/upload`,{
+        method:'POST',headers:{accept:'application/json','x-test-auth':auth},body:form});
+      const text=await response.text();let json=null;try{json=JSON.parse(text);}catch{}
+      return {status:response.status,text,json};
+    };
+    try{
+      db.run("UPDATE products SET image='',gallery='[]' WHERE id=?",product.id);
+      assert.equal((await send({auth:'anonymous'})).status,401,'anonymous request is rejected before multipart upload storage');
+      assert.equal((await send({auth:'no-grant'})).status,403,'inventory.manage is required before file storage');
+      const noCsrf=await send({csrf:false});assert.equal(noCsrf.status,403,'multipart CSRF is enforced after parsing');
+      assert.deepEqual(new Set(fs.readdirSync(root)),initialFiles,'CSRF failure removes the just-uploaded file');
+      assert.equal((await send({file:{name:'unsafe.svg',type:'image/svg+xml',bytes:Buffer.from('<svg/>')}})).status,400);
+      assert.deepEqual(new Set(fs.readdirSync(root)),initialFiles,'rejected extension/MIME leaves no file');
+      assert.equal((await send({file:{name:'fake.png',type:'image/png',bytes:Buffer.from('not an image')}})).status,400);
+      assert.deepEqual(new Set(fs.readdirSync(root)),initialFiles,'invalid signature is removed');
+      const success=await send();assert.equal(success.status,200,success.text.slice(0,250));
+      const pathValue=success.json.gallery.addedPaths[0];assigned.push(pathValue);
+      assert.match(pathValue,/^\/uploads\/custom\/[A-Za-z0-9][A-Za-z0-9._-]*\.png$/);
+      assert.deepEqual(db.get('SELECT image,gallery FROM products WHERE id=?',product.id),{image:pathValue,gallery:JSON.stringify([pathValue])});
+      const beforeFiles=new Set(fs.readdirSync(root));
+      db.rawDb.exec("CREATE TRIGGER p06_http_fail_gallery_upload BEFORE INSERT ON audit_logs WHEN NEW.action='product.gallery.upload' BEGIN SELECT RAISE(ABORT,'fixture gallery upload audit failure'); END");
+      try{const failed=await send({file:{name:'rollback.png',type:'image/png',bytes:Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a,0x00])}});assert.equal(failed.status,500);}
+      finally{db.rawDb.exec('DROP TRIGGER IF EXISTS p06_http_fail_gallery_upload');}
+      assert.deepEqual(new Set(fs.readdirSync(root)),beforeFiles,'audit rollback removes only the upload from the failed request');
+      assert.deepEqual(db.get('SELECT image,gallery FROM products WHERE id=?',product.id),{image:pathValue,gallery:JSON.stringify([pathValue])});
+    }finally{
+      db.rawDb.exec('DROP TRIGGER IF EXISTS p06_http_fail_gallery_upload');
+      await new Promise((resolve)=>server.close(resolve));
+      db.run('UPDATE products SET image=?,gallery=? WHERE id=?',original.image,original.gallery,product.id);
+      for(const imagePath of assigned){
+        const file=path.join(root,path.basename(imagePath));
+        assert.equal(path.dirname(path.resolve(file)),fs.realpathSync(root));
+        assert.equal(Number(db.get('SELECT COUNT(*) AS n FROM products WHERE image=? OR gallery LIKE ?',imagePath,`%${imagePath}%`).n),0,'only unreferenced test-owned files are removed');
+        if(fs.existsSync(file))fs.unlinkSync(file);
+      }
+    }
+  });
+
   test('supplier creation validates fields and atomically records its audit event', async () => {
     const input = { name:'Verified supplier', supplier_code:'P06-SUP-AUDIT', phone:'+8801712345678', email:'supplier-audit@example.com', tax_or_trade_id:'BD-TIN-123' };
     const created = await repo.createSupplier(input, { id:7, ip:'192.0.2.8' });

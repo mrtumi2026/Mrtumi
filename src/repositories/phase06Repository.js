@@ -491,6 +491,59 @@ async function updateProductGallery(productIdInput, input, actor = {}) {
   }
 }
 
+function parseGalleryUploads(imagePaths) {
+  if(!Array.isArray(imagePaths)||imagePaths.length<1||imagePaths.length>6)throw new ValidationError('Upload between 1 and 6 gallery images per request.');
+  const paths=imagePaths.map((value)=>String(value??'').trim());
+  if(paths.some((value)=>!/^\/uploads\/custom\/[A-Za-z0-9][A-Za-z0-9._-]{0,249}$/.test(value)||!isApprovedGalleryPath(value)))
+    throw new ValidationError('Gallery uploads must be existing safe raster images under the approved custom upload root.');
+  if(new Set(paths).size!==paths.length)throw new ValidationError('Each uploaded gallery image must be unique.');
+  return paths;
+}
+
+async function appendProductGalleryImages(productIdInput,imagePaths,actor={}) {
+  const productId=positiveId(productIdInput,'Product');
+  const uploaded=parseGalleryUploads(imagePaths);
+  const save=async(tx)=>{
+    const row=await tx.queryOne('SELECT id,image_url,gallery_json,is_archived FROM products WHERE id=? FOR UPDATE',[productId]);
+    if(!row)throw new NotFoundError('Product not found.');
+    if(Number(row.is_archived))throw new ValidationError('Archived products must be restored before managing galleries.');
+    const current=collectEditableGallery(row);
+    if(current.blockedCount)throw new ValidationError('This product has legacy or missing gallery entries; no gallery changes were applied. Review those references before retrying.');
+    if(uploaded.some((value)=>current.paths.includes(value)))throw new ValidationError('An uploaded image is already assigned to this product.');
+    const paths=[...current.paths,...uploaded];
+    const beforeState={imageUrl:current.paths[0]||'',galleryPaths:current.paths};
+    const imageUrl=current.paths[0]||uploaded[0];
+    await tx.execute('UPDATE products SET image_url=?,gallery_json=? WHERE id=?',[imageUrl,JSON.stringify(paths),productId]);
+    const afterState={imageUrl,galleryPaths:paths,addedPaths:uploaded};
+    await recordAuditLog({actorType:'admin',actorId:actor.id||null,action:'product.gallery.upload',entityType:'product',entityId:productId,
+      beforeState,afterState,ipAddress:actor.ip||'',userAgent:actor.userAgent||''},tx);
+    return {productId,imageUrl,galleryPaths:paths,addedPaths:uploaded};
+  };
+  if(isMysql()){
+    const pool=require('../db/mysqlPool').getPool();
+    return withTransaction((tx)=>save(tx),{pool});
+  }
+  sqlite.rawDb.exec('BEGIN IMMEDIATE');
+  try{
+    const row=sqlite.get('SELECT id,image AS image_url,gallery AS gallery_json,is_archived FROM products WHERE id=?',productId);
+    if(!row)throw new NotFoundError('Product not found.');
+    if(Number(row.is_archived))throw new ValidationError('Archived products must be restored before managing galleries.');
+    const current=collectEditableGallery(row);
+    if(current.blockedCount)throw new ValidationError('This product has legacy or missing gallery entries; no gallery changes were applied. Review those references before retrying.');
+    if(uploaded.some((value)=>current.paths.includes(value)))throw new ValidationError('An uploaded image is already assigned to this product.');
+    const paths=[...current.paths,...uploaded];
+    const beforeState={imageUrl:current.paths[0]||'',galleryPaths:current.paths};
+    const imageUrl=current.paths[0]||uploaded[0];
+    sqlite.run('UPDATE products SET image=?,gallery=? WHERE id=?',imageUrl,JSON.stringify(paths),productId);
+    const afterState={imageUrl,galleryPaths:paths,addedPaths:uploaded};
+    sqlite.run(`INSERT INTO audit_logs (actor_type,actor_id,action,entity_type,entity_id,before_json,after_json,ip_address,user_agent)
+      VALUES ('admin',?,'product.gallery.upload','product',?,?,?,?,?)`,actor.id||null,String(productId),JSON.stringify(beforeState),JSON.stringify(afterState),
+      String(actor.ip||'').slice(0,64),String(actor.userAgent||'').slice(0,255));
+    sqlite.rawDb.exec('COMMIT');
+    return {productId,imageUrl,galleryPaths:paths,addedPaths:uploaded};
+  }catch(err){try{sqlite.rawDb.exec('ROLLBACK');}catch(_e){}throw err;}
+}
+
 async function listProductVariants(productIdInput) {
   const productId = positiveId(productIdInput, 'Product');
   if (isMysql()) {
@@ -971,4 +1024,4 @@ async function archiveProduct(idInput, archive, actor = {}) {
   return {id,archived:Boolean(archive)};
 }
 
-module.exports = { createSupplier,listSuppliers,getSupplierForEdit,updateSupplier,getSupplierPurchaseHistory,createProduct,normalizeProductEditInput,listProducts,getProductForEdit,listProductEditOptions,updateProduct,getProductGalleryForEdit,updateProductGallery,listProductVariants,createProductVariant,updateProductVariant,adjustStock,adjustVariantStock,listInventory,listStockLedger,createPurchase,listPurchases,receivePurchase,archiveProduct };
+module.exports = { createSupplier,listSuppliers,getSupplierForEdit,updateSupplier,getSupplierPurchaseHistory,createProduct,normalizeProductEditInput,listProducts,getProductForEdit,listProductEditOptions,updateProduct,getProductGalleryForEdit,updateProductGallery,appendProductGalleryImages,listProductVariants,createProductVariant,updateProductVariant,adjustStock,adjustVariantStock,listInventory,listStockLedger,createPurchase,listPurchases,receivePurchase,archiveProduct };

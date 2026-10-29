@@ -84,6 +84,11 @@ function legacyAdminRbac(req, _res, next) {
 
 function legacyAdminCsrf(req, res, next) {
   if (!req.path.startsWith('/admin') || !req.adminUser || SAFE_METHODS.has(req.method) || req.path === '/admin/login') return next();
+  // Multer must parse the multipart body before the CSRF field is readable. This exact upload path
+  // enforces requireCsrf immediately after upload parsing and removes any newly written files on denial.
+  const multipartUpload=req.method==='POST'&&/^\/admin\/phase06\/products\/\d+\/gallery\/upload$/.test(req.path)&&
+    String(req.headers?.['content-type']||'').toLowerCase().startsWith('multipart/form-data;');
+  if(multipartUpload)return next();
   return requireCsrf(req,res,next);
 }
 
