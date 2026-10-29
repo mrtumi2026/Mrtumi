@@ -158,16 +158,6 @@ async function reconcileCart(customerId, { caps = [], removals = [] } = {}) {
     for (const { item, maximum } of normalizedCaps) await tx.execute('UPDATE `customer_cart_items` SET `quantity`=LEAST(`quantity`,?) WHERE `customer_id`=? AND `product_id`=? AND `variant_id` <=> ?', [maximum, customerId, item.productId, item.variantId]);
   });
 }
-async function subtractCartLines(customerId, lines) {
-  const normalized = normalizeCartLines(lines);
-  await withTransaction(async (tx) => {
-    await lockCustomerCart(tx, customerId);
-    for (const item of normalized) {
-      await tx.execute('UPDATE `customer_cart_items` SET `quantity`=GREATEST(0,`quantity`-?) WHERE `customer_id`=? AND `product_id`=? AND `variant_id` <=> ?', [item.quantity, customerId, item.productId, item.variantId]);
-      await tx.execute('DELETE FROM `customer_cart_items` WHERE `customer_id`=? AND `product_id`=? AND `variant_id` <=> ? AND `quantity`<=0', [customerId, item.productId, item.variantId]);
-    }
-  });
-}
 async function replaceCart(customerId, sessionCart) {
   const normalized = normalizeCartLines(sessionCart);
   await withTransaction(async (tx) => {
@@ -190,4 +180,4 @@ async function clearCart(customerId) {
     await tx.execute('DELETE FROM `customer_cart_items` WHERE `customer_id`=?', [customerId]);
   });
 }
-module.exports = { normalizeBdPhone, validatePassword, registerCustomer, authenticateCustomer, listAddresses, saveAddress, deleteAddress, mergeCart, listCart, addCartLine, setCartLine, removeCartLine, reconcileCart, subtractCartLines, replaceCart, clearCart };
+module.exports = { normalizeBdPhone, validatePassword, registerCustomer, authenticateCustomer, listAddresses, saveAddress, deleteAddress, mergeCart, listCart, addCartLine, setCartLine, removeCartLine, reconcileCart, replaceCart, clearCart };
