@@ -619,7 +619,6 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
 
   test('legacy complaint routes use MySQL persistence, permission/CSRF, minimized audit and transactional resolution',async(t)=>{
     if(!MYSQL_HOST)return t.skip(SKIP);
-    dashboardCookie=await login(fullEmail);csrfToken=await fetchCsrf(dashboardCookie);
     const {cookie:noGrantCookie,token:noGrantToken}=await noGrantSession();
     assert.equal((await request('/admin/complaints',{cookie:noGrantCookie,token:noGrantToken,accept:'text/html'})).status,403,'customers.manage is required to read complaints');
     assert.equal((await request('/admin/complaints',{cookie:'',accept:'text/html'})).status,302,'complaint list requires authentication');
@@ -654,7 +653,6 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
 
   test('legacy contact inbox reads MySQL records and blocks destructive deletion pending retention policy',async(t)=>{
     if(!MYSQL_HOST)return t.skip(SKIP);
-    dashboardCookie=await login(fullEmail);csrfToken=await fetchCsrf(dashboardCookie);
     const {cookie:noGrantCookie,token:noGrantToken}=await noGrantSession();
     const marker=`P09 contact ${Date.now()}`;
     const email=`${Date.now()}@example.invalid`;
