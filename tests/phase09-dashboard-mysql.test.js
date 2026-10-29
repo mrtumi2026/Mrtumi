@@ -699,8 +699,8 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     const quick={order_id:listFixture.id,status:'confirmed',request_key:statusKey,reason:'Verified order details'};
     assert.equal((await request('/admin/order/status-quick',{method:'POST',token:'',body:quick})).status,403,'quick status requires CSRF');
     assert.equal((await request('/admin/order/status-quick',{method:'POST',cookie:noGrantCookie,token:noGrantToken,body:quick})).status,403,'quick status requires orders.manage');
-    assert.equal((await request('/admin/order/status-quick',{method:'POST',body:quick})).status,302);
-    assert.equal((await request('/admin/order/status-quick',{method:'POST',body:quick})).status,302,'duplicate quick status submission is idempotent');
+    const quickResult=await request('/admin/order/status-quick',{method:'POST',body:quick});assert.equal(quickResult.status,302,`quick status response: ${quickResult.text.slice(0,500)}`);
+    const quickReplay=await request('/admin/order/status-quick',{method:'POST',body:quick});assert.equal(quickReplay.status,302,`quick status replay response: ${quickReplay.text.slice(0,500)}`);
     assert.equal((await db.queryOne('SELECT order_status FROM orders WHERE id=?',[listFixture.id])).order_status,'confirmed');
     assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM order_status_history WHERE order_id=? AND request_key=?',[listFixture.id,statusKey])).n),1);
     assert.equal((await request('/admin/order/status-quick',{method:'POST',body:{...quick,status:'cancelled',request_key:`p09-status-block-${suffix}`} })).status,409,'D7 cancellation remains blocked');
