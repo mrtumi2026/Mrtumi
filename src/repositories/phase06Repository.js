@@ -299,14 +299,14 @@ async function listInventoryPage(filters={}) {
 async function getProductForEdit(idInput) {
   const id = positiveId(idInput, 'Product');
   if (isMysql()) {
-    const product = await require('../db/mysqlPool').queryOne(`SELECT id,sku,barcode,slug,product_type,name_bn,name_en,category_id,brand_id,
+    const product = await require('../db/mysqlPool').queryOne(`SELECT id,sku,barcode,slug,product_type,name_bn,name_en,category_id,subcategory_id,childcategory_id,brand_id,
       regular_price_paisa,sale_price_paisa,cost_price_paisa,wholesale_price_paisa,wholesale_min_qty,low_stock_threshold,unit_label,
       image_url,short_desc_bn,short_desc_en,description_bn,description_en,stock_on_hand,vendor_stock_on_hand,is_archived,status
       FROM products WHERE id=?`, [id]);
     if (!product) throw new NotFoundError('Product not found.');
     return product;
   }
-  const product = sqlite.get(`SELECT id,code AS sku,barcode,slug,product_type,name AS name_bn,name_en,category_id,brand_id,
+  const product = sqlite.get(`SELECT id,code AS sku,barcode,slug,product_type,name AS name_bn,name_en,category_id,subcategory_id,childcategory_id,brand_id,
     ROUND(old_price*100) AS regular_price_paisa,ROUND(new_price*100) AS sale_price_paisa,ROUND(purchase_price*100) AS cost_price_paisa,
     ROUND(wholesale_price*100) AS wholesale_price_paisa,wholesale_min_qty,low_stock_threshold,unit AS unit_label,image AS image_url,
     short_desc AS short_desc_bn,short_desc_en,description AS description_bn,description_en,stock AS stock_on_hand,
@@ -318,16 +318,43 @@ async function getProductForEdit(idInput) {
 async function listProductEditOptions() {
   if (isMysql()) {
     const pool = require('../db/mysqlPool');
-    const [categories, brands] = await Promise.all([
+    const [categories, subcategories, childcategories, brands] = await Promise.all([
       pool.queryAll('SELECT id,name_bn,name_en FROM categories WHERE status=1 ORDER BY sort_order,name_bn LIMIT 500'),
+      pool.queryAll('SELECT id,category_id,name_bn,name_en FROM subcategories WHERE status=1 ORDER BY name_bn LIMIT 1000'),
+      pool.queryAll('SELECT id,subcategory_id,name_bn,name_en FROM childcategories WHERE status=1 ORDER BY name_bn LIMIT 2000'),
       pool.queryAll('SELECT id,name_bn,name_en FROM brands WHERE status=1 ORDER BY name_bn LIMIT 500'),
     ]);
-    return { categories, brands };
+    return { categories, subcategories, childcategories, brands };
   }
   return {
     categories: sqlite.all('SELECT id,name AS name_bn,name_en FROM categories WHERE status=1 ORDER BY sort_order,name LIMIT 500'),
+    subcategories: sqlite.all('SELECT id,category_id,name AS name_bn,name_en FROM subcategories WHERE status=1 ORDER BY name LIMIT 1000'),
+    childcategories: sqlite.all('SELECT id,subcategory_id,name AS name_bn,name_en FROM childcategories WHERE status=1 ORDER BY name LIMIT 2000'),
     brands: sqlite.all('SELECT id,name AS name_bn,name_en FROM brands WHERE status=1 ORDER BY name LIMIT 500'),
   };
+}
+
+async function validateTaxonomyRelations(ids, db = null) {
+  const mysql = isMysql();
+  const one = async (sql, params) => mysql
+    ? (db ? db.queryOne(sql, params) : require('../db/mysqlPool').queryOne(sql, params))
+    : sqlite.get(sql, ...params);
+  if (ids.categoryId) {
+    const row = await one('SELECT id FROM categories WHERE id=? AND status=1', [ids.categoryId]);
+    if (!row) throw new ValidationError('Selected category does not exist or is inactive.');
+  }
+  if (ids.subcategoryId) {
+    if (!ids.categoryId) throw new ValidationError('A category is required when selecting a subcategory.');
+    const row = await one('SELECT id,category_id FROM subcategories WHERE id=? AND status=1', [ids.subcategoryId]);
+    if (!row) throw new ValidationError('Selected subcategory does not exist or is inactive.');
+    if (Number(row.category_id) !== Number(ids.categoryId)) throw new ValidationError('Selected subcategory does not belong to the selected category.');
+  }
+  if (ids.childcategoryId) {
+    if (!ids.subcategoryId) throw new ValidationError('A subcategory is required when selecting a child category.');
+    const row = await one('SELECT id,subcategory_id FROM childcategories WHERE id=? AND status=1', [ids.childcategoryId]);
+    if (!row) throw new ValidationError('Selected child category does not exist or is inactive.');
+    if (Number(row.subcategory_id) !== Number(ids.subcategoryId)) throw new ValidationError('Selected child category does not belong to the selected subcategory.');
+  }
 }
 
 function normalizeProductEditInput(input) {
@@ -337,6 +364,8 @@ function normalizeProductEditInput(input) {
     slug: slugify(input.slug),
     type: cleanText(input.product_type || 'grocery', 32, 'Product type', true),
     categoryId: positiveId(input.category_id, 'Category'),
+    subcategoryId: input.subcategory_id ? positiveId(input.subcategory_id, 'Subcategory') : null,
+    childcategoryId: input.childcategory_id ? positiveId(input.childcategory_id, 'Child category') : null,
     brandId: input.brand_id ? positiveId(input.brand_id, 'Brand') : null,
     unit: cleanText(input.unit_label, 50, 'Unit', true),
     regular: toPaisa(input.regular_price_bdt, 'Regular price'),
@@ -363,24 +392,23 @@ async function updateProduct(idInput, input, actor = {}) {
   if (isMysql()) {
     const pool = require('../db/mysqlPool').getPool();
     return withTransaction(async (tx) => {
-      const before = await tx.queryOne(`SELECT id,sku,barcode,slug,product_type,name_bn,name_en,category_id,brand_id,
+      const before = await tx.queryOne(`SELECT id,sku,barcode,slug,product_type,name_bn,name_en,category_id,subcategory_id,childcategory_id,brand_id,
         regular_price_paisa,sale_price_paisa,cost_price_paisa,wholesale_price_paisa,wholesale_min_qty,low_stock_threshold,unit_label,
         image_url,short_desc_bn,short_desc_en,description_bn,description_en,stock_on_hand,vendor_stock_on_hand,is_archived,status
         FROM products WHERE id=? FOR UPDATE`, [id]);
       if (!before) throw new NotFoundError('Product not found.');
       if (Number(before.is_archived)) throw new ValidationError('Archived products must be restored before editing.');
-      const category = await tx.queryOne('SELECT id FROM categories WHERE id=? AND status=1 FOR UPDATE', [product.categoryId]);
-      if (!category) throw new ValidationError('Selected category does not exist or is inactive.');
+      await validateTaxonomyRelations(product, tx);
       if (product.brandId) {
         const brand = await tx.queryOne('SELECT id FROM brands WHERE id=? AND status=1 FOR UPDATE', [product.brandId]);
         if (!brand) throw new ValidationError('Selected brand does not exist or is inactive.');
       }
       const duplicate = await tx.queryOne('SELECT id FROM products WHERE slug=? AND id<>? FOR UPDATE', [product.slug, id]);
       if (duplicate) throw new AppError('DUPLICATE_PRODUCT_SLUG', 'Product slug is already in use.', 409);
-      await tx.execute(`UPDATE products SET slug=?,product_type=?,name_bn=?,name_en=?,category_id=?,brand_id=?,regular_price_paisa=?,
+      await tx.execute(`UPDATE products SET slug=?,product_type=?,name_bn=?,name_en=?,category_id=?,subcategory_id=?,childcategory_id=?,brand_id=?,regular_price_paisa=?,
         sale_price_paisa=?,cost_price_paisa=?,wholesale_price_paisa=?,wholesale_min_qty=?,low_stock_threshold=?,unit_label=?,image_url=?,
         short_desc_bn=?,short_desc_en=?,description_bn=?,description_en=? WHERE id=?`,
-        [product.slug,product.type,product.nameBn,product.nameEn,product.categoryId,product.brandId,product.regular,product.sale,
+        [product.slug,product.type,product.nameBn,product.nameEn,product.categoryId,product.subcategoryId,product.childcategoryId,product.brandId,product.regular,product.sale,
           product.cost,product.wholesale,product.minQty,product.threshold,product.unit,product.image,product.shortBn,product.shortEn,
           product.descriptionBn,product.descriptionEn,id]);
       await recordAuditLog({ actorType:'admin',actorId:actor.id||null,action:'product.update',entityType:'product',entityId:id,
@@ -390,19 +418,19 @@ async function updateProduct(idInput, input, actor = {}) {
   }
   sqlite.rawDb.exec('BEGIN IMMEDIATE');
   try {
-    const before = sqlite.get(`SELECT id,code AS sku,barcode,slug,product_type,name AS name_bn,name_en,category_id,brand_id,
+    const before = sqlite.get(`SELECT id,code AS sku,barcode,slug,product_type,name AS name_bn,name_en,category_id,subcategory_id,childcategory_id,brand_id,
       ROUND(old_price*100) AS regular_price_paisa,ROUND(new_price*100) AS sale_price_paisa,ROUND(purchase_price*100) AS cost_price_paisa,
       ROUND(wholesale_price*100) AS wholesale_price_paisa,wholesale_min_qty,low_stock_threshold,unit AS unit_label,image AS image_url,
       short_desc AS short_desc_bn,short_desc_en,description AS description_bn,description_en,stock AS stock_on_hand,
       vendor_stock_on_hand,is_archived,status FROM products WHERE id=?`, id);
     if (!before) throw new NotFoundError('Product not found.');
     if (Number(before.is_archived)) throw new ValidationError('Archived products must be restored before editing.');
-    if (!sqlite.get('SELECT id FROM categories WHERE id=? AND status=1', product.categoryId)) throw new ValidationError('Selected category does not exist or is inactive.');
+    await validateTaxonomyRelations(product);
     if (product.brandId && !sqlite.get('SELECT id FROM brands WHERE id=? AND status=1', product.brandId)) throw new ValidationError('Selected brand does not exist or is inactive.');
     if (sqlite.get('SELECT id FROM products WHERE slug=? AND id<>?', product.slug, id)) throw new AppError('DUPLICATE_PRODUCT_SLUG', 'Product slug is already in use.', 409);
-    sqlite.run(`UPDATE products SET slug=?,product_type=?,name=?,name_en=?,category_id=?,brand_id=?,old_price=?,new_price=?,purchase_price=?,
+    sqlite.run(`UPDATE products SET slug=?,product_type=?,name=?,name_en=?,category_id=?,subcategory_id=?,childcategory_id=?,brand_id=?,old_price=?,new_price=?,purchase_price=?,
       wholesale_price=?,wholesale_min_qty=?,low_stock_threshold=?,unit=?,image=?,short_desc=?,short_desc_en=?,description=?,description_en=? WHERE id=?`,
-      product.slug,product.type,product.nameBn,product.nameEn,product.categoryId,product.brandId,product.regular/100,product.sale/100,
+      product.slug,product.type,product.nameBn,product.nameEn,product.categoryId,product.subcategoryId,product.childcategoryId,product.brandId,product.regular/100,product.sale/100,
       product.cost/100,product.wholesale/100,product.minQty,product.threshold,product.unit,product.image,product.shortBn,product.shortEn,
       product.descriptionBn,product.descriptionEn,id);
     sqlite.run(`INSERT INTO audit_logs (actor_type,actor_id,action,entity_type,entity_id,before_json,after_json,ip_address,user_agent)
@@ -718,6 +746,8 @@ async function createProduct(input, actor = {}) {
     slug: slugify(input.slug || input.name_en || input.name_bn || input.name),
     type: cleanText(input.product_type || 'grocery', 32, 'Product type', true),
     categoryId: input.category_id ? positiveId(input.category_id, 'Category') : null,
+    subcategoryId: input.subcategory_id ? positiveId(input.subcategory_id, 'Subcategory') : null,
+    childcategoryId: input.childcategory_id ? positiveId(input.childcategory_id, 'Child category') : null,
     brandId: input.brand_id ? positiveId(input.brand_id, 'Brand') : null,
     unit: cleanText(input.unit_label || input.unit || '1 pc', 50, 'Unit', true),
     regular: toPaisa(input.regular_price_bdt ?? input.old_price ?? '0', 'Regular price'),
@@ -737,19 +767,16 @@ async function createProduct(input, actor = {}) {
   if (isMysql()) {
     const pool = require('../db/mysqlPool').getPool();
     const out = await withTransaction(async (tx) => {
-      if (product.categoryId) {
-        const category = await tx.queryOne('SELECT id FROM categories WHERE id=? AND status=1 FOR UPDATE', [product.categoryId]);
-        if (!category) throw new ValidationError('Selected category does not exist or is inactive.');
-      }
+      await validateTaxonomyRelations(product, tx);
       if (product.brandId) {
         const brand = await tx.queryOne('SELECT id FROM brands WHERE id=? AND status=1 FOR UPDATE', [product.brandId]);
         if (!brand) throw new ValidationError('Selected brand does not exist or is inactive.');
       }
-      const result = await tx.execute(`INSERT INTO products (sku, barcode, slug, product_type, name_bn, name_en, category_id, brand_id,
+      const result = await tx.execute(`INSERT INTO products (sku, barcode, slug, product_type, name_bn, name_en, category_id, subcategory_id, childcategory_id, brand_id,
         regular_price_paisa, sale_price_paisa, cost_price_paisa, wholesale_price_paisa, wholesale_min_qty, low_stock_threshold,
         unit_label, image_url, short_desc_bn, short_desc_en, description_bn, description_en, approval_status, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', 1)`,
-        [product.sku, product.barcode || null, product.slug, product.type, product.nameBn, product.nameEn, product.categoryId, product.brandId,
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', 1)`,
+        [product.sku, product.barcode || null, product.slug, product.type, product.nameBn, product.nameEn, product.categoryId, product.subcategoryId, product.childcategoryId, product.brandId,
           product.regular, product.sale, product.cost, product.wholesale, product.minQty, product.threshold, product.unit,
           product.image, product.shortBn, product.shortEn, product.descriptionBn, product.descriptionEn]);
       if (input.opening_stock !== undefined && String(input.opening_stock).trim() !== '') {
@@ -766,11 +793,11 @@ async function createProduct(input, actor = {}) {
     return out;
   }
   if (sqlite.get('SELECT id FROM products WHERE code=?', product.sku)) throw new AppError('DUPLICATE_SKU', 'SKU already exists.', 409);
-  if (product.categoryId && !sqlite.get('SELECT id FROM categories WHERE id=? AND status=1', product.categoryId)) throw new ValidationError('Selected category does not exist or is inactive.');
-  const result = sqlite.run(`INSERT INTO products (code, barcode, slug, product_type, name, name_en, category_id, brand_id, old_price, new_price, purchase_price,
+  await validateTaxonomyRelations(product);
+  const result = sqlite.run(`INSERT INTO products (code, barcode, slug, product_type, name, name_en, category_id, subcategory_id, childcategory_id, brand_id, old_price, new_price, purchase_price,
     wholesale_price, wholesale_min_qty, low_stock_threshold, unit, image, short_desc, short_desc_en, description, description_en, stock, status, approval_status)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,1,'approved')`, product.sku, product.barcode || null, product.slug, product.type, product.nameBn, product.nameEn,
-    product.categoryId || 1, product.brandId || null, product.regular / 100, product.sale / 100, product.cost / 100, product.wholesale / 100,
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,1,'approved')`, product.sku, product.barcode || null, product.slug, product.type, product.nameBn, product.nameEn,
+    product.categoryId || 1, product.subcategoryId, product.childcategoryId, product.brandId || null, product.regular / 100, product.sale / 100, product.cost / 100, product.wholesale / 100,
     product.minQty, product.threshold, product.unit, product.image, product.shortBn, product.shortEn, product.descriptionBn, product.descriptionEn);
   const id = Number(result.lastInsertRowid);
   if (input.opening_stock !== undefined && String(input.opening_stock).trim() !== '') {

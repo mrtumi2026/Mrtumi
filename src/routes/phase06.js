@@ -53,7 +53,7 @@ router.get('/admin/phase06', asyncRoute(async (req,res) => {
   const [products, inventory, suppliers, purchases, ledger, taxonomy, inventorySummary] = await Promise.all([
     repo.listProducts(), repo.listInventoryPage(req.query), repo.listSuppliers(), repo.listPurchases(), repo.listStockLedger(req.query), repo.listProductEditOptions(), repo.getInventorySummary(),
   ]);
-  res.render('admin/phase06', { products, inventory, suppliers, purchases, ledger, inventorySummary, categories:taxonomy.categories, brands:taxonomy.brands,
+  res.render('admin/phase06', { products, inventory, suppliers, purchases, ledger, inventorySummary, categories:taxonomy.categories, subcategories:taxonomy.subcategories, childcategories:taxonomy.childcategories, brands:taxonomy.brands,
     pageTitle: req.locale === 'en' ? 'Products, Inventory & Purchasing' : 'পণ্য, ইনভেন্টরি ও পারচেজ', csrfToken: req.csrfToken() });
 }));
 
@@ -108,7 +108,7 @@ router.get('/admin/phase06/products/:id/edit', asyncRoute(async (req,res) => {
   const [product, options, variants, gallery] = await Promise.all([repo.getProductForEdit(req.params.id), repo.listProductEditOptions(), repo.listProductVariants(req.params.id), repo.getProductGalleryForEdit(req.params.id)]);
   const { paisaToBdtString } = require('../utils/money');
   res.render('admin/phase06-product-edit', {
-    product, categories:options.categories, brands:options.brands, variants, galleryPaths:gallery.paths, galleryBlockedCount:gallery.blockedCount, paisaToBdtString,
+    product, categories:options.categories, subcategories:options.subcategories, childcategories:options.childcategories, brands:options.brands, variants, galleryPaths:gallery.paths, galleryBlockedCount:gallery.blockedCount, paisaToBdtString,
     pageTitle: req.locale === 'en' ? `Edit ${product.sku}` : `${product.sku} সম্পাদনা`, csrfToken:req.csrfToken(), locale:req.locale,
   });
 }));

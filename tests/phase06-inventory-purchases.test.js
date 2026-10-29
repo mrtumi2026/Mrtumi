@@ -512,6 +512,39 @@ describe('Phase 06 — Product, Inventory Ledger, Supplier & Purchase Receiving'
     await assert.rejects(()=>repo.getSupplierPurchaseHistory(999999999),(err)=>err.statusCode===404,'missing suppliers return not found');
   });
 
+  test('product taxonomy selectors load linked options, persist valid edit values and reject unrelated or missing parents', async () => {
+    const categoryB=Number(db.run('INSERT INTO categories (name,slug,status) VALUES (?,?,1)','Other category','phase06-other-category').lastInsertRowid);
+    const subA=Number(db.run('INSERT INTO subcategories (category_id,name,slug,status) VALUES (?,?,?,1)',1,'Sub A','phase06-sub-a').lastInsertRowid);
+    const subB=Number(db.run('INSERT INTO subcategories (category_id,name,slug,status) VALUES (?,?,?,1)',categoryB,'Sub B','phase06-sub-b').lastInsertRowid);
+    const childA=Number(db.run('INSERT INTO childcategories (subcategory_id,name,slug,status) VALUES (?,?,?,1)',subA,'Child A','phase06-child-a').lastInsertRowid);
+    const childB=Number(db.run('INSERT INTO childcategories (subcategory_id,name,slug,status) VALUES (?,?,?,1)',subB,'Child B','phase06-child-b').lastInsertRowid);
+    const options=await repo.listProductEditOptions();
+    assert.ok(options.subcategories.some((row)=>Number(row.id)===subA&&Number(row.category_id)===1));
+    assert.ok(options.childcategories.some((row)=>Number(row.id)===childA&&Number(row.subcategory_id)===subA));
+    const product=await repo.createProduct({sku:'P06-TAXONOMY',name_bn:'শ্রেণি পণ্য',name_en:'Taxonomy product',slug:'p06-taxonomy-product',category_id:1,
+      subcategory_id:subA,childcategory_id:childA,regular_price_bdt:'20',sale_price_bdt:'18',cost_price_bdt:'10'});
+    let loaded=await repo.getProductForEdit(product.id);
+    assert.deepEqual([Number(loaded.category_id),Number(loaded.subcategory_id),Number(loaded.childcategory_id)],[1,subA,childA]);
+    const edit={name_bn:'শ্রেণি পণ্য',name_en:'Taxonomy product',slug:'p06-taxonomy-product-updated',product_type:'grocery',category_id:categoryB,
+      subcategory_id:subB,childcategory_id:childB,unit_label:'1 pc',regular_price_bdt:'20',sale_price_bdt:'18',cost_price_bdt:'10'};
+    await repo.updateProduct(product.id,edit,{id:7});
+    loaded=await repo.getProductForEdit(product.id);
+    assert.deepEqual([Number(loaded.category_id),Number(loaded.subcategory_id),Number(loaded.childcategory_id)],[categoryB,subB,childB]);
+    await assert.rejects(()=>repo.updateProduct(product.id,{...edit,subcategory_id:subA}, {id:7}),/does not belong/);
+    await assert.rejects(()=>repo.updateProduct(product.id,{...edit,childcategory_id:childA}, {id:7}),/does not belong/);
+    await assert.rejects(()=>repo.updateProduct(product.id,{...edit,subcategory_id:'not-an-id'}, {id:7}),ValidationError);
+    await assert.rejects(()=>repo.updateProduct(product.id,{...edit,subcategory_id:'',childcategory_id:childB}, {id:7}),/required when selecting/);
+    await assert.rejects(()=>repo.createProduct({sku:'P06-TAXONOMY-BAD',name_bn:'ভুল',slug:'p06-taxonomy-bad',category_id:categoryB,subcategory_id:subA,
+      regular_price_bdt:'1',sale_price_bdt:'1',cost_price_bdt:'0'}),/does not belong/);
+    await assert.rejects(()=>repo.createProduct({sku:'P06-TAXONOMY-MISSING',name_bn:'ভুল',slug:'p06-taxonomy-missing',subcategory_id:subA,
+      regular_price_bdt:'1',sale_price_bdt:'1',cost_price_bdt:'0'}),/category is required/);
+    await assert.rejects(()=>repo.createProduct({sku:'P06-TAXONOMY-CHILD',name_bn:'ভুল',slug:'p06-taxonomy-child',category_id:1,childcategory_id:childA,
+      regular_price_bdt:'1',sale_price_bdt:'1',cost_price_bdt:'0'}),/subcategory is required/);
+    db.run('UPDATE subcategories SET status=0 WHERE id=?',subA);
+    await assert.rejects(()=>repo.createProduct({sku:'P06-TAXONOMY-INACTIVE',name_bn:'ভুল',slug:'p06-taxonomy-inactive',category_id:1,subcategory_id:subA,
+      regular_price_bdt:'1',sale_price_bdt:'1',cost_price_bdt:'0'}),/inactive/);
+  });
+
   test('archiving preserves product identity and safe upload rejects SVG signatures', async () => {
     const product = db.get("SELECT id FROM products WHERE code='P06-TEST-001'");
     await repo.archiveProduct(product.id, true, { id: 7 });
