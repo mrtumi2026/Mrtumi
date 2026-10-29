@@ -477,6 +477,14 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
       assert.equal(Number((await client.queryOne("SELECT COUNT(*) AS n FROM incomplete_orders WHERE phone='01712345678' AND consent_given=1")).n),0,'checkout data is not captured before opt-in');
       const capture = await httpRequest(baseUrl,'/checkout/save-incomplete',{method:'POST',headers:{Cookie:cookieHeader,'Content-Type':'application/json','x-csrf-token':csrf[1]},body:JSON.stringify({name:'Checkout Test',phone:'01712345678',consent:'true',notification_consent:'false'})});
       assert.equal(capture.statusCode,200,`Recovery opt-in HTTP failed: ${capture.body.slice(0,500)}`);const capturePayload=JSON.parse(capture.body);assert.equal(capturePayload.ok,true);
+      const unrelatedSessionStart=await httpRequest(baseUrl,'/api/v1/csrf-token');
+      const unrelatedSessionCookie=(Array.isArray(unrelatedSessionStart.headers['set-cookie'])?unrelatedSessionStart.headers['set-cookie']:[unrelatedSessionStart.headers['set-cookie']]).filter(Boolean).map(value=>value.split(';')[0]).join('; ');
+      const unrelatedSessionCsrf=JSON.parse(unrelatedSessionStart.body).data.csrfToken;
+      assert.notEqual(unrelatedSessionCookie,cookieHeader,'withdrawal fixture uses a distinct session');
+      const crossSessionWithdrawal=await httpRequest(baseUrl,'/checkout/withdraw-recovery-consent',{method:'POST',headers:{Cookie:unrelatedSessionCookie,'Content-Type':'application/json','x-csrf-token':unrelatedSessionCsrf},body:JSON.stringify({record_id:capturePayload.id})});
+      assert.equal(crossSessionWithdrawal.statusCode,404,'a different session cannot withdraw another session’s recovery consent');
+      const afterRejectedWithdrawal=await client.queryOne('SELECT status,phone,customer_name,cart_json,consent_withdrawn_at FROM incomplete_orders WHERE id=?',[capturePayload.id]);
+      assert.equal(afterRejectedWithdrawal.status,'abandoned');assert.equal(afterRejectedWithdrawal.phone,'01712345678');assert.equal(afterRejectedWithdrawal.customer_name,'Checkout Test');assert.ok(afterRejectedWithdrawal.cart_json);assert.equal(afterRejectedWithdrawal.consent_withdrawn_at,null,'unauthorized withdrawal leaves the owner’s record intact');
       const form = new URLSearchParams({
         _csrf: csrf[1], checkout_request_key: requestKey[1], customer_name: 'Checkout Test', phone: '01712345678',
         address: 'House 1, Test Road, Dhanmondi', delivery_location_id: String(deliveryLocationId), payment_method: 'cod',
