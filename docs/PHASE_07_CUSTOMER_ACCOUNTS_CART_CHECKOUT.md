@@ -22,6 +22,25 @@
 - Customer cancellation ownership verification, full historical-order compatibility and reservation expiry/cleanup/recovery workflow.
 - Continue expanding route-level MySQL success/denial/CSRF/audit tests for remaining Phase 07 gaps; local MySQL-only skips do not count as passes.
 
+## Phase 07 acceptance audit classification (2026-10-29)
+
+These are slice-level classifications, not a Phase 07 completion claim. The full phase remains `IN PROGRESS`.
+
+| Acceptance area | Classification | Evidence / remaining boundary |
+|---|---|---|
+| Registration, login, logout, session regeneration, Bangladesh phone/password validation, address CRUD and ownership | `VERIFIED` for the implemented slice | Repository and HTTP regressions cover registration/login/guest-cart merge and address ownership; the current audit adds session-ID rotation assertions for login/registration and POST logout invalidation. The new MySQL route assertions require exact-SHA CI before being marked passed. Password recovery and profile/password lifecycle extensions remain blocked pending an authorized verified channel and owner policy (D6). |
+| Guest checkout, server-side cart/prices, cart availability and persistent-cart synchronization | `VERIFIED` for the implemented slice | Existing local and MySQL/MariaDB evidence covers strict quantities, live stock capping/removal, persistent reload, customer-lock/line-scoped concurrent mutations, guest-cart merge and rollback. A reproduced malformed cart-entry failure (`null`/`undefined` produced a raw `TypeError`) now returns a typed `ValidationError`/HTTP 400; local regression passes and live CI is pending for this audit commit. |
+| Duplicate submissions, idempotency, order creation/reservations, rollback and post-order cart behavior | `VERIFIED` for existing behavior; new assertions pending CI | Existing MySQL coverage verifies same-payload replay, changed-payload rejection, inventory contention/reservation and unpaid COD accounting. This audit adds failure-injection rollback assertions across order/lines/reservation/audit, plus authenticated post-order persistent-cart clearing and replay preservation of cart changes made afterward. |
+| Delivery fees and COD availability | `IMPLEMENTED` under current owner settings; target configuration is `BLOCKED` pending owner/operations evidence | Checkout reads active configured delivery locations and COD gateway rows and rejects inactive/missing selections; no defaults are seeded. This audit adds explicit inactive-COD/inactive-delivery regressions. Actual target-database rows and any production configuration remain unverified and are not changed here. |
+| Terms/privacy and consent/retention | `BLOCKED` by owner decision D6 | Required order confirmation and optional, explicit recovery opt-in are operational controls only; exact bilingual legal copy, purpose/version, retention/deletion and reviewer approval are not inferred. |
+| Customer cancellation ownership, OTP/advance payment, payment settlement, reservation cleanup schedule and recovery channel | `BLOCKED` by owner decisions / verified-provider or operational dependencies | Keep D6/D7 gates and the fail-closed behavior. No cancellation, collection, settlement, notification, retention, or production scheduling rule is invented by this audit. |
+
+### Implementable under existing policy
+
+- Reject malformed server-side cart entries as HTTP 400 validation errors instead of allowing a raw `TypeError` to reach the generic 500 handler (fixed; local test-first red/green evidence recorded in this task).
+- Strengthen MySQL HTTP regression evidence for login/registration session regeneration, logout, configured COD/delivery rejection, order transaction rollback, and the authenticated post-order cart-clear/replay boundary (added; pending exact-SHA MySQL 8.0 and MariaDB 10.11 CI).
+- Continue route-level validation/availability, duplicate-retry and transaction-failure coverage without changing approved delivery/COD settings.
+
 ## Verification and boundaries
 
 - The live-MySQL HTTP suite covers server-side prices, CSRF, configured COD/delivery, replay/mismatch, inventory reservation, unpaid/COD accounting, no payment insertion and success-page privacy. This continuation's guest and authenticated cart update availability/persistence tests passed MySQL 8.0 CI run `40498016622` on `15f96ea7bdbec7fd02ef62d7f2f91e1d47bf1558`; the full local suite separately reported 52 passed, 8 MySQL-only skipped, 0 failed. Local skips are not treated as passes; CI TAP totals are not inferred.

@@ -27,6 +27,7 @@ function normalizeLines(cart){
   if(!Array.isArray(cart)||cart.length<1||cart.length>100)throw new ValidationError('Your cart is empty or contains too many items.');
   const map=new Map();
   for(const item of cart){
+    if(!item||typeof item!=='object'||Array.isArray(item))throw new ValidationError('Your cart contains an invalid item.');
     const productId=requirePositiveInt(item.product_id??item.productId??item.id,'product ID');
     const variantId=item.variant_id||item.variantId?requirePositiveInt(item.variant_id??item.variantId,'variant ID'):null;
     const qty=requirePositiveInt(item.qty??item.quantity,'quantity',{max:99});

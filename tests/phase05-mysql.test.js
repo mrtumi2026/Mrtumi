@@ -542,9 +542,11 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
         assert.equal(added.statusCode, 200, `guest cart add failed: ${added.body.slice(0, 300)}`);
         cookie = (Array.isArray(added.headers['set-cookie']) ? added.headers['set-cookie'] : [added.headers['set-cookie']]).filter(Boolean).map((value) => value.split(';')[0]).join('; ') || cookie;
       }
+      const guestCookie = cookie;
       const authenticated = await httpRequest(baseUrl, '/customer/login', { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded', 'x-csrf-token': csrf }, body: new URLSearchParams({ phone, password: 'SecureCartPassword!2026' }).toString() });
       assert.equal(authenticated.statusCode, 302, `login failed: ${authenticated.body.slice(0, 300)}`);
       cookie = (Array.isArray(authenticated.headers['set-cookie']) ? authenticated.headers['set-cookie'] : [authenticated.headers['set-cookie']]).filter(Boolean).map((value) => value.split(';')[0]).join('; ') || cookie;
+      assert.notEqual(cookie, guestCookie, 'login regenerates the session identifier after authentication');
       const tokenResponse = await httpRequest(baseUrl, '/api/v1/csrf-token', { headers: { Cookie: cookie } });
       return { cookie, csrf: JSON.parse(tokenResponse.body).data.csrfToken };
     };
@@ -576,12 +578,98 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
     const registrationPhone = `018${String(Date.now()).slice(-8)}`;
     const registration = await httpRequest(baseUrl, '/customer/register', { method: 'POST', headers: { Cookie: registrationCookie, 'Content-Type': 'application/x-www-form-urlencoded', 'x-csrf-token': registrationCsrf }, body: new URLSearchParams({ name: 'Guest cart registration', phone: registrationPhone, password: 'SecureCartPassword!2026' }).toString() });
     assert.equal(registration.statusCode, 302, `registration with guest cart failed: ${registration.body.slice(0, 300)}`);
+    const registeredCookie = (Array.isArray(registration.headers['set-cookie']) ? registration.headers['set-cookie'] : [registration.headers['set-cookie']]).filter(Boolean).map((value) => value.split(';')[0]).join('; ');
+    assert.ok(registeredCookie && registeredCookie !== registrationCookie, 'registration regenerates the session identifier after account creation');
     const registeredCustomer = await client.queryOne('SELECT id FROM customers WHERE phone=?', [registrationPhone]);
     assert.ok(registeredCustomer);
     assert.equal(Number((await client.queryOne('SELECT quantity FROM customer_cart_items WHERE customer_id=? AND product_id=? AND variant_id=?', [registeredCustomer.id, inhouseProdId, variant5KgId])).quantity), 1, 'registration preserves and merges the guest cart');
+
+    const logout = await httpRequest(baseUrl, '/customer/logout', { method: 'POST', headers: { Cookie: guestSession.cookie, 'Content-Type': 'application/x-www-form-urlencoded', 'x-csrf-token': guestSession.csrf }, body: '' });
+    assert.equal(logout.statusCode, 302, 'logout is a CSRF-protected POST');
+    const afterLogout = await httpRequest(baseUrl, '/customer/account', { headers: { Cookie: guestSession.cookie } });
+    assert.equal(afterLogout.statusCode, 302, 'destroyed customer session cannot reopen the account page');
+    assert.match(afterLogout.headers.location, /^\/customer\/login/);
   });
 
-  test('5. Phase 07 deterministic concurrent persistent-cart adds do not lose quantity updates', { skip: !MYSQL_HOST ? SKIP_REASON : false }, async () => {
+  test('5. Phase 07 checkout uses only active owner-configured COD and delivery rows', { skip: !MYSQL_HOST ? SKIP_REASON : false }, async () => {
+    const product = await client.queryOne('SELECT id FROM products WHERE slug=?', ['artisan-date-gift-box']);
+    const input = { customer_name: 'Configured Checkout', phone: '01912345678', address: 'House 5, Config Road', delivery_location_id: deliveryLocationId, payment_method: 'cod' };
+    const makeOptions = (requestKey) => ({ locale: 'en', requestKey, cart: [{ product_id: product.id, qty: 1 }] });
+
+    await client.execute("UPDATE payment_gateways SET status=0 WHERE code='cod'");
+    try {
+      await assert.rejects(() => checkoutRepo.createOrder(input, makeOptions(`p07-no-cod-${Date.now()}`)), (err) => err.code === 'CONFLICT');
+    } finally {
+      await client.execute("UPDATE payment_gateways SET status=1 WHERE code='cod'");
+    }
+
+    await client.execute('UPDATE delivery_locations SET status=0 WHERE id=?', [deliveryLocationId]);
+    try {
+      await assert.rejects(() => checkoutRepo.createOrder(input, makeOptions(`p07-inactive-zone-${Date.now()}`)), (err) => err.code === 'VALIDATION_ERROR');
+    } finally {
+      await client.execute('UPDATE delivery_locations SET status=1 WHERE id=?', [deliveryLocationId]);
+    }
+  });
+
+  test('6. Phase 07 checkout order, lines, reservation and audit roll back together on injected audit failure', { skip: !MYSQL_HOST ? SKIP_REASON : false }, async () => {
+    const product = await client.queryOne('SELECT id,vendor_stock_reserved FROM products WHERE slug=?', ['artisan-date-gift-box']);
+    const requestKey = `p07-checkout-rollback-${Date.now()}`;
+    const reservedBefore = Number(product.vendor_stock_reserved);
+    const triggerName = `p07_fail_checkout_audit_${process.pid}`;
+    await client.execute(`CREATE TRIGGER \`${triggerName}\` BEFORE INSERT ON audit_logs FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='intentional checkout audit failure'`);
+    try {
+      await assert.rejects(() => checkoutRepo.createOrder({ customer_name: 'Rollback Checkout', phone: '01912345678', address: 'House 6, Rollback Road', delivery_location_id: deliveryLocationId, payment_method: 'cod' }, { locale: 'en', requestKey, cart: [{ product_id: product.id, qty: 1 }] }));
+    } finally {
+      await client.execute(`DROP TRIGGER IF EXISTS \`${triggerName}\``);
+    }
+    assert.equal(Number((await client.queryOne('SELECT COUNT(*) AS n FROM orders WHERE idempotency_key=?', [requestKey])).n), 0, 'failed checkout leaves no order');
+    assert.equal(Number((await client.queryOne('SELECT vendor_stock_reserved FROM products WHERE id=?', [product.id])).vendor_stock_reserved), reservedBefore, 'failed checkout leaves inventory unreserved');
+    assert.equal(Number((await client.queryOne("SELECT COUNT(*) AS n FROM stock_reservations WHERE reservation_key LIKE 'order:%' AND product_id=? AND status='active'", [product.id])).n), 0, 'failed checkout leaves no active reservation');
+  });
+
+  test('7. Phase 07 authenticated checkout clears the saved cart once; duplicate replay preserves later cart edits', { skip: !MYSQL_HOST ? SKIP_REASON : false }, async () => {
+    const phone = `013${String(Date.now()).slice(-8)}`;
+    const customer = await customerRepo.registerCustomer({ name: 'Checkout cart lifecycle', phone, password: 'SecureCartPassword!2026' });
+    const start = await httpRequest(baseUrl, '/api/v1/csrf-token');
+    let cookie = (Array.isArray(start.headers['set-cookie']) ? start.headers['set-cookie'] : [start.headers['set-cookie']]).filter(Boolean).map((value) => value.split(';')[0]).join('; ');
+    const loginCsrf = JSON.parse(start.body).data.csrfToken;
+    const login = await httpRequest(baseUrl, '/customer/login', { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded', 'x-csrf-token': loginCsrf }, body: new URLSearchParams({ phone, password: 'SecureCartPassword!2026' }).toString() });
+    assert.equal(login.statusCode, 302);
+    cookie = (Array.isArray(login.headers['set-cookie']) ? login.headers['set-cookie'] : [login.headers['set-cookie']]).filter(Boolean).map((value) => value.split(';')[0]).join('; ');
+    const product = await client.queryOne('SELECT id FROM products WHERE slug=?', ['artisan-date-gift-box']);
+    const csrfResponse = await httpRequest(baseUrl, '/api/v1/csrf-token', { headers: { Cookie: cookie } });
+    const cartCsrf = JSON.parse(csrfResponse.body).data.csrfToken;
+    const added = await httpRequest(baseUrl, '/cart/add', { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/json', Accept: 'application/json', 'x-csrf-token': cartCsrf }, body: JSON.stringify({ product_id: product.id, qty: 1 }) });
+    assert.equal(added.statusCode, 200, `authenticated cart add failed: ${added.body.slice(0, 300)}`);
+    const checkoutPage = await httpRequest(baseUrl, '/customer/checkout?lang=en', { headers: { Cookie: cookie } });
+    assert.equal(checkoutPage.statusCode, 200);
+    const csrf = checkoutPage.body.match(/name="_csrf" value="([^"]+)"/);
+    const requestKey = checkoutPage.body.match(/name="checkout_request_key" value="([^"]+)"/);
+    assert.ok(csrf && requestKey, 'checkout form contains CSRF and stable request keys');
+    const form = new URLSearchParams({
+      _csrf: csrf[1], checkout_request_key: requestKey[1], customer_name: customer.name, phone,
+      address: 'House 9, Cart Lifecycle Road', delivery_location_id: String(deliveryLocationId),
+      payment_method: 'cod', coupon_code: '', confirm_order: 'yes',
+    }).toString();
+    const submitted = await httpRequest(baseUrl, '/customer/checkout', { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' }, body: form });
+    assert.equal(submitted.statusCode, 302, `authenticated checkout failed: ${submitted.body.slice(0, 300)}`);
+    const invoice = decodeURIComponent(submitted.headers.location.split('/').pop());
+    const order = await client.queryOne('SELECT id,customer_id,idempotency_key FROM orders WHERE invoice_no=?', [invoice]);
+    assert.equal(Number(order.customer_id), Number(customer.id));
+    assert.equal(Number((await client.queryOne('SELECT COUNT(*) AS n FROM customer_cart_items WHERE customer_id=?', [customer.id])).n), 0, 'successful order clears persistent authenticated cart');
+    const emptyCart = await httpRequest(baseUrl, '/cart/json', { headers: { Cookie: cookie, Accept: 'application/json' } });
+    assert.equal(Number(JSON.parse(emptyCart.body).cartCount), 0, 'session cart is empty after checkout');
+
+    const laterAdd = await httpRequest(baseUrl, '/cart/add', { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/json', Accept: 'application/json', 'x-csrf-token': csrf[1] }, body: JSON.stringify({ product_id: product.id, qty: 1 }) });
+    assert.equal(laterAdd.statusCode, 200, 'customer can add an item after completing an order');
+    const replay = await httpRequest(baseUrl, '/customer/checkout', { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' }, body: form });
+    assert.equal(replay.statusCode, 302);
+    assert.equal(replay.headers.location, submitted.headers.location, 'retry resolves to the original invoice');
+    assert.equal(Number((await client.queryOne('SELECT COUNT(*) AS n FROM orders WHERE idempotency_key=?', [order.idempotency_key])).n), 1, 'retry does not create another order');
+    assert.equal(Number((await client.queryOne('SELECT quantity FROM customer_cart_items WHERE customer_id=? AND product_id=? AND variant_id IS NULL', [customer.id, product.id])).quantity), 1, 'replay does not clear cart changes made after the original order');
+  });
+
+  test('8. Phase 07 deterministic concurrent persistent-cart adds do not lose quantity updates', { skip: !MYSQL_HOST ? SKIP_REASON : false }, async () => {
     const phone = `016${String(Date.now()).slice(-8)}`;
     const customer = await customerRepo.registerCustomer({ name: 'Concurrent cart owner', phone, password: 'SecureCartPassword!2026' });
     const originalProduct = await client.queryOne('SELECT stock_on_hand,stock_reserved FROM products WHERE id=?', [inhouseProdId]);
@@ -626,7 +714,7 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
     }
   });
 
-  test('6. Phase 07 concurrent authenticated updates to separate cart lines preserve both changes', { skip: !MYSQL_HOST ? SKIP_REASON : false }, async () => {
+  test('9. Phase 07 concurrent authenticated updates to separate cart lines preserve both changes', { skip: !MYSQL_HOST ? SKIP_REASON : false }, async () => {
     const phone = `014${String(Date.now()).slice(-8)}`;
     const customer = await customerRepo.registerCustomer({ name: 'Concurrent update owner', phone, password: 'SecureCartPassword!2026' });
     const vendorProduct = await client.queryOne('SELECT id FROM products WHERE slug=?', ['artisan-date-gift-box']);
@@ -671,7 +759,7 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
     assert.equal(Number(final.find((row) => Number(row.product_id) === Number(vendorProduct.id))?.quantity), 2, 'customer B line update persists');
   });
 
-  test('7. Phase 07 failed persistent-cart replacement rolls back instead of deleting valid saved data', { skip: !MYSQL_HOST ? SKIP_REASON : false }, async () => {
+  test('10. Phase 07 failed persistent-cart replacement rolls back instead of deleting valid saved data', { skip: !MYSQL_HOST ? SKIP_REASON : false }, async () => {
     const phone = `015${String(Date.now()).slice(-8)}`;
     const customer = await customerRepo.registerCustomer({ name: 'Cart rollback owner', phone, password: 'SecureCartPassword!2026' });
     await client.execute('INSERT INTO customer_cart_items (customer_id,product_id,variant_id,quantity) VALUES (?,?,?,2)', [customer.id, inhouseProdId, variant5KgId]);
