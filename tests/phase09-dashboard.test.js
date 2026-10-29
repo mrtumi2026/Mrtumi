@@ -49,6 +49,18 @@ describe('Phase 09 dashboard repository contract', () => {
     assert.equal(unrelatedMultipartError.statusCode,403,'the multipart CSRF exception does not extend to other admin routes');
   });
 
+  test('HR employee repository validates calendar dates and MySQL admin routes delegate reads and writes', () => {
+    const employeeRepository = require('../src/repositories/hrmEmployeeRepository');
+    assert.equal(employeeRepository.dateOnly('2024-02-29'), '2024-02-29');
+    for (const value of ['', '2023-02-29', '2024-13-01', '2024-1-01', 'not-a-date']) {
+      assert.throws(() => employeeRepository.dateOnly(value), { code: 'VALIDATION_ERROR' });
+    }
+    const source = fs.readFileSync(path.join(__dirname, '../src/routes/adminOperations.js'), 'utf8');
+    assert.match(source, /env\.db\.client === 'mysql'[\s\S]{0,100}hrmEmployeeRepository\.listEmployees\(\)/);
+    assert.match(source, /hrmEmployeeRepository\.createEmployee\(req\.body/);
+    assert.match(source, /hrmEmployeeRepository\.deactivateEmployee\(req\.params\.id/);
+  });
+
   test('legacy admin audit writer failure does not report a successful mutation', async () => {
     let writtenEvent=null;
     const app=express();

@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 const db = require('../db/database');
 const { env } = require('../config/env');
 const adminBlogRepository = require('../repositories/adminBlogRepository');
+const hrmEmployeeRepository = require('../repositories/hrmEmployeeRepository');
 const { asyncHandler } = require('../utils/asyncHandler');
 const { requireAdmin } = require('../middleware/auth');
 
@@ -223,8 +224,10 @@ router.post('/admin/purchases/delete/:id', (req, res) => {
 });
 
 // ─── CRM / HR Module ───
-router.get('/admin/employees', (_req, res) => {
-  const rows = db.all('SELECT * FROM employees ORDER BY id DESC');
+router.get('/admin/employees', asyncHandler(async (req, res) => {
+  const rows = env.db.client === 'mysql'
+    ? await hrmEmployeeRepository.listEmployees()
+    : db.all('SELECT * FROM employees ORDER BY id DESC');
   res.render('admin/crud-module', {
     pageTitle: 'Employees (CRM / HR)',
     subtitle: 'প্রতিষ্ঠানের কর্মকর্তা ও কর্মচারীদের তালিকা',
@@ -250,28 +253,41 @@ router.get('/admin/employees', (_req, res) => {
     ],
     rows,
   });
-});
+}));
 
-router.post('/admin/employees/create', (req, res) => {
-  const { name, designation, phone, email, base_salary, join_date } = req.body;
-  db.run(
-    'INSERT INTO employees (name, designation, phone, email, base_salary, join_date) VALUES (?, ?, ?, ?, ?, ?)',
-    name,
-    designation,
-    phone,
-    email || '',
-    Number(base_salary || 15000),
-    join_date || '2026-01-01'
-  );
+router.post('/admin/employees/create', asyncHandler(async (req, res) => {
+  if (env.db.client === 'mysql') {
+    await hrmEmployeeRepository.createEmployee(req.body, {
+      id: req.adminUser?.id ?? req.session?.adminUser?.id ?? null,
+      ip: req.ip,
+      userAgent: req.get('user-agent'),
+    });
+    req.adminDomainAudit = true;
+  } else {
+    const { name, designation, phone, email, base_salary, join_date } = req.body;
+    db.run(
+      'INSERT INTO employees (name, designation, phone, email, base_salary, join_date) VALUES (?, ?, ?, ?, ?, ?)',
+      name, designation, phone, email || '', Number(base_salary || 15000), join_date || '2026-01-01'
+    );
+  }
   req.flash('success', 'নতুন এমপ্লয়ি যুক্ত হয়েছে।');
   res.redirect('/admin/employees');
-});
+}));
 
-router.post('/admin/employees/delete/:id', (req, res) => {
-  db.run('DELETE FROM employees WHERE id = ?', req.params.id);
-  req.flash('success', 'এমপ্লয়ি ডিলিট হয়েছে।');
+router.post('/admin/employees/delete/:id', asyncHandler(async (req, res) => {
+  if (env.db.client === 'mysql') {
+    await hrmEmployeeRepository.deactivateEmployee(req.params.id, {
+      id: req.adminUser?.id ?? req.session?.adminUser?.id ?? null,
+      ip: req.ip,
+      userAgent: req.get('user-agent'),
+    });
+    req.adminDomainAudit = true;
+  } else {
+    db.run('DELETE FROM employees WHERE id = ?', req.params.id);
+  }
+  req.flash('success', env.db.client === 'mysql' ? 'কর্মচারী নিষ্ক্রিয় করা হয়েছে।' : 'এমপ্লয়ি ডিলিট হয়েছে।');
   res.redirect('/admin/employees');
-});
+}));
 
 router.get('/admin/attendances', (_req, res) => {
   const rows = db.all(

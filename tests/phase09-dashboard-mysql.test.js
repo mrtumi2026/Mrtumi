@@ -582,6 +582,41 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     assert.equal(Number((await db.queryOne("SELECT COUNT(*) AS n FROM audit_logs WHERE action='inventory.variant.adjust' AND entity_id=?",[String(variantId)])).n),auditCount,'failed adjustment leaves no audit row');
   });
 
+  test('legacy employee HR routes use MySQL, exact-paisa salary, permission/CSRF, preserved history and atomic audit',async(t)=>{
+    if(!MYSQL_HOST)return t.skip(SKIP);
+    dashboardCookie=await login(fullEmail);csrfToken=await fetchCsrf(dashboardCookie);
+    const {cookie:noGrantCookie,token:noGrantToken}=await noGrantSession();
+    assert.equal((await request('/admin/employees',{cookie:'',accept:'text/html'})).status,302);
+    assert.equal((await request('/admin/employees',{cookie:noGrantCookie,token:noGrantToken,accept:'text/html'})).status,403,'hr.manage is required to read employee records');
+    const page=await request('/admin/employees',{accept:'text/html'});
+    assert.equal(page.status,200,page.text.slice(0,300));assert.match(page.text,/Employees \(CRM \/ HR\)/);
+    const phone=`017${String(Date.now()).slice(-8)}`;
+    const input={name:'MySQL HR fixture',designation:'Operations Assistant',phone,email:`hr-${Date.now()}@example.invalid`,base_salary:'17500.25',join_date:'2025-02-03'};
+    assert.equal((await request('/admin/employees/create',{method:'POST',body:input,token:''})).status,403,'employee create requires CSRF');
+    assert.equal((await request('/admin/employees/create',{method:'POST',cookie:noGrantCookie,token:noGrantToken,body:input})).status,403,'employee create requires hr.manage');
+    assert.equal((await request('/admin/employees/create',{method:'POST',body:{...input,base_salary:'17.500'}})).status,400,'sub-paisa salary input is rejected');
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM employees WHERE phone=?',[phone])).n),0,'invalid employee payload creates no row');
+    const created=await request('/admin/employees/create',{method:'POST',body:input});
+    assert.equal(created.status,302,created.text.slice(0,300));
+    const employee=await db.queryOne('SELECT id,name,designation,phone,email,base_salary_paisa,join_date,status FROM employees WHERE phone=?',[phone]);
+    assert.ok(employee);assert.equal(Number(employee.base_salary_paisa),1750025);assert.equal(employee.join_date,'2025-02-03');assert.equal(Number(employee.status),1);
+    const createdAudit=await db.queryOne("SELECT before_json,after_json FROM audit_logs WHERE action='hr.employee.created' AND entity_id=? ORDER BY id DESC LIMIT 1",[String(employee.id)]);
+    assert.ok(createdAudit);assert.doesNotMatch(`${createdAudit.before_json||''}${createdAudit.after_json||''}`,new RegExp(`${phone}|${input.email}|17500`),'employee audit payload excludes phone, email and salary');
+    assert.equal((await request('/admin/employees/create',{method:'POST',body:input})).status,409,'duplicate employee phone is reported as conflict');
+    await db.execute('INSERT INTO attendances(employee_id,att_date,status) VALUES(?,?,?)',[employee.id,'2025-02-03','present']);
+    await db.execute("CREATE TRIGGER p09_fail_employee_deactivate_audit BEFORE INSERT ON audit_logs FOR EACH ROW BEGIN IF NEW.action='hr.employee.deactivated' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture employee audit failure'; END IF; END");
+    try { assert.equal((await request(`/admin/employees/delete/${employee.id}`,{method:'POST'})).status,500,'audit failure is surfaced'); }
+    finally { await db.execute('DROP TRIGGER IF EXISTS p09_fail_employee_deactivate_audit'); }
+    assert.equal(Number((await db.queryOne('SELECT status FROM employees WHERE id=?',[employee.id])).status),1,'failed audit rolls deactivation back');
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM attendances WHERE employee_id=?',[employee.id])).n),1,'employee history is not deleted');
+    const deactivated=await request(`/admin/employees/delete/${employee.id}`,{method:'POST'});
+    assert.equal(deactivated.status,302,deactivated.text.slice(0,300));
+    assert.equal(Number((await db.queryOne('SELECT status FROM employees WHERE id=?',[employee.id])).status),0,'legacy delete action deactivates instead of cascading historical data');
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM attendances WHERE employee_id=?',[employee.id])).n),1);
+    const deactivatedAudit=await db.queryOne("SELECT before_json,after_json FROM audit_logs WHERE action='hr.employee.deactivated' AND entity_id=? ORDER BY id DESC LIMIT 1",[String(employee.id)]);
+    assert.deepEqual([JSON.parse(deactivatedAudit.before_json).status,JSON.parse(deactivatedAudit.after_json).status],[1,0]);
+  });
+
   test('legacy blog admin routes use MySQL persistence, permission/CSRF checks, and transactional audit',async(t)=>{
     if(!MYSQL_HOST)return t.skip(SKIP);
     dashboardCookie=await login(fullEmail); csrfToken=await fetchCsrf(dashboardCookie);
