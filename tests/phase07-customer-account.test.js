@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const { normalizeBdPhone, validatePassword, saveAddress } = require('../src/repositories/customerRepository');
 const checkoutRepository = require('../src/repositories/checkoutRepository');
 const { loadMigrationPairs } = require('../src/db/migrator');
+const { createErrorHandler } = require('../src/middleware/errorHandler');
 
 test('Phase 07 validates Bangladesh mobile number forms without accepting malformed values', () => {
   assert.equal(normalizeBdPhone('01712345678'), '01712345678');
@@ -32,6 +33,20 @@ test('Phase 07 malformed address payloads fail as validation errors before datab
       'malformed address payloads must not leak a TypeError or become a server error'
     );
   }
+});
+
+test('Malformed JSON request bodies return a client error instead of HTTP 500', () => {
+  const req = { requestId: 'phase07-malformed-json', method: 'POST', originalUrl: '/customer/account/addresses', path: '/customer/account/addresses', headers: { accept: 'application/json' }, xhr: false };
+  const res = {
+    statusCode: null,
+    body: null,
+    status(code) { this.statusCode = code; return this; },
+    json(body) { this.body = body; return this; },
+    send(body) { this.body = body; return this; },
+  };
+  createErrorHandler()({ type: 'entity.parse.failed', status: 400, message: 'malformed JSON' }, req, res, () => {});
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.body.error.code, 'INVALID_REQUEST_BODY');
 });
 
 test('Phase 07 enforces password bounds compatible with bcrypt', () => {

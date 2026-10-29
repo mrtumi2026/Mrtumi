@@ -11,15 +11,18 @@ const { attachRequestId, sendError, wantsJson } = require('../utils/apiResponse'
 function createErrorHandler({ persistErrorLog } = {}) {
   return function centralizedErrorHandler(err, req, res, _next) {
     const isOperational = Boolean(err instanceof AppError && err.isOperational);
-    const statusCode = err instanceof AppError ? err.statusCode : 500;
-    const code = err instanceof AppError ? err.code : 'INTERNAL_ERROR';
+    const malformedBody = err?.type === 'entity.parse.failed' || err?.type === 'entity.too.large';
+    const statusCode = err instanceof AppError ? err.statusCode : malformedBody ? (err.type === 'entity.too.large' ? 413 : 400) : 500;
+    const code = err instanceof AppError ? err.code : malformedBody ? 'INVALID_REQUEST_BODY' : 'INTERNAL_ERROR';
 
     const safeMessage =
       isOperational && statusCode < 500
         ? String(err.message || 'Request failed')
-        : !env.isProduction && err && err.message
-          ? String(err.message)
-          : 'An unexpected internal error occurred.';
+        : malformedBody
+          ? 'Invalid request body.'
+          : !env.isProduction && err && err.message
+            ? String(err.message)
+            : 'An unexpected internal error occurred.';
 
     if (statusCode >= 500) {
       logger.error('Unhandled request error', {
