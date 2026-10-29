@@ -2,7 +2,25 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const MYSQL_HOST = String(process.env.MYSQL_TEST_HOST || '').trim();
+const MYSQL_REQUIRED = process.env.MYSQL_TEST_REQUIRED === 'true';
+const MYSQL_TEST_DB = process.env.MYSQL_TEST_DB || 'mrtumi_test';
+if (MYSQL_REQUIRED && !MYSQL_HOST) throw new Error('MYSQL_TEST_REQUIRED=true, but MYSQL_TEST_HOST was not provided.');
+if (MYSQL_HOST && (!['127.0.0.1', 'localhost', '::1'].includes(MYSQL_HOST) || MYSQL_TEST_DB !== 'mrtumi_test')) {
+  throw new Error('Category seed integration test is restricted to the disposable local mrtumi_test database.');
+}
+if (MYSQL_HOST) {
+  process.env.DB_CLIENT = 'mysql';
+  process.env.DB_HOST = MYSQL_HOST;
+  process.env.DB_PORT = String(process.env.MYSQL_TEST_PORT || 3306);
+  process.env.DB_NAME = MYSQL_TEST_DB;
+  process.env.DB_USER = process.env.MYSQL_TEST_USER || 'mrtumi_test';
+  process.env.DB_PASSWORD = process.env.MYSQL_TEST_PASSWORD || 'mrtumi_test_pw';
+}
 const { CATEGORY_SEEDS, seedCategories, slugifyEnglish } = require('../scripts/seed-categories');
+const mysql = require('../src/db/mysqlPool');
+const { migrateUp, migrateDown } = require('../src/db/migrator');
+const MYSQL_SKIP_REASON = 'SKIPPED locally: no disposable MySQL 8.0 service; executed in required MySQL/MariaDB CI.';
 
 test('bilingual category taxonomy has 15 unique categories and stable unique subcategory slugs', () => {
   assert.equal(CATEGORY_SEEDS.length, 15);
@@ -53,4 +71,52 @@ test('category seed refuses SQLite without opening a transaction', async () => {
     /requires DB_CLIENT=mysql/
   );
   assert.equal(transactionCalls, 0);
+});
+
+test('category seed runs twice on disposable MySQL with exact bilingual counts and stable parent relationships', { skip: !MYSQL_HOST && MYSQL_SKIP_REASON }, async () => {
+  assert.equal(MYSQL_TEST_DB, 'mrtumi_test', 'integration test must only target the dedicated disposable test database');
+  const pool = mysql.getPool();
+  try {
+    await migrateDown(pool, { steps: 10 });
+    await migrateUp(pool);
+    const before = await mysql.createQueryClient(pool).queryOne('SELECT (SELECT COUNT(*) FROM categories) AS categories,(SELECT COUNT(*) FROM subcategories) AS subcategories');
+    assert.deepEqual([Number(before.categories), Number(before.subcategories)], [0, 0], 'the disposable schema starts without taxonomy rows');
+    const expectedSubcategoryCount = CATEGORY_SEEDS.reduce((count, category) => count + category.subcategories.length, 0);
+    const rollbackFixture = Object.assign(new Error('rollback category seed fixture'), { isOperational: true, code: 'TEST_FIXTURE_ROLLBACK' });
+
+    await assert.rejects(mysql.withTransaction(async (tx) => {
+      const runSeed = () => seedCategories({ dbClient: 'mysql', transaction: (work) => work(tx) });
+      const first = await runSeed();
+      const snapshot = async () => {
+        const categories = await tx.queryAll('SELECT id,slug,name_en,name_bn,icon,sort_order,front_view,status FROM categories ORDER BY slug');
+        const subcategories = await tx.queryAll('SELECT id,category_id,slug,name_en,name_bn,status FROM subcategories ORDER BY slug');
+        return {
+          categories: categories.map((row) => ({ ...row, id: Number(row.id), sort_order: Number(row.sort_order), front_view: Number(row.front_view), status: Number(row.status) })),
+          subcategories: subcategories.map((row) => ({ ...row, id: Number(row.id), category_id: Number(row.category_id), status: Number(row.status) })),
+        };
+      };
+      const firstSnapshot = await snapshot();
+      assert.deepEqual(first, { categoryCount: 15, subcategoryCount: expectedSubcategoryCount });
+      assert.equal(firstSnapshot.categories.length, 15);
+      assert.equal(firstSnapshot.subcategories.length, expectedSubcategoryCount);
+
+      const categoryBySlug = new Map(firstSnapshot.categories.map((row) => [row.slug, row]));
+      for (const [index, category] of CATEGORY_SEEDS.entries()) {
+        const actual = categoryBySlug.get(category.slug);
+        assert.ok(actual, `category ${category.slug} exists`);
+        assert.deepEqual([actual.name_en, actual.name_bn, actual.icon, actual.sort_order, actual.front_view, actual.status], [category.nameEn, category.nameBn, category.icon, index + 1, 1, 1]);
+        const expectedChildren = category.subcategories.map(([nameEn, nameBn]) => ({ name_en: nameEn, name_bn: nameBn, slug: `${category.slug}-${slugifyEnglish(nameEn)}` })).sort((a, b) => a.slug.localeCompare(b.slug));
+        const actualChildren = firstSnapshot.subcategories.filter((row) => row.category_id === actual.id).map(({ name_en, name_bn, slug, status }) => ({ name_en, name_bn, slug, status })).sort((a, b) => a.slug.localeCompare(b.slug));
+        assert.deepEqual(actualChildren, expectedChildren.map((row) => ({ ...row, status: 1 })), `subcategory names and category relationship match for ${category.slug}`);
+      }
+
+      const second = await runSeed();
+      const secondSnapshot = await snapshot();
+      assert.deepEqual(second, first, 'second run reports the same seeded counts');
+      assert.deepEqual(secondSnapshot, firstSnapshot, 'second run changes neither row counts, identities, names nor parent relationships');
+      throw rollbackFixture;
+    }), (error) => error === rollbackFixture);
+  } finally {
+    await mysql.closePool();
+  }
 });
