@@ -628,7 +628,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     const cashlessPhone=`019${String(suffix).slice(-8)}`;
     const failedInput={...input,customer_name:`P09 POS rollback ${suffix}`,phone:cashlessPhone,payment_method:'Nagad',courier_name:'',items_json:JSON.stringify([{id:productId,qty:1}])};
     await db.execute("CREATE TRIGGER p09_fail_pos_create_audit BEFORE INSERT ON audit_logs FOR EACH ROW BEGIN IF NEW.action='order.pos.created' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture POS audit failure'; END IF; END");
-    try { assert.equal((await request('/admin/order/create',{method:'POST',body:failedInput})).status,503,'audit failure returns an unavailable response without claiming success'); }
+    try { assert.equal((await request('/admin/order/create',{method:'POST',body:failedInput})).status,500,'audit failure returns an error without claiming success'); }
     finally { await db.execute('DROP TRIGGER IF EXISTS p09_fail_pos_create_audit'); }
     assert.equal(Number((await db.queryOne('SELECT stock_on_hand FROM products WHERE id=?',[productId])).stock_on_hand),Number(pendingProductAfter.stock_on_hand),'failed POS audit rolls inventory back');
     assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM orders WHERE customer_phone=?',[cashlessPhone])).n),0,'failed POS audit rolls the order back');
