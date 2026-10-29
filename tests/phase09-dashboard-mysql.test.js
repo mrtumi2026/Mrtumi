@@ -705,8 +705,8 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM order_status_history WHERE order_id=? AND request_key=?',[listFixture.id,statusKey])).n),1);
     assert.equal((await request('/admin/order/status-quick',{method:'POST',body:{...quick,status:'cancelled',request_key:`p09-status-block-${suffix}`} })).status,409,'D7 cancellation remains blocked');
     const bulk={order_ids:[bulkA.id,bulkB.id],bulk_action:'confirmed',request_key:`p09-bulk-${suffix}`};
-    assert.equal((await request('/admin/order/bulk-action',{method:'POST',body:bulk})).status,302);
-    assert.equal((await request('/admin/order/bulk-action',{method:'POST',body:bulk})).status,302,'duplicate bulk status request is idempotent');
+    const bulkResult=await request('/admin/order/bulk-action',{method:'POST',body:bulk});assert.equal(bulkResult.status,302,`bulk status response: ${bulkResult.text.slice(0,500)}`);
+    const bulkReplay=await request('/admin/order/bulk-action',{method:'POST',body:bulk});assert.equal(bulkReplay.status,302,`bulk status replay response: ${bulkReplay.text.slice(0,500)}`);
     assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM orders WHERE id IN (?,?) AND order_status=\'confirmed\'',[bulkA.id,bulkB.id])).n),2);
     assert.equal((await request('/admin/order/bulk-action',{method:'POST',body:{...bulk,bulk_action:'delete',request_key:`p09-bulk-delete-${suffix}`} })).status,409,'bulk deletion is blocked pending retention policy');
     assert.equal((await request('/admin/order/bulk-action',{method:'POST',body:{...bulk,bulk_action:'courier:Steadfast Courier',request_key:`p09-bulk-courier-${suffix}`} })).status,409,'bulk courier action never performs provider booking');
