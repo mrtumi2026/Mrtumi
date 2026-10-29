@@ -671,7 +671,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     const updateKey=`p09-item-update-${suffix}`;
     assert.equal((await request(`/admin/order/${target.id}/item-update/${line.id}`,{method:'POST',body:{qty:3,request_key:updateKey} })).status,302);
     assert.equal((await request(`/admin/order/${target.id}/item-update/${line.id}`,{method:'POST',body:{qty:3,request_key:updateKey} })).status,302,'duplicate quantity update does not reserve twice');
-    line=await db.queryOne('SELECT qty,line_total_paisa FROM order_items WHERE id=? AND order_id=?',[line.id,target.id]);assert.deepEqual([Number(line.qty),Number(line.line_total_paisa)],[3,30000]);
+    line=await db.queryOne('SELECT id,qty,line_total_paisa FROM order_items WHERE id=? AND order_id=?',[line.id,target.id]);assert.deepEqual([Number(line.qty),Number(line.line_total_paisa)],[3,30000]);
     assert.equal(Number((await db.queryOne('SELECT stock_reserved FROM products WHERE id=?',[productId])).stock_reserved),Number(initial.stock_reserved)+2);
     await db.execute("CREATE TRIGGER p09_fail_order_item_audit BEFORE INSERT ON audit_logs FOR EACH ROW BEGIN IF NEW.action='order.item.added' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture order item audit failure'; END IF; END");
     try { assert.equal((await request(`/admin/order/${target.id}/item-add`,{method:'POST',body:{product_id:productId,qty:1,request_key:`p09-item-rollback-${suffix}`} })).status,500,'item audit failure is not reported as success'); }
