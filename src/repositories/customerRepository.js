@@ -127,6 +127,47 @@ async function addCartLine(customerId, line, maxQuantity = 99) {
     return Number(saved?.quantity || 0);
   });
 }
+function normalizedCartIdentity(line) {
+  const quantity = Number(line?.qty ?? line?.quantity);
+  const [item] = normalizeCartLines([{ ...line, qty: quantity > 0 ? quantity : 1 }]);
+  return item || null;
+}
+async function setCartLine(customerId, line) {
+  const item = normalizedCartIdentity(line);
+  const quantity = Number(line?.qty ?? line?.quantity);
+  if (!item || !Number.isSafeInteger(quantity) || quantity < 1 || quantity > 99) throw new ValidationError('Cart quantity must be a whole number from 1 to 99.');
+  await withTransaction(async (tx) => {
+    await lockCustomerCart(tx, customerId);
+    await tx.execute('UPDATE `customer_cart_items` SET `quantity`=? WHERE `customer_id`=? AND `product_id`=? AND `variant_id` <=> ?', [quantity, customerId, item.productId, item.variantId]);
+  });
+}
+async function removeCartLine(customerId, line) {
+  const item = normalizedCartIdentity(line);
+  if (!item) return;
+  await withTransaction(async (tx) => {
+    await lockCustomerCart(tx, customerId);
+    await tx.execute('DELETE FROM `customer_cart_items` WHERE `customer_id`=? AND `product_id`=? AND `variant_id` <=> ?', [customerId, item.productId, item.variantId]);
+  });
+}
+async function reconcileCart(customerId, { caps = [], removals = [] } = {}) {
+  const normalizedCaps = caps.map((line) => ({ item: normalizedCartIdentity(line), maximum: Number(line.maxQuantity) })).filter(({ item, maximum }) => item && Number.isSafeInteger(maximum) && maximum >= 1 && maximum <= 99);
+  const normalizedRemovals = removals.map(normalizedCartIdentity).filter(Boolean);
+  await withTransaction(async (tx) => {
+    await lockCustomerCart(tx, customerId);
+    for (const item of normalizedRemovals) await tx.execute('DELETE FROM `customer_cart_items` WHERE `customer_id`=? AND `product_id`=? AND `variant_id` <=> ?', [customerId, item.productId, item.variantId]);
+    for (const { item, maximum } of normalizedCaps) await tx.execute('UPDATE `customer_cart_items` SET `quantity`=LEAST(`quantity`,?) WHERE `customer_id`=? AND `product_id`=? AND `variant_id` <=> ?', [maximum, customerId, item.productId, item.variantId]);
+  });
+}
+async function subtractCartLines(customerId, lines) {
+  const normalized = normalizeCartLines(lines);
+  await withTransaction(async (tx) => {
+    await lockCustomerCart(tx, customerId);
+    for (const item of normalized) {
+      await tx.execute('UPDATE `customer_cart_items` SET `quantity`=GREATEST(0,`quantity`-?) WHERE `customer_id`=? AND `product_id`=? AND `variant_id` <=> ?', [item.quantity, customerId, item.productId, item.variantId]);
+      await tx.execute('DELETE FROM `customer_cart_items` WHERE `customer_id`=? AND `product_id`=? AND `variant_id` <=> ? AND `quantity`<=0', [customerId, item.productId, item.variantId]);
+    }
+  });
+}
 async function replaceCart(customerId, sessionCart) {
   const normalized = normalizeCartLines(sessionCart);
   await withTransaction(async (tx) => {
@@ -149,4 +190,4 @@ async function clearCart(customerId) {
     await tx.execute('DELETE FROM `customer_cart_items` WHERE `customer_id`=?', [customerId]);
   });
 }
-module.exports = { normalizeBdPhone, validatePassword, registerCustomer, authenticateCustomer, listAddresses, saveAddress, deleteAddress, mergeCart, listCart, addCartLine, replaceCart, clearCart };
+module.exports = { normalizeBdPhone, validatePassword, registerCustomer, authenticateCustomer, listAddresses, saveAddress, deleteAddress, mergeCart, listCart, addCartLine, setCartLine, removeCartLine, reconcileCart, subtractCartLines, replaceCart, clearCart };

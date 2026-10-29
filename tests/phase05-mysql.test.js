@@ -643,15 +643,15 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
       return { cookie, csrf: JSON.parse(token.body).data.csrfToken };
     };
     const [first, second] = await Promise.all([makeSession(), makeSession()]);
-    const originalReplace = customerRepo.replaceCart;
+    const originalSetCartLine = customerRepo.setCartLine;
     let arrivals = 0;
     let openGate;
     const gate = new Promise((resolve) => { openGate = resolve; });
-    customerRepo.replaceCart = async (...args) => {
+    customerRepo.setCartLine = async (...args) => {
       arrivals += 1;
       if (arrivals === 2) openGate();
       await gate;
-      return originalReplace(...args);
+      return originalSetCartLine(...args);
     };
     let responses;
     try {
@@ -662,7 +662,7 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
         httpRequest(baseUrl, '/cart/update', { method: 'POST', headers: { Cookie: second.cookie, 'Content-Type': 'application/json', Accept: 'application/json', 'x-csrf-token': second.csrf }, body: JSON.stringify({ key: lineB, qty: 2 }) }),
       ]);
     } finally {
-      customerRepo.replaceCart = originalReplace;
+      customerRepo.setCartLine = originalSetCartLine;
     }
     assert.ok(responses.every((response) => response.statusCode === 200), responses.map((response) => response.body.slice(0, 200)).join('\n'));
     const final = await client.queryAll('SELECT product_id,variant_id,quantity FROM customer_cart_items WHERE customer_id=?', [customer.id]);
