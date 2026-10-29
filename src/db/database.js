@@ -13,6 +13,8 @@ let lazyRawDb = null;
  * when `DB_CLIENT=mysql` or `NODE_ENV=production`.
  */
 function assertSqliteAllowed() {
+  // Fail closed with an operational 503: legacy callers must migrate to async MySQL
+  // repositories, and production must never fall back to a local SQLite database.
   const runtimeNodeEnv = String(process.env.NODE_ENV || env.nodeEnv || '').toLowerCase();
   const runtimeDbClient = String(process.env.DB_CLIENT || env.db.client || '').toLowerCase();
 

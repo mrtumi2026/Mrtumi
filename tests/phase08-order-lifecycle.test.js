@@ -1,10 +1,22 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const phase08 = require('../src/repositories/phase08Repository');
 const { loadMigrationPairs, splitSqlStatements } = require('../src/db/migrator');
 const { requirePermission } = require('../src/middleware/rbac');
 const { requireCsrf, deriveCsrfToken } = require('../src/middleware/csrf');
+
+test('Phase 08 order view gets state constants from route locals, never require() inside EJS', () => {
+  const templatePath = path.join(__dirname, '..', 'views', 'admin', 'phase08-orders.ejs');
+  const routePath = path.join(__dirname, '..', 'src', 'routes', 'phase08Admin.js');
+  const template = fs.readFileSync(templatePath, 'utf8');
+  const route = fs.readFileSync(routePath, 'utf8');
+  assert.doesNotMatch(template, /require\s*\(/);
+  assert.match(template, /Object\.keys\(transitions\)/);
+  assert.match(route, /transitions:repo\.TRANSITIONS/);
+});
 
 test('Phase 08 state machine blocks invalid and terminal transitions', () => {
   assert.deepEqual(phase08.TRANSITIONS.pending, ['confirmed', 'cancelled', 'failed']);

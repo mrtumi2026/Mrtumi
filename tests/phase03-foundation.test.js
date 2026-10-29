@@ -184,18 +184,57 @@ describe('Phase 03 — Production SQLite Prohibition & DB Connection Failure Han
     const prevDbClient = process.env.DB_CLIENT;
     try {
       process.env.NODE_ENV = 'production';
-      assert.throws(() => sqliteDb.assertSqliteAllowed(), /prohibited in production/i);
+      let productionSqliteError;
+      assert.throws(() => sqliteDb.assertSqliteAllowed(), (err) => {
+        productionSqliteError = err;
+        return /prohibited in production/i.test(err.message);
+      });
+      assert.equal(productionSqliteError.code, 'SQLITE_PROHIBITED_IN_PRODUCTION');
+      assert.equal(productionSqliteError.statusCode, 503, 'blocked legacy calls are operational service-unavailable errors, not HTTP 500s');
 
       process.env.NODE_ENV = 'test';
       process.env.DB_CLIENT = 'mysql';
-      assert.throws(
-        () => sqliteDb.assertSqliteAllowed(),
-        /DB_CLIENT=mysql is active/i
-      );
+      let mysqlModeSqliteError;
+      assert.throws(() => sqliteDb.assertSqliteAllowed(), (err) => {
+        mysqlModeSqliteError = err;
+        return /DB_CLIENT=mysql is active/i.test(err.message);
+      });
+      assert.equal(mysqlModeSqliteError.code, 'SQLITE_CALLER_NOT_MIGRATED');
+      assert.equal(mysqlModeSqliteError.statusCode, 503);
     } finally {
       process.env.NODE_ENV = prevNodeEnv;
       process.env.DB_CLIENT = prevDbClient;
     }
+  });
+
+  test('Central error handler returns 503 for a blocked legacy SQLite call instead of HTTP 500', () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    let blockedError;
+    try {
+      process.env.NODE_ENV = 'production';
+      assert.throws(() => sqliteDb.assertSqliteAllowed(), (err) => {
+        blockedError = err;
+        return true;
+      });
+    } finally {
+      process.env.NODE_ENV = previousNodeEnv;
+    }
+
+    let responseStatus;
+    let responseBody;
+    const response = {
+      status(code) { responseStatus = code; return this; },
+      json(body) { responseBody = body; return this; },
+    };
+    createErrorHandler()(blockedError, {
+      headers: { accept: 'application/json' },
+      path: '/admin/legacy',
+      originalUrl: '/admin/legacy',
+      method: 'GET',
+      requestId: 'legacy-test-123',
+    }, response, () => {});
+    assert.equal(responseStatus, 503);
+    assert.equal(responseBody.error.code, 'SQLITE_PROHIBITED_IN_PRODUCTION');
   });
 
   test('Handles missing MySQL config and unreachable MySQL server cleanly without leaking secrets', async () => {
