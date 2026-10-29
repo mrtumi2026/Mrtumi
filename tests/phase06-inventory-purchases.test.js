@@ -29,6 +29,14 @@ after(() => {
 });
 
 describe('Phase 06 — Product, Inventory Ledger, Supplier & Purchase Receiving', () => {
+  test('inventory summaries handle an empty catalog without exposing valuation', async () => {
+    assert.deepEqual(await repo.getInventorySummary(), {
+      products:{product_count:0,warehouse_on_hand:0,warehouse_reserved:0,warehouse_available:0,vendor_on_hand:0,vendor_reserved:0,vendor_available:0,low_stock_products:0,no_available_products:0},
+      variants:{variant_count:0,active_variant_count:0,inactive_variant_count:0,warehouse_on_hand:0,warehouse_reserved:0,warehouse_available:0,no_available_variants:0},
+    });
+    assert.deepEqual(await repo.listInventory(),[]);
+  });
+
   test('product creation uses unique SKU, validates money and writes opening stock ledger once', async () => {
     const created = await repo.createProduct({
       sku: 'P06-TEST-001', name_bn: 'পরীক্ষা পণ্য', name_en: 'Test Product', slug: 'phase06-test-product',
@@ -38,6 +46,12 @@ describe('Phase 06 — Product, Inventory Ledger, Supplier & Purchase Receiving'
     assert.ok(created.id > 0);
     assert.equal(db.get('SELECT stock FROM products WHERE id=?', created.id).stock, 8);
     assert.equal(db.get("SELECT COUNT(*) AS n FROM stock_ledger WHERE product_id=? AND movement_type='opening'", created.id).n, 1);
+    const summary=await repo.getInventorySummary();
+    assert.deepEqual(summary.products,{product_count:1,warehouse_on_hand:8,warehouse_reserved:0,warehouse_available:8,vendor_on_hand:0,vendor_reserved:0,vendor_available:0,low_stock_products:0,no_available_products:0});
+    const inventoryRows=await repo.listInventory();
+    assert.equal(inventoryRows[0].warehouse_available,8);
+    assert.equal(inventoryRows[0].cost_price_paisa,undefined);
+    assert.equal(inventoryRows[0].remaining_value_paisa,undefined);
     await assert.rejects(() => repo.createProduct({
       sku: 'P06-TEST-001', name_bn: 'দ্বিতীয়', slug: 'phase06-test-product-2', category_id: 1,
       regular_price_bdt: '1', sale_price_bdt: '1', cost_price_bdt: '0'
@@ -66,6 +80,10 @@ describe('Phase 06 — Product, Inventory Ledger, Supplier & Purchase Receiving'
       regular_price_bdt:'10',sale_price_bdt:'10',cost_price_bdt:'5'});
     const zeroThreshold=await repo.listInventoryPage({q:'P06-PAGE-ZERO',filter:'low'});
     assert.equal(zeroThreshold.total,1,'zero stock at a zero threshold preserves the existing admin LOW comparison');
+    const summary=await repo.getInventorySummary();
+    assert.equal(summary.products.product_count,32);
+    assert.equal(summary.products.low_stock_products,6,'summary uses the existing warehouse-available <= threshold rule');
+    assert.equal(summary.products.no_available_products,1);
     const escaped=await repo.listInventoryPage({q:'P06-PAGE-%'});
     assert.equal(escaped.total,0,'LIKE wildcards in user text are treated literally');
     const invalid=await repo.listInventoryPage({sort:'name;DROP TABLE products',page:'-3'});
@@ -375,6 +393,8 @@ describe('Phase 06 — Product, Inventory Ledger, Supplier & Purchase Receiving'
     const product=db.get("SELECT id FROM products WHERE code='P06-TEST-001'");
     const variant=await repo.createProductVariant(product.id,{variant_sku:`P06-VAR-STOCK-${process.pid}-${Date.now()}`,size_label:'500 g',color_label:'',price_bdt:'5.00'},{id:7});
     db.run('UPDATE product_variants SET stock_on_hand=5,stock_reserved=2 WHERE id=?',variant.id);
+    const inventorySummary=await repo.getInventorySummary();
+    assert.deepEqual(inventorySummary.variants,{variant_count:2,active_variant_count:1,inactive_variant_count:1,warehouse_on_hand:13,warehouse_reserved:5,warehouse_available:8,no_available_variants:0},'all variant balances are summarized separately from parent products, with active/inactive counts');
     const movement=await repo.adjustVariantStock(product.id,variant.id,{qty_delta:3,reason:'Verified variant count'},{id:7});
     assert.deepEqual(movement,{productId:product.id,variantId:variant.id,previousBalance:5,reservedBalance:2,qtyDelta:3,balanceAfter:8,stockPool:'warehouse'});
     assert.equal(Number(db.get('SELECT stock_on_hand FROM product_variants WHERE id=?',variant.id).stock_on_hand),8);

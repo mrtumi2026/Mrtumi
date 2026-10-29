@@ -865,17 +865,56 @@ async function adjustVariantStock(productIdInput, variantIdInput, input, actor =
   }catch(err){try{sqlite.rawDb.exec('ROLLBACK');}catch(_e){}throw err;}
 }
 
+async function getInventorySummary() {
+  const mysql=isMysql();
+  const productSql=mysql
+    ? `SELECT COUNT(*) AS product_count,
+        COALESCE(SUM(p.stock_on_hand),0) AS warehouse_on_hand,
+        COALESCE(SUM(p.stock_reserved),0) AS warehouse_reserved,
+        COALESCE(SUM(p.stock_on_hand-p.stock_reserved),0) AS warehouse_available,
+        COALESCE(SUM(p.vendor_stock_on_hand),0) AS vendor_on_hand,
+        COALESCE(SUM(p.vendor_stock_reserved),0) AS vendor_reserved,
+        COALESCE(SUM(p.vendor_stock_on_hand-p.vendor_stock_reserved),0) AS vendor_available,
+        COALESCE(SUM(CASE WHEN p.stock_on_hand-p.stock_reserved<=p.low_stock_threshold THEN 1 ELSE 0 END),0) AS low_stock_products,
+        COALESCE(SUM(CASE WHEN p.stock_on_hand-p.stock_reserved<=0 THEN 1 ELSE 0 END),0) AS no_available_products
+      FROM products p WHERE p.is_archived=0`
+    : `SELECT COUNT(*) AS product_count,
+        COALESCE(SUM(p.stock),0) AS warehouse_on_hand,
+        COALESCE(SUM(p.stock_reserved),0) AS warehouse_reserved,
+        COALESCE(SUM(p.stock-p.stock_reserved),0) AS warehouse_available,
+        COALESCE(SUM(p.vendor_stock_on_hand),0) AS vendor_on_hand,
+        COALESCE(SUM(p.vendor_stock_reserved),0) AS vendor_reserved,
+        COALESCE(SUM(p.vendor_stock_on_hand-p.vendor_stock_reserved),0) AS vendor_available,
+        COALESCE(SUM(CASE WHEN p.stock-p.stock_reserved<=p.low_stock_threshold THEN 1 ELSE 0 END),0) AS low_stock_products,
+        COALESCE(SUM(CASE WHEN p.stock-p.stock_reserved<=0 THEN 1 ELSE 0 END),0) AS no_available_products
+      FROM products p WHERE p.is_archived=0`;
+  const variantSql=`SELECT COUNT(*) AS variant_count,
+      COALESCE(SUM(CASE WHEN v.status=1 THEN 1 ELSE 0 END),0) AS active_variant_count,
+      COALESCE(SUM(CASE WHEN v.status=0 THEN 1 ELSE 0 END),0) AS inactive_variant_count,
+      COALESCE(SUM(v.stock_on_hand),0) AS warehouse_on_hand,
+      COALESCE(SUM(v.stock_reserved),0) AS warehouse_reserved,
+      COALESCE(SUM(v.stock_on_hand-v.stock_reserved),0) AS warehouse_available,
+      COALESCE(SUM(CASE WHEN v.stock_on_hand-v.stock_reserved<=0 THEN 1 ELSE 0 END),0) AS no_available_variants
+    FROM product_variants v JOIN products p ON p.id=v.product_id
+    WHERE p.is_archived=0`;
+  const [productRows,variantRows]=mysql
+    ? await Promise.all([require('../db/mysqlPool').queryOne(productSql),require('../db/mysqlPool').queryOne(variantSql)])
+    : [sqlite.get(productSql),sqlite.get(variantSql)];
+  const numeric=(row,keys)=>Object.fromEntries(keys.map((key)=>[key,Number(row[key]||0)]));
+  return {
+    products:numeric(productRows,['product_count','warehouse_on_hand','warehouse_reserved','warehouse_available','vendor_on_hand','vendor_reserved','vendor_available','low_stock_products','no_available_products']),
+    variants:numeric(variantRows,['variant_count','active_variant_count','inactive_variant_count','warehouse_on_hand','warehouse_reserved','warehouse_available','no_available_variants']),
+  };
+}
+
 async function listInventory() {
   if (isMysql()) return require('../db/mysqlPool').queryAll(`SELECT p.id,p.sku,p.name_bn,p.name_en,p.unit_label,p.low_stock_threshold,
     p.stock_on_hand,p.stock_reserved,(p.stock_on_hand-p.stock_reserved) AS warehouse_available,
-    p.vendor_stock_on_hand,p.vendor_stock_reserved,(p.vendor_stock_on_hand-p.vendor_stock_reserved) AS vendor_available,
-    p.cost_price_paisa, COALESCE(SUM(CASE WHEN sl.stock_pool='warehouse' AND sl.unit_cost_paisa IS NOT NULL THEN sl.qty_delta*sl.unit_cost_paisa END),0) AS remaining_value_paisa
-    FROM products p LEFT JOIN stock_ledger sl ON sl.product_id=p.id
-    WHERE p.is_archived=0 GROUP BY p.id ORDER BY p.id DESC LIMIT 1000`);
+    p.vendor_stock_on_hand,p.vendor_stock_reserved,(p.vendor_stock_on_hand-p.vendor_stock_reserved) AS vendor_available
+    FROM products p WHERE p.is_archived=0 ORDER BY p.id DESC LIMIT 1000`);
   return sqlite.all(`SELECT p.id,p.code AS sku,p.name AS name_bn,p.name_en,p.unit AS unit_label,p.low_stock_threshold,
     p.stock AS stock_on_hand,p.stock_reserved,(p.stock-p.stock_reserved) AS warehouse_available,
-    p.vendor_stock_on_hand,p.vendor_stock_reserved,(p.vendor_stock_on_hand-p.vendor_stock_reserved) AS vendor_available,
-    p.purchase_price*100 AS cost_price_paisa,0 AS remaining_value_paisa
+    p.vendor_stock_on_hand,p.vendor_stock_reserved,(p.vendor_stock_on_hand-p.vendor_stock_reserved) AS vendor_available
     FROM products p WHERE p.is_archived=0 ORDER BY p.id DESC LIMIT 1000`);
 }
 
@@ -1092,4 +1131,4 @@ async function archiveProduct(idInput, archive, actor = {}) {
   return {id,archived:Boolean(archive)};
 }
 
-module.exports = { createSupplier,listSuppliers,getSupplierForEdit,updateSupplier,getSupplierPurchaseHistory,createProduct,normalizeProductEditInput,listProducts,getProductForEdit,listProductEditOptions,updateProduct,getProductGalleryForEdit,updateProductGallery,appendProductGalleryImages,listProductVariants,createProductVariant,updateProductVariant,adjustStock,adjustVariantStock,listInventory,listInventoryPage,listStockLedger,createPurchase,listPurchases,receivePurchase,archiveProduct };
+module.exports = { createSupplier,listSuppliers,getSupplierForEdit,updateSupplier,getSupplierPurchaseHistory,createProduct,normalizeProductEditInput,listProducts,getProductForEdit,listProductEditOptions,updateProduct,getProductGalleryForEdit,updateProductGallery,appendProductGalleryImages,listProductVariants,createProductVariant,updateProductVariant,adjustStock,adjustVariantStock,listInventory,getInventorySummary,listInventoryPage,listStockLedger,createPurchase,listPurchases,receivePurchase,archiveProduct };

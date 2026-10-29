@@ -127,6 +127,47 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     assert.ok(data.todayExpenses>=5); assert.ok(data.totalExpenses>=data.todayExpenses);
   });
 
+  test('Phase 06 inventory summary is authenticated, quantity-only, accurate and read-only',async(t)=>{
+    if(!MYSQL_HOST)return t.skip(SKIP);
+    dashboardCookie=await login(fullEmail);csrfToken=await fetchCsrf(dashboardCookie);
+    const {cookie:noGrantCookie,token:noGrantToken}=await noGrantSession();
+    assert.equal((await request('/admin/phase06/inventory.json',{cookie:'',token:''})).status,401,'inventory summary requires an admin session');
+    assert.equal((await request('/admin/phase06/inventory.json',{cookie:noGrantCookie,token:noGrantToken})).status,403,'inventory summary requires inventory.manage');
+    assert.equal((await request('/admin/phase06?ledger_page=1',{cookie:'',token:''})).status,401,'stock movement report requires an admin session');
+    assert.equal((await request('/admin/phase06?ledger_page=1',{cookie:noGrantCookie,token:noGrantToken})).status,403,'stock movement report requires inventory.manage');
+    let variantId=null;
+    try{
+      variantId=Number((await db.execute('INSERT INTO product_variants(product_id,variant_sku,size_label,price_paisa,stock_on_hand,stock_reserved,status) VALUES(?,?,?,?,?,?,1)',[productId,`P09-SUMMARY-${Date.now()}`,'Summary fixture',0,4,2])).insertId);
+      const expectedProducts=await db.queryOne(`SELECT COUNT(*) AS product_count,COALESCE(SUM(stock_on_hand),0) AS warehouse_on_hand,
+        COALESCE(SUM(stock_reserved),0) AS warehouse_reserved,COALESCE(SUM(stock_on_hand-stock_reserved),0) AS warehouse_available,
+        COALESCE(SUM(vendor_stock_on_hand),0) AS vendor_on_hand,COALESCE(SUM(vendor_stock_reserved),0) AS vendor_reserved,
+        COALESCE(SUM(vendor_stock_on_hand-vendor_stock_reserved),0) AS vendor_available,
+        COALESCE(SUM(CASE WHEN stock_on_hand-stock_reserved<=low_stock_threshold THEN 1 ELSE 0 END),0) AS low_stock_products,
+        COALESCE(SUM(CASE WHEN stock_on_hand-stock_reserved<=0 THEN 1 ELSE 0 END),0) AS no_available_products FROM products WHERE is_archived=0`);
+      const expectedVariants=await db.queryOne(`SELECT COUNT(*) AS variant_count,COALESCE(SUM(CASE WHEN v.status=1 THEN 1 ELSE 0 END),0) AS active_variant_count,
+        COALESCE(SUM(CASE WHEN v.status=0 THEN 1 ELSE 0 END),0) AS inactive_variant_count,COALESCE(SUM(v.stock_on_hand),0) AS warehouse_on_hand,
+        COALESCE(SUM(v.stock_reserved),0) AS warehouse_reserved,COALESCE(SUM(v.stock_on_hand-v.stock_reserved),0) AS warehouse_available,
+        COALESCE(SUM(CASE WHEN v.stock_on_hand-v.stock_reserved<=0 THEN 1 ELSE 0 END),0) AS no_available_variants
+        FROM product_variants v JOIN products p ON p.id=v.product_id WHERE p.is_archived=0`);
+      const beforeRows=await db.queryOne('SELECT stock_on_hand,stock_reserved FROM products WHERE id=?',[productId]);
+      const response=await request('/admin/phase06/inventory.json');
+      assert.equal(response.status,200,response.text.slice(0,250));
+      assert.deepEqual(response.json.summary.products,Object.fromEntries(Object.keys(expectedProducts).map((key)=>[key,Number(expectedProducts[key])])));
+      assert.deepEqual(response.json.summary.variants,Object.fromEntries(Object.keys(expectedVariants).map((key)=>[key,Number(expectedVariants[key])])));
+      assert.equal(response.headers.get('cache-control'),'no-store');
+      assert.doesNotMatch(JSON.stringify(response.json),/cost_price_paisa|remaining_value_paisa|unit_cost_paisa/,'inventory report omits cost and valuation fields');
+      assert.deepEqual(await db.queryOne('SELECT stock_on_hand,stock_reserved FROM products WHERE id=?',[productId]),beforeRows,'GET summary leaves product stock unchanged');
+      const page=await request('/admin/phase06?lang=en',{accept:'text/html'});
+      assert.equal(page.status,200,page.text.slice(0,250));
+      assert.match(page.text,/Read-only inventory summary/);
+      assert.match(page.text,/Variant stock \(separate balances\)/);
+      const pageBn=await request('/admin/phase06?lang=bn',{accept:'text/html'});
+      assert.equal(pageBn.status,200,pageBn.text.slice(0,250));
+      assert.match(pageBn.text,/শুধু-পঠন ইনভেন্টরি সারাংশ/);
+      assert.match(pageBn.text,/ভ্যারিয়েন্ট স্টক \(আলাদা ব্যালেন্স\)/);
+    }finally{if(variantId)await db.execute('DELETE FROM product_variants WHERE id=?',[variantId]);}
+  });
+
   test('Phase 06 catalog edit UI and HTTP update enforce grants/CSRF and preserve inventory/variant state',async(t)=>{
     if(!MYSQL_HOST)return t.skip(SKIP);
     const path=`/admin/phase06/products/${productId}/edit`;
