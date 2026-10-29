@@ -626,7 +626,52 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
     }
   });
 
-  test('6. Phase 07 failed persistent-cart replacement rolls back instead of deleting valid saved data', { skip: !MYSQL_HOST ? SKIP_REASON : false }, async () => {
+  test('6. Phase 07 concurrent authenticated updates to separate cart lines preserve both changes', { skip: !MYSQL_HOST ? SKIP_REASON : false }, async () => {
+    const phone = `014${String(Date.now()).slice(-8)}`;
+    const customer = await customerRepo.registerCustomer({ name: 'Concurrent update owner', phone, password: 'SecureCartPassword!2026' });
+    const vendorProduct = await client.queryOne('SELECT id FROM products WHERE slug=?', ['artisan-date-gift-box']);
+    await client.execute('INSERT INTO customer_cart_items (customer_id,product_id,variant_id,quantity) VALUES (?,?,?,1)', [customer.id, inhouseProdId, variant5KgId]);
+    await client.execute('INSERT INTO customer_cart_items (customer_id,product_id,variant_id,quantity) VALUES (?,?,NULL,1)', [customer.id, vendorProduct.id]);
+    const makeSession = async () => {
+      const initial = await httpRequest(baseUrl, '/api/v1/csrf-token');
+      let cookie = (Array.isArray(initial.headers['set-cookie']) ? initial.headers['set-cookie'] : [initial.headers['set-cookie']]).filter(Boolean).map((value) => value.split(';')[0]).join('; ');
+      const csrf = JSON.parse(initial.body).data.csrfToken;
+      const auth = await httpRequest(baseUrl, '/customer/login', { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded', 'x-csrf-token': csrf }, body: new URLSearchParams({ phone, password: 'SecureCartPassword!2026' }).toString() });
+      assert.equal(auth.statusCode, 302);
+      cookie = (Array.isArray(auth.headers['set-cookie']) ? auth.headers['set-cookie'] : [auth.headers['set-cookie']]).filter(Boolean).map((value) => value.split(';')[0]).join('; ') || cookie;
+      const token = await httpRequest(baseUrl, '/api/v1/csrf-token', { headers: { Cookie: cookie } });
+      return { cookie, csrf: JSON.parse(token.body).data.csrfToken };
+    };
+    const [first, second] = await Promise.all([makeSession(), makeSession()]);
+    const originalReplace = customerRepo.replaceCart;
+    let arrivals = 0;
+    let openGate;
+    const gate = new Promise((resolve) => { openGate = resolve; });
+    customerRepo.replaceCart = async (...args) => {
+      arrivals += 1;
+      if (arrivals === 2) openGate();
+      await gate;
+      return originalReplace(...args);
+    };
+    let responses;
+    try {
+      const lineA = `saved-${inhouseProdId}-${variant5KgId}`;
+      const lineB = `saved-${vendorProduct.id}-0`;
+      responses = await Promise.all([
+        httpRequest(baseUrl, '/cart/update', { method: 'POST', headers: { Cookie: first.cookie, 'Content-Type': 'application/json', Accept: 'application/json', 'x-csrf-token': first.csrf }, body: JSON.stringify({ key: lineA, qty: 2 }) }),
+        httpRequest(baseUrl, '/cart/update', { method: 'POST', headers: { Cookie: second.cookie, 'Content-Type': 'application/json', Accept: 'application/json', 'x-csrf-token': second.csrf }, body: JSON.stringify({ key: lineB, qty: 2 }) }),
+      ]);
+    } finally {
+      customerRepo.replaceCart = originalReplace;
+    }
+    assert.ok(responses.every((response) => response.statusCode === 200), responses.map((response) => response.body.slice(0, 200)).join('\n'));
+    const final = await client.queryAll('SELECT product_id,variant_id,quantity FROM customer_cart_items WHERE customer_id=?', [customer.id]);
+    assert.equal(final.length, 2, 'both cart lines remain present');
+    assert.equal(Number(final.find((row) => Number(row.product_id) === inhouseProdId)?.quantity), 2, 'customer A line update persists');
+    assert.equal(Number(final.find((row) => Number(row.product_id) === Number(vendorProduct.id))?.quantity), 2, 'customer B line update persists');
+  });
+
+  test('7. Phase 07 failed persistent-cart replacement rolls back instead of deleting valid saved data', { skip: !MYSQL_HOST ? SKIP_REASON : false }, async () => {
     const phone = `015${String(Date.now()).slice(-8)}`;
     const customer = await customerRepo.registerCustomer({ name: 'Cart rollback owner', phone, password: 'SecureCartPassword!2026' });
     await client.execute('INSERT INTO customer_cart_items (customer_id,product_id,variant_id,quantity) VALUES (?,?,?,2)', [customer.id, inhouseProdId, variant5KgId]);
