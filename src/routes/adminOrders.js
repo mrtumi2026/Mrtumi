@@ -1,12 +1,14 @@
 const express = require('express');
+const crypto = require('crypto');
 const db = require('../db/database');
 const { requireAdmin } = require('../middleware/auth');
 const { env } = require('../config/env');
 const { asyncHandler } = require('../utils/asyncHandler');
-const { ConflictError, ValidationError, NotFoundError } = require('../utils/errors');
+const { AppError, ConflictError, ValidationError, NotFoundError } = require('../utils/errors');
 const adminOrderReadRepository = require('../repositories/adminOrderReadRepository');
 const adminOrderStatusRepository = require('../repositories/adminOrderStatusRepository');
 const adminPosRepository = require('../repositories/adminPosRepository');
+const adminOrderMutationRepository = require('../repositories/adminOrderMutationRepository');
 
 const router = express.Router();
 router.use('/admin', requireAdmin);
@@ -19,6 +21,13 @@ function generateInvoiceId() {
   }
   return String(Date.now()).slice(-6);
 }
+function handleOrderMutationError(err, req, res, redirectTo) {
+  if (!(err instanceof AppError) || err.statusCode >= 500) return false;
+  if (req.accepts('json')) res.status(err.statusCode).json({ error:err.code, message:err.message });
+  else { req.flash('error',err.message); res.redirect(redirectTo); }
+  return true;
+}
+function orderActor(req) { return { id:req.adminUser?.id ?? null,ip:req.ip,userAgent:req.get('user-agent')||'' }; }
 
 // ─── POS System (/admin/order/create) ───
 router.get('/admin/order/create', asyncHandler(async (req, res) => {
@@ -163,7 +172,9 @@ router.get('/admin/order/view/:id', asyncHandler(async (req, res) => {
       req.flash('error', 'অর্ডার খুঁজে পাওয়া যায়নি।');
       return res.redirect('/admin/order/all');
     }
-    return res.render('admin/order-detail', detail);
+    const mutationKeys={orderUpdate:crypto.randomUUID(),itemAdd:crypto.randomUUID(),itemQty:{},itemRemove:{}};
+    for(const item of detail.items){mutationKeys.itemQty[item.id]=crypto.randomUUID();mutationKeys.itemRemove[item.id]=crypto.randomUUID();}
+    return res.render('admin/order-detail', { ...detail, mutationKeys });
   }
   const order = db.get(
     `SELECT o.*, COALESCE(os.name, o.status) AS status_label, COALESCE(os.badge_class, 'sb-1') AS badge_class
@@ -184,6 +195,8 @@ router.get('/admin/order/view/:id', asyncHandler(async (req, res) => {
   const deliveryBoys = db.all('SELECT * FROM delivery_boys WHERE status = 1');
   const allProducts = db.all('SELECT id, name, new_price, sizes FROM products WHERE status = 1 ORDER BY name ASC');
 
+  const mutationKeys={orderUpdate:crypto.randomUUID(),itemAdd:crypto.randomUUID(),itemQty:{},itemRemove:{}};
+  for(const item of items){mutationKeys.itemQty[item.id]=crypto.randomUUID();mutationKeys.itemRemove[item.id]=crypto.randomUUID();}
   res.render('admin/order-detail', {
     order,
     items,
@@ -191,6 +204,7 @@ router.get('/admin/order/view/:id', asyncHandler(async (req, res) => {
     couriers,
     deliveryBoys,
     allProducts,
+    mutationKeys,
   });
 }));
 
@@ -203,7 +217,15 @@ function recalcOrderTotals(orderId) {
   db.run('UPDATE orders SET subtotal = ?, amount = ? WHERE id = ?', subtotal, total, orderId);
 }
 
-router.post('/admin/order/:id/item-add', (req, res) => {
+router.post('/admin/order/:id/item-add', asyncHandler(async (req, res) => {
+  if(env.db.client==='mysql'){
+    try{
+      const result=await adminOrderMutationRepository.addOrderItem(req.params.id,req.body,orderActor(req));
+      req.adminDomainAudit=true;
+      req.flash('success',`Product added to order #${result.orderId}.`);
+      return res.redirect(`/admin/order/view/${result.orderId}`);
+    }catch(err){if(handleOrderMutationError(err,req,res,`/admin/order/view/${req.params.id}`))return;throw err;}
+  }
   const orderId = Number(req.params.id);
   const prod = db.get('SELECT * FROM products WHERE id = ?', Number(req.body.product_id));
   const qty = Math.max(1, Number(req.body.qty || 1));
@@ -233,9 +255,17 @@ router.post('/admin/order/:id/item-add', (req, res) => {
     req.flash('success', `"${prod.name}" অর্ডারে যোগ করা হয়েছে!`);
   }
   res.redirect(`/admin/order/view/${orderId}`);
-});
+}));
 
-router.post('/admin/order/:id/item-update/:itemId', (req, res) => {
+router.post('/admin/order/:id/item-update/:itemId', asyncHandler(async (req, res) => {
+  if(env.db.client==='mysql'){
+    try{
+      const result=await adminOrderMutationRepository.updateOrderItem(req.params.id,req.params.itemId,req.body,orderActor(req));
+      req.adminDomainAudit=true;
+      req.flash('success',result.quantity===0?'Order item removed.':'Order item quantity updated.');
+      return res.redirect(`/admin/order/view/${result.orderId}`);
+    }catch(err){if(handleOrderMutationError(err,req,res,`/admin/order/view/${req.params.id}`))return;throw err;}
+  }
   const orderId = Number(req.params.id);
   const item = db.get('SELECT * FROM order_items WHERE id = ? AND order_id = ?', req.params.itemId, orderId);
   if (item) {
@@ -256,9 +286,10 @@ router.post('/admin/order/:id/item-update/:itemId', (req, res) => {
     req.flash('success', 'অর্ডারের পণ্যের পরিমাণ আপডেট হয়েছে।');
   }
   res.redirect(`/admin/order/view/${orderId}`);
-});
+}));
 
 router.post('/admin/order/:id/send-courier', (req, res) => {
+  if(env.db.client==='mysql')return res.status(409).json({error:'PROVIDER_ACTION_DISABLED',message:'Courier booking is disabled until an approved provider workflow is configured.'});
   const order = db.get('SELECT * FROM orders WHERE id = ?', req.params.id);
   if (order) {
     const courierName = String(req.body.courier_name || 'Steadfast Courier');
@@ -294,7 +325,15 @@ router.get('/admin/order/invoice/:id', asyncHandler(async (req, res) => {
 }));
 
 // ─── Update Order ───
-router.post('/admin/order/update/:id', (req, res) => {
+router.post('/admin/order/update/:id', asyncHandler(async (req, res) => {
+  if(env.db.client==='mysql'){
+    try{
+      const result=await adminOrderMutationRepository.updateAdminOrder(req.params.id,req.body,orderActor(req));
+      req.adminDomainAudit=true;
+      req.flash('success',`Order #${result.orderId} updated successfully.`);
+      return res.redirect(`/admin/order/view/${result.orderId}`);
+    }catch(err){if(handleOrderMutationError(err,req,res,`/admin/order/view/${req.params.id}`))return;throw err;}
+  }
   const order = db.get('SELECT * FROM orders WHERE id = ?', req.params.id);
   if (!order) return res.redirect('/admin/order/all');
 
@@ -344,7 +383,7 @@ router.post('/admin/order/update/:id', (req, res) => {
 
   req.flash('success', `অর্ডার #${order.invoice_id} সফলভাবে আপডেট হয়েছে!`);
   res.redirect(`/admin/order/view/${order.id}`);
-});
+}));
 
 // ─── Quick Status Change & Bulk Actions ───
 function creditEarningsOnOrderCompleted(prevOrder, newStatus) {
@@ -376,7 +415,15 @@ function creditEarningsOnOrderCompleted(prevOrder, newStatus) {
   }
 }
 
-router.post('/admin/order/status-quick', (req, res) => {
+router.post('/admin/order/status-quick', asyncHandler(async (req, res) => {
+  if(env.db.client==='mysql'){
+    try{
+      await adminOrderMutationRepository.transitionOrder(req.body.order_id,req.body.status,req.body,orderActor(req));
+      req.adminDomainAudit=true;
+      req.flash('success','Order status updated.');
+      return res.redirect(req.get('Referrer')||'/admin/order/all');
+    }catch(err){if(handleOrderMutationError(err,req,res,req.get('Referrer')||'/admin/order/all'))return;throw err;}
+  }
   const { order_id, status } = req.body;
   if (order_id && status) {
     const prev = db.get('SELECT * FROM orders WHERE id = ?', order_id);
@@ -385,9 +432,17 @@ router.post('/admin/order/status-quick', (req, res) => {
     req.flash('success', 'অর্ডার স্ট্যাটাস পরিবর্তন হয়েছে।');
   }
   res.redirect(req.get('Referrer') || '/admin/order/all');
-});
+}));
 
-router.post('/admin/order/bulk-action', (req, res) => {
+router.post('/admin/order/bulk-action', asyncHandler(async (req, res) => {
+  if(env.db.client==='mysql'){
+    try{
+      const result=await adminOrderMutationRepository.bulkOrderAction(req.body,orderActor(req));
+      req.adminDomainAudit=true;
+      req.flash('success',`${result.ids.length} order(s) updated to ${result.target}.`);
+      return res.redirect(req.get('Referrer')||'/admin/order/all');
+    }catch(err){if(handleOrderMutationError(err,req,res,req.get('Referrer')||'/admin/order/all'))return;throw err;}
+  }
   let ids = req.body.order_ids || [];
   if (!Array.isArray(ids)) ids = [ids];
   ids = ids.map((x) => Number(x)).filter(Boolean);
@@ -425,9 +480,10 @@ router.post('/admin/order/bulk-action', (req, res) => {
   }
 
   res.redirect(req.get('Referrer') || '/admin/order/all');
-});
+}));
 
 router.post('/admin/order/delete/:id', (req, res) => {
+  if(env.db.client==='mysql')return res.status(409).json({error:'ORDER_RETENTION_POLICY_REQUIRED',message:'Order deletion is disabled pending an approved data-retention policy.'});
   db.run('DELETE FROM order_items WHERE order_id = ?', req.params.id);
   db.run('DELETE FROM orders WHERE id = ?', req.params.id);
   req.flash('success', 'অর্ডার সফলভাবে মুছে ফেলা হয়েছে।');
@@ -723,10 +779,12 @@ router.get('/admin/order/:status', asyncHandler(async (req, res) => {
 
   if (env.db.client === 'mysql') {
     const data = await adminOrderReadRepository.listAdminOrders({ statusParam, searchQuery: q });
+    data.orders=data.orders.map((order)=>({...order,status_request_key:crypto.randomUUID()}));
     return res.render('admin/orders', {
       pageTitle: titleMap[statusParam] || `Orders (${statusParam})`,
       statusFilter: statusParam,
       searchQuery: q,
+      bulkRequestKey:crypto.randomUUID(),
       ...data,
     });
   }

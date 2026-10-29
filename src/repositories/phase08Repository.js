@@ -257,6 +257,37 @@ async function restoreReturnedInventoryTx(tx, orderId, actor = {}, reason = 'Ret
   return {restored:rows.length};
 }
 
+async function transitionOrderTx(tx, orderIdInput, toStatus, note, actor = {}, requestKeyInput) {
+  const id = requirePositiveInt(orderIdInput, 'order ID');
+  const target = String(toStatus || '').trim();
+  const reason = requireString(note, 'transition reason', { min: 3, max: 255 });
+  const key = requireString(requestKeyInput, 'transition request key', { min: 8, max: 128 });
+  if (!Object.hasOwn(TRANSITIONS, target)) throw new ValidationError('Invalid target order status.');
+  let prior = await tx.queryOne('SELECT order_id,to_status FROM order_status_history WHERE request_key=?', [key]);
+  if (prior) {
+    if (Number(prior.order_id) !== id || prior.to_status !== target) throw new ConflictError('Status request key was already used for a different transition.');
+    return { id, to: target, replayed: true };
+  }
+  const order = await tx.queryOne('SELECT id,order_status FROM orders WHERE id=? FOR UPDATE', [id]);
+  if (!order) throw new NotFoundError('Order not found.');
+  // Recheck after locking the parent order so a concurrent retry observes the committed key.
+  prior = await tx.queryOne('SELECT order_id,to_status FROM order_status_history WHERE request_key=? FOR UPDATE', [key]);
+  if (prior) {
+    if (Number(prior.order_id) !== id || prior.to_status !== target) throw new ConflictError('Status request key was already used for a different transition.');
+    return { id, to: target, replayed: true };
+  }
+  const from = String(order.order_status);
+  if (target === 'returned') throw new ConflictError('Return completion and restock are disabled until the owner approves item eligibility, inspection/disposition, partial-return, refund and shipping-fee policy.');
+  if (!TRANSITIONS[from]?.includes(target)) throw new ConflictError(`Order cannot move from ${from} to ${target}.`);
+  if (target === 'confirmed') await reserveOrderInventoryTx(tx, id, actor);
+  if (target === 'cancelled' || target === 'failed') await releaseOrderInventoryTx(tx, id, actor, reason);
+  if (target === 'shipped') await consumeOrderInventoryTx(tx, id, actor);
+  if (target === 'returned') await restoreReturnedInventoryTx(tx,id,actor,reason);
+  await tx.execute('UPDATE orders SET order_status=?,is_seen=1 WHERE id=?', [target,id]);
+  await tx.execute('INSERT INTO order_status_history (order_id,from_status,to_status,note,request_key,changed_by_user_id) VALUES (?,?,?,?,?,?)', [id,from,target,reason,key,actor.id||null]);
+  await insertAudit(tx, actor, `order.status.${target}`, 'order', id, { status:from }, { status:target, reason, requestKey:key });
+  return { id, from, to:target, replayed:false };
+}
 async function transitionOrder(orderId, toStatus, note, actor = {}, requestKey) {
   assertMysql();
   const id = requirePositiveInt(orderId, 'order ID');
@@ -265,32 +296,7 @@ async function transitionOrder(orderId, toStatus, note, actor = {}, requestKey) 
   const key = requireString(requestKey, 'transition request key', { min: 8, max: 128 });
   if (!Object.hasOwn(TRANSITIONS, target)) throw new ValidationError('Invalid target order status.');
   try {
-    return await mysql.withTransaction(async (tx) => {
-    let prior = await tx.queryOne('SELECT order_id,to_status FROM order_status_history WHERE request_key=?', [key]);
-    if (prior) {
-      if (Number(prior.order_id) !== id || prior.to_status !== target) throw new ConflictError('Status request key was already used for a different transition.');
-      return { id, to: target, replayed: true };
-    }
-    const order = await tx.queryOne('SELECT id,order_status FROM orders WHERE id=? FOR UPDATE', [id]);
-    if (!order) throw new NotFoundError('Order not found.');
-    // Recheck after locking the parent order so a concurrent retry observes the committed key.
-    prior = await tx.queryOne('SELECT order_id,to_status FROM order_status_history WHERE request_key=? FOR UPDATE', [key]);
-    if (prior) {
-      if (Number(prior.order_id) !== id || prior.to_status !== target) throw new ConflictError('Status request key was already used for a different transition.');
-      return { id, to: target, replayed: true };
-    }
-    const from = String(order.order_status);
-    if (target === 'returned') throw new ConflictError('Return completion and restock are disabled until the owner approves item eligibility, inspection/disposition, partial-return, refund and shipping-fee policy.');
-    if (!TRANSITIONS[from]?.includes(target)) throw new ConflictError(`Order cannot move from ${from} to ${target}.`);
-    if (target === 'confirmed') await reserveOrderInventoryTx(tx, id, actor);
-    if (target === 'cancelled' || target === 'failed') await releaseOrderInventoryTx(tx, id, actor, reason);
-    if (target === 'shipped') await consumeOrderInventoryTx(tx, id, actor);
-    if (target === 'returned') await restoreReturnedInventoryTx(tx,id,actor,reason);
-    await tx.execute('UPDATE orders SET order_status=? WHERE id=?', [target,id]);
-    await tx.execute('INSERT INTO order_status_history (order_id,from_status,to_status,note,request_key,changed_by_user_id) VALUES (?,?,?,?,?,?)', [id,from,target,reason,key,actor.id||null]);
-    await insertAudit(tx, actor, `order.status.${target}`, 'order', id, { status:from }, { status:target, reason, requestKey:key });
-    return { id, from, to:target, replayed:false };
-    });
+    return await mysql.withTransaction((tx) => transitionOrderTx(tx,id,target,reason,actor,key));
   } catch(err) {
     if(err.code==='DB_DUPLICATE_ENTRY'){
       const prior=await client().queryOne('SELECT order_id,to_status FROM order_status_history WHERE request_key=?',[key]);
@@ -551,4 +557,4 @@ async function getOrderOtpStatus(orderId){
 }
 async function listOrderHistory(orderId){assertMysql();return client().queryAll('SELECT h.*,u.name AS actor_name FROM order_status_history h LEFT JOIN users u ON u.id=h.changed_by_user_id WHERE h.order_id=? ORDER BY h.id',[requirePositiveInt(orderId,'order ID')]);}
 
-module.exports={TRANSITIONS,REFUND_STATES,INCOMPLETE_STATES,validateOtpPolicy,validateAdvancePolicy,calculateAdvance,computeOrderPayment,otpDigest,makeOtp,normalizeCaptureCart,transitionOrder,requestRefund,transitionRefund,recordIncompleteCheckout,withdrawIncompleteCheckout,listIncompleteCheckouts,transitionIncompleteCheckout,createOrderOtp,verifyOrderOtp,getPhase08Settings,savePhase08Settings,listOrders,listRefunds,listRefundHistory,listOrderHistory,getOrderOtpStatus,reserveOrderInventory:async(orderId,actor={})=>mysql.withTransaction(tx=>reserveOrderInventoryTx(tx,requirePositiveInt(orderId,'order ID'),actor)),reserveOrderInventoryTx,releaseOrderInventory:async(orderId,actor={},reason='Order cancelled')=>mysql.withTransaction(tx=>releaseOrderInventoryTx(tx,requirePositiveInt(orderId,'order ID'),actor,reason)),listExpiredOrderReservationCandidates,expireExpiredOrderReservations};
+module.exports={TRANSITIONS,REFUND_STATES,INCOMPLETE_STATES,validateOtpPolicy,validateAdvancePolicy,calculateAdvance,computeOrderPayment,otpDigest,makeOtp,normalizeCaptureCart,normalizeOrderLines,orderReservationKey,transitionOrder,transitionOrderTx,requestRefund,transitionRefund,recordIncompleteCheckout,withdrawIncompleteCheckout,listIncompleteCheckouts,transitionIncompleteCheckout,createOrderOtp,verifyOrderOtp,getPhase08Settings,savePhase08Settings,listOrders,listRefunds,listRefundHistory,listOrderHistory,getOrderOtpStatus,reserveOrderInventory:async(orderId,actor={})=>mysql.withTransaction(tx=>reserveOrderInventoryTx(tx,requirePositiveInt(orderId,'order ID'),actor)),reserveOrderInventoryTx,releaseOrderInventory:async(orderId,actor={},reason='Order cancelled')=>mysql.withTransaction(tx=>releaseOrderInventoryTx(tx,requirePositiveInt(orderId,'order ID'),actor,reason)),listExpiredOrderReservationCandidates,expireExpiredOrderReservations};

@@ -94,7 +94,8 @@ async function getAdminOrderDetail(orderId, poolOverride = null) {
     client.queryAll(
       `SELECT id,COALESCE(NULLIF(name_en,''),name_bn) AS name,
               sale_price_paisa,unit_label AS sizes
-         FROM products WHERE status=1 ORDER BY COALESCE(NULLIF(name_en,''),name_bn) ASC`,
+         FROM products WHERE status=1 AND is_archived=0 AND approval_status='approved' AND vendor_id IS NULL
+        ORDER BY COALESCE(NULLIF(name_en,''),name_bn) ASC`,
     ),
   ]);
   return {

@@ -81,6 +81,27 @@ describe('Phase 09 dashboard repository contract', () => {
     assert.match(view,/name="_csrf" value="<%= csrfToken/);
   });
 
+  test('MySQL order mutation routes delegate to transactional repositories and shared state-machine transitions', () => {
+    const orders = require('../src/repositories/adminOrderMutationRepository');
+    assert.equal(orders.normalizeOrderQty('3'),3);
+    assert.throws(()=>orders.normalizeOrderQty('1.25'),{code:'VALIDATION_ERROR'});
+    assert.throws(()=>orders.normalizeOrderQty('-1'),{code:'VALIDATION_ERROR'});
+    assert.equal(orders.recalculateTotals({subtotalPaisa:10000,shippingPaisa:2500,discountPaisa:500,paidPaisa:0}).totalPaisa,12000);
+    assert.throws(()=>orders.recalculateTotals({subtotalPaisa:1000,shippingPaisa:0,discountPaisa:0,paidPaisa:1001}),{code:'CONFLICT'});
+    const route=fs.readFileSync(path.join(__dirname,'../src/routes/adminOrders.js'),'utf8');
+    assert.match(route,/adminOrderMutationRepository\.addOrderItem/);
+    assert.match(route,/adminOrderMutationRepository\.updateOrderItem/);
+    assert.match(route,/adminOrderMutationRepository\.updateAdminOrder/);
+    assert.match(route,/adminOrderMutationRepository\.transitionOrder\(/);
+    assert.match(route,/adminOrderMutationRepository\.bulkOrderAction/);
+    const lifecycle=require('../src/repositories/phase08Repository');
+    assert.equal(typeof lifecycle.transitionOrderTx,'function','compound order updates reuse the established transition transaction behavior');
+    const detail=fs.readFileSync(path.join(__dirname,'../views/admin/order-detail.ejs'),'utf8');
+    assert.match(detail,/name="request_key"/,'order-detail writes carry retry-stable request keys');
+    const list=fs.readFileSync(path.join(__dirname,'../views/admin/orders.ejs'),'utf8');
+    assert.match(list,/name="request_key"/,'quick and bulk status writes carry retry-stable request keys');
+  });
+
   test('complaint repository validates before persistence and MySQL admin routes delegate safe actions', async () => {
     const complaints = require('../src/repositories/adminComplaintRepository');
     await assert.rejects(complaints.createComplaint({name:'A',phone:'bad',invoice_id:'',details:'issue'}), { code:'VALIDATION_ERROR', statusCode:400 });

@@ -635,6 +635,85 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM customers WHERE phone=?',[cashlessPhone])).n),0,'failed POS audit rolls customer creation back');
   });
 
+  test('MySQL order item edits, order updates, quick/bulk status actions enforce ownership, inventory and idempotency',async(t)=>{
+    if(!MYSQL_HOST)return t.skip(SKIP);
+    csrfToken=await fetchCsrf(dashboardCookie);
+    const {cookie:noGrantCookie,token:noGrantToken}=await noGrantSession();
+    const suffix=Date.now();
+    async function makeOrder(label,status='pending',qty=1){
+      const invoice=`P09-EDIT-${label}-${suffix}`;
+      const id=Number((await db.execute(`INSERT INTO orders(invoice_no,customer_name,customer_phone,shipping_address,subtotal_paisa,total_paisa,cod_due_paisa,payment_method,payment_status,order_status,order_channel)
+        VALUES(?,?,?,?,?,?,?,'cod','unpaid',?,'storefront')`,[invoice,`P09 ${label}`,'01712345678','Edit fixture',10000*qty,10000*qty,10000*qty,status])).insertId);
+      const itemId=Number((await db.execute('INSERT INTO order_items(order_id,product_id,product_name,product_image,unit_price_paisa,qty,line_total_paisa,size_label) VALUES(?,?,?,?,10000,?,? ,?)',[id,productId,'Dashboard product','',qty,10000*qty,'1 pc'])).insertId);
+      return{id,itemId};
+    }
+    const target=await makeOrder('target','confirmed',1);
+    const other=await makeOrder('other','pending',1);
+    const listFixture=await makeOrder('quick','pending',1);
+    const bulkA=await makeOrder('bulk-a','pending',1);
+    const bulkB=await makeOrder('bulk-b','pending',1);
+    const phase08=require('../src/repositories/phase08Repository');
+    await phase08.reserveOrderInventory(target.id,{id:dashboardUserId});
+    const initial=await db.queryOne('SELECT stock_on_hand,stock_reserved FROM products WHERE id=?',[productId]);
+    const add={product_id:productId,qty:1,request_key:`p09-add-${suffix}-0001`};
+    assert.equal((await request(`/admin/order/${target.id}/item-add`,{method:'POST',token:'',body:add})).status,403,'item add requires CSRF');
+    assert.equal((await request(`/admin/order/${target.id}/item-add`,{method:'POST',cookie:noGrantCookie,token:noGrantToken,body:add})).status,403,'item add requires orders.manage');
+    assert.equal((await request(`/admin/order/${target.id}/item-add`,{method:'POST',body:{...add,qty:0,request_key:`p09-add-bad-${suffix}`} })).status,400,'zero add quantity is rejected');
+    const added=await request(`/admin/order/${target.id}/item-add`,{method:'POST',body:add});assert.equal(added.status,302);
+    const addedReplay=await request(`/admin/order/${target.id}/item-add`,{method:'POST',body:add});assert.equal(addedReplay.status,302,'duplicate add submission is acknowledged without applying twice');
+    let line=await db.queryOne('SELECT id,qty,line_total_paisa FROM order_items WHERE order_id=? AND product_id=?',[target.id,productId]);
+    assert.deepEqual([Number(line.qty),Number(line.line_total_paisa)],[2,20000]);
+    assert.equal(Number((await db.queryOne('SELECT stock_reserved FROM products WHERE id=?',[productId])).stock_reserved),Number(initial.stock_reserved)+1,'reservation increases exactly once');
+    const reserveLedger=await db.queryOne("SELECT movement_type,qty_delta,balance_after FROM stock_ledger WHERE reference_type='order' AND reference_id=? ORDER BY id DESC LIMIT 1",[target.id]);
+    assert.deepEqual([reserveLedger.movement_type,Number(reserveLedger.qty_delta),Number(reserveLedger.balance_after)],['order_item_reserve',0,Number(initial.stock_on_hand)],'reservation-only edit is recorded without pretending on-hand stock moved');
+    assert.equal((await request(`/admin/order/${target.id}/item-update/${other.itemId}`,{method:'POST',body:{qty:2,request_key:`p09-own-${suffix}-0001`} })).status,404,'an item from another order cannot be edited');
+    assert.equal((await request(`/admin/order/${target.id}/item-update/${line.id}`,{method:'POST',body:{qty:1.5,request_key:`p09-qty-bad-${suffix}`} })).status,400,'fractional quantity is rejected');
+    const updateKey=`p09-item-update-${suffix}`;
+    assert.equal((await request(`/admin/order/${target.id}/item-update/${line.id}`,{method:'POST',body:{qty:3,request_key:updateKey} })).status,302);
+    assert.equal((await request(`/admin/order/${target.id}/item-update/${line.id}`,{method:'POST',body:{qty:3,request_key:updateKey} })).status,302,'duplicate quantity update does not reserve twice');
+    line=await db.queryOne('SELECT qty,line_total_paisa FROM order_items WHERE id=? AND order_id=?',[line.id,target.id]);assert.deepEqual([Number(line.qty),Number(line.line_total_paisa)],[3,30000]);
+    assert.equal(Number((await db.queryOne('SELECT stock_reserved FROM products WHERE id=?',[productId])).stock_reserved),Number(initial.stock_reserved)+2);
+    await db.execute("CREATE TRIGGER p09_fail_order_item_audit BEFORE INSERT ON audit_logs FOR EACH ROW BEGIN IF NEW.action='order.item.added' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture order item audit failure'; END IF; END");
+    try { assert.equal((await request(`/admin/order/${target.id}/item-add`,{method:'POST',body:{product_id:productId,qty:1,request_key:`p09-item-rollback-${suffix}`} })).status,500,'item audit failure is not reported as success'); }
+    finally { await db.execute('DROP TRIGGER IF EXISTS p09_fail_order_item_audit'); }
+    assert.equal(Number((await db.queryOne('SELECT qty FROM order_items WHERE id=?',[line.id])).qty),3,'failed item edit rolls line quantity back');
+    assert.equal(Number((await db.queryOne('SELECT stock_reserved FROM products WHERE id=?',[productId])).stock_reserved),Number(initial.stock_reserved)+2,'failed item edit rolls reservation back');
+    const rider=await db.execute("INSERT INTO delivery_boys(name,phone,status) VALUES('P09 Edit Rider','01711117777',1)");
+    const edit={customer_name:`P09 Edited ${suffix}`,phone:`016${String(suffix).slice(-8)}`,address:'Updated fixture address',shipping_charge:'70.50',discount:'5.25',status:'processing',payment_status:'unpaid',courier_name:'',courier_tracking_id:'',delivery_boy_id:String(rider.insertId),admin_note:'Updated by regression test',request_key:`p09-order-edit-${suffix}`};
+    const updated=await request(`/admin/order/update/${target.id}`,{method:'POST',body:edit});assert.equal(updated.status,302);
+    assert.equal((await request(`/admin/order/update/${target.id}`,{method:'POST',body:edit})).status,302,'duplicate order update is idempotent');
+    const order=await db.queryOne('SELECT customer_name,customer_phone,shipping_address,shipping_paisa,discount_paisa,subtotal_paisa,total_paisa,paid_paisa,cod_due_paisa,order_status,payment_status,delivery_boy_id,admin_note FROM orders WHERE id=?',[target.id]);
+    assert.deepEqual([order.customer_name,order.customer_phone,order.shipping_address,Number(order.shipping_paisa),Number(order.discount_paisa),Number(order.subtotal_paisa),Number(order.total_paisa),Number(order.paid_paisa),Number(order.cod_due_paisa),order.order_status,order.payment_status,Number(order.delivery_boy_id),order.admin_note],[edit.customer_name,edit.phone,edit.address,7050,525,30000,36525,0,36525,'processing','unpaid',Number(rider.insertId),edit.admin_note]);
+    const badUpdate={...edit,request_key:`p09-order-bad-${suffix}`,phone:'not-a-phone'};
+    assert.equal((await request(`/admin/order/update/${target.id}`,{method:'POST',body:badUpdate})).status,400,'invalid customer phone is rejected');
+    const paymentMutation={...edit,request_key:`p09-payment-edit-${suffix}`,payment_status:'paid'};
+    assert.equal((await request(`/admin/order/update/${target.id}`,{method:'POST',body:paymentMutation})).status,409,'generic order edits cannot fabricate a payment record');
+    const blockedStatus={...edit,request_key:`p09-status-cancel-${suffix}`,status:'cancelled'};
+    assert.equal((await request(`/admin/order/update/${target.id}`,{method:'POST',body:blockedStatus})).status,409,'D7 cancellation is blocked');
+    await db.execute("CREATE TRIGGER p09_fail_order_edit_audit BEFORE INSERT ON audit_logs FOR EACH ROW BEGIN IF NEW.action='order.updated' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture order edit audit failure'; END IF; END");
+    try { assert.equal((await request(`/admin/order/update/${target.id}`,{method:'POST',body:{...edit,request_key:`p09-order-rollback-${suffix}`,address:'Must roll back'} })).status,500,'audit failure is not reported as success'); }
+    finally { await db.execute('DROP TRIGGER IF EXISTS p09_fail_order_edit_audit'); }
+    assert.equal((await db.queryOne('SELECT shipping_address FROM orders WHERE id=?',[target.id])).shipping_address,edit.address,'order update fields roll back with audit');
+    const statusKey=`p09-status-${suffix}-0001`;
+    const quick={order_id:listFixture.id,status:'confirmed',request_key:statusKey,reason:'Verified order details'};
+    assert.equal((await request('/admin/order/status-quick',{method:'POST',token:'',body:quick})).status,403,'quick status requires CSRF');
+    assert.equal((await request('/admin/order/status-quick',{method:'POST',cookie:noGrantCookie,token:noGrantToken,body:quick})).status,403,'quick status requires orders.manage');
+    assert.equal((await request('/admin/order/status-quick',{method:'POST',body:quick})).status,302);
+    assert.equal((await request('/admin/order/status-quick',{method:'POST',body:quick})).status,302,'duplicate quick status submission is idempotent');
+    assert.equal((await db.queryOne('SELECT order_status FROM orders WHERE id=?',[listFixture.id])).order_status,'confirmed');
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM order_status_history WHERE order_id=? AND request_key=?',[listFixture.id,statusKey])).n),1);
+    assert.equal((await request('/admin/order/status-quick',{method:'POST',body:{...quick,status:'cancelled',request_key:`p09-status-block-${suffix}`} })).status,409,'D7 cancellation remains blocked');
+    const bulk={order_ids:[bulkA.id,bulkB.id],bulk_action:'confirmed',request_key:`p09-bulk-${suffix}`};
+    assert.equal((await request('/admin/order/bulk-action',{method:'POST',body:bulk})).status,302);
+    assert.equal((await request('/admin/order/bulk-action',{method:'POST',body:bulk})).status,302,'duplicate bulk status request is idempotent');
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM orders WHERE id IN (?,?) AND order_status=\'confirmed\'',[bulkA.id,bulkB.id])).n),2);
+    assert.equal((await request('/admin/order/bulk-action',{method:'POST',body:{...bulk,bulk_action:'delete',request_key:`p09-bulk-delete-${suffix}`} })).status,409,'bulk deletion is blocked pending retention policy');
+    assert.equal((await request('/admin/order/bulk-action',{method:'POST',body:{...bulk,bulk_action:'courier:Steadfast Courier',request_key:`p09-bulk-courier-${suffix}`} })).status,409,'bulk courier action never performs provider booking');
+    assert.equal(Number((await db.queryOne('SELECT stock_on_hand FROM products WHERE id=?',[productId])).stock_on_hand),Number(initial.stock_on_hand));
+    assert.ok(await db.queryOne("SELECT id FROM audit_logs WHERE action='order.item.added' AND entity_id=?",[String(target.id)]));
+    assert.ok(await db.queryOne("SELECT id FROM audit_logs WHERE action='order.updated' AND entity_id=?",[String(target.id)]));
+  });
+
   test('legacy order-status configuration uses MySQL, permission/CSRF, validation, audit and history-preserving deactivation',async(t)=>{
     if(!MYSQL_HOST)return t.skip(SKIP);
     csrfToken=await fetchCsrf(dashboardCookie);

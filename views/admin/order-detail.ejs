@@ -55,6 +55,7 @@
                     <td>৳<%= it.price %></td>
                     <td class="text-center">
                       <form action="/admin/order/<%= order.id %>/item-update/<%= it.id %>" method="POST" class="d-inline-flex align-items-center gap-1">
+                        <input type="hidden" name="request_key" value="<%= mutationKeys?.itemQty?.[it.id] || '' %>" />
                         <input type="number" name="qty" value="<%= it.qty %>" min="1" class="form-control form-control-sm text-center px-1" style="width: 58px;" />
                         <button type="submit" class="btn btn-sm btn-outline-success py-0 px-2" title="Update Qty">✓</button>
                       </form>
@@ -62,6 +63,7 @@
                     <td class="text-end fw-bold">৳<%= Number(it.price * it.qty).toLocaleString('en-IN') %></td>
                     <td class="text-end">
                       <form action="/admin/order/<%= order.id %>/item-update/<%= it.id %>" method="POST" class="d-inline">
+                        <input type="hidden" name="request_key" value="<%= mutationKeys?.itemRemove?.[it.id] || '' %>" />
                         <input type="hidden" name="qty" value="0" />
                         <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2" title="Remove Item">×</button>
                       </form>
@@ -75,6 +77,7 @@
           <!-- Add Another Product to Existing Order -->
           <div class="p-3 border-top bg-white">
             <form id="order-detail-product-options" action="/admin/order/<%= order.id %>/item-add" method="POST" class="row g-2 align-items-center">
+              <input type="hidden" name="request_key" value="<%= mutationKeys?.itemAdd || '' %>" />
               <div class="col-sm-7">
                 <select name="product_id" class="form-select form-select-sm" required>
                   <option value="">+ এই অর্ডারে নতুন পণ্য যোগ করুন...</option>
@@ -114,6 +117,7 @@
 
       <div class="col-lg-5">
         <form id="order-detail-fields" action="/admin/order/update/<%= order.id %>" method="POST" class="tbl-card p-3">
+          <input type="hidden" name="request_key" value="<%= mutationKeys?.orderUpdate || '' %>" />
           <h6 class="fw-bold border-bottom pb-2 mb-3">Process &amp; Update Order</h6>
 
           <div class="mb-2">
