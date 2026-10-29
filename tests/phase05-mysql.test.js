@@ -439,6 +439,22 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
       assert.equal(Number((await client.queryOne('SELECT COUNT(*) AS n FROM customer_cart_items WHERE customer_id=?',[testCustomer.id])).n),0,'unavailable authenticated cart line is removed from persistence');
       await client.execute('UPDATE product_variants SET stock_reserved=? WHERE id=?',[customerVariant.stock_reserved,variant5KgId]);
 
+      const reloadAdd=await httpRequest(baseUrl,'/cart/add',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json',Cookie:customerCookie,'x-csrf-token':customerCsrf},body:JSON.stringify({product_id:inhouseProdId,variant_id:variant5KgId,qty:2})});
+      assert.equal(reloadAdd.statusCode,200,'persistent cart can be repopulated before stale-stock reload checks');
+      await client.execute('UPDATE product_variants SET stock_on_hand=1,stock_reserved=0 WHERE id=?',[variant5KgId]);
+      const cartPageAfterStockDrop=await httpRequest(baseUrl,'/cart',{headers:{Cookie:customerCookie}});
+      assert.equal(cartPageAfterStockDrop.statusCode,200);
+      assert.match(cartPageAfterStockDrop.body,/availability changed|প্রাপ্যতা পরিবর্তিত/,'cart page discloses that live availability adjusted saved quantities');
+      const reloadedCapped=await httpRequest(baseUrl,'/cart/json',{headers:{Cookie:customerCookie,Accept:'application/json'}});
+      assert.equal(JSON.parse(reloadedCapped.body).cart[0].qty,1,'loading a saved cart caps its quantity to current variant and parent availability');
+      assert.equal(Number((await client.queryOne('SELECT quantity FROM customer_cart_items WHERE customer_id=? AND product_id=? AND variant_id=?',[testCustomer.id,inhouseProdId,variant5KgId])).quantity),1,'GET cart refresh persists the capped quantity');
+      await client.execute('UPDATE product_variants SET stock_reserved=stock_on_hand WHERE id=?',[variant5KgId]);
+      const reloadedUnavailable=await httpRequest(baseUrl,'/cart/json',{headers:{Cookie:customerCookie,Accept:'application/json'}});
+      assert.equal(reloadedUnavailable.statusCode,200);
+      assert.equal(JSON.parse(reloadedUnavailable.body).cartCount,0,'loading a saved cart removes a newly unavailable variant');
+      assert.equal(Number((await client.queryOne('SELECT COUNT(*) AS n FROM customer_cart_items WHERE customer_id=?',[testCustomer.id])).n),0,'unavailable saved lines are removed from persistent storage');
+      await client.execute('UPDATE product_variants SET stock_on_hand=?,stock_reserved=? WHERE id=?',[customerVariant.stock_on_hand,customerVariant.stock_reserved,variant5KgId]);
+
       const checkoutPage = await httpRequest(baseUrl, '/customer/checkout?lang=en&utm_source=facebook&utm_medium=paid_social&utm_campaign=p14-ci', { headers: { Cookie: cookieHeader, Accept:'application/json' } });
       assert.equal(checkoutPage.statusCode, 200, `MySQL checkout GET failed: ${checkoutPage.body.slice(0,500)}`);
       assert.doesNotMatch(checkoutPage.body, /name="cart_backup_json"/,'MySQL checkout must not accept a client cart backup');

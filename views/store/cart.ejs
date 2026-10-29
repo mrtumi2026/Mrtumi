@@ -10,6 +10,10 @@
     <span class="badge bg-secondary bg-opacity-25 text-dark rounded-pill px-3 py-2"><%= t('store.cartStep3') %></span>
   </nav>
 
+  <% if (availabilityAdjusted) { %>
+    <div class="alert alert-warning" role="status"><%= locale === 'en' ? 'Your cart was updated because product availability changed. Review the quantities before checkout.' : 'পণ্যের প্রাপ্যতা পরিবর্তিত হওয়ায় আপনার কার্ট আপডেট করা হয়েছে। চেকআউটের আগে পরিমাণ যাচাই করুন।' %></div>
+  <% } %>
+
   <% if (!cart || !cart.length) { %>
     <%- include('../partials/empty-state', {
       icon: '🛒',

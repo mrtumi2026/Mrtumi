@@ -133,9 +133,28 @@ function wantsJson(req) {
 }
 
 async function refreshCustomerCart(req) {
-  if (storefrontRepo.isMysqlMode() && req.customerUser?.id) {
-    req.session.cart = await customerRepo.listCart(req.customerUser.id, req.locale);
+  if (!storefrontRepo.isMysqlMode() || !req.customerUser?.id) return { availabilityAdjusted:false };
+  const savedCart = await customerRepo.listCart(req.customerUser.id, req.locale);
+  const refreshed = [];
+  for (const item of savedCart) {
+    const product = await storefrontRepo.findProductForCart(item.product_id, { locale:req.locale });
+    if (!product) continue;
+    const variant = item.variant_id
+      ? (product.variants || []).find((row) => Number(row.id) === Number(item.variant_id)) || null
+      : null;
+    if (item.variant_id && (!variant || product.vendor_id)) continue;
+    const productAvailable = Number(product.available_stock);
+    const variantAvailable = variant ? Number(variant.available_stock) : productAvailable;
+    const available = variant ? Math.min(productAvailable, variantAvailable) : productAvailable;
+    if (!Number.isSafeInteger(available) || available <= 0) continue;
+    const quantity = Math.min(Number(item.qty), available);
+    if (!Number.isSafeInteger(quantity) || quantity <= 0) continue;
+    refreshed.push({ ...item, qty:quantity, price:resolveEffectiveUnitPrice(product, variant, quantity) });
   }
+  const availabilityAdjusted = refreshed.length !== savedCart.length || refreshed.some((item,index) => item.qty !== savedCart[index].qty);
+  req.session.cart = refreshed;
+  if (availabilityAdjusted) await customerRepo.replaceCart(req.customerUser.id, refreshed);
+  return { availabilityAdjusted };
 }
 async function persistCustomerCart(req) {
   if (storefrontRepo.isMysqlMode() && req.customerUser?.id) {
@@ -492,9 +511,9 @@ router.get(
 
 // ─── Dedicated Shopping Cart Page (/cart) ───
 router.get('/cart', asyncHandler(async (req, res) => {
-  await refreshCustomerCart(req);
+  const cartRefresh = await refreshCustomerCart(req);
   const state = computeCartTotals(req);
-  res.render('store/cart', state);
+  res.render('store/cart', { ...state, availabilityAdjusted:cartRefresh.availabilityAdjusted });
 }));
 
 // ─── Cart Entry Endpoints (Product Lookup Backed by MySQL-First Repository) ───
@@ -502,7 +521,7 @@ router.post(
   '/cart/add',
   requireCsrf,
   asyncHandler(async (req, res) => {
-    await refreshCustomerCart(req);
+    const cartRefresh = await refreshCustomerCart(req);
     const t = res.locals.t;
     const { product_id, variant_id, qty, size, color, buy_now } = req.body;
     const qtyText = qty === undefined || qty === null || String(qty).trim() === '' ? '1' : String(qty).trim();
@@ -613,6 +632,7 @@ router.post(
         success: true,
         message: addedMsg,
         ...state,
+        availabilityAdjusted:cartRefresh.availabilityAdjusted,
         sessionToken: req.sessionID,
         redirect: isBuyNow ? '/customer/checkout' : null,
       });
@@ -630,12 +650,12 @@ router.post(
   '/cart/update',
   requireCsrf,
   asyncHandler(async (req, res) => {
-    await refreshCustomerCart(req);
+    const cartRefresh = await refreshCustomerCart(req);
     const t = res.locals.t;
     const { key, qty } = req.body;
     const qtyText = String(qty ?? '');
     if (!/^\d+$/.test(qtyText) || Number(qtyText) > 99) throw new (require('../utils/errors').ValidationError)('Quantity must be a whole number from 0 to 99.');
-    let availabilityAdjusted = false;
+    let availabilityAdjusted = cartRefresh.availabilityAdjusted;
     if (Array.isArray(req.session.cart)) {
       const item = req.session.cart.find((i) => i.key === key);
       if (item) {
@@ -717,10 +737,11 @@ router.post('/cart/clear', requireCsrf, asyncHandler(async (req, res) => {
 }));
 
 router.get('/cart/json', asyncHandler(async (req, res) => {
-  await refreshCustomerCart(req);
+  const cartRefresh = await refreshCustomerCart(req);
   const state = computeCartTotals(req);
   res.json({
     ...state,
+    availabilityAdjusted:cartRefresh.availabilityAdjusted,
     sessionToken: req.sessionID,
   });
 }));
