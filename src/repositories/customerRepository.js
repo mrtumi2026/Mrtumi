@@ -49,6 +49,7 @@ async function listAddresses(customerId) {
   return mysqlClient().queryAll('SELECT `id`, `label`, `recipient_name`, `recipient_phone`, `division`, `district`, `upazila`, `street_address`, `is_default` FROM `customer_addresses` WHERE `customer_id` = ? ORDER BY `is_default` DESC, `id` DESC', [customerId]);
 }
 async function saveAddress(customerId, input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw new ValidationError('Enter a valid address.');
   const fields = ['label', 'recipient_name', 'recipient_phone', 'division', 'district', 'upazila', 'street_address'];
   const values = Object.fromEntries(fields.map((key) => [key, String(input[key] || '').trim()]));
   if (!values.recipient_name || values.recipient_name.length > 191 || !values.street_address || values.street_address.length > 2000 || !values.division || !values.district) throw new ValidationError('Recipient, division, district and street address are required.');

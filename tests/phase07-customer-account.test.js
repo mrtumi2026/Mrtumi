@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { normalizeBdPhone, validatePassword } = require('../src/repositories/customerRepository');
+const { normalizeBdPhone, validatePassword, saveAddress } = require('../src/repositories/customerRepository');
 const checkoutRepository = require('../src/repositories/checkoutRepository');
 const { loadMigrationPairs } = require('../src/db/migrator');
 
@@ -20,6 +20,16 @@ test('Phase 07 checkout rejects malformed server-cart entries as validation erro
       () => checkoutRepository.normalizeLines([invalidLine]),
       (err) => err.code === 'VALIDATION_ERROR' && err.statusCode === 400,
       'malformed cart lines should fail closed as HTTP 400 validation errors, not raw TypeErrors'
+    );
+  }
+});
+
+test('Phase 07 malformed address payloads fail as validation errors before database access', async () => {
+  for (const malformed of [null, undefined]) {
+    await assert.rejects(
+      () => saveAddress(1, malformed),
+      (err) => err.code === 'VALIDATION_ERROR' && err.statusCode === 400,
+      'malformed address payloads must not leak a TypeError or become a server error'
     );
   }
 });

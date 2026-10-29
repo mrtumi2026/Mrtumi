@@ -669,6 +669,93 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
     assert.equal(Number((await client.queryOne('SELECT quantity FROM customer_cart_items WHERE customer_id=? AND product_id=? AND variant_id IS NULL', [customer.id, product.id])).quantity), 1, 'replay does not clear cart changes made after the original order');
   });
 
+  test('7b. Phase 07 checkout keeps order, inventory reservation, and saved-cart clearing atomic on clear failure', { skip: !MYSQL_HOST ? SKIP_REASON : false }, async () => {
+    const phone = `018${String(Date.now()).slice(-8)}`;
+    const customer = await customerRepo.registerCustomer({ name: 'Checkout atomic cart', phone, password: 'SecureCartPassword!2026' });
+    const initial = await httpRequest(baseUrl, '/api/v1/csrf-token');
+    let cookie = (Array.isArray(initial.headers['set-cookie']) ? initial.headers['set-cookie'] : [initial.headers['set-cookie']]).filter(Boolean).map((value) => value.split(';')[0]).join('; ');
+    const login = await httpRequest(baseUrl, '/customer/login', { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded', 'x-csrf-token': JSON.parse(initial.body).data.csrfToken }, body: new URLSearchParams({ phone, password: 'SecureCartPassword!2026' }).toString() });
+    assert.equal(login.statusCode, 302);
+    cookie = (Array.isArray(login.headers['set-cookie']) ? login.headers['set-cookie'] : [login.headers['set-cookie']]).filter(Boolean).map((value) => value.split(';')[0]).join('; ');
+    const token = await httpRequest(baseUrl, '/api/v1/csrf-token', { headers: { Cookie: cookie } });
+    const csrf = JSON.parse(token.body).data.csrfToken;
+    const reservationBefore = await client.queryOne('SELECT stock_on_hand,stock_reserved FROM product_variants WHERE id=?', [variant5KgId]);
+    const add = await httpRequest(baseUrl, '/cart/add', { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/json', Accept: 'application/json', 'x-csrf-token': csrf }, body: JSON.stringify({ product_id: inhouseProdId, variant_id: variant5KgId, qty: 1 }) });
+    assert.equal(add.statusCode, 200);
+    const checkout = await httpRequest(baseUrl, '/customer/checkout?lang=en', { headers: { Cookie: cookie } });
+    const checkoutCsrf = checkout.body.match(/name="_csrf" value="([^"]+)"/);
+    const requestKey = checkout.body.match(/name="checkout_request_key" value="([^"]+)"/);
+    assert.ok(checkoutCsrf && requestKey);
+    const form = new URLSearchParams({ _csrf: checkoutCsrf[1], checkout_request_key: requestKey[1], customer_name: customer.name, phone, address: 'House 10, Atomic Cart Road', delivery_location_id: String(deliveryLocationId), payment_method: 'cod', coupon_code: '', confirm_order: 'yes' }).toString();
+    const trigger = `phase07_fail_cart_delete_${String(customer.id)}`;
+    await client.execute(`CREATE TRIGGER ${trigger} BEFORE DELETE ON customer_cart_items FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='intentional checkout cart-clear failure'`);
+    try {
+      const failed = await httpRequest(baseUrl, '/customer/checkout', { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' }, body: form });
+      assert.equal(failed.statusCode, 500, 'injected transactional cart-clear failure is surfaced');
+      assert.equal(Number((await client.queryOne('SELECT COUNT(*) AS n FROM orders WHERE idempotency_key=?', [requestKey[1]])).n), 0, 'failed transaction must not leave a durable order');
+      assert.equal(Number((await client.queryOne('SELECT COUNT(*) AS n FROM customer_cart_items WHERE customer_id=?', [customer.id])).n), 1, 'failed transaction retains the saved cart line');
+      const reservationAfterFailure = await client.queryOne('SELECT stock_on_hand,stock_reserved FROM product_variants WHERE id=?', [variant5KgId]);
+      assert.equal(Number(reservationAfterFailure.stock_on_hand), Number(reservationBefore.stock_on_hand), 'failed checkout does not decrement variant stock');
+      assert.equal(Number(reservationAfterFailure.stock_reserved), Number(reservationBefore.stock_reserved), 'failed checkout does not leave a partial inventory reservation');
+      await client.execute(`DROP TRIGGER ${trigger}`);
+      const retried = await httpRequest(baseUrl, '/customer/checkout', { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' }, body: form });
+      assert.equal(retried.statusCode, 302, `same-key retry succeeds: ${retried.body.slice(0, 300)}`);
+      assert.equal(Number((await client.queryOne('SELECT COUNT(*) AS n FROM orders WHERE idempotency_key=?', [requestKey[1]])).n), 1, 'retry creates exactly one order');
+      assert.equal(Number((await client.queryOne('SELECT COUNT(*) AS n FROM customer_cart_items WHERE customer_id=?', [customer.id])).n), 0, 'successful retry commits persistent-cart clearing with the order');
+    } finally {
+      await client.execute(`DROP TRIGGER IF EXISTS ${trigger}`);
+    }
+  });
+
+  test('7c. Phase 07 address routes are customer-scoped and checkout cannot consume a foreign saved-address ID', { skip: !MYSQL_HOST ? SKIP_REASON : false }, async () => {
+    const suffix = String(Date.now()).slice(-8);
+    const firstPhone = `015${suffix}`;
+    const secondPhone = `017${suffix}`;
+    const password = 'SecureAddressPassword!2026';
+    const first = await customerRepo.registerCustomer({ name: 'Address owner one', phone: firstPhone, password });
+    const second = await customerRepo.registerCustomer({ name: 'Address owner two', phone: secondPhone, password });
+    const firstAddress = await client.execute('INSERT INTO customer_addresses (customer_id,label,recipient_name,recipient_phone,division,district,upazila,street_address) VALUES (?,?,?,?,?,?,?,?)', [first.id, 'Home', 'Owner One', firstPhone, 'Dhaka', 'Dhaka', 'Dhanmondi', 'House 11, Owner One Road']);
+    const secondAddress = await client.execute('INSERT INTO customer_addresses (customer_id,label,recipient_name,recipient_phone,division,district,upazila,street_address) VALUES (?,?,?,?,?,?,?,?)', [second.id, 'Home', 'Owner Two', secondPhone, 'Dhaka', 'Dhaka', 'Gulshan', 'House 22, Owner Two Road']);
+    const loginCustomer = async (phone) => {
+      const initial = await httpRequest(baseUrl, '/api/v1/csrf-token');
+      let cookie = (Array.isArray(initial.headers['set-cookie']) ? initial.headers['set-cookie'] : [initial.headers['set-cookie']]).filter(Boolean).map((value) => value.split(';')[0]).join('; ');
+      const login = await httpRequest(baseUrl, '/customer/login', { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded', 'x-csrf-token': JSON.parse(initial.body).data.csrfToken }, body: new URLSearchParams({ phone, password }).toString() });
+      assert.equal(login.statusCode, 302);
+      cookie = (Array.isArray(login.headers['set-cookie']) ? login.headers['set-cookie'] : [login.headers['set-cookie']]).filter(Boolean).map((value) => value.split(';')[0]).join('; ');
+      const token = await httpRequest(baseUrl, '/api/v1/csrf-token', { headers: { Cookie: cookie } });
+      return { cookie, csrf: JSON.parse(token.body).data.csrfToken };
+    };
+    const one = await loginCustomer(firstPhone);
+    const account = await httpRequest(baseUrl, '/customer/account', { headers: { Cookie: one.cookie } });
+    assert.equal(account.statusCode, 200);
+    assert.match(account.body, /House 11, Owner One Road/);
+    assert.doesNotMatch(account.body, /House 22, Owner Two Road/, 'account read is scoped to the authenticated customer');
+    const foreignDelete = await httpRequest(baseUrl, `/customer/account/addresses/${secondAddress.insertId}/delete`, { method: 'POST', headers: { Cookie: one.cookie, 'Content-Type': 'application/x-www-form-urlencoded', 'x-csrf-token': one.csrf }, body: '_csrf=' + encodeURIComponent(one.csrf) });
+    assert.equal(foreignDelete.statusCode, 404, 'cross-customer delete is indistinguishable from a missing address');
+    assert.equal(Number((await client.queryOne('SELECT COUNT(*) AS n FROM customer_addresses WHERE id=? AND customer_id=?', [secondAddress.insertId, second.id])).n), 1, 'foreign address remains unchanged');
+    for (const id of ['not-an-id', '9007199254740992']) {
+      const invalid = await httpRequest(baseUrl, `/customer/account/addresses/${id}/delete`, { method: 'POST', headers: { Cookie: one.cookie, 'Content-Type': 'application/x-www-form-urlencoded', 'x-csrf-token': one.csrf }, body: '_csrf=' + encodeURIComponent(one.csrf) });
+      assert.equal(invalid.statusCode, 404, `invalid address ID ${id} is rejected`);
+    }
+    const missing = await httpRequest(baseUrl, '/customer/account/addresses/999999999/delete', { method: 'POST', headers: { Cookie: one.cookie, 'Content-Type': 'application/x-www-form-urlencoded', 'x-csrf-token': one.csrf }, body: '_csrf=' + encodeURIComponent(one.csrf) });
+    assert.equal(missing.statusCode, 404, 'well-formed but missing address ID is rejected');
+    const malformed = await httpRequest(baseUrl, '/customer/account/addresses', { method: 'POST', headers: { Cookie: one.cookie, 'Content-Type': 'application/json', 'x-csrf-token': one.csrf }, body: 'null' });
+    assert.equal(malformed.statusCode, 400, 'malformed address body is a client validation error');
+    const unsupportedUpdate = await httpRequest(baseUrl, `/customer/account/addresses/${firstAddress.insertId}`, { method: 'POST', headers: { Cookie: one.cookie, 'Content-Type': 'application/x-www-form-urlencoded', 'x-csrf-token': one.csrf }, body: new URLSearchParams({ _csrf: one.csrf, recipient_name: 'Changed' }).toString() });
+    assert.equal(unsupportedUpdate.statusCode, 404, 'no address-update route exists, so an ID cannot be used to update another owner address');
+
+    const product = await client.queryOne('SELECT id FROM products WHERE slug=?', ['artisan-date-gift-box']);
+    const cartAdd = await httpRequest(baseUrl, '/cart/add', { method: 'POST', headers: { Cookie: one.cookie, 'Content-Type': 'application/json', Accept: 'application/json', 'x-csrf-token': one.csrf }, body: JSON.stringify({ product_id: product.id, qty: 1 }) });
+    assert.equal(cartAdd.statusCode, 200);
+    const checkout = await httpRequest(baseUrl, '/customer/checkout?lang=en', { headers: { Cookie: one.cookie } });
+    const checkoutCsrf = checkout.body.match(/name="_csrf" value="([^"]+)"/);
+    const requestKey = checkout.body.match(/name="checkout_request_key" value="([^"]+)"/);
+    assert.ok(checkoutCsrf && requestKey);
+    const foreignUse = await httpRequest(baseUrl, '/customer/checkout', { method: 'POST', headers: { Cookie: one.cookie, 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ _csrf: checkoutCsrf[1], checkout_request_key: requestKey[1], customer_name: first.name, phone: firstPhone, address_id: String(secondAddress.insertId), delivery_location_id: String(deliveryLocationId), payment_method: 'cod', confirm_order: 'yes' }).toString() });
+    assert.equal(foreignUse.statusCode, 400, 'a saved-address ID alone cannot supply another customer\'s shipping address');
+    assert.equal(Number((await client.queryOne('SELECT COUNT(*) AS n FROM orders WHERE customer_id=?', [first.id])).n), 0, 'foreign ID did not create an order');
+  });
+
   test('8. Phase 07 deterministic concurrent persistent-cart adds do not lose quantity updates', { skip: !MYSQL_HOST ? SKIP_REASON : false }, async () => {
     const phone = `016${String(Date.now()).slice(-8)}`;
     const customer = await customerRepo.registerCustomer({ name: 'Concurrent cart owner', phone, password: 'SecureCartPassword!2026' });

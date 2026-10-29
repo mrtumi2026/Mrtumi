@@ -132,7 +132,12 @@ async function createOrder(input,options={}){
     // Reserve only after the durable order and lines exist, in this same transaction.
     await lifecycle.reserveOrderInventoryTx(tx,Number(order.insertId),{type:'system'});
     if(coupon.code)await tx.execute('UPDATE coupons SET used_count=used_count+1 WHERE code=?',[coupon.code]);
-    if(customerId)await tx.execute('UPDATE customers SET total_orders=total_orders+1,address=? WHERE id=?',[address,customerId]);
+    if(customerId){
+      await tx.execute('UPDATE customers SET total_orders=total_orders+1,address=? WHERE id=?',[address,customerId]);
+      // The order, inventory reservation, and saved-cart clear must commit or roll back together.
+      // Cart mutations acquire the same customer lock, so this clear cannot race a line-scoped write.
+      await tx.execute('DELETE FROM customer_cart_items WHERE customer_id=?',[customerId]);
+    }
     if(recovery){
       await tx.execute("UPDATE incomplete_orders SET status='recovered',recovered_order_id=? WHERE id=? AND consent_withdrawn_at IS NULL",[order.insertId,recoveryId]);
       await tx.execute("INSERT INTO incomplete_order_history (incomplete_order_id,from_status,to_status,reason) VALUES (?,?,'recovered','Customer placed order through the same consented checkout session')",[recoveryId,recovery.status]);
