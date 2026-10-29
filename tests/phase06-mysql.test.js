@@ -172,7 +172,13 @@ describe('Phase 06 — Live MySQL 8.0 schema, product, stock ledger & purchase r
     };
     const orderId = await makeConfirmedOrder('P08EXP');
     const beforeHeld = Number((await db.queryOne('SELECT stock_reserved FROM products WHERE id=?',[productId])).stock_reserved);
+    const dryRunLedgerBefore=Number((await db.queryOne("SELECT COUNT(*) AS n FROM stock_ledger WHERE reference_type='order' AND reference_id=? AND reason='Expired order reservation'",[orderId])).n);
+    const dryRunAuditBefore=Number((await db.queryOne("SELECT COUNT(*) AS n FROM audit_logs WHERE action='inventory.reservation.expired' AND entity_id=?",[String(orderId)])).n);
     assert.equal((await phase08.listExpiredOrderReservationCandidates({limit:10})).some(row=>row.reservation_key===`order:${orderId}`),true);
+    assert.equal(Number((await db.queryOne('SELECT stock_reserved FROM products WHERE id=?',[productId])).stock_reserved),beforeHeld,'candidate discovery is read-only');
+    assert.equal((await db.queryOne('SELECT status FROM stock_reservations WHERE reservation_key=?',[`order:${orderId}`])).status,'active','candidate discovery does not expire holds');
+    assert.equal(Number((await db.queryOne("SELECT COUNT(*) AS n FROM stock_ledger WHERE reference_type='order' AND reference_id=? AND reason='Expired order reservation'",[orderId])).n),dryRunLedgerBefore,'candidate discovery writes no release ledger entry');
+    assert.equal(Number((await db.queryOne("SELECT COUNT(*) AS n FROM audit_logs WHERE action='inventory.reservation.expired' AND entity_id=?",[String(orderId)])).n),dryRunAuditBefore,'candidate discovery writes no expiry audit event');
     const competing = await Promise.all([phase08.expireExpiredOrderReservations({limit:10}),phase08.expireExpiredOrderReservations({limit:10})]);
     assert.equal(competing.reduce((sum,result)=>sum+result.expiredReservations,0),1);
     assert.equal(Number((await db.queryOne('SELECT stock_reserved FROM products WHERE id=?',[productId])).stock_reserved),beforeHeld-1);
