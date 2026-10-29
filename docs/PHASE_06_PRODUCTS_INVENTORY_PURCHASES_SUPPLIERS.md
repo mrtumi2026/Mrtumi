@@ -42,7 +42,7 @@
 
 - `/admin/phase06#ledger` now renders a bounded, newest-first 25-row movement page with optional product filtering and clamped pagination. It shows timestamp, product SKU/name, variant identity/labels when present, stock pool, movement type, quantity delta, resulting balance, reference type/ID, and reason. Cost/unit-cost and calculated valuation fields are intentionally excluded.
 - `listStockLedger` binds product and limit/offset parameters, rejects malformed product IDs, joins optional variants without dropping parent-product events, and returns a total/page summary. The existing Admin session and `inventory.manage` route boundary protects the report; it introduces no mutation endpoint or new stock policy.
-- SQLite tests cover the bounded newest-first page, product filter, page clamping, invalid filter rejection, and absence of valuation fields. Authenticated MySQL HTTP coverage renders a variant-linked movement and reason in English. MySQL 8.0/MariaDB 10.11 exact-SHA CI for this report is pending.
+- SQLite tests cover the bounded newest-first page, product filter, page clamping, invalid filter rejection, read-only behavior, variant SKU resolution, and absence of valuation fields. Authenticated MySQL HTTP coverage renders a variant-linked movement and reason in English. Exact-SHA run [`40826203164`](https://github.com/mrtumi2026/Mrtumi/actions/runs/40826203164) passed lint, migration lifecycle, and integration suites on MySQL 8.0 and MariaDB 10.11 for code SHA `d52671c7543320845439e89f0c6bda85903e1c3a`.
 
 ## Purchase creation audit atomicity (current exact-SHA verification)
 
