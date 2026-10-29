@@ -726,9 +726,14 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
       return { cookie, csrf: JSON.parse(token.body).data.csrfToken };
     };
     const one = await loginCustomer(firstPhone);
+    const createOwn = await httpRequest(baseUrl, '/customer/account/addresses', { method: 'POST', headers: { Cookie: one.cookie, 'Content-Type': 'application/x-www-form-urlencoded', 'x-csrf-token': one.csrf }, body: new URLSearchParams({ _csrf: one.csrf, label: 'Work', recipient_name: 'Owner One Work', recipient_phone: firstPhone, division: 'Dhaka', district: 'Dhaka', upazila: 'Dhanmondi', street_address: 'House 12, Owner One Work Road' }).toString() });
+    assert.equal(createOwn.statusCode, 302, 'authenticated owner can create a valid saved address');
+    const createdAddress = await client.queryOne('SELECT id,customer_id FROM customer_addresses WHERE customer_id=? AND recipient_name=?', [first.id, 'Owner One Work']);
+    assert.ok(createdAddress, 'valid address persists for its authenticated owner');
     const account = await httpRequest(baseUrl, '/customer/account', { headers: { Cookie: one.cookie } });
     assert.equal(account.statusCode, 200);
     assert.match(account.body, /House 11, Owner One Road/);
+    assert.match(account.body, /House 12, Owner One Work Road/);
     assert.doesNotMatch(account.body, /House 22, Owner Two Road/, 'account read is scoped to the authenticated customer');
     const foreignDelete = await httpRequest(baseUrl, `/customer/account/addresses/${secondAddress.insertId}/delete`, { method: 'POST', headers: { Cookie: one.cookie, 'Content-Type': 'application/x-www-form-urlencoded', 'x-csrf-token': one.csrf }, body: '_csrf=' + encodeURIComponent(one.csrf) });
     assert.equal(foreignDelete.statusCode, 404, 'cross-customer delete is indistinguishable from a missing address');
@@ -747,6 +752,9 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
     assert.equal(Number((await client.queryOne('SELECT COUNT(*) AS n FROM customer_addresses WHERE customer_id=?', [first.id])).n), addressCountBeforeMalformedField, 'malformed field does not persist an address');
     const unsupportedUpdate = await httpRequest(baseUrl, `/customer/account/addresses/${firstAddress.insertId}`, { method: 'POST', headers: { Cookie: one.cookie, 'Content-Type': 'application/x-www-form-urlencoded', 'x-csrf-token': one.csrf }, body: new URLSearchParams({ _csrf: one.csrf, recipient_name: 'Changed' }).toString() });
     assert.equal(unsupportedUpdate.statusCode, 404, 'no address-update route exists, so an ID cannot be used to update another owner address');
+    const ownerDelete = await httpRequest(baseUrl, `/customer/account/addresses/${createdAddress.id}/delete`, { method: 'POST', headers: { Cookie: one.cookie, 'Content-Type': 'application/x-www-form-urlencoded', 'x-csrf-token': one.csrf }, body: '_csrf=' + encodeURIComponent(one.csrf) });
+    assert.equal(ownerDelete.statusCode, 302, 'authenticated owner can delete their own saved address');
+    assert.equal(Number((await client.queryOne('SELECT COUNT(*) AS n FROM customer_addresses WHERE id=? AND customer_id=?', [createdAddress.id, first.id])).n), 0, 'owner deletion persists');
 
     const product = await client.queryOne('SELECT id FROM products WHERE slug=?', ['artisan-date-gift-box']);
     const cartAdd = await httpRequest(baseUrl, '/cart/add', { method: 'POST', headers: { Cookie: one.cookie, 'Content-Type': 'application/json', Accept: 'application/json', 'x-csrf-token': one.csrf }, body: JSON.stringify({ product_id: product.id, qty: 1 }) });
