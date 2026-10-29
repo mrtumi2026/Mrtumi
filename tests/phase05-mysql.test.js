@@ -601,21 +601,21 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
         return { cookie, csrf: JSON.parse(token.body).data.csrfToken };
       };
       const [first, second] = await Promise.all([makeSession(), makeSession()]);
-      const originalReplace = customerRepo.replaceCart;
+      const originalAddCartLine = customerRepo.addCartLine;
       let arrivals = 0;
       let openGate;
       const gate = new Promise((resolve) => { openGate = resolve; });
-      customerRepo.replaceCart = async (...args) => {
+      customerRepo.addCartLine = async (...args) => {
         arrivals += 1;
         if (arrivals === 2) openGate();
         await gate;
-        return originalReplace(...args);
+        return originalAddCartLine(...args);
       };
       let responses;
       try {
         responses = await Promise.all([first, second].map((session) => httpRequest(baseUrl, '/cart/add', { method: 'POST', headers: { Cookie: session.cookie, 'Content-Type': 'application/json', Accept: 'application/json', 'x-csrf-token': session.csrf }, body: JSON.stringify({ product_id: inhouseProdId, variant_id: variant5KgId, qty: 1 }) })));
       } finally {
-        customerRepo.replaceCart = originalReplace;
+        customerRepo.addCartLine = originalAddCartLine;
       }
       assert.ok(responses.every((response) => response.statusCode === 200), responses.map((response) => response.body.slice(0, 200)).join('\n'));
       const finalQuantity = Number((await client.queryOne('SELECT quantity FROM customer_cart_items WHERE customer_id=? AND product_id=? AND variant_id=?', [customer.id, inhouseProdId, variant5KgId])).quantity);

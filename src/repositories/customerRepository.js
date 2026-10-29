@@ -80,9 +80,14 @@ function normalizeCartLines(sessionCart, { additive = false } = {}) {
   }
   return [...normalized.values()];
 }
+async function lockCustomerCart(tx, customerId) {
+  const customer = await tx.queryOne('SELECT `id` FROM `customers` WHERE `id`=? FOR UPDATE', [customerId]);
+  if (!customer) throw new NotFoundError('Customer not found.');
+}
 async function mergeCart(customerId, sessionCart) {
   const normalized = normalizeCartLines(sessionCart, { additive: true });
   await withTransaction(async (tx) => {
+    await lockCustomerCart(tx, customerId);
     for (const item of normalized) {
       const product = await tx.queryOne('SELECT `id` FROM `products` WHERE `id` = ? AND `status` = 1 AND `is_archived` = 0 LIMIT 1', [item.productId]);
       if (!product) continue;
@@ -105,10 +110,27 @@ async function listCart(customerId, locale = 'bn') {
     return { key: `saved-${row.product_id}-${row.variant_id || 0}`, product_id: Number(row.product_id), variant_id: row.variant_id == null ? null : Number(row.variant_id), sku: row.variant_sku || row.sku, name: locale === 'en' ? row.name_en || row.name_bn : row.name_bn || row.name_en, slug: row.slug, image: row.image_url, regular_price: retailPaisa / 100, wholesale_price: wholesalePaisa / 100, wholesale_min_qty: Number(row.wholesale_min_qty || 0), price: unitPaisa / 100, qty, size: row.size_label || '', color: row.color_label || '' };
   });
 }
+async function addCartLine(customerId, line, maxQuantity = 99) {
+  const [item] = normalizeCartLines([line]);
+  const maximum = Number(maxQuantity);
+  if (!item || !Number.isSafeInteger(maximum) || maximum < 1 || maximum > 99) throw new ValidationError('Invalid cart line or stock limit.');
+  return withTransaction(async (tx) => {
+    await lockCustomerCart(tx, customerId);
+    const product = await tx.queryOne('SELECT `id` FROM `products` WHERE `id`=? AND `status`=1 AND `is_archived`=0 LIMIT 1', [item.productId]);
+    if (!product) throw new NotFoundError('Product is no longer available.');
+    if (item.variantId) {
+      const variant = await tx.queryOne('SELECT `id` FROM `product_variants` WHERE `id`=? AND `product_id`=? AND `status`=1 LIMIT 1', [item.variantId, item.productId]);
+      if (!variant) throw new NotFoundError('Product variant is no longer available.');
+    }
+    await tx.execute('INSERT INTO `customer_cart_items` (`customer_id`,`product_id`,`variant_id`,`quantity`) VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE `quantity`=LEAST(?,`quantity`+VALUES(`quantity`))', [customerId, item.productId, item.variantId, item.quantity, maximum]);
+    const saved = await tx.queryOne('SELECT `quantity` FROM `customer_cart_items` WHERE `customer_id`=? AND `product_id`=? AND `variant_id` <=> ? LIMIT 1', [customerId, item.productId, item.variantId]);
+    return Number(saved?.quantity || 0);
+  });
+}
 async function replaceCart(customerId, sessionCart) {
   const normalized = normalizeCartLines(sessionCart);
   await withTransaction(async (tx) => {
-    await tx.queryOne('SELECT `id` FROM `customers` WHERE `id`=? FOR UPDATE', [customerId]);
+    await lockCustomerCart(tx, customerId);
     await tx.execute('DELETE FROM `customer_cart_items` WHERE `customer_id`=?', [customerId]);
     for (const item of normalized) {
       const product = await tx.queryOne('SELECT `id` FROM `products` WHERE `id`=? AND `status`=1 AND `is_archived`=0 LIMIT 1', [item.productId]);
@@ -122,6 +144,9 @@ async function replaceCart(customerId, sessionCart) {
   });
 }
 async function clearCart(customerId) {
-  await mysqlClient().execute('DELETE FROM `customer_cart_items` WHERE `customer_id`=?', [customerId]);
+  await withTransaction(async (tx) => {
+    await lockCustomerCart(tx, customerId);
+    await tx.execute('DELETE FROM `customer_cart_items` WHERE `customer_id`=?', [customerId]);
+  });
 }
-module.exports = { normalizeBdPhone, validatePassword, registerCustomer, authenticateCustomer, listAddresses, saveAddress, deleteAddress, mergeCart, listCart, replaceCart, clearCart };
+module.exports = { normalizeBdPhone, validatePassword, registerCustomer, authenticateCustomer, listAddresses, saveAddress, deleteAddress, mergeCart, listCart, addCartLine, replaceCart, clearCart };

@@ -596,7 +596,14 @@ router.post(
         it.color === chosenColor
     );
 
-    if (existing) {
+    if (storefrontRepo.isMysqlMode() && req.customerUser?.id) {
+      await customerRepo.addCartLine(req.customerUser.id, {
+        product_id: prod.id,
+        variant_id: matchedVariant ? matchedVariant.id : null,
+        qty: addQty,
+      }, Math.min(99, availableStock));
+      req.session.cart = await customerRepo.listCart(req.customerUser.id, req.locale);
+    } else if (existing) {
       existing.qty = Math.min(availableStock, Number(existing.qty || 1) + addQty);
       existing.price = resolveEffectiveUnitPrice(prod, matchedVariant, existing.qty);
     } else {
@@ -622,7 +629,7 @@ router.post(
       });
     }
 
-    await persistCustomerCart(req);
+    if (!(storefrontRepo.isMysqlMode() && req.customerUser?.id)) await persistCustomerCart(req);
     const state = computeCartTotals(req);
     const isBuyNow = String(buy_now || '') === '1' || buy_now === true;
     const addedMsg = t('store.addedToCartMsg', { name: prod.name });
