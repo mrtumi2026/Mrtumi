@@ -64,6 +64,23 @@ describe('Phase 09 dashboard repository contract', () => {
     assert.match(source, /Order-status definitions are retained to preserve historical order labels/);
   });
 
+  test('MySQL POS normalizes unique product quantities and rejects invalid or excessive cart input before persistence', () => {
+    const pos = require('../src/repositories/adminPosRepository');
+    assert.deepEqual(pos.parsePosLines(JSON.stringify([{id:9,qty:2},{product_id:'3',qty:1},{id:9,qty:3}])),[
+      {productId:3,qty:1},{productId:9,qty:5},
+    ]);
+    for(const input of [[],{},'not-json',JSON.stringify([{id:1,qty:0}]),JSON.stringify([{id:1,qty:1.5}]),JSON.stringify([{id:-1,qty:1}]),JSON.stringify([{id:1,qty:100001}])]) {
+      assert.throws(()=>pos.parsePosLines(input),{code:'VALIDATION_ERROR'});
+    }
+    assert.throws(()=>pos.parsePosLines([{id:1,qty:100000},{id:1,qty:1}]),{code:'VALIDATION_ERROR'});
+    const source=fs.readFileSync(path.join(__dirname,'../src/routes/adminOrders.js'),'utf8');
+    assert.match(source,/adminPosRepository\.listPosFormData\(\)/);
+    assert.match(source,/adminPosRepository\.createPosOrder\(req\.body/);
+    assert.match(source,/id: req\.adminUser\?\.id[\s\S]{0,100}userAgent: req\.get\('user-agent'\)/);
+    const view=fs.readFileSync(path.join(__dirname,'../views/admin/pos.ejs'),'utf8');
+    assert.match(view,/name="_csrf" value="<%= csrfToken/);
+  });
+
   test('complaint repository validates before persistence and MySQL admin routes delegate safe actions', async () => {
     const complaints = require('../src/repositories/adminComplaintRepository');
     await assert.rejects(complaints.createComplaint({name:'A',phone:'bad',invoice_id:'',details:'issue'}), { code:'VALIDATION_ERROR', statusCode:400 });

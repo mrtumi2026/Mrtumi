@@ -54,6 +54,7 @@
       <!-- Right: POS Cart & Customer Billing -->
       <div class="col-lg-5">
         <form action="/admin/order/create" method="POST" id="posForm" class="tbl-card p-3">
+          <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>" />
           <input type="hidden" name="items_json" id="posItemsJson" value="[]" />
 
           <h6 class="fw-bold border-bottom pb-2 mb-3">🛒 POS Cart Items</h6>

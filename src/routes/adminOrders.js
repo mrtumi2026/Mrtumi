@@ -3,9 +3,10 @@ const db = require('../db/database');
 const { requireAdmin } = require('../middleware/auth');
 const { env } = require('../config/env');
 const { asyncHandler } = require('../utils/asyncHandler');
-const { ConflictError } = require('../utils/errors');
+const { ConflictError, ValidationError, NotFoundError } = require('../utils/errors');
 const adminOrderReadRepository = require('../repositories/adminOrderReadRepository');
 const adminOrderStatusRepository = require('../repositories/adminOrderStatusRepository');
+const adminPosRepository = require('../repositories/adminPosRepository');
 
 const router = express.Router();
 router.use('/admin', requireAdmin);
@@ -20,7 +21,11 @@ function generateInvoiceId() {
 }
 
 // ─── POS System (/admin/order/create) ───
-router.get('/admin/order/create', (_req, res) => {
+router.get('/admin/order/create', asyncHandler(async (req, res) => {
+  if (env.db.client === 'mysql') {
+    const formData = await adminPosRepository.listPosFormData();
+    return res.render('admin/pos', { ...formData, csrfToken: req.csrfToken() });
+  }
   const products = db.all(
     `SELECT p.*, c.name AS category_name
      FROM products p
@@ -38,9 +43,25 @@ router.get('/admin/order/create', (_req, res) => {
     customers,
     couriers,
   });
-});
+}));
 
-router.post('/admin/order/create', (req, res) => {
+router.post('/admin/order/create', asyncHandler(async (req, res) => {
+  if (env.db.client === 'mysql') {
+    try {
+      const result = await adminPosRepository.createPosOrder(req.body, {
+        id: req.adminUser?.id ?? null, ip: req.ip, userAgent: req.get('user-agent') || '',
+      });
+      req.adminDomainAudit = true;
+      req.flash('success', `POS order #${result.invoiceNo} created successfully.`);
+      return res.redirect(`/admin/order/view/${result.id}`);
+    } catch (err) {
+      if (err instanceof ValidationError || err instanceof NotFoundError || err instanceof ConflictError) {
+        req.flash('error', err.message);
+        return res.redirect('/admin/order/create');
+      }
+      throw err;
+    }
+  }
   try {
     const {
       customer_name,
@@ -132,7 +153,7 @@ router.post('/admin/order/create', (req, res) => {
     req.flash('error', 'অর্ডার তৈরি করতে সমস্যা হয়েছে।');
     res.redirect('/admin/order/create');
   }
-});
+}));
 
 // ─── View / Process Single Order ───
 router.get('/admin/order/view/:id', asyncHandler(async (req, res) => {

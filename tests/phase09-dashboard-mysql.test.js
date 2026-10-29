@@ -583,6 +583,58 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     assert.equal(Number((await db.queryOne("SELECT COUNT(*) AS n FROM audit_logs WHERE action='inventory.variant.adjust' AND entity_id=?",[String(variantId)])).n),auditCount,'failed adjustment leaves no audit row');
   });
 
+  test('POS page and creation use MySQL inventory, server prices, integer paisa and one audited transaction',async(t)=>{
+    if(!MYSQL_HOST)return t.skip(SKIP);
+    csrfToken=await fetchCsrf(dashboardCookie);
+    const {cookie:noGrantCookie,token:noGrantToken}=await noGrantSession();
+    assert.equal((await request('/admin/order/create',{cookie:'',accept:'text/html'})).status,302,'POS requires an authenticated admin');
+    assert.equal((await request('/admin/order/create',{cookie:noGrantCookie,token:noGrantToken,accept:'text/html'})).status,403,'POS requires orders.manage');
+    const page=await request('/admin/order/create',{accept:'text/html'});
+    assert.equal(page.status,200,page.text.slice(0,300));assert.match(page.text,/Dashboard product/);assert.match(page.text,/name="_csrf"/);
+    const productBefore=await db.queryOne('SELECT sale_price_paisa,image_url,unit_label,stock_on_hand,stock_reserved,sold_count FROM products WHERE id=?',[productId]);
+    assert.ok(Number(productBefore.stock_on_hand)-Number(productBefore.stock_reserved)>=3,'fixture has quantity for sale and rollback coverage');
+    const suffix=Date.now();const phone=`017${String(suffix).slice(-8)}`;
+    const input={customer_name:`P09 POS ${suffix}`,phone,address:'POS fixture address',shipping_charge:'60',discount:'5',payment_method:'Cash',courier_name:'P09 Test Courier',note:'POS transaction fixture',items_json:JSON.stringify([{id:productId,name:'Tampered client product',price:0,image:'/tampered.jpg',qty:2}])};
+    assert.equal((await request('/admin/order/create',{method:'POST',token:'',body:input})).status,403,'POS order creation requires CSRF');
+    assert.equal((await request('/admin/order/create',{method:'POST',cookie:noGrantCookie,token:noGrantToken,body:input})).status,403,'POS order creation requires orders.manage');
+    const invalid=await request('/admin/order/create',{method:'POST',body:{...input,items_json:JSON.stringify([{id:productId,qty:0}])}});
+    assert.equal(invalid.status,302,'invalid POS line returns to the form');
+    assert.equal(Number((await db.queryOne('SELECT stock_on_hand FROM products WHERE id=?',[productId])).stock_on_hand),Number(productBefore.stock_on_hand),'invalid cart leaves inventory untouched');
+    const created=await request('/admin/order/create',{method:'POST',body:input});
+    assert.equal(created.status,302,created.text.slice(0,300));assert.match(created.headers.get('location'),/^\/admin\/order\/view\//);
+    const orderId=Number(created.headers.get('location').split('/').pop());
+    const order=await db.queryOne('SELECT id,invoice_no,customer_id,subtotal_paisa,shipping_paisa,discount_paisa,total_paisa,paid_paisa,cod_due_paisa,payment_method,payment_status,order_status,order_channel,traffic_source,courier_code FROM orders WHERE id=?',[orderId]);
+    assert.ok(order);assert.equal(Number(order.subtotal_paisa),2*Number(productBefore.sale_price_paisa));assert.equal(Number(order.shipping_paisa),6000);assert.equal(Number(order.discount_paisa),500);assert.equal(Number(order.total_paisa),2*Number(productBefore.sale_price_paisa)+5500);
+    assert.equal(Number(order.paid_paisa),Number(order.total_paisa));assert.equal(Number(order.cod_due_paisa),0);assert.equal(order.payment_status,'paid');assert.equal(order.order_status,'processing');assert.equal(order.order_channel,'pos');assert.equal(order.traffic_source,'POS');
+    assert.match(order.courier_code,/^p09-courier-/,'selected courier is stored without a provider booking');
+    const line=await db.queryOne('SELECT product_name,product_image,unit_price_paisa,qty,line_total_paisa,size_label FROM order_items WHERE order_id=?',[orderId]);
+    assert.deepEqual([line.product_name,line.product_image,Number(line.unit_price_paisa),Number(line.qty),Number(line.line_total_paisa),line.size_label],['Dashboard product',productBefore.image_url,Number(productBefore.sale_price_paisa),2,2*Number(productBefore.sale_price_paisa),productBefore.unit_label],'POS uses canonical product fields rather than client price/name/image');
+    const productAfter=await db.queryOne('SELECT stock_on_hand,stock_reserved,sold_count FROM products WHERE id=?',[productId]);
+    assert.deepEqual([Number(productAfter.stock_on_hand),Number(productAfter.stock_reserved),Number(productAfter.sold_count)],[Number(productBefore.stock_on_hand)-2,Number(productBefore.stock_reserved),Number(productBefore.sold_count)+2]);
+    const ledger=await db.queryOne("SELECT movement_type,qty_delta,balance_after,reference_type,reference_id,actor_user_id FROM stock_ledger WHERE reference_type='order' AND reference_id=? ORDER BY id DESC LIMIT 1",[orderId]);
+    assert.deepEqual([ledger.movement_type,Number(ledger.qty_delta),Number(ledger.balance_after),ledger.reference_type,Number(ledger.reference_id),Number(ledger.actor_user_id)],['pos_sale',-2,Number(productAfter.stock_on_hand),'order',orderId,dashboardUserId]);
+    const customer=await db.queryOne('SELECT id,name,phone,total_orders FROM customers WHERE id=?',[order.customer_id]);assert.equal(customer.name,input.customer_name);assert.equal(customer.phone,phone);assert.equal(Number(customer.total_orders),1);
+    assert.ok(await db.queryOne("SELECT id FROM order_status_history WHERE order_id=? AND to_status='processing'",[orderId]));
+    assert.ok(await db.queryOne("SELECT actor_id,after_json FROM audit_logs WHERE action='order.pos.created' AND entity_id=?",[String(orderId)]));
+    const pendingPhone=`018${String(suffix).slice(-8)}`;
+    const pendingInput={...input,customer_name:`P09 POS pending ${suffix}`,phone:pendingPhone,shipping_charge:'0',discount:'0',payment_method:'Nagad',courier_name:'',items_json:JSON.stringify([{id:productId,qty:1}])};
+    const pendingResponse=await request('/admin/order/create',{method:'POST',body:pendingInput});assert.equal(pendingResponse.status,302);
+    const pendingOrderId=Number(pendingResponse.headers.get('location').split('/').pop());
+    const pendingOrder=await db.queryOne('SELECT payment_method,payment_status,paid_paisa,cod_due_paisa FROM orders WHERE id=?',[pendingOrderId]);
+    assert.deepEqual([pendingOrder.payment_method,pendingOrder.payment_status,Number(pendingOrder.paid_paisa),Number(pendingOrder.cod_due_paisa)],['Nagad','unpaid',0,0],'selecting an unpaid non-COD method makes no provider payment or COD claim');
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM order_payments WHERE order_id=?',[pendingOrderId])).n),0,'POS selection does not execute or record a provider operation');
+    const pendingProductAfter=await db.queryOne('SELECT stock_on_hand FROM products WHERE id=?',[productId]);
+    assert.equal(Number(pendingProductAfter.stock_on_hand),Number(productAfter.stock_on_hand)-1);
+    const cashlessPhone=`019${String(suffix).slice(-8)}`;
+    const failedInput={...input,customer_name:`P09 POS rollback ${suffix}`,phone:cashlessPhone,payment_method:'Nagad',courier_name:'',items_json:JSON.stringify([{id:productId,qty:1}])};
+    await db.execute("CREATE TRIGGER p09_fail_pos_create_audit BEFORE INSERT ON audit_logs FOR EACH ROW BEGIN IF NEW.action='order.pos.created' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture POS audit failure'; END IF; END");
+    try { assert.equal((await request('/admin/order/create',{method:'POST',body:failedInput})).status,503,'audit failure returns an unavailable response without claiming success'); }
+    finally { await db.execute('DROP TRIGGER IF EXISTS p09_fail_pos_create_audit'); }
+    assert.equal(Number((await db.queryOne('SELECT stock_on_hand FROM products WHERE id=?',[productId])).stock_on_hand),Number(pendingProductAfter.stock_on_hand),'failed POS audit rolls inventory back');
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM orders WHERE customer_phone=?',[cashlessPhone])).n),0,'failed POS audit rolls the order back');
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM customers WHERE phone=?',[cashlessPhone])).n),0,'failed POS audit rolls customer creation back');
+  });
+
   test('legacy order-status configuration uses MySQL, permission/CSRF, validation, audit and history-preserving deactivation',async(t)=>{
     if(!MYSQL_HOST)return t.skip(SKIP);
     csrfToken=await fetchCsrf(dashboardCookie);
