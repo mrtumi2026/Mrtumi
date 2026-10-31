@@ -46,4 +46,4 @@ A real 768 px admin inventory run found the supplier submit button expanding the
 2. D7 paths now have explicit legacy RBAC mappings; settlement list permits either prepare or approve permission while mutation permissions remain separate.
 3. Admin inventory supplier button wraps at tablet width to avoid document overflow.
 
-`npm run verify` after these changes: foundation checker **948 checks passed**; Node tests **167 total, 143 passed, 0 failed, 24 skipped** (MySQL/MariaDB integrations require CI). See the updated parent `browser-and-viewport-status.md` for exact-SHA CI status after push.
+`npm run verify` after these changes: foundation checker **948 checks passed**; Node tests **167 total, 143 passed, 0 failed, 24 skipped** (MySQL/MariaDB integrations require CI). Exact-SHA run [41215634955](https://github.com/mrtumi2026/Mrtumi/actions/runs/41215634955) passed on `3d2b4f5eafe62af1215f1915942de5365877fb46`, including [MySQL 8.0](https://github.com/mrtumi2026/Mrtumi/actions/runs/41215634955/job/124579438665) and [MariaDB 10.11](https://github.com/mrtumi2026/Mrtumi/actions/runs/41215634955/job/124579438898).
