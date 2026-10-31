@@ -7,6 +7,7 @@ const adminBlogRepository = require('../repositories/adminBlogRepository');
 const hrmEmployeeRepository = require('../repositories/hrmEmployeeRepository');
 const adminComplaintRepository = require('../repositories/adminComplaintRepository');
 const adminFinanceReadRepository = require('../repositories/adminFinanceReadRepository');
+const adminCustomerRepository = require('../repositories/adminCustomerRepository');
 const { asyncHandler } = require('../utils/asyncHandler');
 const { requireAdmin } = require('../middleware/auth');
 const { ConflictError } = require('../utils/errors');
@@ -1142,13 +1143,14 @@ router.post('/admin/permissions/delete/:id', (req, res) => {
   res.redirect('/admin/permissions/manage');
 });
 
-router.get('/admin/customer', (_req, res) => {
-  const rows = db.all('SELECT * FROM customers ORDER BY id DESC');
+router.get('/admin/customer', asyncHandler(async (req, res) => {
+  const rows = env.db.client==='mysql'
+    ? await adminCustomerRepository.listCustomers({search:req.query.search||''})
+    : db.all('SELECT * FROM customers ORDER BY id DESC');
   res.render('admin/crud-module', {
     pageTitle: 'Registered & Order Customers',
     subtitle: 'স্টোরের সকল গ্রাহকের তালিকা ও মোট অর্ডার সংখ্যা',
     createAction: '/admin/customer/create',
-    deletePrefix: '/admin/customer/delete',
     columns: [
       { key: 'id', label: '#' },
       { key: 'name', label: 'Customer Name' },
@@ -1164,9 +1166,17 @@ router.get('/admin/customer', (_req, res) => {
     ],
     rows,
   });
-});
+}));
 
-router.post('/admin/customer/create', (req, res) => {
+router.post('/admin/customer/create', asyncHandler(async (req, res) => {
+  if(env.db.client==='mysql'){
+    const result=await adminCustomerRepository.createCustomer(req.body,{
+      id:req.adminUser?.id||null,ip:req.ip||'',userAgent:req.get('user-agent')||'',
+    });
+    req.adminDomainAudit=true;
+    req.flash('success',`Customer #${result.id} added.`);
+    return res.redirect('/admin/customer');
+  }
   db.run(
     'INSERT INTO customers (name, phone, address, total_orders) VALUES (?, ?, ?, 0)',
     req.body.name,
@@ -1175,12 +1185,11 @@ router.post('/admin/customer/create', (req, res) => {
   );
   req.flash('success', 'গ্রাহক যুক্ত হয়েছে।');
   res.redirect('/admin/customer');
-});
+}));
 
-router.post('/admin/customer/delete/:id', (req, res) => {
-  db.run('DELETE FROM customers WHERE id = ?', req.params.id);
-  res.redirect('/admin/customer');
-});
+router.post('/admin/customer/delete/:id', asyncHandler(async (_req, _res) => {
+  throw new ConflictError('Customer deletion is disabled pending an approved data-retention policy.');
+}));
 
 // ─── Delivery Module ───
 router.get('/admin/delivery-boys', (_req, res) => {

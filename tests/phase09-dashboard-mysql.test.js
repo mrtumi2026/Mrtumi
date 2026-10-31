@@ -647,6 +647,60 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM customers WHERE phone=?',[cashlessPhone])).n),0,'failed POS audit rolls customer creation back');
   });
 
+  test('MySQL customer list/create preserves history, audit atomicity, authorization and retention guard',async(t)=>{
+    if(!MYSQL_HOST)return t.skip(SKIP);
+    const {cookie:noGrantCookie,token:noGrantToken}=await noGrantSession();
+    assert.equal((await request('/admin/customer',{cookie:noGrantCookie,token:noGrantToken})).status,403,'customer list requires customers.manage');
+    const page=await request('/admin/customer',{accept:'text/html'});
+    assert.equal(page.status,200,page.text.slice(0,300));assert.doesNotMatch(page.text,/password_hash/);assert.doesNotMatch(page.text,/\/admin\/customer\/delete\//,'customer management UI offers no hard-delete control');
+    const suffix=Date.now();const phone=`018${String(suffix).slice(-8)}`;const input={name:`P09 Admin Customer ${suffix}`,phone,address:'P09 admin fixture address'};
+    assert.equal((await request('/admin/customer/create',{method:'POST',token:'',body:input})).status,403,'customer creation requires CSRF');
+    assert.equal((await request('/admin/customer/create',{method:'POST',cookie:noGrantCookie,token:noGrantToken,body:input})).status,403,'customer creation requires customers.manage');
+    assert.equal((await request('/admin/customer/create',{method:'POST',body:{...input,phone:'123'}})).status,400,'invalid Bangladesh phone is rejected');
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM customers WHERE name=?',[input.name])).n),0);
+    const created=await request('/admin/customer/create',{method:'POST',body:input});assert.equal(created.status,302,created.text.slice(0,300));
+    const customer=await db.queryOne('SELECT id,name,phone,address,total_orders,status FROM customers WHERE phone=?',[phone]);
+    assert.ok(customer);assert.equal(customer.name,input.name);assert.equal(customer.phone,phone);assert.equal(Number(customer.total_orders),0);assert.equal(Number(customer.status),1);
+    const audit=await db.queryOne("SELECT actor_id,after_json FROM audit_logs WHERE action='customer.admin.created' AND entity_id=? ORDER BY id DESC LIMIT 1",[String(customer.id)]);
+    assert.ok(audit);assert.equal(Number(audit.actor_id),dashboardUserId);assert.match(audit.after_json,/\"phone\"/);
+    assert.equal((await request('/admin/customer/create',{method:'POST',body:input})).status,409,'duplicate customer phone is rejected');
+    const failedPhone=`019${String(suffix).slice(-8)}`;const failedName=`P09 Customer Rollback ${suffix}`;
+    await db.execute("CREATE TRIGGER p09_fail_customer_admin_audit BEFORE INSERT ON audit_logs FOR EACH ROW BEGIN IF NEW.action='customer.admin.created' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture customer audit failure'; END IF; END");
+    try { assert.equal((await request('/admin/customer/create',{method:'POST',body:{name:failedName,phone:failedPhone,address:'Rollback fixture'}})).status,500,'audit failure is surfaced'); }
+    finally { await db.execute('DROP TRIGGER IF EXISTS p09_fail_customer_admin_audit'); }
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM customers WHERE phone=?',[failedPhone])).n),0,'customer insert rolls back with its audit event');
+    const history=await db.queryOne('SELECT c.id,COUNT(o.id) AS order_count FROM customers c JOIN orders o ON o.customer_id=c.id GROUP BY c.id HAVING COUNT(o.id)>0 ORDER BY c.id LIMIT 1');
+    assert.ok(history,'POS fixture provides customer order history');
+    const priorOrderCount=Number(history.order_count);
+    assert.equal((await request(`/admin/customer/delete/${history.id}`,{method:'POST'})).status,409,'customer deletion is blocked pending retention policy');
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM orders WHERE customer_id=?',[history.id])).n),priorOrderCount,'blocked deletion preserves customer order history');
+  });
+
+  test('MySQL IP/phone block management requires security authorization, audits writes and retains history',async(t)=>{
+    if(!MYSQL_HOST)return t.skip(SKIP);
+    const {cookie:noGrantCookie,token:noGrantToken}=await noGrantSession();
+    assert.equal((await request('/admin/customer/ip-block',{cookie:noGrantCookie,token:noGrantToken})).status,403,'IP/phone block list requires security.manage');
+    const page=await request('/admin/customer/ip-block',{accept:'text/html'});
+    assert.equal(page.status,200,page.text.slice(0,300));assert.doesNotMatch(page.text,/\/admin\/customer\/ip-block\/delete\//,'block list has no destructive deletion control');
+    const suffix=Date.now();const phone=`017${String(suffix).slice(-8)}`;const input={ip_or_phone:phone,reason:'P09 repeated abuse'};
+    assert.equal((await request('/admin/customer/ip-block/create',{method:'POST',token:'',body:input})).status,403,'block creation requires CSRF');
+    assert.equal((await request('/admin/customer/ip-block/create',{method:'POST',cookie:noGrantCookie,token:noGrantToken,body:input})).status,403,'block creation requires security.manage');
+    assert.equal((await request('/admin/customer/ip-block/create',{method:'POST',body:{...input,ip_or_phone:'not-an-address'}})).status,400,'invalid block target is rejected');
+    const created=await request('/admin/customer/ip-block/create',{method:'POST',body:input});assert.equal(created.status,302,created.text.slice(0,300));
+    const block=await db.queryOne('SELECT id,target_type,ip_or_phone,reason,status FROM ip_blocks WHERE ip_or_phone=?',[phone]);
+    assert.ok(block);assert.equal(block.target_type,'phone');assert.equal(block.ip_or_phone,phone);assert.equal(Number(block.status),1);
+    const audit=await db.queryOne("SELECT actor_id,after_json FROM audit_logs WHERE action='customer.ip_block.created' AND entity_id=? ORDER BY id DESC LIMIT 1",[String(block.id)]);
+    assert.ok(audit);assert.equal(Number(audit.actor_id),dashboardUserId);assert.match(audit.after_json,/phone/);
+    assert.equal((await request('/admin/customer/ip-block/create',{method:'POST',body:input})).status,409,'duplicate block target is rejected');
+    const failedIp=`2001:db8::${String(suffix).slice(-4)}`;
+    await db.execute("CREATE TRIGGER p09_fail_ip_block_audit BEFORE INSERT ON audit_logs FOR EACH ROW BEGIN IF NEW.action='customer.ip_block.created' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture IP block audit failure'; END IF; END");
+    try { assert.equal((await request('/admin/customer/ip-block/create',{method:'POST',body:{ip_or_phone:failedIp,reason:'P09 rollback fixture'}})).status,500,'audit failure is surfaced'); }
+    finally { await db.execute('DROP TRIGGER IF EXISTS p09_fail_ip_block_audit'); }
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM ip_blocks WHERE ip_or_phone=?',[failedIp])).n),0,'block creation rolls back with audit');
+    assert.equal((await request(`/admin/customer/ip-block/delete/${block.id}`,{method:'POST'})).status,409,'block deletion is disabled pending policy review');
+    assert.ok(await db.queryOne('SELECT id FROM ip_blocks WHERE id=?',[block.id]),'blocked deletion preserves security record');
+  });
+
   test('MySQL order item edits, order updates, quick/bulk status actions enforce ownership, inventory and idempotency',async(t)=>{
     if(!MYSQL_HOST)return t.skip(SKIP);
     csrfToken=await fetchCsrf(dashboardCookie);

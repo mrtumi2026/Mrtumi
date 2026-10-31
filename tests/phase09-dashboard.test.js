@@ -119,6 +119,22 @@ describe('Phase 09 dashboard repository contract', () => {
     assert.doesNotMatch(operations,/router\.post\('\/admin\/payment-records/,'payment record page exposes no mutation endpoint');
   });
 
+  test('MySQL customer management delegates list/create to a transactional repository and blocks retention deletion',()=>{
+    const customers=require('../src/repositories/adminCustomerRepository');
+    assert.equal(typeof customers.listCustomers,'function');assert.equal(typeof customers.createCustomer,'function');
+    assert.equal(typeof customers.listIpBlocks,'function');assert.equal(typeof customers.createIpBlock,'function');
+    assert.equal(customers.deleteCustomer,undefined);
+    const source=fs.readFileSync(path.join(__dirname,'../src/routes/adminOperations.js'),'utf8');
+    assert.match(source,/adminCustomerRepository\.listCustomers/);assert.match(source,/adminCustomerRepository\.createCustomer/);
+    assert.match(source,/Customer deletion is disabled pending an approved data-retention policy/);
+    const orders=fs.readFileSync(path.join(__dirname,'../src/routes/adminOrders.js'),'utf8');
+    assert.match(orders,/adminCustomerRepository\.listIpBlocks/);assert.match(orders,/adminCustomerRepository\.createIpBlock/);
+    assert.match(orders,/IP\/phone block deletion is disabled/);
+    const policy=policyForAdminRoute('POST','/admin/customer/create');assert.equal(policy.key,'customers.manage');
+    assert.equal(policyForAdminRoute('POST','/admin/customer/ip-block/create').key,'security.manage');
+    assert.match(source,/req\.adminDomainAudit\s*=\s*true/);
+  });
+
   test('complaint repository validates before persistence and MySQL admin routes delegate safe actions', async () => {
     const complaints = require('../src/repositories/adminComplaintRepository');
     await assert.rejects(complaints.createComplaint({name:'A',phone:'bad',invoice_id:'',details:'issue'}), { code:'VALIDATION_ERROR', statusCode:400 });

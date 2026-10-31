@@ -9,6 +9,7 @@ const adminOrderReadRepository = require('../repositories/adminOrderReadReposito
 const adminOrderStatusRepository = require('../repositories/adminOrderStatusRepository');
 const adminPosRepository = require('../repositories/adminPosRepository');
 const adminOrderMutationRepository = require('../repositories/adminOrderMutationRepository');
+const adminCustomerRepository = require('../repositories/adminCustomerRepository');
 
 const router = express.Router();
 router.use('/admin', requireAdmin);
@@ -655,13 +656,14 @@ router.post('/admin/orderstatus/delete/:id', (req, res, next) => {
 });
 
 // ─── IP / Phone Block ───
-router.get('/admin/customer/ip-block', (_req, res) => {
-  const rows = db.all('SELECT * FROM ip_blocks ORDER BY id DESC');
+router.get('/admin/customer/ip-block', asyncHandler(async (_req, res) => {
+  const rows=env.db.client==='mysql'
+    ? await adminCustomerRepository.listIpBlocks()
+    : db.all('SELECT * FROM ip_blocks ORDER BY id DESC');
   res.render('admin/crud-module', {
     pageTitle: 'IP & Phone Block List',
     subtitle: 'ফেইক অর্ডার প্রতিরোধে সন্দেহজনক IP অ্যাড্রেস অথবা মোবাইল নম্বর ব্লক করুন',
     createAction: '/admin/customer/ip-block/create',
-    deletePrefix: '/admin/customer/ip-block/delete',
     columns: [
       { key: 'id', label: '#' },
       { key: 'ip_or_phone', label: 'Blocked IP / Phone' },
@@ -675,9 +677,17 @@ router.get('/admin/customer/ip-block', (_req, res) => {
     ],
     rows,
   });
-});
+}));
 
-router.post('/admin/customer/ip-block/create', (req, res) => {
+router.post('/admin/customer/ip-block/create', asyncHandler(async (req, res) => {
+  if(env.db.client==='mysql'){
+    const result=await adminCustomerRepository.createIpBlock(req.body,{
+      id:req.adminUser?.id||null,ip:req.ip||'',userAgent:req.get('user-agent')||'',
+    });
+    req.adminDomainAudit=true;
+    req.flash('success',`IP / phone block #${result.id} created.`);
+    return res.redirect('/admin/customer/ip-block');
+  }
   db.run(
     'INSERT INTO ip_blocks (ip_or_phone, reason) VALUES (?, ?)',
     String(req.body.ip_or_phone || '').trim(),
@@ -685,13 +695,11 @@ router.post('/admin/customer/ip-block/create', (req, res) => {
   );
   req.flash('success', 'IP / মোবাইল নম্বর সফলভাবে ব্লক তালিকায় যুক্ত হয়েছে।');
   res.redirect('/admin/customer/ip-block');
-});
+}));
 
-router.post('/admin/customer/ip-block/delete/:id', (req, res) => {
-  db.run('DELETE FROM ip_blocks WHERE id = ?', req.params.id);
-  req.flash('success', 'ব্লক তালিকা থেকে সরানো হয়েছে।');
-  res.redirect('/admin/customer/ip-block');
-});
+router.post('/admin/customer/ip-block/delete/:id', asyncHandler(async (_req, _res) => {
+  throw new ConflictError('IP/phone block deletion is disabled pending an owner-approved retention policy.');
+}));
 
 // ─── Refunds ───
 router.get('/admin/refunds', (req, res) => {
