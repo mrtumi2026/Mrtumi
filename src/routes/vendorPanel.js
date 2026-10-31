@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const db = require('../db/database');
 const { requireVendor } = require('../middleware/auth');
+const { requireCsrf } = require('../middleware/csrf');
 const upload = require('../middleware/upload');
 
 const router = express.Router();
@@ -310,13 +311,11 @@ router.get('/vendor/orders', (req, res) => {
   res.render('vendor/orders', { vendor, orderLines });
 });
 
-router.post('/vendor/orders/mark-ready/:orderId', (req, res) => {
-  const ord = db.get('SELECT * FROM orders WHERE id = ?', req.params.orderId);
-  if (ord && ord.status === 'pending') {
-    db.run("UPDATE orders SET status = 'processing' WHERE id = ?", ord.id);
-    req.flash('success', `অর্ডার #${ord.invoice_id} প্যাকিং / রেডি টু শিপ মার্ক করা হয়েছে!`);
-  }
-  res.redirect('/vendor/orders');
+// Vendor authority to transition a parent order is not defined or approved. Fail closed in every
+// database mode; do not query or mutate orders until D3 and fulfillment/history semantics are approved.
+router.post('/vendor/orders/mark-ready/:orderId', requireCsrf, (req, res) => {
+  req.flash('error', 'অর্ডারের স্ট্যাটাস পরিবর্তন নীতিমালা অনুমোদিত না হওয়া পর্যন্ত বন্ধ রয়েছে।');
+  return res.redirect('/vendor/orders');
 });
 
 // ─── Vendor Wallet & Withdrawals ───

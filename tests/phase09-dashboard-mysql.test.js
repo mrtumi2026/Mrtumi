@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('node:crypto');
 const { describe, test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const bcrypt = require('bcryptjs');
@@ -16,6 +17,8 @@ if (MYSQL_HOST) {
   process.env.DB_PASSWORD = process.env.MYSQL_TEST_PASSWORD || 'mrtumi_test_pw';
 }
 const { getPool, createQueryClient, closePool } = require('../src/db/mysqlPool');
+const { upsertSession } = require('../src/repositories/sessionRepository');
+const { deriveCsrfToken } = require('../src/middleware/csrf');
 const { migrateUp, migrateDown } = require('../src/db/migrator');
 const dashboardRepo = require('../src/repositories/adminDashboardRepository');
 const adminOrderRepo = require('../src/repositories/adminOrderReadRepository');
@@ -283,6 +286,41 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     assert.equal(Number((await db.queryOne('SELECT verified FROM vendors WHERE id=?',[vendorPending.insertId])).verified),0);
     assert.equal(Number((await db.queryOne('SELECT verified FROM resellers WHERE id=?',[resellerPending.insertId])).verified),0);
     assert.ok(await db.queryOne('SELECT id FROM vendors WHERE id=?',[vendorVerified.insertId]));assert.ok(await db.queryOne('SELECT id FROM resellers WHERE id=?',[resellerVerified.insertId]));
+  });
+
+  test('vendor mark-ready is CSRF-protected and fail-closed in MySQL without changing any order/history',async(t)=>{
+    if(!MYSQL_HOST)return t.skip(SKIP);
+    const suffix=Date.now();
+    const hash=bcrypt.hashSync('P09 Vendor Fixture Password!2026',8);
+    const owner=Number((await db.execute('INSERT INTO vendors(shop_name,owner_name,phone,password_hash,verified,status) VALUES(?,?,?,?,1,1)',[`P09 Vendor Owner ${suffix}`,'P09 Owner',`016${String(suffix).slice(-8)}`,hash])).insertId);
+    const other=Number((await db.execute('INSERT INTO vendors(shop_name,owner_name,phone,password_hash,verified,status) VALUES(?,?,?,?,1,1)',[`P09 Other Vendor ${suffix}`,'P09 Other',`017${String(suffix).slice(-8)}`,hash])).insertId);
+    async function makeVendorProduct(vendorId,label){
+      return Number((await db.execute('INSERT INTO products(sku,slug,name_bn,name_en,vendor_id,regular_price_paisa,sale_price_paisa,approval_status,status) VALUES(?,?,?,?,?,500,500,\'approved\',1)',[`P09-V-${suffix}-${label}`,`p09-v-${suffix}-${label}`,`P09 ${label}`,'P09 vendor fixture',vendorId])).insertId);
+    }
+    const ownerProduct=await makeVendorProduct(owner,'OWNER');
+    const otherProduct=await makeVendorProduct(other,'OTHER');
+    async function makeVendorOrder(label,productId,vendorId){
+      const orderId=Number((await db.execute('INSERT INTO orders(invoice_no,customer_name,customer_phone,shipping_address,subtotal_paisa,total_paisa,order_status) VALUES(?,?,?,\'Fixture address\',500,500,\'pending\')',[`P09-V-${suffix}-${label}`,`P09 ${label}`,'01790000000'])).insertId);
+      await db.execute('INSERT INTO order_items(order_id,product_id,vendor_id,product_name,unit_price_paisa,qty,line_total_paisa) VALUES(?,?,?,?,500,1,500)',[orderId,productId,vendorId,`P09 ${label} line`]);
+      await db.execute('INSERT INTO order_status_history(order_id,from_status,to_status,note,changed_by_user_id) VALUES(?,\'\',\'pending\',\'P09 vendor fixture\',NULL)',[orderId]);
+      return orderId;
+    }
+    const ownerOrder=await makeVendorOrder('OWNER',ownerProduct,owner);
+    const otherOrder=await makeVendorOrder('OTHER',otherProduct,other);
+    const sid=crypto.randomBytes(20).toString('hex');
+    const nonce=crypto.randomBytes(16).toString('hex');
+    await upsertSession({sid,dataJson:JSON.stringify({_csrfNonce:nonce,vendorUser:{id:owner,shop_name:`P09 Vendor Owner ${suffix}`,owner_name:'P09 Owner',phone:`016${String(suffix).slice(-8)}`}}),expiresAtMs:Date.now()+3600000});
+    const vendorCookie=`pholbazar_sid=${sid}`;
+    const token=deriveCsrfToken(sid,nonce);
+    const noCsrf=await request(`/vendor/orders/mark-ready/${otherOrder}`,{method:'POST',cookie:vendorCookie,token:''});
+    assert.equal(noCsrf.status,403,'vendor POST rejects missing CSRF token before handling the order');
+    for(const orderId of [otherOrder,ownerOrder]){
+      const denied=await request(`/vendor/orders/mark-ready/${orderId}`,{method:'POST',cookie:vendorCookie,token});
+      assert.equal(denied.status,302,denied.text.slice(0,250));
+      assert.equal(denied.headers.get('location'),'/vendor/orders');
+      assert.equal((await db.queryOne('SELECT order_status FROM orders WHERE id=?',[orderId])).order_status,'pending');
+      assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM order_status_history WHERE order_id=?',[orderId])).n),1);
+    }
   });
 
   test('legacy catalog routes use MySQL taxonomy/product/review repositories with permission, CSRF, audit and retained-history checks',async(t)=>{
