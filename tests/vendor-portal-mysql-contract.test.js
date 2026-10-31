@@ -20,6 +20,9 @@ test('vendor fulfillment machine has only forward transitions and rejects unsupp
   assert.deepEqual(portal.NEXT, { pending: 'processing', processing: 'ready', ready: 'dispatched' });
   for (const target of ['pending','delivered','cancelled','']) assert.throws(() => portal.validateTransitionTarget(target), { code: 'VALIDATION_ERROR' });
   assert.equal(portal.validateTransitionTarget('dispatched'), 'dispatched');
+  assert.equal(portal.paisa('15.25', 'price'), 1525);
+  assert.equal(portal.paisa('1', 'price'), 100);
+  assert.throws(() => portal.paisa('1.234', 'price'), { code: 'VALIDATION_ERROR' });
   await assert.rejects(() => portal.transitionOrderItem(1, 1, 'ready'), /requires MySQL/);
 });
 
