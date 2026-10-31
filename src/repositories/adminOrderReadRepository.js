@@ -159,4 +159,24 @@ async function listAdminOrders({ statusParam = 'all', searchQuery = '' } = {}, p
   };
 }
 
-module.exports = { getAdminInvoice, getAdminOrderDetail, listAdminOrders };
+/** Canonical platform-wide reseller order listing; monetary projection uses integer paisa. */
+async function listAdminResellerOrders(poolOverride = null) {
+  const client = createQueryClient(poolOverride || getPool());
+  const [orders, statuses, counts, total] = await Promise.all([
+    client.queryAll(`SELECT o.id,o.invoice_no AS invoice_id,o.customer_name,o.customer_phone AS phone,
+      o.shipping_address AS address,o.total_paisa,o.payment_method,o.order_status AS status,
+      COALESCE(os.name,o.order_status) AS status_label,COALESCE(os.badge_class,'sb-1') AS badge_class,
+      COALESCE(NULLIF(ca.name,''),o.courier_code,'') AS courier_name,o.courier_tracking_id,o.created_at
+      FROM orders o LEFT JOIN order_statuses os ON os.slug=o.order_status
+      LEFT JOIN courier_apis ca ON ca.code=o.courier_code
+      WHERE o.reseller_id IS NOT NULL OR o.order_channel='reseller' ORDER BY o.id DESC`),
+    client.queryAll('SELECT slug,name,badge_class,color,sort_order FROM order_statuses WHERE status=1 ORDER BY sort_order ASC'),
+    client.queryAll("SELECT order_status AS status,COUNT(*) AS c FROM orders WHERE reseller_id IS NOT NULL OR order_channel='reseller' GROUP BY order_status"),
+    client.queryOne("SELECT COUNT(*) AS c FROM orders WHERE reseller_id IS NOT NULL OR order_channel='reseller'")
+  ]);
+  const statusCounts={all:Number(total?.c||0)};
+  for(const row of counts)statusCounts[row.status]=Number(row.c||0);
+  return {orders:orders.map(row=>({...row,amount:toBdtString(row.total_paisa)})),statuses,statusCounts};
+}
+
+module.exports = { getAdminInvoice, getAdminOrderDetail, listAdminOrders, listAdminResellerOrders };

@@ -181,8 +181,13 @@ async function createOrder(input,options={}){
     throw err;
   }
 }
+async function getOrderForCancellation(invoiceNo){
+  assertMysql();
+  const value=requireString(invoiceNo,'invoice number',{min:8,max:40});
+  return client().queryOne('SELECT id,invoice_no,order_status FROM orders WHERE invoice_no=? LIMIT 1',[value]);
+}
 async function getOrderForSuccess(invoiceNo){
   assertMysql();const db=client();const order=await db.queryOne('SELECT id,invoice_no,customer_name,total_paisa,paid_paisa,cod_due_paisa,order_status,payment_status,created_at FROM orders WHERE invoice_no=?',[requireString(invoiceNo,'invoice number',{min:8,max:40})]);
   if(!order)return null;const items=await db.queryAll('SELECT product_name,qty,unit_price_paisa,line_total_paisa,size_label,color_label FROM order_items WHERE order_id=? ORDER BY id',[order.id]);return{order,items};
 }
-module.exports={normalizeLines,unitPrice,quoteCart,listDeliveryLocations,listCheckoutMethods,couponAmount,validateCoupon,resolveQuickOrderVariant,quoteQuickOrder,createOrder,getOrderForSuccess};
+module.exports={normalizeLines,unitPrice,quoteCart,listDeliveryLocations,listCheckoutMethods,couponAmount,validateCoupon,resolveQuickOrderVariant,quoteQuickOrder,createOrder,getOrderForSuccess,getOrderForCancellation};

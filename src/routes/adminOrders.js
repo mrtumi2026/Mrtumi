@@ -472,7 +472,11 @@ router.post('/admin/order/delete/:id', (req, res) => {
 });
 
 // ─── Reseller Orders ───
-router.get('/admin/reseller-orders', (req, res) => {
+router.get('/admin/reseller-orders', asyncHandler(async (req, res) => {
+  if (env.db.client === 'mysql') {
+    const data = await adminOrderReadRepository.listAdminResellerOrders();
+    return res.render('admin/orders', { pageTitle:'Reseller Orders', statusFilter:'reseller', searchQuery:'', bulkRequestKey:crypto.randomUUID(), ...data });
+  }
   const orders = db.all(
     `SELECT o.*, COALESCE(os.name, o.status) AS status_label, COALESCE(os.badge_class, 'sb-1') AS badge_class
      FROM orders o
@@ -489,10 +493,11 @@ router.get('/admin/reseller-orders', (req, res) => {
     searchQuery: '',
     statusCounts: {},
   });
-});
+}));
 
 // ─── Incomplete Orders ───
 router.get('/admin/incomplete-orders', (_req, res) => {
+  if (env.db.client === 'mysql') return res.status(409).send('Legacy incomplete-order records are unavailable in MySQL mode; only consented Phase 08 recovery records are supported.')
   const rows = db.all('SELECT * FROM incomplete_orders ORDER BY id DESC');
   res.render('admin/crud-module', {
     pageTitle: 'Incomplete / Abandoned Orders',
@@ -523,6 +528,7 @@ router.get('/admin/incomplete-orders', (_req, res) => {
 });
 
 router.post('/admin/incomplete-orders/create', (req, res) => {
+  if (env.db.client === 'mysql') return res.status(409).send('Legacy incomplete-order creation is disabled; use the consented checkout recovery workflow.');
   const { customer_name, phone, address, cart_summary, estimated_amount } = req.body;
   db.run(
     'INSERT INTO incomplete_orders (customer_name, phone, address, cart_summary, estimated_amount) VALUES (?, ?, ?, ?, ?)',
@@ -537,6 +543,7 @@ router.post('/admin/incomplete-orders/create', (req, res) => {
 });
 
 router.post('/admin/incomplete-orders/convert/:id', (req, res) => {
+  if (env.db.client === 'mysql') return res.status(409).send('Legacy incomplete-order conversion is disabled; a recovery order must originate from its consented checkout session.');
   const inc = db.get('SELECT * FROM incomplete_orders WHERE id = ?', req.params.id);
   if (inc) {
     const inv = generateInvoiceId();
@@ -567,6 +574,7 @@ router.post('/admin/incomplete-orders/convert/:id', (req, res) => {
 });
 
 router.post('/admin/incomplete-orders/delete/:id', (req, res) => {
+  if (env.db.client === 'mysql') return res.status(409).send('Recovery history is retained; withdrawal and state changes use the consent-aware workflow.');
   db.run('DELETE FROM incomplete_orders WHERE id = ?', req.params.id);
   req.flash('success', 'রেকর্ড মুছে ফেলা হয়েছে।');
   res.redirect('/admin/incomplete-orders');
@@ -683,6 +691,7 @@ router.post('/admin/customer/ip-block/delete/:id', asyncHandler(async (_req, _re
 
 // ─── Refunds ───
 router.get('/admin/refunds', (req, res) => {
+  if (env.db.client === 'mysql') return res.status(409).send('Legacy refund records are unavailable in MySQL mode; no refund provider operation is configured.')
   const statusFilter = req.query.status || '';
   const rows = statusFilter
     ? db.all('SELECT * FROM refunds WHERE status = ? ORDER BY id DESC', statusFilter)
@@ -718,6 +727,7 @@ router.get('/admin/refunds', (req, res) => {
 });
 
 router.post('/admin/refunds/create', (req, res) => {
+  if (env.db.client === 'mysql') return res.status(409).send('Legacy refund creation is disabled; no refund request was recorded or paid.');
   const { invoice_id, customer_name, phone, amount, method, reason } = req.body;
   db.run(
     'INSERT INTO refunds (invoice_id, customer_name, phone, amount, method, reason, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
@@ -734,6 +744,7 @@ router.post('/admin/refunds/create', (req, res) => {
 });
 
 router.post('/admin/refunds/advance/:id', (req, res) => {
+  if (env.db.client === 'mysql') return res.status(409).send('Legacy refund advancement is disabled; no refund was initiated.');
   const ref = db.get('SELECT * FROM refunds WHERE id = ?', req.params.id);
   if (ref) {
     const nextStatus =
@@ -745,6 +756,7 @@ router.post('/admin/refunds/advance/:id', (req, res) => {
 });
 
 router.post('/admin/refunds/delete/:id', (req, res) => {
+  if (env.db.client === 'mysql') return res.status(409).send('Refund records are retained.');
   db.run('DELETE FROM refunds WHERE id = ?', req.params.id);
   req.flash('success', 'রিফান্ড রেকর্ড ডিলিট হয়েছে।');
   res.redirect('/admin/refunds');

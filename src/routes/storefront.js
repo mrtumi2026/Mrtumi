@@ -1262,8 +1262,22 @@ router.get('/order-success/:invoiceId', asyncHandler(async (req, res) => {
   return res.render('store/order-success', { order, items });
 }));
 
-router.post('/order/:invoiceId/cancel', requireCsrf, (req, res) => {
-  if (storefrontRepo.isMysqlMode()) return res.status(409).json({ success:false, message:'Customer cancellation is paused on MySQL until invoice ownership verification is available. Contact support; authorized admins can cancel pending orders.' });
+router.post('/order/:invoiceId/cancel', requireCsrf, asyncHandler(async (req, res) => {
+  if (storefrontRepo.isMysqlMode()) {
+    if (String(req.session.checkoutLastInvoice || '') !== String(req.params.invoiceId || '')) return res.redirect('/track-order');
+    const order = await checkoutRepo.getOrderForCancellation(req.params.invoiceId);
+    if (!order) return res.redirect('/track-order');
+    try {
+      const phase08Repo = require('../repositories/phase08Repository');
+      const requestKey = `customer-cancel:${crypto.createHash('sha256').update(`${req.sessionID}:${order.invoice_no}`).digest('hex').slice(0, 48)}`;
+      await phase08Repo.transitionOrder(Number(order.id), 'cancelled', 'Customer cancelled before dispatch', { type: 'customer', id: req.customerUser?.id || null, ip: req.ip || '' }, requestKey);
+      req.flash('success', `Order #${order.invoice_no} cancelled.`);
+    } catch (error) {
+      if (error.statusCode === 409) req.flash('error', 'This order can no longer be cancelled online. Contact support.');
+      else throw error;
+    }
+    return res.redirect(`/track-order?q=${encodeURIComponent(order.invoice_no)}`);
+  }
   if (String(req.session.checkoutLastInvoice || '') !== String(req.params.invoiceId || '')) return res.redirect('/track-order');
   const order = db.get('SELECT * FROM orders WHERE invoice_id = ?', req.params.invoiceId);
   if (!order) return res.redirect('/track-order');
@@ -1287,7 +1301,7 @@ router.post('/order/:invoiceId/cancel', requireCsrf, (req, res) => {
   }
   req.flash('success', `অর্ডার #${order.invoice_id} বাতিল করা হয়েছে।`);
   return res.redirect(`/track-order?q=${order.invoice_id}`);
-});
+}));
 
 router.get(['/track-order', '/order-track', '/site/order-track'], (req, res) => {
   const query = String(req.query.q || '').trim().replace(/^#/, '');
@@ -1296,16 +1310,14 @@ router.get(['/track-order', '/order-track', '/site/order-track'], (req, res) => 
   res.render('store/track-order', { query: '', orders });
 });
 
-router.get('/campaign/:slug', (req, res) => {
-  const campaign = db.get('SELECT * FROM campaigns WHERE slug = ? AND status = 1', req.params.slug);
-  if (!campaign) return res.redirect('/');
-  const product =
-    db.get('SELECT * FROM products WHERE id = ?', campaign.product_id) ||
-    db.get('SELECT * FROM products LIMIT 1');
-  return res.render('store/campaign', { campaign, product, csrfToken: req.csrfToken() });
-});
+router.get('/campaign/:slug', asyncHandler(async (req, res) => {
+  const result = await storefrontRepo.getCampaignBySlug(req.params.slug, req.locale);
+  if (!result?.campaign) return res.redirect('/');
+  return res.render('store/campaign', { campaign: result.campaign, product: result.product, csrfToken: req.csrfToken() });
+}));
 
-router.post('/campaign/:slug/order', publicFormLimiter, requireCsrf, (req, res) => {
+router.post('/campaign/:slug/order', publicFormLimiter, requireCsrf, asyncHandler(async (req, res) => {
+  if (storefrontRepo.isMysqlMode()) return res.status(409).json({ error:'CAMPAIGN_CHECKOUT_UNAVAILABLE', message:'Campaign checkout is paused until campaign offer pricing has a transactional, stock-reserving checkout workflow. No order was created.' });
   const campaign = db.get('SELECT * FROM campaigns WHERE slug = ?', req.params.slug);
   if (!campaign) return res.redirect('/');
   const product = db.get('SELECT * FROM products WHERE id = ?', campaign.product_id);
@@ -1344,7 +1356,7 @@ router.post('/campaign/:slug/order', publicFormLimiter, requireCsrf, (req, res) 
   );
   req.session.checkoutLastInvoice = String(inv);
   return res.redirect(`/order-success/${inv}`);
-});
+}));
 
 // ============================================================================
 // PHASE 05 — BLOGS, CMS POLICIES, ABOUT, FAQ, CONTACT, SUPPORT & SEO ENDPOINTS

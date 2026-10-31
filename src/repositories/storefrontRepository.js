@@ -1312,6 +1312,32 @@ async function getSitemapEntries(poolOverride = null, config = env) {
   return { categories, subcategories, childcategories, brands, products, blogs, pages };
 }
 
+async function getCampaignBySlug(slugInput, locale = 'bn', poolOverride = null, config = env) {
+  const slug = String(slugInput || '').trim();
+  if (!slug || slug.length > 191) return null;
+  if (!isMysqlMode(config)) {
+    const campaign = sqliteDb.get('SELECT * FROM campaigns WHERE slug=? AND status=1', slug);
+    if (!campaign) return null;
+    const product = campaign.product_id
+      ? sqliteDb.get('SELECT * FROM products WHERE id=? AND status=1', campaign.product_id)
+      : sqliteDb.get('SELECT * FROM products WHERE status=1 ORDER BY id ASC LIMIT 1');
+    return { campaign: { ...campaign, offer_price: Number(campaign.offer_price || 0), regular_price: Number(campaign.regular_price || 0) }, product: product ? normalizeSqliteProduct(product, locale) : null };
+  }
+  const client = getClient(poolOverride);
+  const campaign = await client.queryOne(`SELECT id,title,slug,theme_key,product_id,headline,subheadline,banner_image,
+    offer_price_paisa,regular_price_paisa,benefits_json,publish_state,status
+    FROM campaigns WHERE slug=? AND status=1 AND publish_state='published' LIMIT 1`, [slug]);
+  if (!campaign) return null;
+  let benefits = [];
+  try { const parsed = JSON.parse(campaign.benefits_json || '[]'); benefits = Array.isArray(parsed) ? parsed : []; } catch (_) { benefits = []; }
+  const productId = Number(campaign.product_id || 0);
+  const product = productId ? await findProductForCart(productId, { locale }, poolOverride, config) : null;
+  return {
+    campaign: { ...campaign, offer_price: Number(campaign.offer_price_paisa || 0) / 100, regular_price: Number(campaign.regular_price_paisa || 0) / 100, benefits: benefits.map(String).join('|') },
+    product,
+  };
+}
+
 module.exports = {
   isMysqlMode,
   parsePromoWindow,
@@ -1329,4 +1355,5 @@ module.exports = {
   submitComplaint,
   subscribeNewsletter,
   getSitemapEntries,
+  getCampaignBySlug,
 };
