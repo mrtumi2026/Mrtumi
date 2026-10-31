@@ -9,7 +9,7 @@ const {asyncHandler}=require('../utils/asyncHandler');
 const repo=require('../repositories/phase08Repository');
 const router=express.Router();
 router.use('/admin/phase08',requireAdmin);
-function actor(req){return{id:req.adminUser?.id||req.session?.adminUser?.id||null,ip:req.ip||'',userAgent:req.get('user-agent')||''};}
+function actor(req){return{id:req.adminUser?.id||req.session?.adminUser?.id||null,permissions:req.adminUser?.permissions||req.session?.adminUser?.permissions||[],roleSlug:req.adminUser?.role_slug||req.session?.adminUser?.role_slug||'',ip:req.ip||'',userAgent:req.get('user-agent')||''};}
 function isEn(req){return req.locale==='en';}
 function wantsJson(req){return req.is('application/json')||String(req.headers.accept||'').includes('application/json')||req.xhr;}
 function idempotencyId(){return crypto.randomUUID();}

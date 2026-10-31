@@ -21,7 +21,7 @@ test('D6 customer/admin request reads bind to customer ownership and admin mutat
   assert.equal(policyForAdminRoute('GET', '/admin/privacy/policies').key, 'privacy.manage');
   assert.equal(policyForAdminRoute('POST', '/admin/privacy/requests/12/anonymize').key, 'privacy.review');
   assert.equal(policyForAdminRoute('POST', '/admin/privacy/policies/3/publish').key, 'privacy.manage');
-  for (const pair of loadMigrationPairs().filter((row) => Number(row.version) >= 12)) {
+  for (const pair of loadMigrationPairs().filter((row) => row.version === '0012')) {
     assert.match(pair.upSql, /customer_recovery_tokens/);
     assert.match(pair.downSql, /customer_recovery_tokens/);
     assert.match(pair.upSql, /privacy_policy_publication_history/);

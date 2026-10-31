@@ -21,7 +21,7 @@
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
-    "ejs": "^3.1.10",
+    "ejs": "^7.0.2",
     "express": "^4.21.1",
     "express-session": "^1.18.1",
     "multer": "^2.0.1",

@@ -22,7 +22,7 @@ test('Phase 08 state machine blocks invalid and terminal transitions', () => {
   assert.deepEqual(phase08.TRANSITIONS.pending, ['confirmed', 'cancelled', 'failed']);
   assert.deepEqual(phase08.TRANSITIONS.cancelled, []);
   assert.deepEqual(phase08.TRANSITIONS.returned, []);
-  assert.deepEqual(phase08.TRANSITIONS.return_requested, [], 'return completion is blocked pending an owner-approved disposition/refund policy');
+  assert.deepEqual(phase08.TRANSITIONS.return_requested, ['returned'], 'return completion requires inspected dispositions in the transactional repository guard');
 });
 test('OTP policy validates expiry, attempt and cooldown bounds', () => {
   assert.deepEqual(phase08.validateOtpPolicy({ enabled:true, expirySeconds:120, maxAttempts:4, cooldownSeconds:45 }), { enabled:true, expirySeconds:120, maxAttempts:4, cooldownSeconds:45, maxPerHour:5 });

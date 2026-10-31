@@ -35,6 +35,7 @@ const resellerPanelRoutes = require('./src/routes/resellerPanel');
 const storefrontRoutes = require('./src/routes/storefront');
 const customerAccountRoutes = require('./src/routes/customerAccount');
 const phase08AdminRoutes = require('./src/routes/phase08Admin');
+const d7AdminRoutes = require('./src/routes/d7Admin');
 
 // Initialize local SQLite prototype ONLY in non-production when DB_CLIENT=sqlite.
 // Production strictly uses MySQL via versioned migrations (`npm run migrate:up`).
@@ -94,6 +95,7 @@ app.use(adminOperationsRoutes);
 app.use(adminSettingsRoutes);
 app.use(phase06Routes);
 app.use(phase08AdminRoutes);
+app.use(d7AdminRoutes);
 app.use(vendorPanelRoutes);
 app.use(resellerPanelRoutes);
 app.use(customerAccountRoutes);

@@ -9,6 +9,9 @@ const customers = require('../repositories/customerRepository');
 const privacy = require('../repositories/privacyRepository');
 const { env } = require('../config/env');
 const { formatBdt } = require('../utils/money');
+const d7 = require('../repositories/d7Repository');
+const upload = require('../middleware/upload');
+const phase08 = require('../repositories/phase08Repository');
 const router = express.Router();
 const loginLimiter = createRateLimiter({ keyPrefix: 'customer-login', windowMs: 15 * 60 * 1000, max: 10 });
 const registerLimiter = createRateLimiter({ keyPrefix: 'customer-register', windowMs: 60 * 60 * 1000, max: 5 });
@@ -142,5 +145,31 @@ router.post('/customer/account/addresses/:id/delete', requireCustomer, requireCs
   if (!Number.isSafeInteger(id) || id < 1) return res.sendStatus(404);
   await customers.deleteAddress(req.session.customerUser.id, id, { ip:req.ip||'', userAgent:req.get('user-agent')||'' });
   return res.redirect('/customer/account');
+}));
+
+router.post('/customer/account/orders/:id/cancel', requireCustomer, requireCsrf, asyncHandler(async (req,res)=>{
+  await d7.cancelOrder(req.params.id,req.session.customerUser.id,req.body.reason||'Customer requested cancellation',{ip:req.ip||'',userAgent:req.get('user-agent')||''});
+  req.flash('success',isEn(req)?'Your pre-dispatch cancellation was recorded.':'ডিসপ্যাচের আগের বাতিলের অনুরোধ গ্রহণ করা হয়েছে।');
+  return res.redirect(`/customer/account/orders/${encodeURIComponent(req.params.id)}`);
+}));
+router.post('/customer/account/orders/:id/returns', requireCustomer, requireCsrf, upload.single('evidence'), asyncHandler(async(req,res)=>{
+  let evidencePath='';
+  try {
+    evidencePath=upload.validateUploadedImageFile(req.file)||'';
+    let items;try{items=JSON.parse(String(req.body.items_json||'[]'));}catch{throw Object.assign(new Error('Return items are invalid.'),{status:400});}
+    const result=await d7.requestReturn(req.session.customerUser.id,req.params.id,{claimType:req.body.claim_type,reason:req.body.reason,items,evidencePath});
+    req.flash('success',isEn(req)?`Return request #${result.id} submitted for review.`:`রিটার্ন অনুরোধ #${result.id} পর্যালোচনার জন্য জমা হয়েছে।`);
+    return res.redirect(`/customer/account/orders/${encodeURIComponent(req.params.id)}`);
+  } catch(error) { if(req.file)upload.safeUnlink(req.file.path); throw error; }
+}));
+router.get('/customer/account/returns',requireCustomer,asyncHandler(async(req,res)=>res.render('customer/returns',{returns:await d7.listCustomerReturns(req.session.customerUser.id),isEn:isEn(req)})));
+router.post('/customer/account/orders/:id/refunds',requireCustomer,requireCsrf,asyncHandler(async(req,res)=>{
+  const id=Number(req.params.id),amount=Number(req.body.amount_paisa);
+  const order=await customers.getOrderDetails(req.session.customerUser.id,id);
+  const method=String(order.order.payment_method||'').toLowerCase();
+  if(method==='cod')throw Object.assign(new Error('COD refunds are disabled until a verified destination can be collected and verified.'),{status:409});
+  const result=await phase08.requestRefund(id,amount,req.body.reason,req.body.request_key||`customer-refund-${require('crypto').randomUUID()}`,{id:null,type:'customer'});
+  req.flash('success',isEn(req)?`Refund request #${result.id} submitted. Execution is not available here.`:`রিফান্ড অনুরোধ #${result.id} জমা হয়েছে। এখানে রিফান্ড কার্যকর করা যায় না।`);
+  return res.redirect(`/customer/account/orders/${encodeURIComponent(id)}`);
 }));
 module.exports = router;

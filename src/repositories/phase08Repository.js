@@ -13,7 +13,7 @@ const TRANSITIONS = Object.freeze({
   shipped: ['delivered', 'return_requested'],
   delivered: ['return_requested'],
   // Final return acceptance/restock is intentionally disabled pending owner-approved partial-return, inspection, refund and disposition policy.
-  return_requested: [],
+  return_requested: ['returned'],
   cancelled: [], failed: [], returned: [],
 });
 const REFUND_STATES = Object.freeze({
@@ -277,12 +277,14 @@ async function transitionOrderTx(tx, orderIdInput, toStatus, note, actor = {}, r
     return { id, to: target, replayed: true };
   }
   const from = String(order.order_status);
-  if (target === 'returned') throw new ConflictError('Return completion and restock are disabled until the owner approves item eligibility, inspection/disposition, partial-return, refund and shipping-fee policy.');
   if (!TRANSITIONS[from]?.includes(target)) throw new ConflictError(`Order cannot move from ${from} to ${target}.`);
+  if(target==='returned'){
+    const incomplete=await tx.queryOne(`SELECT COUNT(*) AS n FROM order_items oi LEFT JOIN (SELECT ri.order_item_id,SUM(ri.qty) AS inspected_qty FROM customer_return_items ri JOIN customer_return_requests rr ON rr.id=ri.return_request_id WHERE rr.order_id=? AND rr.status='inspected' AND ri.disposition<>'pending_inspection' GROUP BY ri.order_item_id) returned ON returned.order_item_id=oi.id WHERE oi.order_id=? AND COALESCE(returned.inspected_qty,0)<oi.qty`,[id,id]);
+    if(!incomplete||Number(incomplete.n)>0)throw new ConflictError('An order can be marked returned only after every ordered unit is approved and inspected with a recorded disposition.');
+  }
   if (target === 'confirmed') await reserveOrderInventoryTx(tx, id, actor);
   if (target === 'cancelled' || target === 'failed') await releaseOrderInventoryTx(tx, id, actor, reason);
   if (target === 'shipped') await consumeOrderInventoryTx(tx, id, actor);
-  if (target === 'returned') await restoreReturnedInventoryTx(tx,id,actor,reason);
   await tx.execute('UPDATE orders SET order_status=?,is_seen=1 WHERE id=?', [target,id]);
   await tx.execute('INSERT INTO order_status_history (order_id,from_status,to_status,note,request_key,changed_by_user_id) VALUES (?,?,?,?,?,?)', [id,from,target,reason,key,actor.id||null]);
   await insertAudit(tx, actor, `order.status.${target}`, 'order', id, { status:from }, { status:target, reason, requestKey:key });
@@ -375,6 +377,9 @@ async function transitionRefund(refundId, targetStatus, reason, actor = {}, requ
     const allowedFrom=refund.status==='pending'?'requested':refund.status;
     if (!['requested','pending'].includes(refund.status) || !REFUND_STATES[allowedFrom]?.includes(target)) throw new ConflictError(`Refund cannot transition from ${refund.status} to ${target}.`);
     if (target === 'approved') {
+      const configuredLimit=await tx.queryOne("SELECT setting_value FROM settings WHERE setting_key='d7_refund_approval_limit_paisa'");
+      const approvalLimit=Number(configuredLimit?.setting_value||0);
+      if(approvalLimit>0&&Number(refund.amount_paisa)>approvalLimit&&!(Array.isArray(actor.permissions)&&actor.permissions.includes('refunds.approve_high'))&&!['super_admin','superadmin'].includes(actor.roleSlug))throw new ConflictError('Refund exceeds the configured standard approval limit; a separate refunds.approve_high grant is required.');
       const reservedRows=await tx.queryAll(`SELECT id,amount_paisa FROM refunds WHERE order_id=? AND status IN (${RESERVED_REFUND_STATES.map(()=>'?').join(',')}) ORDER BY id FOR UPDATE`,[refund.order_id,...RESERVED_REFUND_STATES]);
       const reserved=reservedRows.reduce((sum,row)=>sum+BigInt(row.amount_paisa),0n);
       if(!order || reserved>BigInt(order.paid_paisa||0))throw new ConflictError('Approved refund requests exceed recorded payments.');
