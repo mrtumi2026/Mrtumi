@@ -135,11 +135,17 @@ async function main() {
     assert(page.url().endsWith('/customer/account/orders'), 'authenticated order history was not accessible');
     await page.screenshot({ path: path.join(outDir, `customer-${index}-history-before.png`), fullPage: true });
     await page.goto(`${baseUrl}/product/${demoTag.toLowerCase()}-${productIndex}`, { waitUntil: 'domcontentloaded' });
+    const addResponsePromise = page.waitForNavigation({ waitUntil: 'domcontentloaded' });
     await page.locator('#productCartForm button[type="submit"]').first().click();
-    await page.waitForLoadState('domcontentloaded');
+    await addResponsePromise;
+    await page.goto(`${baseUrl}/cart`, { waitUntil: 'domcontentloaded' });
+    const cartText = await page.locator('body').innerText();
+    assert(cartText.includes(productNames[productIndex - 1][0]), `product missing from normal browser cart; url=${page.url()} body=${cartText.slice(0, 500)}`);
+    await page.screenshot({ path: path.join(outDir, `customer-${index}-cart.png`), fullPage: true });
     await page.goto(`${baseUrl}/customer/checkout`, { waitUntil: 'domcontentloaded' });
     await page.screenshot({ path: path.join(outDir, `customer-${index}-checkout.png`), fullPage: true });
     const checkoutForm = page.locator('#mainCheckoutForm');
+    assert(await checkoutForm.count(), `customer checkout form absent; url=${page.url()} body=${(await page.locator('body').innerText()).slice(0, 500)}`);
     await checkoutForm.locator('input[name="customer_name"]').fill(`Demo Customer 0${index} ${suffix}`);
     await checkoutForm.locator('input[name="phone"]').fill(identity.phone);
     await checkoutForm.locator('textarea[name="address"]').fill(`${demoTag} test address; do not dispatch`);
@@ -209,6 +215,7 @@ async function main() {
   });
 
   await journey('Vendor login, tenant isolation and assigned order visibility', async () => {
+    if (ids.orders.length < 2) throw Object.assign(new Error('BLOCKED: both customer COD orders are required before vendor tenant visibility can be compared.'), { code: 'BLOCKED_NO_VENDOR_ORDER_PAIR' });
     const attempts = [];
     for (let i = 1; i <= 2; i++) {
       await page.context().clearCookies();
