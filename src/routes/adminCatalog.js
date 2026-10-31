@@ -5,6 +5,7 @@ const upload = require('../middleware/upload');
 const { env } = require('../config/env');
 const catalogRepo = require('../repositories/adminCatalogRepository');
 const phase06Repo = require('../repositories/phase06Repository');
+const couponRepo = require('../repositories/adminCouponRepository');
 const { asyncHandler } = require('../utils/asyncHandler');
 const { ConflictError } = require('../utils/errors');
 
@@ -511,13 +512,16 @@ router.post('/admin/size/delete/:id', (req, res, next) => {
 });
 
 // ─── Coupons ───
-function renderCoupons(res, openModal = false) {
-  const rows = db.all('SELECT * FROM coupons ORDER BY id DESC');
+async function renderCoupons(res, openModal = false) {
+  const rows = mysqlMode()
+    ? await couponRepo.listCoupons()
+    : db.all('SELECT * FROM coupons ORDER BY id DESC');
   res.render('admin/crud-module', {
     pageTitle: 'Discount Coupons',
     subtitle: 'চেকআউট ডিসকাউন্ট কুপন কোড তৈরি ও পরিচালনা করুন',
     createAction: '/admin/coupon/create',
-    deletePrefix: '/admin/coupon/delete',
+    deletePrefix: mysqlMode() ? null : '/admin/coupon/delete',
+    mysqlMode: mysqlMode(),
     autoOpenModal: openModal,
     columns: [
       { key: 'id', label: '#' },
@@ -548,24 +552,30 @@ function renderCoupons(res, openModal = false) {
   });
 }
 
-router.get('/admin/coupon/manage', (_req, res) => renderCoupons(res, false));
-router.get('/admin/coupon/create', (_req, res) => renderCoupons(res, true));
+router.get('/admin/coupon/manage', asyncHandler(async (_req, res) => renderCoupons(res, false)));
+router.get('/admin/coupon/create', asyncHandler(async (_req, res) => renderCoupons(res, true)));
 
-router.post('/admin/coupon/create', (req, res) => {
-  const { code, type, value, min_purchase, expiry_date } = req.body;
-  db.run(
-    'INSERT INTO coupons (code, type, value, min_purchase, expiry_date) VALUES (?, ?, ?, ?, ?)',
-    String(code || '').trim().toUpperCase(),
-    type || 'percent',
-    Number(value || 10),
-    Number(min_purchase || 0),
-    expiry_date || '2027-12-31'
-  );
+router.post('/admin/coupon/create', asyncHandler(async (req, res) => {
+  if (mysqlMode()) {
+    await couponRepo.createCoupon(req.body, actor(req));
+    req.adminDomainAudit = true;
+  } else {
+    const { code, type, value, min_purchase, expiry_date } = req.body;
+    db.run(
+      'INSERT INTO coupons (code, type, value, min_purchase, expiry_date) VALUES (?, ?, ?, ?, ?)',
+      String(code || '').trim().toUpperCase(),
+      type || 'percent',
+      Number(value || 10),
+      Number(min_purchase || 0),
+      expiry_date || '2027-12-31'
+    );
+  }
   req.flash('success', 'কুপন কোড সফলভাবে তৈরি হয়েছে!');
   res.redirect('/admin/coupon/manage');
-});
+}));
 
-router.post('/admin/coupon/delete/:id', (req, res) => {
+router.post('/admin/coupon/delete/:id', (req, res, next) => {
+  if (mysqlMode()) return next(new ConflictError('Coupon deletion is disabled to preserve coupon and order history.'));
   db.run('DELETE FROM coupons WHERE id = ?', req.params.id);
   req.flash('success', 'কুপন ডিলিট হয়েছে।');
   res.redirect('/admin/coupon/manage');

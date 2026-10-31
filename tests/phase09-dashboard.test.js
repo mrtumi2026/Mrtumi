@@ -119,6 +119,22 @@ describe('Phase 09 dashboard repository contract', () => {
     assert.doesNotMatch(operations,/router\.post\('\/admin\/payment-records/,'payment record page exposes no mutation endpoint');
   });
 
+  test('MySQL coupon administration delegates to a transactional repository and blocks destructive deletion',()=>{
+    const coupons=require('../src/repositories/adminCouponRepository');
+    assert.equal(typeof coupons.listCoupons,'function');assert.equal(typeof coupons.createCoupon,'function');
+    const source=fs.readFileSync(path.join(__dirname,'../src/routes/adminCatalog.js'),'utf8');
+    assert.match(source,/couponRepo\.listCoupons\(\)/);
+    assert.match(source,/couponRepo\.createCoupon\(req\.body,\s*actor\(req\)\)/);
+    assert.match(source,/deletePrefix: mysqlMode\(\) \? null : '\/admin\/coupon\/delete'/);
+    assert.match(source,/Coupon deletion is disabled to preserve coupon and order history/);
+    assert.equal(policyForAdminRoute('GET','/admin/coupon/manage').key,'catalog.view');
+    assert.equal(policyForAdminRoute('POST','/admin/coupon/create').key,'catalog.manage');
+    const checkout=fs.readFileSync(path.join(__dirname,'../src/repositories/checkoutRepository.js'),'utf8');
+    assert.match(checkout,/validateCoupon[\s\S]*?mysql\.withTransaction/);
+    assert.match(checkout,/isolationLevel:'REPEATABLE READ'/,'coupon validation reads cart prices and coupon eligibility from one consistent snapshot');
+    assert.match(checkout,/usage_limit,used_count,expires_at,status FROM coupons WHERE UPPER\(code\)=\? FOR UPDATE/);
+  });
+
   test('MySQL catalog routes delegate taxonomy, review and product operations and protect retained references',()=>{
     const catalog=require('../src/repositories/adminCatalogRepository');
     for(const method of ['listProducts','listTaxonomy','createTaxonomy','toggleProductStatus','approvePendingVendorProduct','listReviews','createReview','approveReview'])assert.equal(typeof catalog[method],'function');

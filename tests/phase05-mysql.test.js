@@ -631,6 +631,49 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
     }
   });
 
+  test('5c. Phase 07 coupon eligibility, paisa discounts, usage limits, concurrency and checkout rollback', { skip: !MYSQL_HOST ? SKIP_REASON : false }, async () => {
+    const cart=[{product_id:inhouseProdId,variant_id:variant5KgId,qty:1}];
+    const prefix=`P05-COUPON-${Date.now()}`;
+    await client.execute("INSERT INTO coupons(code,discount_type,discount_value,min_purchase_paisa,max_discount_paisa,usage_limit,used_count,expires_at,status) VALUES(?,'percent',15,0,NULL,10,0,UTC_TIMESTAMP()+INTERVAL 2 DAY,1)",[`${prefix}-PERCENT`]);
+    await client.execute("INSERT INTO coupons(code,discount_type,discount_value,min_purchase_paisa,max_discount_paisa,usage_limit,used_count,expires_at,status) VALUES(?,'fixed',500,0,NULL,NULL,0,UTC_TIMESTAMP()+INTERVAL 2 DAY,1)",[`${prefix}-FIXED`]);
+    await client.execute("INSERT INTO coupons(code,discount_type,discount_value,min_purchase_paisa,max_discount_paisa,usage_limit,used_count,expires_at,status) VALUES(?,'percent',10,0,NULL,NULL,0,UTC_TIMESTAMP()-INTERVAL 1 DAY,1)",[`${prefix}-EXPIRED`]);
+    await client.execute("INSERT INTO coupons(code,discount_type,discount_value,min_purchase_paisa,max_discount_paisa,usage_limit,used_count,expires_at,status) VALUES(?,'percent',10,999999999,NULL,NULL,0,UTC_TIMESTAMP()+INTERVAL 2 DAY,1)",[`${prefix}-MINIMUM`]);
+    await client.execute("INSERT INTO coupons(code,discount_type,discount_value,min_purchase_paisa,max_discount_paisa,usage_limit,used_count,expires_at,status) VALUES(?,'percent',10,0,NULL,1,1,UTC_TIMESTAMP()+INTERVAL 2 DAY,1)",[`${prefix}-EXHAUSTED`]);
+    await client.execute("INSERT INTO coupons(code,discount_type,discount_value,min_purchase_paisa,max_discount_paisa,usage_limit,used_count,expires_at,status) VALUES(?,'percent',10,0,NULL,NULL,0,NULL,0)",[`${prefix}-DISABLED`]);
+    const quote=await checkoutRepo.quoteCart(cart,{locale:'en'});
+    const percent=await checkoutRepo.validateCoupon(`${prefix}-percent`,cart,{locale:'en'});
+    assert.equal(percent.amount,Number((BigInt(quote.subtotalPaisa)*15n)/100n),'percentage discounts retain canonical whole-paisa truncation');
+    assert.equal(percent.subtotalPaisa,quote.subtotalPaisa);
+    assert.equal((await checkoutRepo.validateCoupon(`${prefix}-fixed`,cart,{locale:'en'})).amount,Math.min(quote.subtotalPaisa,500),'flat legacy BDT amount maps to fixed paisa');
+    for(const code of [`${prefix}-missing`,`${prefix}-expired`,`${prefix}-minimum`,`${prefix}-exhausted`,`${prefix}-disabled`]){
+      await assert.rejects(()=>checkoutRepo.validateCoupon(code,cart,{locale:'en'}),(err)=>err.code==='VALIDATION_ERROR',`${code} must not qualify`);
+    }
+
+    const concurrentCode=`${prefix}-ONCE`;
+    await client.execute("INSERT INTO coupons(code,discount_type,discount_value,min_purchase_paisa,usage_limit,used_count,expires_at,status) VALUES(?,'percent',10,0,1,0,UTC_TIMESTAMP()+INTERVAL 2 DAY,1)",[concurrentCode]);
+    const orderInput={customer_name:'Coupon concurrency',phone:'01812345678',address:'House 8, Coupon concurrency road',delivery_location_id:deliveryLocationId,payment_method:'cod',coupon_code:concurrentCode};
+    const keys=[`${prefix}-ORDER-A`,`${prefix}-ORDER-B`];
+    const results=await Promise.allSettled(keys.map(requestKey=>checkoutRepo.createOrder(orderInput,{locale:'en',requestKey,cart})));
+    assert.equal(results.filter(result=>result.status==='fulfilled').length,1,'only one concurrent checkout consumes the single-use coupon');
+    assert.equal(results.filter(result=>result.status==='rejected'&&result.reason.code==='VALIDATION_ERROR').length,1,'the second concurrent checkout sees the exhausted usage limit');
+    assert.equal(Number((await client.queryOne('SELECT used_count FROM coupons WHERE code=?',[concurrentCode])).used_count),1);
+    assert.equal(Number((await client.queryOne('SELECT COUNT(*) AS n FROM orders WHERE idempotency_key IN (?,?)',keys)).n),1);
+
+    const rollbackCode=`${prefix}-ROLLBACK`;
+    await client.execute("INSERT INTO coupons(code,discount_type,discount_value,min_purchase_paisa,usage_limit,used_count,expires_at,status) VALUES(?,'percent',10,0,5,0,UTC_TIMESTAMP()+INTERVAL 2 DAY,1)",[rollbackCode]);
+    const rollbackKey=`${prefix}-ROLLBACK-ORDER`;
+    const stockBefore=await client.queryOne('SELECT stock_on_hand,stock_reserved FROM products WHERE id=?',[inhouseProdId]);
+    const usageTrigger=`p05_coupon_fail_${process.pid}`;
+    await client.execute(`CREATE TRIGGER ${usageTrigger} BEFORE UPDATE ON coupons FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture coupon usage failure'`);
+    try{
+      await assert.rejects(()=>checkoutRepo.createOrder({...orderInput,coupon_code:rollbackCode},{locale:'en',requestKey:rollbackKey,cart}));
+    }finally{await client.execute(`DROP TRIGGER IF EXISTS ${usageTrigger}`);}
+    assert.equal(Number((await client.queryOne('SELECT COUNT(*) AS n FROM orders WHERE idempotency_key=?',[rollbackKey])).n),0,'failed usage update rolls back the order');
+    assert.equal(Number((await client.queryOne('SELECT used_count FROM coupons WHERE code=?',[rollbackCode])).used_count),0,'failed checkout does not consume coupon usage');
+    const stockAfter=await client.queryOne('SELECT stock_on_hand,stock_reserved FROM products WHERE id=?',[inhouseProdId]);
+    assert.deepEqual([Number(stockAfter.stock_on_hand),Number(stockAfter.stock_reserved)],[Number(stockBefore.stock_on_hand),Number(stockBefore.stock_reserved)],'failed checkout preserves warehouse stock and reservations');
+  });
+
   test('6. Phase 07 checkout order, lines, reservation and audit roll back together on injected audit failure', { skip: !MYSQL_HOST ? SKIP_REASON : false }, async () => {
     const product = await client.queryOne('SELECT id,vendor_stock_reserved FROM products WHERE slug=?', ['artisan-date-gift-box']);
     const requestKey = `p07-checkout-rollback-${Date.now()}`;

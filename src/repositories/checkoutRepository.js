@@ -84,8 +84,14 @@ function couponAmount(row,subtotal){
 }
 async function validateCoupon(code,cart,{locale='bn'}={}){
   assertMysql();const clean=String(code||'').trim().toUpperCase();if(!clean)throw new ValidationError('Enter a coupon code.');
-  const quote=await quoteCart(cart,{locale});const row=await client().queryOne('SELECT code,discount_type,discount_value,min_purchase_paisa,max_discount_paisa,usage_limit,used_count,expires_at,status FROM coupons WHERE UPPER(code)=? LIMIT 1',[clean]);
-  return{...couponAmount(row,quote.subtotalPaisa),subtotalPaisa:quote.subtotalPaisa};
+  const lines=normalizeLines(cart);
+  return mysql.withTransaction(async tx=>{
+    const loaded=await loadLines(tx,lines,locale,false);
+    const subtotalPaisa=loaded.reduce((sum,line)=>sum+line.lineTotalPaisa,0);
+    if(!Number.isSafeInteger(subtotalPaisa))throw new ValidationError('Order subtotal exceeds the safe calculation range.');
+    const row=await tx.queryOne('SELECT code,discount_type,discount_value,min_purchase_paisa,max_discount_paisa,usage_limit,used_count,expires_at,status FROM coupons WHERE UPPER(code)=? LIMIT 1',[clean]);
+    return{...couponAmount(row,subtotalPaisa),subtotalPaisa};
+  },{isolationLevel:'REPEATABLE READ'});
 }
 async function createOrder(input,options={}){
   const {locale='bn',sessionCustomer=null,ip='',requestKey,cart,incompleteOrderId=null,sessionSid='',analyticsConsent=false,attribution=null,deadlockRetry=0}=options;
@@ -161,4 +167,4 @@ async function getOrderForSuccess(invoiceNo){
   assertMysql();const db=client();const order=await db.queryOne('SELECT id,invoice_no,customer_name,total_paisa,paid_paisa,cod_due_paisa,order_status,payment_status,created_at FROM orders WHERE invoice_no=?',[requireString(invoiceNo,'invoice number',{min:8,max:40})]);
   if(!order)return null;const items=await db.queryAll('SELECT product_name,qty,unit_price_paisa,line_total_paisa,size_label,color_label FROM order_items WHERE order_id=? ORDER BY id',[order.id]);return{order,items};
 }
-module.exports={normalizeLines,unitPrice,quoteCart,listDeliveryLocations,listCheckoutMethods,validateCoupon,createOrder,getOrderForSuccess};
+module.exports={normalizeLines,unitPrice,quoteCart,listDeliveryLocations,listCheckoutMethods,couponAmount,validateCoupon,createOrder,getOrderForSuccess};

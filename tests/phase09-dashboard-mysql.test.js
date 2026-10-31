@@ -257,6 +257,26 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     assert.equal((await request('/admin/categories/create',{method:'POST',cookie:noGrantCookie,token:noGrantToken,body:{name:'Denied'}})).status,403,'catalog.manage is required for taxonomy writes');
     assert.equal((await request('/admin/categories/create',{method:'POST',token:'',body:{name:'No CSRF'}})).status,403,'taxonomy writes require CSRF');
     const suffix=Date.now();const slug=`p09-catalog-${suffix}`;
+    const couponPath='/admin/coupon/manage';
+    assert.equal((await request(couponPath,{cookie:noGrantCookie,accept:'text/html'})).status,403,'coupon listing requires catalog.view');
+    assert.equal((await request('/admin/coupon/create',{method:'POST',cookie:noGrantCookie,token:noGrantToken,body:{code:`DENIED-${suffix}`,value:'10',expiry_date:'2027-12-31'}})).status,403,'coupon creation requires catalog.manage');
+    assert.equal((await request('/admin/coupon/create',{method:'POST',token:'',body:{code:`NO-CSRF-${suffix}`,value:'10',expiry_date:'2027-12-31'}})).status,403,'coupon creation requires CSRF');
+    assert.equal((await request('/admin/coupon/create',{method:'POST',body:{code:'',type:'percent',value:'10',expiry_date:'2027-12-31'}})).status,400,'invalid coupon fields are rejected before persistence');
+    const couponCode=`P09-${suffix}`;
+    const couponCreate=await request('/admin/coupon/create',{method:'POST',body:{code:couponCode.toLowerCase(),type:'flat',value:'12.50',min_purchase:'100',expiry_date:'2027-12-31'}});
+    assert.equal(couponCreate.status,302,couponCreate.text.slice(0,250));
+    const coupon=await db.queryOne('SELECT id,code,discount_type,discount_value,min_purchase_paisa,expires_at,used_count,status FROM coupons WHERE code=?',[couponCode]);
+    assert.ok(coupon);assert.equal(coupon.code,couponCode);assert.equal(coupon.discount_type,'fixed');assert.equal(Number(coupon.discount_value),1250);assert.equal(Number(coupon.min_purchase_paisa),10000);assert.equal(Number(coupon.used_count),0);
+    assert.ok(await db.queryOne("SELECT id,actor_id FROM audit_logs WHERE action='coupon.create' AND entity_id=?",[String(coupon.id)]),'coupon creation is audited transactionally');
+    const couponList=await request(couponPath,{accept:'text/html'});assert.equal(couponList.status,200,couponList.text.slice(0,250));assert.match(couponList.text,new RegExp(couponCode));assert.equal(couponList.text.includes('/admin/coupon/delete/'),false,'MySQL coupon list exposes no destructive delete control');
+    assert.equal((await request(`/admin/coupon/delete/${coupon.id}`,{method:'POST'})).status,409,'coupon deletion is blocked to preserve history');
+    assert.ok(await db.queryOne('SELECT id FROM coupons WHERE id=?',[coupon.id]),'blocked coupon deletion preserves coupon row');
+    const failedCouponCode=`P09-FAIL-${suffix}`;
+    await db.execute("CREATE TRIGGER p09_coupon_audit_fail BEFORE INSERT ON audit_logs FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture coupon audit failure'");
+    let failedCoupon;
+    try{failedCoupon=await request('/admin/coupon/create',{method:'POST',body:{code:failedCouponCode,type:'percent',value:'15',min_purchase:'50',expiry_date:'2027-12-31'}});}finally{await db.execute('DROP TRIGGER IF EXISTS p09_coupon_audit_fail');}
+    assert.equal(failedCoupon.status,500,failedCoupon.text.slice(0,250));
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM coupons WHERE code=?',[failedCouponCode])).n),0,'coupon row rolls back when its audit insert fails');
     const categoryCreate=await request('/admin/categories/create',{method:'POST',body:{name:'P09 Category',name_en:'P09 Category',slug,icon:'🍐',sort_order:'7'}});
     assert.equal(categoryCreate.status,302,categoryCreate.text.slice(0,250));
     const category=await db.queryOne('SELECT id,name_bn,name_en,slug,icon,sort_order FROM categories WHERE slug=?',[slug]);
