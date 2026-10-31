@@ -25,7 +25,7 @@ Date: 2026-10-31 (Asia/Dhaka)
 ## Automated verification
 
 - `npm run verify`: foundation check **948 passed, 0 failed**; Node suite **167 total, 143 passed, 0 failed, 24 skipped**. Skips are MySQL/MariaDB integration cases, which must run in CI.
-- Exact-SHA CI run **41215634955** passed on code commit `3d2b4f5eafe62af1215f1915942de5365877fb46`: [MySQL 8.0 job](https://github.com/mrtumi2026/Mrtumi/actions/runs/41215634955/job/124579438665) and [MariaDB 10.11 job](https://github.com/mrtumi2026/Mrtumi/actions/runs/41215634955/job/124579438898). This evidence-only follow-up is being pushed separately; its workflow will also be checked before reporting the final SHA.
+- Exact-SHA CI run **41215634955** passed on code commit `3d2b4f5eafe62af1215f1915942de5365877fb46`: [MySQL 8.0 job](https://github.com/mrtumi2026/Mrtumi/actions/runs/41215634955/job/124579438665) and [MariaDB 10.11 job](https://github.com/mrtumi2026/Mrtumi/actions/runs/41215634955/job/124579438898). A subsequent evidence-only commit `7f0ab0a8d57aa04f831c0e17c348de1af8282ce2` also passed exact-SHA CI run **41215806893** on both engines; the current run is linked from the final response.
 
 ## Launch sign-off
 
