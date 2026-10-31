@@ -13,4 +13,4 @@ Date: 2026-10-31
 
 A real Chromium browser run was attempted with Playwright Core and the packaged headless Chromium binary against the local development server. Chromium exited before opening a page because this sandbox lacks OS libraries `libnspr4.so`, `libnss3.so`, and `libnssutil3.so`. No screenshot or browser-flow result is claimed. The temporary browser packages were not added to project dependencies.
 
-Therefore registration/login, search/variants, cart/checkout, quick order/coupon/payment, order history, vendor/reseller actions, cancellation/returns/review, refunds/settlements, and privacy-request flows still require browser execution in an environment with Chromium and a disposable MySQL/MariaDB fixture before launch sign-off. Exact-SHA database CI is also required after pushing.
+Database integration was subsequently verified on exact SHA `a492685c92e0d67a0fc47f7008a420b67db28749`: MySQL 8.0 and MariaDB 10.11 CI run `41212148766` both passed. The browser flows listed above and true rendered viewport tests still require execution in an environment with Chromium's OS libraries; they remain launch sign-off blockers.
