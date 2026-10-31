@@ -17,7 +17,8 @@
     "seed:categories": "node scripts/seed-categories.js",
     "lint": "node scripts/check-foundation.js",
     "test": "NODE_ENV=test node --no-warnings --test --test-concurrency=1 tests/*.test.js",
-    "verify": "npm run lint && npm test"
+    "verify": "npm run lint && npm test",
+    "qa:browser": "node scripts/qa/demo-browser-e2e.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -26,5 +27,8 @@
     "express-session": "^1.18.1",
     "multer": "^2.0.1",
     "mysql2": "^3.24.6"
+  },
+  "devDependencies": {
+    "playwright": "^1.56.1"
   }
 }
