@@ -40,6 +40,15 @@ async function formPost(route, cookie, token, fields = {}) {
   });
 }
 
+async function hiddenTokenPost(route, cookie, token) {
+  return fetch(`${baseUrl}${route}`, {
+    method: 'POST',
+    headers: { accept: 'text/html', cookie, 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: token }).toString(),
+    redirect: 'manual',
+  });
+}
+
 async function loginPartner(kind, identifier, password) {
   const loginPage = await fetch(`${baseUrl}/${kind}/login`, { redirect: 'manual' });
   const cookie = responseCookie(loginPage);
@@ -168,4 +177,15 @@ test('invalid-CSRF multipart product uploads delete only the newly uploaded file
   }
   assert.equal(fs.readFileSync(sentinelPath, 'utf8'), 'preserve-existing-file');
   assert.deepEqual(db.get('SELECT id,name FROM products WHERE id=? AND vendor_id=?', vendorProductId, vendorId), { id: vendorProductId, name: 'CSRF Vendor Product' });
+});
+
+test('session-bound hidden form tokens authorize the normal vendor and reseller logout flows', async () => {
+  const vendorLogout = await hiddenTokenPost('/vendor/logout', vendorCookie, vendorCsrf);
+  assert.equal(vendorLogout.status, 302);
+  assert.equal(vendorLogout.headers.get('location'), '/vendor/login');
+  const resellerLogout = await hiddenTokenPost('/reseller/logout', resellerCookie, resellerCsrf);
+  assert.equal(resellerLogout.status, 302);
+  assert.equal(resellerLogout.headers.get('location'), '/reseller/login');
+  assert.equal((await fetch(`${baseUrl}/vendor/dashboard`, { headers: { cookie: vendorCookie }, redirect: 'manual' })).headers.get('location'), '/vendor/login');
+  assert.equal((await fetch(`${baseUrl}/reseller/dashboard`, { headers: { cookie: resellerCookie }, redirect: 'manual' })).headers.get('location'), '/reseller/login');
 });
