@@ -3,6 +3,7 @@
 <div class="tbl-card p-4" style="max-width: 650px;">
   <h5 class="fw-bold border-bottom pb-2 mb-3">🤝 রিসেলার প্রোফাইল ও ফেসবুক পেজ সেটিংস</h5>
   <form action="/reseller/profile" method="POST" class="row g-3">
+    <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
     <div class="col-md-6">
       <label class="form-label small fw-semibold">আপনার নাম *</label>
       <input type="text" name="name" value="<%= reseller.name %>" class="form-control" required />

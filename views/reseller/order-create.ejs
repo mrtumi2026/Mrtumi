@@ -9,6 +9,7 @@
 </div>
 
 <form action="/reseller/orders/create" method="POST" class="row g-4">
+  <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
   <div class="col-lg-7">
     <div class="tbl-card p-4">
       <h6 class="fw-bold border-bottom pb-2 mb-3">১. পণ্য ও আপনার বিক্রয়মূল্য নির্ধারণ</h6>

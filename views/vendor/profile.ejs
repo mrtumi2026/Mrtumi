@@ -3,6 +3,7 @@
 <div class="tbl-card p-4" style="max-width: 680px;">
   <h5 class="fw-bold border-bottom pb-2 mb-3">🏪 ভেন্ডর শপ প্রোফাইল ও পাসওয়ার্ড পরিবর্তন</h5>
   <form action="/vendor/profile" method="POST" class="row g-3">
+    <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
     <div class="col-md-6">
       <label class="form-label small fw-semibold">শপ / বাগানের নাম *</label>
       <input type="text" name="shop_name" value="<%= vendor.shop_name %>" class="form-control" required />

@@ -323,6 +323,41 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     }
   });
 
+  test('vendor and reseller portal POST routes reject missing CSRF in MySQL mode before writes',async(t)=>{
+    if(!MYSQL_HOST)return t.skip(SKIP);
+    const suffix=Date.now();
+    const vendorHash=bcrypt.hashSync('P09 CSRF Vendor Password!2026',8);
+    const vendorId=Number((await db.execute('INSERT INTO vendors(shop_name,owner_name,phone,password_hash,verified,status) VALUES(?,?,?,?,1,1)',[`P09 CSRF Vendor ${suffix}`,'P09 CSRF Owner',`015${String(suffix).slice(-8)}`,vendorHash])).insertId);
+    const vendorSessionId=crypto.randomBytes(20).toString('hex');
+    const vendorNonce=crypto.randomBytes(16).toString('hex');
+    await upsertSession({sid:vendorSessionId,dataJson:JSON.stringify({_csrfNonce:vendorNonce,vendorUser:{id:vendorId,shop_name:`P09 CSRF Vendor ${suffix}`,owner_name:'P09 CSRF Owner'}}),expiresAtMs:Date.now()+3600000});
+    const vendorSessionCookie=`pholbazar_sid=${vendorSessionId}`;
+    const vendorRoutes=['/vendor/login','/vendor/register','/vendor/logout','/vendor/products/create','/vendor/products/edit/987654','/vendor/products/delete/987654','/vendor/withdrawals/request','/vendor/profile'];
+
+    const resellerHash=bcrypt.hashSync('P09 CSRF Reseller Password!2026',8);
+    const resellerId=Number((await db.execute('INSERT INTO resellers(name,shop_name,phone,email,password_hash,balance_paisa,verified,status) VALUES(?,?,?,?,?,50000,1,1)',[`P09 CSRF Reseller ${suffix}`,'P09 CSRF Shop',`014${String(suffix).slice(-8)}`,`p09-csrf-${suffix}@example.invalid`,resellerHash])).insertId);
+    const resellerSessionId=crypto.randomBytes(20).toString('hex');
+    const resellerNonce=crypto.randomBytes(16).toString('hex');
+    await upsertSession({sid:resellerSessionId,dataJson:JSON.stringify({_csrfNonce:resellerNonce,resellerUser:{id:resellerId,name:`P09 CSRF Reseller ${suffix}`,shop_name:'P09 CSRF Shop'}}),expiresAtMs:Date.now()+3600000});
+    const resellerSessionCookie=`pholbazar_sid=${resellerSessionId}`;
+    const resellerRoutes=['/reseller/login','/reseller/register','/reseller/logout','/reseller/orders/create','/reseller/deposits/create','/reseller/withdrawals/create','/reseller/profile'];
+    const vendorSnapshot=await db.queryOne('SELECT shop_name,phone FROM vendors WHERE id=?',[vendorId]);
+    const resellerSnapshot=await db.queryOne('SELECT name,phone,balance_paisa FROM resellers WHERE id=?',[resellerId]);
+    const transactionCount=Number((await db.queryOne('SELECT COUNT(*) AS n FROM reseller_transactions WHERE reseller_id=?',[resellerId])).n);
+
+    for(const route of vendorRoutes){
+      const denied=await request(route,{method:'POST',cookie:vendorSessionCookie,token:'',body:{}});
+      assert.equal(denied.status,403,`${route} rejects missing CSRF in MySQL mode`);
+    }
+    for(const route of resellerRoutes){
+      const denied=await request(route,{method:'POST',cookie:resellerSessionCookie,token:'',body:{}});
+      assert.equal(denied.status,403,`${route} rejects missing CSRF in MySQL mode`);
+    }
+    assert.deepEqual(await db.queryOne('SELECT shop_name,phone FROM vendors WHERE id=?',[vendorId]),vendorSnapshot);
+    assert.deepEqual(await db.queryOne('SELECT name,phone,balance_paisa FROM resellers WHERE id=?',[resellerId]),resellerSnapshot);
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM reseller_transactions WHERE reseller_id=?',[resellerId])).n),transactionCount);
+  });
+
   test('legacy catalog routes use MySQL taxonomy/product/review repositories with permission, CSRF, audit and retained-history checks',async(t)=>{
     if(!MYSQL_HOST)return t.skip(SKIP);
     csrfToken=await fetchCsrf(dashboardCookie);

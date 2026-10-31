@@ -11,6 +11,7 @@
         <h6 class="fw-bold mb-2">💳 নতুন ডিপোজিট অ্যাড করুন</h6>
         <p class="small text-muted mb-3">অ্যাডমিন বিকাশ/নগদ নম্বরে (01711-009988) সেন্ড মানি করে নিচে TrxID দিন:</p>
         <form action="/reseller/deposits/create" method="POST">
+          <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
           <div class="mb-2">
             <label class="form-label small fw-semibold">মাধ্যম *</label>
             <select name="method" class="form-select">
@@ -36,6 +37,7 @@
         </div>
         <h6 class="fw-bold mb-3">💸 কমিশন লাভ উত্তোলন রিকোয়েস্ট</h6>
         <form action="/reseller/withdrawals/create" method="POST">
+          <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
           <div class="mb-2">
             <label class="form-label small fw-semibold">পেমেন্ট মাধ্যম *</label>
             <select name="method" class="form-select">

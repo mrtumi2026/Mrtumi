@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const db = require('../db/database');
 const { requireReseller } = require('../middleware/auth');
+const { requireCsrf } = require('../middleware/csrf');
 
 const router = express.Router();
 
@@ -26,7 +27,7 @@ router.get('/reseller/login', (req, res) => {
   res.render('reseller/auth', { mode: 'login', error: null });
 });
 
-router.post('/reseller/login', (req, res) => {
+router.post('/reseller/login', requireCsrf, (req, res) => {
   const identifier = String(req.body.identifier || '').trim();
   const password = String(req.body.password || '');
 
@@ -69,7 +70,7 @@ router.get('/reseller/register', (req, res) => {
   res.render('reseller/auth', { mode: 'register', error: null });
 });
 
-router.post('/reseller/register', (req, res) => {
+router.post('/reseller/register', requireCsrf, (req, res) => {
   const { name, shop_name, phone, email, password } = req.body;
   if (!name || !phone || !password) {
     return res.render('reseller/auth', {
@@ -109,7 +110,7 @@ router.post('/reseller/register', (req, res) => {
   res.redirect('/reseller/dashboard');
 });
 
-router.post('/reseller/logout', (req, res) => {
+router.post('/reseller/logout', requireCsrf, (req, res) => {
   delete req.session.resellerUser;
   res.redirect('/reseller/login');
 });
@@ -190,7 +191,7 @@ router.get('/reseller/orders/create', (req, res) => {
   });
 });
 
-router.post('/reseller/orders/create', (req, res) => {
+router.post('/reseller/orders/create', requireCsrf, (req, res) => {
   const reseller = db.get('SELECT * FROM resellers WHERE id = ?', req.session.resellerUser.id);
   const {
     product_id,
@@ -293,7 +294,7 @@ router.get('/reseller/deposits', (req, res) => {
   res.render('reseller/wallet', { mode: 'deposit', reseller, transactions });
 });
 
-router.post('/reseller/deposits/create', (req, res) => {
+router.post('/reseller/deposits/create', requireCsrf, (req, res) => {
   const resellerId = req.session.resellerUser.id;
   const amount = Number(req.body.amount || 0);
   const method = String(req.body.method || 'bKash').trim();
@@ -324,7 +325,7 @@ router.get('/reseller/withdrawals', (req, res) => {
   res.render('reseller/wallet', { mode: 'withdrawal', reseller, transactions });
 });
 
-router.post('/reseller/withdrawals/create', (req, res) => {
+router.post('/reseller/withdrawals/create', requireCsrf, (req, res) => {
   const reseller = db.get('SELECT * FROM resellers WHERE id = ?', req.session.resellerUser.id);
   const amount = Number(req.body.amount || 0);
   const method = String(req.body.method || 'bKash').trim();
@@ -357,7 +358,7 @@ router.get('/reseller/profile', (req, res) => {
   res.render('reseller/profile', { reseller });
 });
 
-router.post('/reseller/profile', (req, res) => {
+router.post('/reseller/profile', requireCsrf, (req, res) => {
   const { name, shop_name, phone, email, new_password } = req.body;
   const rId = req.session.resellerUser.id;
   db.run(

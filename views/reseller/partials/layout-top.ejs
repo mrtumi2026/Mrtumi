@@ -43,6 +43,7 @@
                 <a href="/reseller/withdrawals" class="dropdown-item notify-item"><i class="fas fa-wallet me-2"></i><%= t('reseller.wallet') %></a>
                 <div class="dropdown-divider"></div>
                 <form action="/reseller/logout" method="POST">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
                   <button type="submit" class="dropdown-item notify-item text-danger border-0 bg-transparent w-100 text-start">
                     <i class="fas fa-sign-out-alt me-2"></i><%= t('admin.logout') %>
                   </button>

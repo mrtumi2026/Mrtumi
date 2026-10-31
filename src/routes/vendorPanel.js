@@ -7,6 +7,13 @@ const upload = require('../middleware/upload');
 
 const router = express.Router();
 
+function requireCsrfAndCleanupUploadedFile(req, res, next) {
+  return requireCsrf(req, res, (error) => {
+    if (error && req.file && req.file.path) upload.safeUnlink(req.file.path);
+    return next(error);
+  });
+}
+
 function makeSlug(str) {
   return (
     String(str || '')
@@ -31,7 +38,7 @@ router.get('/vendor/login', (req, res) => {
   res.render('vendor/auth', { mode: 'login', error: null });
 });
 
-router.post('/vendor/login', (req, res) => {
+router.post('/vendor/login', requireCsrf, (req, res) => {
   const identifier = String(req.body.identifier || '').trim();
   const password = String(req.body.password || '');
 
@@ -74,7 +81,7 @@ router.get('/vendor/register', (req, res) => {
   res.render('vendor/auth', { mode: 'register', error: null });
 });
 
-router.post('/vendor/register', (req, res) => {
+router.post('/vendor/register', requireCsrf, (req, res) => {
   const { shop_name, owner_name, phone, email, address, password } = req.body;
   if (!shop_name || !owner_name || !phone || !password) {
     return res.render('vendor/auth', {
@@ -115,7 +122,7 @@ router.post('/vendor/register', (req, res) => {
   res.redirect('/vendor/dashboard');
 });
 
-router.post('/vendor/logout', (req, res) => {
+router.post('/vendor/logout', requireCsrf, (req, res) => {
   delete req.session.vendorUser;
   res.redirect('/vendor/login');
 });
@@ -198,7 +205,7 @@ router.get('/vendor/products/create', (_req, res) => {
   res.render('vendor/product-form', { product: null, categories, brands });
 });
 
-router.post('/vendor/products/create', upload.single('image'), (req, res) => {
+router.post('/vendor/products/create', upload.single('image'), requireCsrfAndCleanupUploadedFile, (req, res) => {
   const vendor = db.get('SELECT * FROM vendors WHERE id = ?', req.session.vendorUser.id);
   const b = req.body;
   const imgPath = req.file ? `/uploads/custom/${req.file.filename}` : '/uploads/product/lychee-fresh.jpg';
@@ -251,7 +258,7 @@ router.get('/vendor/products/edit/:id', (req, res) => {
   res.render('vendor/product-form', { product, categories, brands });
 });
 
-router.post('/vendor/products/edit/:id', upload.single('image'), (req, res) => {
+router.post('/vendor/products/edit/:id', upload.single('image'), requireCsrfAndCleanupUploadedFile, (req, res) => {
   const existing = db.get(
     'SELECT * FROM products WHERE id = ? AND vendor_id = ?',
     req.params.id,
@@ -289,7 +296,7 @@ router.post('/vendor/products/edit/:id', upload.single('image'), (req, res) => {
   res.redirect('/vendor/products');
 });
 
-router.post('/vendor/products/delete/:id', (req, res) => {
+router.post('/vendor/products/delete/:id', requireCsrf, (req, res) => {
   db.run('DELETE FROM products WHERE id = ? AND vendor_id = ?', req.params.id, req.session.vendorUser.id);
   req.flash('success', 'প্রোডাক্ট মুছে ফেলা হয়েছে।');
   res.redirect('/vendor/products');
@@ -328,7 +335,7 @@ router.get('/vendor/withdrawals', (req, res) => {
   res.render('vendor/withdrawals', { vendor, withdrawals });
 });
 
-router.post('/vendor/withdrawals/request', (req, res) => {
+router.post('/vendor/withdrawals/request', requireCsrf, (req, res) => {
   const vendor = db.get('SELECT * FROM vendors WHERE id = ?', req.session.vendorUser.id);
   const amount = Number(req.body.amount || 0);
   const method = String(req.body.method || 'bKash').trim();
@@ -363,7 +370,7 @@ router.get('/vendor/profile', (req, res) => {
   res.render('vendor/profile', { vendor });
 });
 
-router.post('/vendor/profile', (req, res) => {
+router.post('/vendor/profile', requireCsrf, (req, res) => {
   const { shop_name, owner_name, phone, email, address, new_password } = req.body;
   const vendorId = req.session.vendorUser.id;
   db.run(

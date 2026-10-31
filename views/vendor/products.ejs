@@ -55,6 +55,7 @@
               <a href="/product/<%= p.slug %>" target="_blank" class="btn btn-sm btn-outline-secondary py-1 px-2" title="View on Storefront"><i class="fas fa-external-link-alt"></i></a>
               <a href="/vendor/products/edit/<%= p.id %>" class="btn btn-sm btn-outline-primary py-1 px-2"><i class="fas fa-edit"></i></a>
               <form action="/vendor/products/delete/<%= p.id %>" method="POST" class="d-inline" onsubmit="return confirm('পণ্যটি ডিলিট করতে চান?');">
+                <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
                 <button type="submit" class="btn btn-sm btn-outline-danger py-1 px-2"><i class="fas fa-trash"></i></button>
               </form>
             </td>
