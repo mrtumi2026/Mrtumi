@@ -30,6 +30,13 @@ describe('Vendor portal live MySQL/MariaDB repository integration', () => {
     await vendorPortalRepo.adjustInventory(vendorA.insertId, productA, 11, 'Received vendor stock');
     const inventory = await client.queryOne('SELECT vendor_stock_on_hand FROM products WHERE id=? AND vendor_id=?', [productA, vendorA.insertId]);
     assert.equal(Number(inventory.vendor_stock_on_hand), 11);
+    const variantId = await vendorPortalRepo.saveVariant(vendorA.insertId, productA, { variant_sku: `V${suffix}-A`, size_label: '500 g', color_label: 'Red', price_bdt: '12.34', stock_on_hand: 2 });
+    assert.equal((await vendorPortalRepo.listVariants(vendorA.insertId, productA)).length, 1);
+    assert.equal((await vendorPortalRepo.listVariants(vendorB.insertId, productA)).length, 0);
+    await assert.rejects(() => vendorPortalRepo.saveVariant(vendorB.insertId, productA, { variant_sku: 'DENIED', price_bdt: '1', stock_on_hand: 0 }, { variantId }), { code: 'NOT_FOUND' });
+    await vendorPortalRepo.saveVariant(vendorA.insertId, productA, { variant_sku: `V${suffix}-A`, size_label: '500 g', color_label: 'Red', price_bdt: '13.45', stock_on_hand: 3 }, { variantId });
+    const variant = await client.queryOne('SELECT price_paisa,stock_on_hand FROM product_variants WHERE id=? AND product_id=?', [variantId, productA]);
+    assert.deepEqual([Number(variant.price_paisa), Number(variant.stock_on_hand)], [1345, 3]);
 
     const order = await client.execute("INSERT INTO orders(invoice_no,customer_name,customer_phone,shipping_address,subtotal_paisa,discount_paisa,shipping_paisa,total_paisa,payment_method,payment_status,order_status,order_channel) VALUES(?,?,?,'Test address',1950,0,0,1950,'cod','unpaid','pending','storefront')", [`VPORTAL-${suffix}`, 'Portal customer', `015${suffix}111`]);
     const itemA = await client.execute("INSERT INTO order_items(order_id,product_id,vendor_id,product_name,unit_price_paisa,qty,line_total_paisa) VALUES(?,?,?,'A line',1250,1,1250)", [order.insertId, productA, vendorA.insertId]);
@@ -59,6 +66,7 @@ describe('Vendor portal live MySQL/MariaDB repository integration', () => {
     await client.execute('DELETE FROM order_items WHERE order_id=?', [order.insertId]);
     await client.execute('DELETE FROM orders WHERE id=?', [order.insertId]);
     await client.execute('DELETE FROM stock_ledger WHERE product_id IN (?,?)', [productA, productB]);
+    await client.execute('DELETE FROM product_variants WHERE id=? AND product_id=?', [variantId, productA]);
     await client.execute('DELETE FROM vendor_product_history WHERE vendor_id IN (?,?)', [vendorA.insertId, vendorB.insertId]);
     await client.execute('DELETE FROM products WHERE id IN (?,?)', [productA, productB]);
     await client.execute('DELETE FROM vendors WHERE id IN (?,?)', [vendorA.insertId, vendorB.insertId]);

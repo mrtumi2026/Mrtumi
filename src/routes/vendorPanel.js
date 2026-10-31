@@ -204,7 +204,7 @@ router.get('/vendor/products', async (req, res, next) => {
 });
 
 router.get('/vendor/products/create', async (_req, res, next) => {
-  if (mysqlActive()) { try { const sql = require('../db/mysqlPool'); const [categories, brands] = await Promise.all([sql.queryAll('SELECT id,name_bn AS name,status FROM categories WHERE status=1 ORDER BY sort_order,id'), sql.queryAll('SELECT id,name_bn AS name,status FROM brands WHERE status=1 ORDER BY id')]); return res.render('vendor/product-form', { product: null, categories, brands }); } catch (error) { return next(error); } }
+  if (mysqlActive()) { try { const sql = require('../db/mysqlPool'); const [categories, brands] = await Promise.all([sql.queryAll('SELECT id,name_bn AS name,status FROM categories WHERE status=1 ORDER BY sort_order,id'), sql.queryAll('SELECT id,name_bn AS name,status FROM brands WHERE status=1 ORDER BY id')]); return res.render('vendor/product-form', { product: null, categories, brands, variants: [] }); } catch (error) { return next(error); } }
   const categories = db.all('SELECT * FROM categories WHERE status = 1 ORDER BY sort_order ASC');
   const brands = db.all('SELECT * FROM brands WHERE status = 1');
   res.render('vendor/product-form', { product: null, categories, brands });
@@ -253,7 +253,7 @@ router.post('/vendor/products/create', upload.single('image'), requireCsrfAndCle
 });
 
 router.get('/vendor/products/edit/:id', async (req, res, next) => {
-  if (mysqlActive()) { try { const sql = require('../db/mysqlPool'); const product = (await vendorPortal.listProducts(req.session.vendorUser.id)).find(row => Number(row.id) === Number(req.params.id)); if (!product) return res.redirect('/vendor/products'); const [categories, brands] = await Promise.all([sql.queryAll('SELECT id,name_bn AS name,status FROM categories WHERE status=1 ORDER BY sort_order,id'), sql.queryAll('SELECT id,name_bn AS name,status FROM brands WHERE status=1 ORDER BY id')]); return res.render('vendor/product-form', { product, categories, brands }); } catch (error) { return next(error); } }
+  if (mysqlActive()) { try { const sql = require('../db/mysqlPool'); const product = (await vendorPortal.listProducts(req.session.vendorUser.id)).find(row => Number(row.id) === Number(req.params.id)); if (!product) return res.redirect('/vendor/products'); const [categories, brands] = await Promise.all([sql.queryAll('SELECT id,name_bn AS name,status FROM categories WHERE status=1 ORDER BY sort_order,id'), sql.queryAll('SELECT id,name_bn AS name,status FROM brands WHERE status=1 ORDER BY id')]); return res.render('vendor/product-form', { product, categories, brands, variants: await vendorPortal.listVariants(req.session.vendorUser.id, req.params.id) }); } catch (error) { return next(error); } }
   const product = db.get(
     'SELECT * FROM products WHERE id = ? AND vendor_id = ?',
     req.params.id,
@@ -313,6 +313,15 @@ router.post('/vendor/products/:id/status', requireCsrf, async (req, res, next) =
   if (mysqlActive()) { try { await vendorPortal.setProductStatus(req.session.vendorUser.id, req.params.id, req.body.status); req.flash('success', 'Product status updated.'); return res.redirect('/vendor/products'); } catch (error) { return next(error); } }
   if (req.body.status === '0') db.run('UPDATE products SET status=0 WHERE id=? AND vendor_id=?', req.params.id, req.session.vendorUser.id); else db.run('UPDATE products SET status=1 WHERE id=? AND vendor_id=?', req.params.id, req.session.vendorUser.id);
   return res.redirect('/vendor/products');
+});
+
+router.post('/vendor/products/:id/variants', requireCsrf, async (req, res, next) => {
+  if (!mysqlActive()) return res.status(409).send('Variant management requires MySQL.');
+  try { await vendorPortal.saveVariant(req.session.vendorUser.id, req.params.id, req.body); req.flash('success', 'Variant saved.'); return res.redirect(`/vendor/products/edit/${req.params.id}`); } catch (error) { return next(error); }
+});
+router.post('/vendor/products/:id/variants/:variantId', requireCsrf, async (req, res, next) => {
+  if (!mysqlActive()) return res.status(409).send('Variant management requires MySQL.');
+  try { await vendorPortal.saveVariant(req.session.vendorUser.id, req.params.id, req.body, { variantId: req.params.variantId }); req.flash('success', 'Variant updated.'); return res.redirect(`/vendor/products/edit/${req.params.id}`); } catch (error) { return next(error); }
 });
 
 router.post('/vendor/products/delete/:id', requireCsrf, async (req, res, next) => {
