@@ -25,6 +25,33 @@ function isMysqlMode(config = env) {
 function getClient(poolOverride = null) {
   return createQueryClient(poolOverride || getPool());
 }
+async function getSearchSuggestions(query, locale = 'bn', poolOverride = null, config = env) {
+  const term = String(query || '').trim().replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 80);
+  if (term.length < 2) return [];
+  const pattern = `%${term}%`;
+  const rows = !isMysqlMode(config) && !poolOverride
+    ? sqliteDb.all(`SELECT id,name,slug,image,new_price AS price FROM products
+        WHERE status=1 AND approval_status='approved' AND (name LIKE ? OR slug LIKE ?)
+        ORDER BY sold_count DESC,id DESC LIMIT 5`, pattern, pattern)
+    : await getClient(poolOverride).queryAll(`SELECT p.id,
+        CASE WHEN ?='en' THEN COALESCE(NULLIF(p.name_en,''),p.name_bn) ELSE COALESCE(NULLIF(p.name_bn,''),p.name_en) END AS name,
+        p.slug,p.image_url AS image,p.sale_price_paisa/100 AS price
+        FROM products p
+        WHERE p.status=1 AND p.is_archived=0 AND p.approval_status='approved'
+          AND (p.name_bn LIKE ? OR p.name_en LIKE ? OR p.sku LIKE ?)
+        ORDER BY p.sold_count DESC,p.id DESC LIMIT 5`, [locale, pattern, pattern, pattern]);
+  return rows.slice(0, 5).map((row) => {
+    const price = Number(row.price || 0);
+    return {
+      id: Number(row.id),
+      name: String(row.name || row.name_bn || row.slug || ''),
+      slug: String(row.slug || ''),
+      image: sanitizeImagePath(row.image),
+      price,
+      formatted_price: `৳${price.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`,
+    };
+  });
+}
 
 function pickLocalizedText(locale, bnVal, enVal, fallback = '') {
   const bn = replaceLegacyBrandTokens(String(bnVal || '').trim(), 'bn');
@@ -1344,6 +1371,7 @@ module.exports = {
   parseGalleryImages,
   getCatalogFacets,
   listStorefrontProducts,
+  getSearchSuggestions,
   getHomepageData,
   getStorefrontProductDetail,
   findProductForCart,

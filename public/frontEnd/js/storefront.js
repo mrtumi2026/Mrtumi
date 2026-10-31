@@ -345,7 +345,88 @@
     });
   }
 
+  function initProductSearchSuggestions() {
+    var input = document.getElementById('storeMainSearch');
+    var form = input && input.closest('form');
+    if (!input || !form) return;
+
+    var list = document.createElement('div');
+    list.className = 'store-search-suggestions';
+    list.id = 'storeSearchSuggestions';
+    list.setAttribute('role', 'listbox');
+    list.setAttribute('aria-label', input.getAttribute('aria-label') || input.placeholder || 'Product suggestions');
+    list.hidden = true;
+    form.appendChild(list);
+    input.setAttribute('aria-autocomplete', 'list');
+    input.setAttribute('aria-controls', list.id);
+    input.setAttribute('aria-expanded', 'false');
+
+    var timer = null;
+    var controller = null;
+    function closeSuggestions() {
+      list.hidden = true;
+      input.setAttribute('aria-expanded', 'false');
+      input.removeAttribute('aria-activedescendant');
+    }
+    function renderSuggestions(items) {
+      list.replaceChildren();
+      if (!items.length) { closeSuggestions(); return; }
+      items.slice(0, 5).forEach(function (item, index) {
+        var link = document.createElement('a');
+        link.className = 'store-search-suggestion';
+        link.id = 'store-search-suggestion-' + index;
+        link.setAttribute('role', 'option');
+        link.setAttribute('aria-selected', 'false');
+        link.href = navUrl('/product/' + encodeURIComponent(item.slug));
+        var image = document.createElement('img');
+        image.src = item.image || '/uploads/product/lychee-fresh.jpg';
+        image.alt = '';
+        image.loading = 'lazy';
+        var title = document.createElement('span');
+        title.className = 'store-search-suggestion-name';
+        title.textContent = item.name || '';
+        var price = document.createElement('strong');
+        price.textContent = item.formatted_price || ('৳' + Number(item.price || 0).toLocaleString('en-IN'));
+        link.append(image, title, price);
+        link.addEventListener('mousedown', function (event) { event.preventDefault(); });
+        link.addEventListener('click', closeSuggestions);
+        list.appendChild(link);
+      });
+      list.hidden = false;
+      input.setAttribute('aria-expanded', 'true');
+    }
+    input.addEventListener('input', function () {
+      if (timer) window.clearTimeout(timer);
+      if (controller) controller.abort();
+      var query = input.value.trim();
+      if (query.length < 2) { closeSuggestions(); return; }
+      timer = window.setTimeout(function () {
+        controller = typeof AbortController === 'function' ? new AbortController() : null;
+        var options = { headers: { Accept: 'application/json' }, credentials: 'same-origin' };
+        if (controller) options.signal = controller.signal;
+        fetch('/api/search-suggestions?q=' + encodeURIComponent(query), options)
+          .then(function (response) { if (!response.ok) throw new Error('Suggestions unavailable'); return response.json(); })
+          .then(function (data) {
+            if (input.value.trim() !== query) return;
+            renderSuggestions(Array.isArray(data.suggestions) ? data.suggestions : []);
+          })
+          .catch(function (error) { if (error.name !== 'AbortError') closeSuggestions(); });
+      }, 300);
+    });
+    input.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape') { closeSuggestions(); return; }
+      if (event.key === 'ArrowDown' && !list.hidden) {
+        var first = list.querySelector('a');
+        if (first) { event.preventDefault(); first.focus(); }
+      }
+    });
+    document.addEventListener('click', function (event) {
+      if (!form.contains(event.target)) closeSuggestions();
+    });
+  }
+
   document.addEventListener('DOMContentLoaded', function () {
+    initProductSearchSuggestions();
     initCountdowns();
     window.syncCartUI({ cart: window.__INITIAL_CART || [] }, false);
 

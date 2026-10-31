@@ -505,3 +505,13 @@ body {
   .ls-box { bottom:134px;right:12px; }
 }
 @media (max-width: 380px) { .store-utility-hotline { display:none!important; } .store-trust-row article { padding:9px 7px; } }
+
+.pb-search-box { position:relative; }
+.store-search-suggestions { position:absolute; z-index:1060; top:calc(100% + 6px); left:0; right:0; max-height:min(68vh,420px); overflow:auto; padding:6px; border:1px solid #dce9de; border-radius:14px; background:#fff; box-shadow:0 16px 36px rgba(15,48,29,.18); }
+.store-search-suggestions[hidden] { display:none; }
+.store-search-suggestion { display:grid; grid-template-columns:46px minmax(0,1fr) auto; align-items:center; gap:10px; min-height:58px; padding:6px 8px; border-radius:9px; color:#173b25; text-decoration:none; }
+.store-search-suggestion:hover,.store-search-suggestion:focus-visible { background:#f0fdf4; color:#14532d; }
+.store-search-suggestion img { width:44px; height:44px; object-fit:cover; border-radius:8px; background:#f1f5f2; }
+.store-search-suggestion-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; font-weight:700; }
+.store-search-suggestion strong { color:#15803d; font-size:12px; white-space:nowrap; }
+@media (max-width:767px) { .store-search-suggestions { top:calc(100% + 4px); max-height:55vh; } }

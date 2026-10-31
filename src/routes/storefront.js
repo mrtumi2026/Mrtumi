@@ -17,6 +17,13 @@ const { captureAttribution, consentGranted } = require('../analytics/attribution
 
 const router = express.Router();
 
+router.use((req, res, next) => {
+  res.locals.mysqlCheckoutEnabled = typeof res.locals.mysqlCheckoutEnabled === 'boolean'
+    ? res.locals.mysqlCheckoutEnabled
+    : Boolean(env.db.client === 'mysql' || (req.app && req.app.locals && req.app.locals.mysqlCheckoutEnabled));
+  next();
+});
+
 const publicFormLimiter = createRateLimiter({
   keyPrefix: 'store_public_form',
   windowMs: 60_000,
@@ -38,6 +45,13 @@ router.use((req, res, next) => {
   captureAttribution(req.session, req.query, enabled);
   next();
 });
+
+router.get('/api/search-suggestions', publicFormLimiter, asyncHandler(async (req, res) => {
+  const q = String(req.query.q || '').trim();
+  if (q.length < 2) return res.json({ suggestions: [] });
+  const suggestions = await storefrontRepo.getSearchSuggestions(q, req.locale || 'bn');
+  return res.json({ suggestions });
+}));
 
 function safeLocalReturnPath(value) {
   const path = String(value || '/').trim();

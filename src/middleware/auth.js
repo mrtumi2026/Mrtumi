@@ -1,6 +1,7 @@
 'use strict';
 
 const { getAllSettings } = require('../repositories/settingsRepository');
+const { env } = require('../config/env');
 const {
   findActiveAdminById,
   findVendorById,
@@ -22,6 +23,9 @@ const {
  * via the async repository layer (MySQL in production/CI; SQLite in local prototype mode).
  */
 async function attachGlobals(req, res, next) {
+  res.locals.mysqlCheckoutEnabled = typeof res.locals.mysqlCheckoutEnabled === 'boolean'
+    ? res.locals.mysqlCheckoutEnabled
+    : Boolean(env.db.client === 'mysql' || (req.app && req.app.locals && req.app.locals.mysqlCheckoutEnabled));
   try {
     const isAdminPath = Boolean(req.path && req.path.startsWith('/admin'));
 
