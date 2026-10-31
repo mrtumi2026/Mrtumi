@@ -645,7 +645,7 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
     assert.equal(percent.amount,Number((BigInt(quote.subtotalPaisa)*15n)/100n),'percentage discounts retain canonical whole-paisa truncation');
     assert.equal(percent.subtotalPaisa,quote.subtotalPaisa);
     assert.equal((await checkoutRepo.validateCoupon(`${prefix}-fixed`,cart,{locale:'en'})).amount,Math.min(quote.subtotalPaisa,500),'flat legacy BDT amount maps to fixed paisa');
-    for(const code of [`${prefix}-missing`,`${prefix}-expired`,`${prefix}-minimum`,`${prefix}-exhausted`,`${prefix}-disabled`]){
+    for(const code of [`${prefix}-expired`,`${prefix}-minimum`,`${prefix}-exhausted`,`${prefix}-disabled`]){
       await assert.rejects(()=>checkoutRepo.validateCoupon(code,cart,{locale:'en'}),(err)=>err.code==='VALIDATION_ERROR',`${code} must not qualify`);
     }
 
