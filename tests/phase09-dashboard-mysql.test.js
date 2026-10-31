@@ -250,7 +250,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
 
   test('legacy catalog routes use MySQL taxonomy/product/review repositories with permission, CSRF, audit and retained-history checks',async(t)=>{
     if(!MYSQL_HOST)return t.skip(SKIP);
-    dashboardCookie=await login(fullEmail);csrfToken=await fetchCsrf(dashboardCookie);
+    csrfToken=await fetchCsrf(dashboardCookie);
     const {cookie:noGrantCookie,token:noGrantToken}=await noGrantSession();
     assert.equal((await request('/admin/categories/manage',{cookie:'',token:'',accept:'text/html'})).status,302,'unauthenticated catalog requests follow the existing admin login flow');
     assert.equal((await request('/admin/categories/manage',{cookie:noGrantCookie,token:noGrantToken,accept:'text/html'})).status,403,'catalog.view is required');
@@ -323,7 +323,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
 
   test('legacy supplier and purchase entries route to Phase 06, preserve ledger history and block ambiguous accounting actions',async(t)=>{
     if(!MYSQL_HOST)return t.skip(SKIP);
-    dashboardCookie=await login(fullEmail);csrfToken=await fetchCsrf(dashboardCookie);
+    csrfToken=await fetchCsrf(dashboardCookie);
     const {cookie:noGrantCookie,token:noGrantToken}=await noGrantSession();
     assert.equal((await request('/admin/suppliers/manage',{cookie:noGrantCookie,accept:'text/html'})).status,403,'supplier routes require inventory.manage');
     assert.equal((await request('/admin/suppliers/manage',{accept:'text/html'})).headers.get('location'),'/admin/phase06#suppliers');
