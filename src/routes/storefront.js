@@ -1313,11 +1313,28 @@ router.get(['/track-order', '/order-track', '/site/order-track'], (req, res) => 
 router.get('/campaign/:slug', asyncHandler(async (req, res) => {
   const result = await storefrontRepo.getCampaignBySlug(req.params.slug, req.locale);
   if (!result?.campaign) return res.redirect('/');
-  return res.render('store/campaign', { campaign: result.campaign, product: result.product, csrfToken: req.csrfToken() });
+  let deliveryLocations=[];let campaignCheckoutAvailable=false;let campaignCheckoutKey='';
+  if(storefrontRepo.isMysqlMode()){
+    const [locations,methods]=await Promise.all([checkoutRepo.listDeliveryLocations(),checkoutRepo.listCheckoutMethods()]);
+    deliveryLocations=locations;campaignCheckoutAvailable=Boolean(locations.length&&methods.some(method=>method.code==='cod'));
+    campaignCheckoutKey=crypto.randomBytes(24).toString('hex');
+    req.session.campaignCheckoutKey=campaignCheckoutKey;
+    req.session.campaignCheckoutSlug=String(result.campaign.slug);
+  }
+  return res.render('store/campaign', { campaign: result.campaign, product: result.product, csrfToken: req.csrfToken(),deliveryLocations,campaignCheckoutAvailable,campaignCheckoutKey,canonicalCampaignCheckout:storefrontRepo.isMysqlMode() });
 }));
 
 router.post('/campaign/:slug/order', publicFormLimiter, requireCsrf, asyncHandler(async (req, res) => {
-  if (storefrontRepo.isMysqlMode()) return res.status(409).json({ error:'CAMPAIGN_CHECKOUT_UNAVAILABLE', message:'Campaign checkout is paused until campaign offer pricing has a transactional, stock-reserving checkout workflow. No order was created.' });
+  if (storefrontRepo.isMysqlMode()) {
+    const supplied=String(req.body.checkout_request_key||'');
+    const expected=String(req.session.campaignCheckoutKey||'');
+    const same=supplied.length===expected.length&&expected.length>=32&&crypto.timingSafeEqual(Buffer.from(supplied),Buffer.from(expected));
+    if(!same||String(req.session.campaignCheckoutSlug||'')!==String(req.params.slug))throw new (require('../utils/errors').ConflictError)('Campaign checkout session expired. Reload the campaign and try again.');
+    const result=await checkoutRepo.createCampaignOrder({customer_name:req.body.customer_name,phone:req.body.phone,address:req.body.address,delivery_location_id:req.body.delivery_location_id,payment_method:'cod'}, {campaignSlug:req.params.slug,qty:req.body.qty,requestKey:`${req.sessionID}:${supplied}`,locale:req.locale,ip:req.ip||''});
+    req.session.checkoutLastInvoice=String(result.invoiceNo);
+    delete req.session.campaignCheckoutKey;delete req.session.campaignCheckoutSlug;
+    return res.redirect(`/order-success/${encodeURIComponent(result.invoiceNo)}`);
+  }
   const campaign = db.get('SELECT * FROM campaigns WHERE slug = ?', req.params.slug);
   if (!campaign) return res.redirect('/');
   const product = db.get('SELECT * FROM products WHERE id = ?', campaign.product_id);

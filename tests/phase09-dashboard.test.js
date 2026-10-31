@@ -149,6 +149,20 @@ describe('Phase 09 dashboard repository contract', () => {
     assert.equal(policyForAdminRoute('POST','/admin/reviews/approve/1').key,'catalog.manage');
   });
 
+  test('Batch 1 MySQL orders expose paginated list, canonical detail history, and transactional state transitions',()=>{
+    const source=fs.readFileSync(path.join(__dirname,'../src/routes/adminOrders.js'),'utf8');
+    const reads=fs.readFileSync(path.join(__dirname,'../src/repositories/adminOrderReadRepository.js'),'utf8');
+    assert.match(source,/router\.get\('\/admin\/orders'/);
+    assert.match(source,/router\.get\(\/\^\\\/admin\\\/order/,'numeric canonical order URL redirects to the order detail route');
+    assert.match(source,/router\.post\('\/admin\/order\/:id\/status'/);
+    assert.match(source,/phase08Repo\.transitionOrder\(req\.params\.id/);
+    assert.match(reads,/ORDER BY o\.id DESC LIMIT \? OFFSET \?/);
+    assert.match(reads,/SELECT h\.id,h\.from_status,h\.to_status/);
+    assert.match(reads,/LEFT JOIN users u ON u\.id=h\.changed_by_user_id/);
+    assert.equal(policyForAdminRoute('GET','/admin/orders').key,'orders.manage');
+    assert.equal(policyForAdminRoute('POST','/admin/order/123/status').key,'orders.manage');
+  });
+
   test('vendor/reseller MySQL admin directories stay read-only and retain existing platform-wide permission gates',()=>{
     const directory=require('../src/repositories/adminPartnerDirectoryRepository');
     assert.equal(typeof directory.listVendors,'function');assert.equal(typeof directory.listResellers,'function');

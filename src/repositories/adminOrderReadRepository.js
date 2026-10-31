@@ -81,7 +81,7 @@ async function getAdminOrderDetail(orderId, poolOverride = null) {
 
   // Preserve the legacy detail page's notification acknowledgement on open.
   await client.execute('UPDATE orders SET is_seen=1,updated_at=updated_at WHERE id=?', [id]);
-  const [rawItems,statuses,couriers,deliveryBoys,rawProducts] = await Promise.all([
+  const [rawItems,statuses,couriers,deliveryBoys,rawProducts,statusHistory] = await Promise.all([
     client.queryAll(
       `SELECT id,order_id,product_name,product_image,qty,
               size_label AS size,color_label AS color,unit_price_paisa
@@ -97,6 +97,9 @@ async function getAdminOrderDetail(orderId, poolOverride = null) {
          FROM products WHERE status=1 AND is_archived=0 AND approval_status='approved' AND vendor_id IS NULL
         ORDER BY COALESCE(NULLIF(name_en,''),name_bn) ASC`,
     ),
+    client.queryAll(`SELECT h.id,h.from_status,h.to_status,h.note,h.created_at,u.name AS changed_by_name
+      FROM order_status_history h LEFT JOIN users u ON u.id=h.changed_by_user_id
+      WHERE h.order_id=? ORDER BY h.id DESC LIMIT 100`,[id]),
   ]);
   return {
     order: {
@@ -110,12 +113,13 @@ async function getAdminOrderDetail(orderId, poolOverride = null) {
     statuses,
     couriers,
     deliveryBoys,
+    statusHistory,
     allProducts: rawProducts.map((product) => ({ ...product, new_price: toBdtString(product.sale_price_paisa) })),
   };
 }
 
 /** Platform-wide admin order list projection used by the legacy status/search route. */
-async function listAdminOrders({ statusParam = 'all', searchQuery = '' } = {}, poolOverride = null) {
+async function listAdminOrders({ statusParam = 'all', searchQuery = '', page = 1, perPage = 25 } = {}, poolOverride = null) {
   const client = createQueryClient(poolOverride || getPool());
   const status = String(statusParam || 'all');
   const search = String(searchQuery || '').trim();
@@ -130,7 +134,9 @@ async function listAdminOrders({ statusParam = 'all', searchQuery = '' } = {}, p
     params.push(`%${search}%`, `%${search}%`, `%${search}%`);
   }
   const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
-  const [orders, statuses, counts, total] = await Promise.all([
+  const currentPage=Math.max(1,Math.min(100000,Number.parseInt(page,10)||1));
+  const pageSize=Math.max(1,Math.min(100,Number.parseInt(perPage,10)||25));
+  const [orders, statuses, counts, total, matched] = await Promise.all([
     client.queryAll(
       `SELECT o.id,o.invoice_no AS invoice_id,o.customer_name,o.customer_phone AS phone,
               o.shipping_address AS address,o.total_paisa,o.payment_method,o.order_status AS status,
@@ -143,12 +149,13 @@ async function listAdminOrders({ statusParam = 'all', searchQuery = '' } = {}, p
          LEFT JOIN order_statuses os ON os.slug=o.order_status
          LEFT JOIN courier_apis ca ON ca.code=o.courier_code
          ${clause}
-        ORDER BY o.id DESC`,
-      params
+        ORDER BY o.id DESC LIMIT ? OFFSET ?`,
+      [...params,pageSize,(currentPage-1)*pageSize]
     ),
     client.queryAll('SELECT slug,name,badge_class,color,sort_order FROM order_statuses WHERE status=1 ORDER BY sort_order ASC'),
     client.queryAll('SELECT order_status AS status,COUNT(*) AS c FROM orders GROUP BY order_status'),
     client.queryOne('SELECT COUNT(*) AS c FROM orders'),
+    client.queryOne(`SELECT COUNT(*) AS c FROM orders o ${clause}`,params),
   ]);
   const statusCounts = { all: Number(total?.c || 0) };
   for (const row of counts) statusCounts[row.status] = Number(row.c || 0);
@@ -156,6 +163,7 @@ async function listAdminOrders({ statusParam = 'all', searchQuery = '' } = {}, p
     orders: orders.map((row) => ({ ...row, amount: toBdtString(row.total_paisa) })),
     statuses,
     statusCounts,
+    pagination:{page:currentPage,perPage:pageSize,total:Number(matched?.c||0),totalPages:Math.ceil(Number(matched?.c||0)/pageSize)},
   };
 }
 

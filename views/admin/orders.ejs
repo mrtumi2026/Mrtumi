@@ -6,7 +6,7 @@
   <div class="content">
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
       <div>
-        <h4 class="fw-bold mb-0"><%= pageTitle %> (<%= orders.length %>)</h4>
+        <h4 class="fw-bold mb-0"><%= pageTitle %> (<%= typeof pagination !== 'undefined' && pagination ? pagination.total : orders.length %>)</h4>
         <p class="text-muted small mb-0">অর্ডার প্রসেসিং, কুরিয়ার অ্যাসাইন এবং ইনভয়েস প্রিন্ট করুন</p>
       </div>
       <div class="d-flex gap-2">
@@ -136,6 +136,15 @@
         </table>
       </div>
     </div>
+    <% if (pagination && pagination.totalPages > 1) { %>
+      <nav class="d-flex justify-content-between align-items-center p-3" aria-label="Order pages">
+        <span class="small text-muted">Page <%= pagination.page %> of <%= pagination.totalPages %> (<%= pagination.total %> orders)</span>
+        <div class="d-flex gap-2">
+          <% if (pagination.page > 1) { %><a class="btn btn-sm btn-outline-secondary" href="<%= paginationPath || '/admin/orders' %>?page=<%= pagination.page - 1 %>&amp;q=<%= encodeURIComponent(searchQuery || '') %>&amp;status=<%= encodeURIComponent(statusFilter || 'all') %>">Previous</a><% } %>
+          <% if (pagination.page < pagination.totalPages) { %><a class="btn btn-sm btn-outline-secondary" href="<%= paginationPath || '/admin/orders' %>?page=<%= pagination.page + 1 %>&amp;q=<%= encodeURIComponent(searchQuery || '') %>&amp;status=<%= encodeURIComponent(statusFilter || 'all') %>">Next</a><% } %>
+        </div>
+      </nav>
+    <% } %>
   </div>
 </div>
 

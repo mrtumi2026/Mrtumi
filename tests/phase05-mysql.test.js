@@ -212,6 +212,26 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
     }
   });
 
+  test('MySQL campaign checkout uses locked offer paisa, canonical delivery, and atomic inventory/history writes', { skip: !MYSQL_HOST ? SKIP_REASON : false }, async () => {
+    const slug=`ci-campaign-${Date.now()}`;
+    const offerPaisa=25000;const qty=2;
+    const before=await client.queryOne('SELECT stock_reserved FROM products WHERE id=?',[inhouseProdId]);
+    await client.execute(`INSERT INTO campaigns(title,slug,product_id,headline,offer_price_paisa,regular_price_paisa,publish_state,status)
+      VALUES(?,?,?,'Campaign checkout test',?, ?, 'published',1)`,["CI Campaign",slug,inhouseProdId,offerPaisa,bdtToPaisa(420)]);
+    const result=await checkoutRepo.createCampaignOrder({customer_name:'Campaign Customer',phone:`017${String(Date.now()).slice(-8)}`,address:'House 10, Campaign Road',delivery_location_id:deliveryLocationId,payment_method:'cod'},
+      {campaignSlug:slug,qty,requestKey:`campaign-test-session-${Date.now()}`,locale:'en',ip:'198.51.100.7'});
+    const order=await client.queryOne('SELECT id,order_channel,subtotal_paisa,shipping_paisa,total_paisa,order_status,payment_status FROM orders WHERE invoice_no=?',[result.invoiceNo]);
+    const line=await client.queryOne('SELECT product_id,unit_price_paisa,qty,line_total_paisa FROM order_items WHERE order_id=?',[order.id]);
+    assert.equal(order.order_channel,'campaign');assert.equal(Number(order.subtotal_paisa),offerPaisa*qty);
+    assert.equal(Number(order.total_paisa),offerPaisa*qty+Number(order.shipping_paisa));
+    assert.equal(order.order_status,'pending');assert.equal(order.payment_status,'unpaid');
+    assert.deepEqual([Number(line.product_id),Number(line.unit_price_paisa),Number(line.qty),Number(line.line_total_paisa)],[inhouseProdId,offerPaisa,qty,offerPaisa*qty]);
+    assert.equal(Number((await client.queryOne('SELECT stock_reserved FROM products WHERE id=?',[inhouseProdId])).stock_reserved),Number(before.stock_reserved)+qty);
+    assert.ok(await client.queryOne("SELECT id FROM order_status_history WHERE order_id=? AND to_status='pending'",[order.id]));
+    await require('../src/repositories/phase08Repository').transitionOrder(order.id,'cancelled','Customer cancelled campaign order',{type:'customer'},`campaign-cancel-${Date.now()}`);
+    assert.equal(Number((await client.queryOne('SELECT stock_reserved FROM products WHERE id=?',[inhouseProdId])).stock_reserved),Number(before.stock_reserved),'cancellation releases the reserved units');
+  });
+
   test(
     '1. MySQL Homepage, Facets, Filters, Paisa Price Range, Pagination & Bilingual Localization',
     { skip: !MYSQL_HOST ? SKIP_REASON : false },

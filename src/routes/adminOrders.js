@@ -173,9 +173,9 @@ router.get('/admin/order/view/:id', asyncHandler(async (req, res) => {
       req.flash('error', 'অর্ডার খুঁজে পাওয়া যায়নি।');
       return res.redirect('/admin/order/all');
     }
-    const mutationKeys={orderUpdate:crypto.randomUUID(),itemAdd:crypto.randomUUID(),itemQty:{},itemRemove:{}};
+    const mutationKeys={orderUpdate:crypto.randomUUID(),statusTransition:crypto.randomUUID(),itemAdd:crypto.randomUUID(),itemQty:{},itemRemove:{}};
     for(const item of detail.items){mutationKeys.itemQty[item.id]=crypto.randomUUID();mutationKeys.itemRemove[item.id]=crypto.randomUUID();}
-    return res.render('admin/order-detail', { ...detail, mutationKeys });
+    return res.render('admin/order-detail', { ...detail, mutationKeys, csrfToken:req.csrfToken() });
   }
   const order = db.get(
     `SELECT o.*, COALESCE(os.name, o.status) AS status_label, COALESCE(os.badge_class, 'sb-1') AS badge_class
@@ -196,7 +196,7 @@ router.get('/admin/order/view/:id', asyncHandler(async (req, res) => {
   const deliveryBoys = db.all('SELECT * FROM delivery_boys WHERE status = 1');
   const allProducts = db.all('SELECT id, name, new_price, sizes FROM products WHERE status = 1 ORDER BY name ASC');
 
-  const mutationKeys={orderUpdate:crypto.randomUUID(),itemAdd:crypto.randomUUID(),itemQty:{},itemRemove:{}};
+  const mutationKeys={orderUpdate:crypto.randomUUID(),statusTransition:crypto.randomUUID(),itemAdd:crypto.randomUUID(),itemQty:{},itemRemove:{}};
   for(const item of items){mutationKeys.itemQty[item.id]=crypto.randomUUID();mutationKeys.itemRemove[item.id]=crypto.randomUUID();}
   res.render('admin/order-detail', {
     order,
@@ -206,6 +206,7 @@ router.get('/admin/order/view/:id', asyncHandler(async (req, res) => {
     deliveryBoys,
     allProducts,
     mutationKeys,
+    csrfToken:req.csrfToken(),
   });
 }));
 
@@ -403,6 +404,22 @@ function creditEarningsOnOrderCompleted(prevOrder, newStatus) {
     db.run('UPDATE vendors SET balance = balance + ? WHERE id = ?', net, it.vendor_id);
   }
 }
+
+router.post('/admin/order/:id/status', asyncHandler(async (req,res)=>{
+  if(env.db.client==='mysql'){
+    try{
+      const phase08Repo=require('../repositories/phase08Repository');
+      await phase08Repo.transitionOrder(req.params.id,req.body.status,req.body.reason,{id:req.adminUser?.id??null,type:'admin',ip:req.ip||'',userAgent:req.get('user-agent')||''},req.body.request_key);
+      req.adminDomainAudit=true;req.flash('success','Order status updated.');
+      return res.redirect(`/admin/order/view/${req.params.id}`);
+    }catch(err){if(handleOrderMutationError(err,req,res,`/admin/order/view/${req.params.id}`))return;throw err;}
+  }
+  const order=db.get('SELECT id,status FROM orders WHERE id=?',req.params.id);
+  if(!order)return res.status(404).send('Order not found.');
+  db.run('UPDATE orders SET status=?,is_seen=1 WHERE id=?',req.body.status,order.id);
+  req.flash('success','অর্ডার স্ট্যাটাস পরিবর্তন হয়েছে।');
+  return res.redirect(`/admin/order/view/${req.params.id}`);
+}));
 
 router.post('/admin/order/status-quick', asyncHandler(async (req, res) => {
   if(env.db.client==='mysql'){
@@ -762,67 +779,30 @@ router.post('/admin/refunds/delete/:id', (req, res) => {
   res.redirect('/admin/refunds');
 });
 
-// ─── Orders List by Status (/admin/order/:status) ───
-router.get('/admin/order/:status', asyncHandler(async (req, res) => {
-  const statusParam = req.params.status;
-  const q = String(req.query.q || '').trim();
-  const titleMap = {
-    all: 'All Orders',
-    pending: 'Pending Orders',
-    processing: 'Processing Orders',
-    'on-the-way': 'On The Way Orders',
-    'in-courier': 'In Courier Orders',
-    completed: 'Completed Orders',
-    unpaid: 'Unpaid Orders',
-    cancelled: 'Cancelled Orders',
-  };
-
-  if (env.db.client === 'mysql') {
-    const data = await adminOrderReadRepository.listAdminOrders({ statusParam, searchQuery: q });
-    data.orders=data.orders.map((order)=>({...order,status_request_key:crypto.randomUUID()}));
-    return res.render('admin/orders', {
-      pageTitle: titleMap[statusParam] || `Orders (${statusParam})`,
-      statusFilter: statusParam,
-      searchQuery: q,
-      bulkRequestKey:crypto.randomUUID(),
-      ...data,
-    });
+// ─── Orders List (/admin/orders and legacy /admin/order/:status) ───
+async function renderAdminOrderList(req,res,statusParam){
+  const q=String(req.query.q||'').trim();
+  const titleMap={all:'All Orders',pending:'Pending Orders',processing:'Processing Orders','on-the-way':'On The Way Orders','in-courier':'In Courier Orders',completed:'Completed Orders',unpaid:'Unpaid Orders',cancelled:'Cancelled Orders'};
+  if(env.db.client==='mysql'){
+    const data=await adminOrderReadRepository.listAdminOrders({statusParam,searchQuery:q,page:req.query.page||1,perPage:25});
+    data.orders=data.orders.map(order=>({...order,status_request_key:crypto.randomUUID()}));
+    return res.render('admin/orders',{pageTitle:titleMap[statusParam]||`Orders (${statusParam})`,statusFilter:statusParam,searchQuery:q,bulkRequestKey:crypto.randomUUID(),paginationPath:req.path==='/admin/orders'?'/admin/orders':`/admin/order/${encodeURIComponent(statusParam)}`,...data});
   }
-
-  let where = 'WHERE 1=1';
-  const params = [];
-  if (statusParam && statusParam !== 'all') {
-    if (statusParam === 'unpaid') {
-      where += " AND (o.payment_status = 'unpaid' OR o.status = 'unpaid')";
-    } else {
-      where += ' AND o.status = ?';
-      params.push(statusParam);
-    }
+  let where='WHERE 1=1';const params=[];
+  if(statusParam&&statusParam!=='all'){
+    if(statusParam==='unpaid')where+=" AND (o.payment_status='unpaid' OR o.status='unpaid')";
+    else{where+=' AND o.status=?';params.push(statusParam);}
   }
-  if (q) {
-    where += ' AND (o.invoice_id LIKE ? OR o.customer_name LIKE ? OR o.phone LIKE ?)';
-    params.push(`%${q}%`, `%${q}%`, `%${q}%`);
-  }
-  const orders = db.all(
-    `SELECT o.*, COALESCE(os.name, o.status) AS status_label, COALESCE(os.badge_class, 'sb-1') AS badge_class
-     FROM orders o
-     LEFT JOIN order_statuses os ON os.slug = o.status
-     ${where}
-     ORDER BY o.id DESC`,
-    ...params
-  );
-  const statuses = db.all('SELECT * FROM order_statuses WHERE status = 1 ORDER BY sort_order ASC');
-  const countRows = db.all('SELECT status, COUNT(*) AS c FROM orders GROUP BY status');
-  const statusCounts = { all: db.get('SELECT COUNT(*) AS c FROM orders').c };
-  for (const row of countRows) statusCounts[row.status] = row.c;
-  return res.render('admin/orders', {
-    pageTitle: titleMap[statusParam] || `Orders (${statusParam})`,
-    statusFilter: statusParam,
-    orders,
-    statuses,
-    searchQuery: q,
-    statusCounts,
-  });
-}));
+  if(q){where+=' AND (o.invoice_id LIKE ? OR o.customer_name LIKE ? OR o.phone LIKE ?)';params.push(`%${q}%`,`%${q}%`,`%${q}%`);}
+  const orders=db.all(`SELECT o.*,COALESCE(os.name,o.status) AS status_label,COALESCE(os.badge_class,'sb-1') AS badge_class FROM orders o LEFT JOIN order_statuses os ON os.slug=o.status ${where} ORDER BY o.id DESC`,...params);
+  const statuses=db.all('SELECT * FROM order_statuses WHERE status=1 ORDER BY sort_order ASC');
+  const countRows=db.all('SELECT status,COUNT(*) AS c FROM orders GROUP BY status');
+  const total=db.get('SELECT COUNT(*) AS c FROM orders');const statusCounts={all:Number(total?.c||0)};
+  for(const row of countRows)statusCounts[row.status]=Number(row.c||0);
+  return res.render('admin/orders',{pageTitle:titleMap[statusParam]||`Orders (${statusParam})`,statusFilter:statusParam,orders,statuses,searchQuery:q,statusCounts});
+}
+router.get(/^\/admin\/order\/([0-9]+)$/,(req,res)=>res.redirect(`/admin/order/view/${req.params[0]}`));
+router.get('/admin/orders',asyncHandler(async(req,res)=>renderAdminOrderList(req,res,String(req.query.status||'all'))));
+router.get('/admin/order/:status',asyncHandler(async(req,res)=>renderAdminOrderList(req,res,String(req.params.status||'all'))));
 
 module.exports = router;

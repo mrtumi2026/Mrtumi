@@ -110,14 +110,14 @@ async function quoteQuickOrder({productId,qty,size,color,deliveryLocationId,loca
   return{variantId,subtotalPaisa:cartQuote.subtotalPaisa,shippingPaisa,totalPaisa,unitPricePaisa:cartQuote.items[0].price_paisa};
 }
 async function createOrder(input,options={}){
-  const {locale='bn',sessionCustomer=null,ip='',requestKey,cart,incompleteOrderId=null,sessionSid='',analyticsConsent=false,attribution=null,clearSavedCart=true,deadlockRetry=0}=options;
+  const {locale='bn',sessionCustomer=null,ip='',requestKey,cart,incompleteOrderId=null,sessionSid='',analyticsConsent=false,attribution=null,clearSavedCart=true,deadlockRetry=0,campaignSlug=''}=options;
   const attributionAllowed=env.analyticsAttributionEnabled&&analyticsConsent===true;
   const attributionData=attributionAllowed?normalizeAttribution(attribution||{}):EMPTY_ATTRIBUTION;
   assertMysql();const name=requireString(input.customer_name,'customer name',{min:2,max:191});const phone=normalizeBdPhone(input.phone);const address=requireString(input.address,'shipping address',{min:5,max:2000});const zoneId=requirePositiveInt(input.delivery_location_id,'delivery location');const note=String(input.note||'').trim().slice(0,1000);
   const paymentMethod=String(input.payment_method||'cod').trim().toLowerCase();if(paymentMethod!=='cod')throw new ConflictError('Only cash on delivery is currently available; online/manual payment is not configured for canonical checkout.');
   const recoveryId=incompleteOrderId?requirePositiveInt(incompleteOrderId,'incomplete order ID'):null;
-  const key=requireString(recoveryId?`incomplete:${recoveryId}`:requestKey,'checkout request key',{min:8,max:100});const lines=normalizeLines(cart);
-  const payloadHash=crypto.createHash('sha256').update(JSON.stringify({name,phone,address,zoneId,note,paymentMethod,lines:lines.map(lineCanonical),coupon:String(input.coupon_code||'').trim().toUpperCase(),recoveryId})).digest('hex');
+  const campaignKey=campaignSlug?requireString(campaignSlug,'campaign slug',{min:1,max:191}):'';const key=requireString(recoveryId?`incomplete:${recoveryId}`:requestKey,'checkout request key',{min:8,max:100});const lines=normalizeLines(cart);if(campaignKey&&lines.length!==1)throw new ValidationError('Campaign checkout accepts exactly one campaign product.');
+  const payloadHash=crypto.createHash('sha256').update(JSON.stringify({name,phone,address,zoneId,note,paymentMethod,lines:lines.map(lineCanonical),coupon:String(input.coupon_code||'').trim().toUpperCase(),recoveryId,campaignSlug:campaignKey})).digest('hex');
   try {
   return await mysql.withTransaction(async tx=>{
     const replay=await tx.queryOne('SELECT id,invoice_no,checkout_request_hash FROM orders WHERE idempotency_key=?',[key]);
@@ -134,7 +134,14 @@ async function createOrder(input,options={}){
       recovery=await tx.queryOne('SELECT id,status,phone,session_sid,consent_given,consent_withdrawn_at FROM incomplete_orders WHERE id=? FOR UPDATE',[recoveryId]);
       if(!recovery||recovery.session_sid!==sessionHash||Number(recovery.consent_given)!==1||recovery.consent_withdrawn_at||!['abandoned','contacted','recovery_started'].includes(recovery.status)||recovery.phone!==phone)throw new ConflictError('This consented recovery record is not available for this session and phone.');
     }
+    let campaign=null;
+    if(campaignKey){
+      campaign=await tx.queryOne("SELECT id,slug,title,product_id,offer_price_paisa,publish_state,status FROM campaigns WHERE slug=? FOR UPDATE",[campaignKey]);
+      if(!campaign||Number(campaign.status)!==1||campaign.publish_state!=='published')throw new ConflictError('This campaign is not active.');
+      if(Number(campaign.product_id)!==lines[0].productId)throw new ConflictError('The campaign product changed; reload the campaign and try again.');
+    }
     const items=await loadLines(tx,lines,locale,true);
+    if(campaign){const offer=asSafeInteger(campaign.offer_price_paisa,'Campaign offer price');if(offer<1)throw new ConflictError('This campaign has no valid offer price.');items[0].unitPricePaisa=offer;items[0].lineTotalPaisa=offer*items[0].qty;if(!Number.isSafeInteger(items[0].lineTotalPaisa))throw new ValidationError('Campaign line total exceeds the safe calculation range.');}
     const subtotal=items.reduce((s,x)=>s+x.lineTotalPaisa,0);if(!Number.isSafeInteger(subtotal))throw new ValidationError('Order subtotal exceeds the safe calculation range.');
     const shipping=asSafeInteger(zone.delivery_charge_paisa,'Delivery charge');
     let coupon={amount:0,code:''};const couponCode=String(input.coupon_code||'').trim().toUpperCase();
@@ -150,7 +157,8 @@ async function createOrder(input,options={}){
     if(sessionCustomer?.id){const customer=await tx.queryOne('SELECT id,phone,status,is_blocked FROM customers WHERE id=? FOR UPDATE',[requirePositiveInt(sessionCustomer.id,'customer ID')]);if(!customer||Number(customer.status)!==1||Number(customer.is_blocked)===1||normalizeBdPhone(customer.phone)!==phone)throw new ConflictError('Sign in with an account matching the delivery phone, or continue as a guest.');customerId=Number(customer.id);}
     const invoice=`MT-${crypto.randomBytes(12).toString('hex').toUpperCase()}`;
     const zoneLabel=[zone.division,zone.district,zone.upazila].filter(Boolean).join(' / ');
-    const order=await tx.execute(`INSERT INTO orders (invoice_no,idempotency_key,checkout_request_hash,customer_id,customer_name,customer_phone,shipping_address,division,district,upazila,shipping_zone,subtotal_paisa,discount_paisa,shipping_paisa,total_paisa,advance_required_paisa,paid_paisa,cod_due_paisa,coupon_code,payment_method,payment_status,order_status,order_channel,traffic_source,utm_source,utm_medium,utm_campaign,analytics_consent_at,analytics_consent_version,client_ip,customer_note,consent_accepted_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP())`,[invoice,key,payloadHash,customerId,name,phone,address,zone.division,zone.district,zone.upazila,zoneLabel,subtotal,coupon.amount,shipping,total,0,0,total,coupon.code,'cod','unpaid','pending','storefront',attributionData.platformSource,attributionData.utmSource,attributionData.utmMedium,attributionData.utmCampaign,attributionAllowed?new Date():null,attributionAllowed?CONSENT_VERSION:null,String(ip||'').slice(0,64),note||null]);
+    const orderChannel=campaign?'campaign':'storefront';const trafficSource=campaign?`Campaign:${campaign.slug}`:attributionData.platformSource;const customerNote=note||(campaign?`Campaign: ${campaign.title}`:null);
+    const order=await tx.execute(`INSERT INTO orders (invoice_no,idempotency_key,checkout_request_hash,customer_id,customer_name,customer_phone,shipping_address,division,district,upazila,shipping_zone,subtotal_paisa,discount_paisa,shipping_paisa,total_paisa,advance_required_paisa,paid_paisa,cod_due_paisa,coupon_code,payment_method,payment_status,order_status,order_channel,traffic_source,utm_source,utm_medium,utm_campaign,analytics_consent_at,analytics_consent_version,client_ip,customer_note,consent_accepted_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP())`,[invoice,key,payloadHash,customerId,name,phone,address,zone.division,zone.district,zone.upazila,zoneLabel,subtotal,coupon.amount,shipping,total,0,0,total,coupon.code,'cod','unpaid','pending',orderChannel,trafficSource,attributionData.utmSource,attributionData.utmMedium,attributionData.utmCampaign,attributionAllowed?new Date():null,attributionAllowed?CONSENT_VERSION:null,String(ip||'').slice(0,64),customerNote]);
     for(const item of items){await tx.execute('INSERT INTO order_items (order_id,product_id,variant_id,vendor_id,product_name,product_image,unit_price_paisa,qty,line_total_paisa,size_label,color_label) VALUES (?,?,?,?,?,?,?,?,?,?,?)',[order.insertId,item.productId,item.variantId,item.product.vendor_id||null,item.name,item.image,item.unitPricePaisa,item.qty,item.lineTotalPaisa,item.size,item.color]);}
     await tx.execute("INSERT INTO order_status_history (order_id,from_status,to_status,note,changed_by_user_id) VALUES (?,'','pending','Customer checkout submitted',NULL)",[order.insertId]);
     // Reserve only after the durable order and lines exist, in this same transaction.
@@ -181,6 +189,16 @@ async function createOrder(input,options={}){
     throw err;
   }
 }
+async function createCampaignOrder(input={},options={}){
+  assertMysql();
+  const slug=requireString(options.campaignSlug,'campaign slug',{min:1,max:191});
+  const qty=requirePositiveInt(options.qty,'quantity',{max:99});
+  const row=await client().queryOne("SELECT product_id,publish_state,status FROM campaigns WHERE slug=? LIMIT 1",[slug]);
+  if(!row||Number(row.status)!==1||row.publish_state!=='published'||!row.product_id)throw new ConflictError('This campaign is not active or has no linked product.');
+  const sessionKey=requireString(options.requestKey,'campaign request key',{min:16,max:100});
+  const requestKey=`campaign:${crypto.createHash('sha256').update(slug).digest('hex').slice(0,16)}:${crypto.createHash('sha256').update(sessionKey).digest('hex').slice(0,32)}`;
+  return createOrder(input,{...options,requestKey,cart:[{product_id:Number(row.product_id),qty}],campaignSlug:slug,clearSavedCart:false});
+}
 async function getOrderForCancellation(invoiceNo){
   assertMysql();
   const value=requireString(invoiceNo,'invoice number',{min:8,max:40});
@@ -190,4 +208,4 @@ async function getOrderForSuccess(invoiceNo){
   assertMysql();const db=client();const order=await db.queryOne('SELECT id,invoice_no,customer_name,total_paisa,paid_paisa,cod_due_paisa,order_status,payment_status,created_at FROM orders WHERE invoice_no=?',[requireString(invoiceNo,'invoice number',{min:8,max:40})]);
   if(!order)return null;const items=await db.queryAll('SELECT product_name,qty,unit_price_paisa,line_total_paisa,size_label,color_label FROM order_items WHERE order_id=? ORDER BY id',[order.id]);return{order,items};
 }
-module.exports={normalizeLines,unitPrice,quoteCart,listDeliveryLocations,listCheckoutMethods,couponAmount,validateCoupon,resolveQuickOrderVariant,quoteQuickOrder,createOrder,getOrderForSuccess,getOrderForCancellation};
+module.exports={normalizeLines,unitPrice,quoteCart,listDeliveryLocations,listCheckoutMethods,couponAmount,validateCoupon,resolveQuickOrderVariant,quoteQuickOrder,createOrder,getOrderForSuccess,getOrderForCancellation,createCampaignOrder};
