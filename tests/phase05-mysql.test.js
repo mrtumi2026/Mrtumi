@@ -584,7 +584,7 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
     assert.equal(registrationAdd.statusCode, 200);
     registrationCookie = (Array.isArray(registrationAdd.headers['set-cookie']) ? registrationAdd.headers['set-cookie'] : [registrationAdd.headers['set-cookie']]).filter(Boolean).map((value) => value.split(';')[0]).join('; ') || registrationCookie;
     const registrationPhone = `018${String(Date.now()).slice(-8)}`;
-    const registration = await httpRequest(baseUrl, '/customer/register', { method: 'POST', headers: { Cookie: registrationCookie, 'Content-Type': 'application/x-www-form-urlencoded', 'x-csrf-token': registrationCsrf }, body: new URLSearchParams({ name: 'Guest cart registration', phone: registrationPhone, password: 'SecureCartPassword!2026' }).toString() });
+    const registration = await httpRequest(baseUrl, '/customer/register', { method: 'POST', headers: { Cookie: registrationCookie, 'Content-Type': 'application/x-www-form-urlencoded', 'x-csrf-token': registrationCsrf }, body: new URLSearchParams({ name: 'Guest cart registration', phone: registrationPhone, password: 'SecureCartPassword!2026', privacy_notice_acknowledged: 'yes', privacy_policy_version: '1.0' }).toString() });
     assert.equal(registration.statusCode, 302, `registration with guest cart failed: ${registration.body.slice(0, 300)}`);
     const registeredCookie = (Array.isArray(registration.headers['set-cookie']) ? registration.headers['set-cookie'] : [registration.headers['set-cookie']]).filter(Boolean).map((value) => value.split(';')[0]).join('; ');
     assert.ok(registeredCookie && registeredCookie !== registrationCookie, 'registration regenerates the session identifier after account creation');
