@@ -5,6 +5,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const nodeAssert = require('node:assert/strict');
 const bcrypt = require('bcryptjs');
 const { chromium } = require('playwright');
 
@@ -162,12 +163,12 @@ async function main() {
     const invoice = decodeURIComponent(page.url().split('/').pop());
     const order = await db.queryOne('SELECT id,invoice_no,order_status,payment_method,customer_id FROM orders WHERE invoice_no=?', [invoice]);
     assert(order, `order ${invoice} absent from MySQL`);
-    assert.equal(order.payment_method, 'cod');
-    assert.equal(Number(order.customer_id), ids.customers[index - 1]);
+    nodeAssert.equal(order.payment_method, 'cod');
+    nodeAssert.equal(Number(order.customer_id), ids.customers[index - 1]);
     ids.orders.push(Number(order.id));
     const stockAfter = await db.queryOne('SELECT vendor_stock_on_hand,vendor_stock_reserved FROM products WHERE id=?', [selectedProductId]);
-    assert.equal(Number(stockAfter.vendor_stock_on_hand), Number(stockBefore.vendor_stock_on_hand), 'placing a pending COD order should reserve, not consume, vendor stock');
-    assert.equal(Number(stockAfter.vendor_stock_reserved), Number(stockBefore.vendor_stock_reserved) + 1, 'pending order did not reserve exactly one unit from the assigned vendor pool');
+    nodeAssert.equal(Number(stockAfter.vendor_stock_on_hand), Number(stockBefore.vendor_stock_on_hand), 'placing a pending COD order should reserve, not consume, vendor stock');
+    nodeAssert.equal(Number(stockAfter.vendor_stock_reserved), Number(stockBefore.vendor_stock_reserved) + 1, 'pending order did not reserve exactly one unit from the assigned vendor pool');
     await page.screenshot({ path: path.join(outDir, `customer-${index}-order-success.png`), fullPage: true });
     await page.goto(`${baseUrl}/customer/account/orders`, { waitUntil: 'domcontentloaded' });
     assert((await page.locator('body').innerText()).includes(invoice), 'new invoice absent from customer history');
@@ -203,7 +204,7 @@ async function main() {
     assert(row, 'cancellation request was not recorded');
     const orderLine = await db.queryOne('SELECT product_id FROM order_items WHERE order_id=? LIMIT 1', [orderId]);
     const productAfterCancel = await db.queryOne('SELECT vendor_stock_reserved FROM products WHERE id=?', [orderLine.product_id]);
-    assert.equal(Number(productAfterCancel.vendor_stock_reserved), 0, 'cancellation did not release the demo product reservation');
+    nodeAssert.equal(Number(productAfterCancel.vendor_stock_reserved), 0, 'cancellation did not release the demo product reservation');
     await page.screenshot({ path: path.join(outDir, 'customer-cancellation.png'), fullPage: true });
     return { orderId, cancellationStatus: row.status };
   });
