@@ -6,6 +6,7 @@ const { env } = require('../config/env');
 const adminBlogRepository = require('../repositories/adminBlogRepository');
 const hrmEmployeeRepository = require('../repositories/hrmEmployeeRepository');
 const adminComplaintRepository = require('../repositories/adminComplaintRepository');
+const adminFinanceReadRepository = require('../repositories/adminFinanceReadRepository');
 const { asyncHandler } = require('../utils/asyncHandler');
 const { requireAdmin } = require('../middleware/auth');
 const { ConflictError } = require('../utils/errors');
@@ -641,7 +642,24 @@ router.post('/admin/newsletter-subscribers/delete/:id', (req, res) => {
 });
 
 // ─── Fund / Account & Expenses ───
-router.get('/admin/fund', (_req, res) => {
+router.get('/admin/payment-records', asyncHandler(async (req, res) => {
+  if(env.db.client!=='mysql') return res.redirect('/admin/orders');
+  const status=String(req.query.status||'all');
+  const search=String(req.query.search||'');
+  const rows=await adminFinanceReadRepository.listPaymentRecords({status,search});
+  return res.render('admin/payment-records',{rows,status,search});
+}));
+
+router.get('/admin/fund', asyncHandler(async (req, res) => {
+  if(env.db.client==='mysql'){
+    const [rows,summary]=await Promise.all([adminFinanceReadRepository.listFundTransactions(),adminFinanceReadRepository.getFundSummary()]);
+    return res.render('admin/crud-module',{
+      pageTitle:`Fund / Account Ledger (Balance: ৳${summary.balance})`,
+      subtitle:`Credits ৳${summary.credits} · Debits ৳${summary.debits}`,
+      columns:[{key:'id',label:'#'},{key:'account_name',label:'Account'},{key:'type',label:'Type',type:'badge'},
+        {key:'amount',label:'Amount (৳)',type:'currency'},{key:'note',label:'Note / Particulars'},{key:'tx_date',label:'Date'}],rows,fields:[],
+    });
+  }
   const rows = db.all('SELECT * FROM fund_transactions ORDER BY id DESC');
   const credits = db.get("SELECT COALESCE(SUM(amount), 0) AS s FROM fund_transactions WHERE type = 'credit'").s;
   const debits = db.get("SELECT COALESCE(SUM(amount), 0) AS s FROM fund_transactions WHERE type = 'debit'").s;
@@ -675,7 +693,7 @@ router.get('/admin/fund', (_req, res) => {
     ],
     rows,
   });
-});
+}));
 
 router.post('/admin/fund/create', (req, res) => {
   const { account_name, type, amount, note, tx_date } = req.body;
@@ -696,7 +714,15 @@ router.post('/admin/fund/delete/:id', (req, res) => {
   res.redirect('/admin/fund');
 });
 
-router.get('/admin/expenses', (_req, res) => {
+router.get('/admin/expenses', asyncHandler(async (_req, res) => {
+  if(env.db.client==='mysql'){
+    const rows=await adminFinanceReadRepository.listExpenses();
+    return res.render('admin/crud-module',{
+      pageTitle:'Daily & Monthly Expenses',subtitle:'Read-only expenses recorded in integer paisa.',
+      columns:[{key:'id',label:'#'},{key:'title',label:'Expense Title'},{key:'category',label:'Category'},
+        {key:'amount',label:'Amount (৳)',type:'currency'},{key:'note',label:'Note'},{key:'expense_date',label:'Date'}],rows,fields:[],
+    });
+  }
   const rows = db.all('SELECT * FROM expenses ORDER BY id DESC');
   res.render('admin/crud-module', {
     pageTitle: 'Daily & Monthly Expenses',
@@ -720,7 +746,7 @@ router.get('/admin/expenses', (_req, res) => {
     ],
     rows,
   });
-});
+}));
 
 router.post('/admin/expenses/create', (req, res) => {
   const { title, category, amount, note, expense_date } = req.body;

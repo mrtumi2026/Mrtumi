@@ -102,6 +102,23 @@ describe('Phase 09 dashboard repository contract', () => {
     assert.match(list,/name="request_key"/,'quick and bulk status writes carry retry-stable request keys');
   });
 
+  test('MySQL finance and payment read routes delegate to canonical integer-paisa queries and remain read-only', () => {
+    const finance=require('../src/repositories/adminFinanceReadRepository');
+    for(const method of ['listPaymentRecords','listFundTransactions','getFundSummary','listExpenses','getReport'])assert.equal(typeof finance[method],'function');
+    const operations=fs.readFileSync(path.join(__dirname,'../src/routes/adminOperations.js'),'utf8');
+    assert.match(operations,/adminFinanceReadRepository\.listPaymentRecords/);
+    assert.match(operations,/adminFinanceReadRepository\.listFundTransactions/);
+    assert.match(operations,/adminFinanceReadRepository\.getFundSummary/);
+    assert.match(operations,/adminFinanceReadRepository\.listExpenses/);
+    const settings=fs.readFileSync(path.join(__dirname,'../src/routes/adminSettings.js'),'utf8');
+    assert.match(settings,/adminFinanceReadRepository\.getReport\(type\)/);
+    const policy=policyForAdminRoute('GET','/admin/payment-records');
+    assert.equal(policy.key,'finance.view');assert.equal(policy.auditRead,true);
+    const routeInventory=collectAdminRoutes();
+    assert.ok(routeInventory.some((route)=>route.method==='GET'&&route.path==='/admin/payment-records'));
+    assert.doesNotMatch(operations,/router\.post\('\/admin\/payment-records/,'payment record page exposes no mutation endpoint');
+  });
+
   test('complaint repository validates before persistence and MySQL admin routes delegate safe actions', async () => {
     const complaints = require('../src/repositories/adminComplaintRepository');
     await assert.rejects(complaints.createComplaint({name:'A',phone:'bad',invoice_id:'',details:'issue'}), { code:'VALIDATION_ERROR', statusCode:400 });

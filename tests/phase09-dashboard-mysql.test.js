@@ -116,6 +116,18 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     return cachedNoGrantSession;
   }
 
+  test('finance/payment read routes use MySQL records and preserve report export behavior',async(t)=>{
+    if(!MYSQL_HOST)return t.skip(SKIP);
+    const payments=await request('/admin/payment-records?status=pending&search=P09-TRX-');
+    assert.equal(payments.status,200,payments.text.slice(0,300));assert.match(payments.text,/P09-TRX-/);assert.match(payments.text,/P09 fixture/);
+    const fund=await request('/admin/fund');assert.equal(fund.status,200,fund.text.slice(0,300));assert.match(fund.text,/fixture/);
+    const expenses=await request('/admin/expenses');assert.equal(expenses.status,200,expenses.text.slice(0,300));assert.match(expenses.text,/fixture/);
+    const report=await request('/admin/reports/orders?export=csv',{accept:'text/csv'});
+    assert.equal(report.status,200);assert.match(report.headers.get('content-type'),/text\/csv/);assert.match(report.text,/invoice_id,customer_name,phone,amount,status/);
+    assert.match(report.text,/P09-/);
+    const pnl=await request('/admin/reports/profit-loss');assert.equal(pnl.status,200,pnl.text.slice(0,300));assert.match(pnl.text,/Profit &amp; Loss Statement|Profit & Loss Statement/);
+  });
+
   test('live repository preserves MySQL summaries, Dhaka boundaries, statuses, limits and paisa',async(t)=>{
     if(!MYSQL_HOST)return t.skip(SKIP);
     const data=await dashboardRepo.getDashboardData({now:new Date()});

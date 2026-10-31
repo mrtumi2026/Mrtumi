@@ -4,6 +4,7 @@ const { requireAdmin } = require('../middleware/auth');
 const upload = require('../middleware/upload');
 const { env } = require('../config/env');
 const settingsRepository = require('../repositories/settingsRepository');
+const adminFinanceReadRepository = require('../repositories/adminFinanceReadRepository');
 const { asyncHandler } = require('../utils/asyncHandler');
 
 const router = express.Router();
@@ -512,9 +513,20 @@ function renderAds(res, channel) {
 }
 
 // ─── Reports (/admin/reports/:type) ───
-router.get('/admin/reports/:type', (req, res) => {
+router.get('/admin/reports/:type', asyncHandler(async (req, res) => {
   const type = req.params.type;
   const format = req.query.export;
+  if(env.db.client==='mysql'){
+    const report=await adminFinanceReadRepository.getReport(type);
+    if(format==='csv'){
+      const lines=[report.columns.join(',')];
+      for(const row of report.rows)lines.push(report.columns.map((column)=>`"${String(row[column]??'').replace(/"/g,'""')}"`).join(','));
+      res.setHeader('Content-Type','text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition',`attachment; filename="${type}-report.csv"`);
+      return res.send('\uFEFF'+lines.join('\n'));
+    }
+    return res.render('admin/reports',{type,reportTitle:report.reportTitle,rows:report.rows,columns:report.columns,summary:report.summary});
+  }
 
   const totalSales = db.get("SELECT COALESCE(SUM(amount), 0) AS s FROM orders WHERE status != 'cancelled'").s;
   const completedSales = db.get("SELECT COALESCE(SUM(amount), 0) AS s FROM orders WHERE status = 'completed'").s;
@@ -585,7 +597,7 @@ router.get('/admin/reports/:type', (req, res) => {
       stockRetailVal: stockValue.retail_val,
     },
   });
-});
+}));
 
 // ─── Clear Cache & Error Log ───
 router.get('/admin/clear-cache', (_req,res) => res.status(405).send('Use the CSRF-protected POST form.'));

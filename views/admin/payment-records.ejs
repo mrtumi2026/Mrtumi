@@ -1,0 +1,49 @@
+<%- include('partials/head', { title: 'Order Payment Records' }) %>
+<%- include('partials/topbar') %>
+<%- include('partials/sidebar') %>
+<div class="content-page">
+  <div class="content">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+      <div>
+        <h4 class="fw-bold mb-0">Order Payment Records (<%= rows.length %>)</h4>
+        <p class="text-muted small mb-0">Read-only payment records linked to their historical orders.</p>
+      </div>
+    </div>
+    <div class="tbl-card mb-3">
+      <div class="tbl-card-body p-3">
+        <form method="GET" action="/admin/payment-records" class="d-flex flex-wrap align-items-end gap-2">
+          <div>
+            <label class="form-label small" for="paymentSearch">Invoice, customer, phone, or provider transaction</label>
+            <input id="paymentSearch" class="form-control form-control-sm" type="search" name="search" maxlength="120" value="<%= search %>" />
+          </div>
+          <div>
+            <label class="form-label small" for="paymentStatus">Payment status</label>
+            <input id="paymentStatus" class="form-control form-control-sm" type="text" name="status" maxlength="32" value="<%= status === 'all' ? '' : status %>" placeholder="All statuses" />
+          </div>
+          <button class="btn btn-forest btn-sm" type="submit">Filter</button>
+          <a class="btn btn-outline-secondary btn-sm" href="/admin/payment-records">Clear</a>
+        </form>
+      </div>
+    </div>
+    <div class="tbl-card">
+      <div class="tbl-card-head"><h4>Records</h4></div>
+      <div class="tbl-card-body">
+        <table class="table clean mb-0">
+          <thead><tr><th>#</th><th>Invoice</th><th>Customer</th><th>Gateway</th><th>Provider Transaction</th><th>Purpose</th><th>Amount</th><th>Status</th><th>Created</th></tr></thead>
+          <tbody>
+            <% if (!rows.length) { %><tr><td colspan="9" class="text-center py-4 text-muted">No payment records found.</td></tr><% } %>
+            <% rows.forEach(function(row) { %>
+              <tr>
+                <td><%= row.id %></td><td><%= row.invoice_no %></td><td><%= row.customer_name %></td>
+                <td><%= row.gateway_code %></td><td><%= row.provider_trx_id || '—' %></td>
+                <td><%= row.payment_purpose %></td><td>৳<%= Number(row.amount).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}) %></td>
+                <td><span class="sb sb-2"><%= row.status %></span></td><td><%= row.created_at %></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+<%- include('partials/footer') %>

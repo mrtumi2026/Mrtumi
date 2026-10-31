@@ -37,6 +37,7 @@ function policyForAdminRoute(method, pathname) {
   if (has(path,'/admin/phase06')) return { key:write?'inventory.manage':'inventory.manage', audit:false };
 
   if (has(path,'/admin/refunds')) return { key:'refunds.review', audit:true };
+  if (has(path,'/admin/payment-records')) return { key:'finance.view', audit:false, auditRead:true };
   if (has(path,'/admin/incomplete-orders')) return { key:write?'checkout.recovery.manage':'checkout.recovery.view', audit:true };
   if (has(path,'/admin/customer/ip-block')) return { key:'security.manage', audit:true };
   if (has(path,'/admin/reseller-orders') || has(path,'/admin/reseller-deposits') || has(path,'/admin/reseller-withdrawals') || has(path,'/admin/reseller-tx'))
