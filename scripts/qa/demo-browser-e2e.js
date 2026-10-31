@@ -135,9 +135,11 @@ async function main() {
     assert(page.url().endsWith('/customer/account/orders'), 'authenticated order history was not accessible');
     await page.screenshot({ path: path.join(outDir, `customer-${index}-history-before.png`), fullPage: true });
     await page.goto(`${baseUrl}/product/${demoTag.toLowerCase()}-${productIndex}`, { waitUntil: 'domcontentloaded' });
-    const addResponsePromise = page.waitForNavigation({ waitUntil: 'domcontentloaded' });
+    const addResponsePromise = page.waitForResponse(response => response.url().endsWith('/cart/add') && response.request().method() === 'POST');
     await page.locator('#productCartForm button[type="submit"]').first().click();
-    await addResponsePromise;
+    const addResponse = await addResponsePromise;
+    const addResult = await addResponse.json();
+    assert(addResponse.ok() && addResult.success, `normal add-to-cart request failed: HTTP=${addResponse.status()} message=${addResult.message || ''}`);
     await page.goto(`${baseUrl}/cart`, { waitUntil: 'domcontentloaded' });
     const cartText = await page.locator('body').innerText();
     assert(cartText.includes(productNames[productIndex - 1][0]), `product missing from normal browser cart; url=${page.url()} body=${cartText.slice(0, 500)}`);
