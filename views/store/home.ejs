@@ -1,6 +1,17 @@
 <%- include('partials/header') %>
 
 <main id="mainContent" class="container py-4">
+  <section class="store-hero-layout" aria-label="<%= locale === 'en' ? 'Shop highlights' : 'দোকানের বিশেষ আয়োজন' %>">
+    <aside class="store-hero-categories" aria-label="<%= locale === 'en' ? 'Shop by category' : 'ক্যাটাগরি অনুযায়ী কেনাকাটা' %>">
+      <h2><i class="fas fa-list" aria-hidden="true"></i> <%= locale === 'en' ? 'Shop by category' : 'ক্যাটাগরি দেখুন' %></h2>
+      <ul>
+        <% ((featuredCategories && featuredCategories.length) ? featuredCategories : (navCategories || [])).slice(0, 8).forEach(function(cat) { %>
+          <li><a href="/category/<%= cat.slug %>"><span aria-hidden="true"><%= cat.icon || '🛒' %></span><span><%= cat.name %></span><i class="fas fa-chevron-right" aria-hidden="true"></i></a></li>
+        <% }) %>
+      </ul>
+      <a href="/all-products" class="store-category-more"><%= t('common.allProducts') %> →</a>
+    </aside>
+    <div class="store-hero-main">
   <!-- Hero Banner Slider -->
   <% if (heroBanners && heroBanners.length) { %>
     <div id="heroCarousel" class="carousel slide mb-5" data-bs-ride="carousel">
@@ -50,6 +61,28 @@
       </div>
     </section>
   <% } %>
+    </div>
+    <aside class="store-hero-promos" aria-label="<%= locale === 'en' ? 'Special offers' : 'বিশেষ অফার' %>">
+      <% if (promoBanners && promoBanners.length) { %>
+        <% promoBanners.slice(0, 2).forEach(function(promo, index) { %>
+          <a class="store-promo-card <%= index === 1 ? 'store-promo-card-warm' : '' %>" href="<%= promo.link || '/hot-deals' %>">
+            <% if (promo.image) { %><img src="<%= promo.image %>" alt="" loading="lazy"><% } %>
+            <span class="store-promo-copy"><small><%= index === 0 ? (locale === 'en' ? 'JUST FOR YOU' : 'আপনার জন্য') : (locale === 'en' ? 'SPECIAL OFFER' : 'বিশেষ অফার') %></small><strong><%= promo.title || t('store.hotDealTitle') %></strong><span><%= promo.subtitle || t('store.shopNowBtn') %> →</span></span>
+          </a>
+        <% }) %>
+      <% } else { %>
+        <a class="store-promo-card" href="/hot-deals"><span class="store-promo-emoji" aria-hidden="true">🥬</span><span class="store-promo-copy"><small><%= locale === 'en' ? 'FRESH EVERY DAY' : 'প্রতিদিনের সতেজতা' %></small><strong><%= locale === 'en' ? 'Fresh picks for your table' : 'আপনার টেবিলে টাটকা পছন্দ' %></strong><span><%= t('store.shopNowBtn') %> →</span></span></a>
+        <a class="store-promo-card store-promo-card-warm" href="/all-products?deal=gift"><span class="store-promo-emoji" aria-hidden="true">🎁</span><span class="store-promo-copy"><small><%= locale === 'en' ? 'MAKE IT A GIFT' : 'উপহার দিন ভালোবাসা' %></small><strong><%= t('common.giftCorner') %></strong><span><%= t('store.exploreGiftsBtn') %> →</span></span></a>
+      <% } %>
+    </aside>
+  </section>
+
+  <section class="store-trust-row" aria-label="<%= locale === 'en' ? 'Shopping benefits' : 'কেন আমাদের থেকে কিনবেন' %>">
+    <article><span aria-hidden="true">🚚</span><div><strong><%= locale === 'en' ? 'Cash on delivery' : 'ক্যাশ অন ডেলিভারি' %></strong><small><%= locale === 'en' ? 'Across Bangladesh' : 'সারা দেশে' %></small></div></article>
+    <article><span aria-hidden="true">🌿</span><div><strong><%= locale === 'en' ? 'Fresh & authentic' : 'খাঁটি ও তাজা পণ্য' %></strong><small><%= locale === 'en' ? 'Carefully selected' : 'যত্নে বাছাই করা' %></small></div></article>
+    <article><span aria-hidden="true">↩</span><div><strong><%= locale === 'en' ? 'Easy returns' : 'সহজ রিটার্ন' %></strong><small><%= locale === 'en' ? 'Simple support' : 'সহজ সহায়তা' %></small></div></article>
+    <article><span aria-hidden="true">🎧</span><div><strong><%= locale === 'en' ? 'Customer support' : 'কাস্টমার সাপোর্ট' %></strong><small><%= locale === 'en' ? 'Here when you need us' : 'আমরা আছি পাশে' %></small></div></article>
+  </section>
 
   <!-- Shop by Category Grid (DB-Driven) -->
   <% if (typeof featuredCategories !== 'undefined' && featuredCategories && featuredCategories.length) { %>

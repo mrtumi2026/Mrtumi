@@ -60,6 +60,18 @@
       </div>
     <% } %>
 
+    <!-- Compact utility strip for support, language and customer services -->
+    <div class="store-utility-bar">
+      <div class="container d-flex align-items-center justify-content-between gap-2">
+        <a class="store-utility-hotline" href="tel:<%= siteSettings.site_phone %>"><i class="fas fa-headset" aria-hidden="true"></i> <%= locale === 'en' ? 'Customer care' : 'কাস্টমার কেয়ার' %>: <strong><%= siteSettings.site_phone %></strong></a>
+        <div class="d-flex align-items-center gap-3">
+          <a href="/track-order"><i class="fas fa-truck-fast" aria-hidden="true"></i> <%= t('common.trackOrder') %></a>
+          <a href="/customer/login"><i class="far fa-user" aria-hidden="true"></i> <%= locale === 'en' ? 'My account' : 'আমার অ্যাকাউন্ট' %></a>
+          <%- include('../../partials/lang-switch', { variant: 'light' }) %>
+        </div>
+      </div>
+    </div>
+
     <!-- Sticky Main Header -->
     <header class="pb-header" role="banner">
       <div class="container py-2">
@@ -89,6 +101,10 @@
           <!-- Search Box -->
           <form action="/all-products" method="GET" class="pb-search-box order-3 order-lg-2 flex-grow-1 mx-lg-3" role="search">
             <label for="storeMainSearch" class="visually-hidden"><%= t('a11y.searchProducts') %></label>
+            <select name="category" class="store-search-category" aria-label="<%= locale === 'en' ? 'Search in category' : 'ক্যাটাগরি বেছে নিন' %>">
+              <option value=""><%= locale === 'en' ? 'All categories' : 'সব ক্যাটাগরি' %></option>
+              <% (navCategories || []).forEach(function(cat) { %><option value="<%= cat.slug %>" <%= typeof categoryFilter !== 'undefined' && categoryFilter === cat.slug ? 'selected' : '' %>><%= cat.name %></option><% }) %>
+            </select>
             <input
               type="search"
               id="storeMainSearch"
@@ -102,7 +118,7 @@
 
           <!-- Language Switcher + Support + Cart + Checkout + Portals -->
           <div class="d-flex align-items-center gap-1 gap-sm-2 order-2 order-lg-3">
-            <%- include('../../partials/lang-switch', { variant: 'light' }) %>
+            <a href="/customer/login" class="store-account-button" aria-label="<%= locale === 'en' ? 'Customer account' : 'গ্রাহক অ্যাকাউন্ট' %>"><i class="far fa-user" aria-hidden="true"></i><span class="d-none d-xl-inline"><%= locale === 'en' ? 'Account' : 'অ্যাকাউন্ট' %></span></a>
 
             <a href="/track-order" class="btn btn-outline-success btn-sm rounded-pill px-3 d-none d-xl-inline-flex align-items-center gap-1">
               <i class="fas fa-truck-fast" aria-hidden="true"></i> <%= t('common.trackOrder') %>
@@ -124,6 +140,7 @@
               <i class="fas fa-shopping-basket" aria-hidden="true"></i>
               <span class="d-none d-sm-inline"><%= t('common.cart') %></span>
               <span class="badge bg-warning text-dark rounded-pill js-cart-count" id="headerCartBadge"><%= cartCount || 0 %></span>
+              <span class="store-cart-total">৳<span class="js-cart-subtotal"><%= Number(cartSubtotal || 0).toLocaleString('en-IN') %></span></span>
             </button>
 
             <a href="/customer/checkout" class="btn btn-warning btn-sm rounded-pill px-3 fw-bold d-none d-md-inline-flex align-items-center gap-1">
@@ -149,11 +166,21 @@
 
       <!-- Category & Storefront Navigation Strip -->
       <nav class="pb-cat-nav" aria-label="<%= t('a11y.categoryNavigation') %>">
-        <div class="container d-flex align-items-center">
+        <div class="container d-flex align-items-center store-nav-inner">
+          <div class="dropdown store-all-categories">
+            <button class="store-all-categories-button dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false"><i class="fas fa-bars" aria-hidden="true"></i> <%= locale === 'en' ? 'All Categories' : 'সকল ক্যাটাগরি' %></button>
+            <ul class="dropdown-menu shadow border-0 rounded-3">
+              <% (navCategories || []).forEach(function(cat) { %><li><a class="dropdown-item py-2" href="/category/<%= cat.slug %>"><span aria-hidden="true"><%= cat.icon || '🛒' %></span> <%= cat.name %></a></li><% }) %>
+              <li><hr class="dropdown-divider"></li><li><a class="dropdown-item fw-semibold" href="/all-products"><%= t('common.allProducts') %> →</a></li>
+            </ul>
+          </div>
           <a href="/" class="pb-cat-link <%= currentPath === '/' ? 'active' : '' %>">🏠 <%= t('common.home') %></a>
-          <a href="/all-products" class="pb-cat-link <%= currentPath === '/all-products' ? 'active' : '' %>">🛒 <%= t('common.allProducts') %></a>
-          <a href="/flash-sales" class="pb-cat-link <%= currentPath === '/flash-sales' ? 'active' : '' %> text-danger">⚡ <%= t('common.flashSale') %></a>
-          <a href="/hot-deals" class="pb-cat-link <%= currentPath === '/hot-deals' ? 'active' : '' %>">🔥 <%= t('common.hotDeal') %></a>
+          <a href="/flash-sales" class="pb-cat-link store-nav-hot">⚡ <%= locale === 'en' ? 'Flash Sale' : 'ফ্ল্যাশ সেল' %></a>
+          <a href="/hot-deals" class="pb-cat-link">🔥 <%= locale === 'en' ? 'Hot Deals' : 'হট ডিল' %></a>
+          <a href="/all-products" class="pb-cat-link"><%= locale === 'en' ? 'Grocery' : 'গ্রোসারি' %></a>
+          <a href="/all-products?deal=gift" class="pb-cat-link"><%= locale === 'en' ? 'Gift Items' : 'গিফট আইটেম' %></a>
+          <a href="/blogs" class="pb-cat-link"><%= t('common.blogs') %></a>
+          <a href="/all-products" class="pb-cat-link"><%= t('common.allProducts') %></a>
           <% navCategories.forEach(function(cat) { %>
             <a href="/category/<%= cat.slug %>" class="pb-cat-link <%= currentPath === ('/category/' + cat.slug) ? 'active' : '' %>">
               <span aria-hidden="true"><%= cat.icon || '🛒' %></span> <%= cat.name %>

@@ -398,5 +398,11 @@
         toastr["<%= flash.type === 'error' ? 'error' : 'success' %>"](<%- JSON.stringify(flash.message) %>);
       </script>
     <% } %>
+    <nav class="store-mobile-bottom-nav" aria-label="<%= locale === 'en' ? 'Quick navigation' : 'দ্রুত নেভিগেশন' %>">
+      <a href="/" class="<%= currentPath === '/' ? 'is-active' : '' %>"><i class="fas fa-house" aria-hidden="true"></i><span><%= locale === 'en' ? 'Home' : 'হোম' %></span></a>
+      <button type="button" data-bs-toggle="offcanvas" data-bs-target="#mobileStoreNavDrawer" aria-controls="mobileStoreNavDrawer"><i class="fas fa-shapes" aria-hidden="true"></i><span><%= locale === 'en' ? 'Categories' : 'ক্যাটাগরি' %></span></button>
+      <button type="button" data-bs-toggle="offcanvas" data-bs-target="#miniCartDrawer" aria-controls="miniCartDrawer"><i class="fas fa-basket-shopping" aria-hidden="true"></i><span><%= locale === 'en' ? 'Cart' : 'কার্ট' %></span><b class="js-cart-count"><%= cartCount || 0 %></b></button>
+      <a href="/track-order"><i class="fas fa-box" aria-hidden="true"></i><span><%= locale === 'en' ? 'Account / Track' : 'অ্যাকাউন্ট / ট্র্যাক' %></span></a>
+    </nav>
   </body>
 </html>

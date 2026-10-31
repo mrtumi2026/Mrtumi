@@ -894,3 +894,13 @@ code,
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Customer storefront semantic aliases (shared with the storefront refresh). */
+:root {
+  --mt-store-emerald: #16a34a;
+  --mt-store-emerald-deep: #15803d;
+  --mt-store-organic-surface: #f0fdf4;
+  --mt-store-sale: #e85d04;
+  --mt-store-sale-soft: #fff7ed;
+  --mt-store-focus-ring: #f59e0b;
+}
