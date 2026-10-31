@@ -1,0 +1,104 @@
+<% const formatPaisa = value => { const n=BigInt(String(value||0)); const whole=n/100n; const cents=(n%100n).toString().padStart(2,'0'); return whole.toLocaleString('en-IN')+'.'+cents; }; %>
+<%- include('partials/layout-top', { title: mode === 'history' ? 'Reseller Transaction History' : mode === 'deposit' ? 'Reseller Deposits' : 'Withdraw Profit' }) %>
+
+<div class="row g-3">
+  <div class="col-lg-5">
+    <div class="tbl-card p-4">
+      <% if (canonicalWallet) { %><div class="alert alert-info mb-0">এই পোর্টালে canonical tx_type এবং amount_paisa অনুযায়ী লেনদেনের ইতিহাস দেখানো হয়। অনুমোদিত balance/settlement নীতি না থাকায় বর্তমান উত্তোলনযোগ্য ব্যালেন্স দেখানো বা কোনো আর্থিক আবেদন গ্রহণ করা হচ্ছে না।</div><% } else if (mode === 'deposit') { %>
+        <div class="p-3 rounded-3 bg-info bg-opacity-10 border border-info mb-3 text-center">
+          <div class="small text-muted">বর্তমান সিকিউরিটি ডিপোজিট ব্যালেন্স</div>
+          <div class="display-6 fw-bold text-primary">৳<%= Number(reseller.deposit_amount || 0).toLocaleString('en-IN') %></div>
+        </div>
+        <h6 class="fw-bold mb-2">💳 নতুন ডিপোজিট অ্যাড করুন</h6>
+        <p class="small text-muted mb-3">অ্যাডমিন বিকাশ/নগদ নম্বরে (01711-009988) সেন্ড মানি করে নিচে TrxID দিন:</p>
+        <form action="/reseller/deposits/create" method="POST">
+          <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">মাধ্যম *</label>
+            <select name="method" class="form-select">
+              <option value="bKash">bKash</option>
+              <option value="Nagad">Nagad</option>
+              <option value="Rocket">Rocket</option>
+            </select>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">টাকার পরিমাণ (৳) *</label>
+            <input type="number" name="amount" min="100" value="500" class="form-control" required />
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">ট্রানজেকশন আইডি (TrxID) *</label>
+            <input type="text" name="trx_id" class="form-control" placeholder="যেমন: BGH82KL9M" required />
+          </div>
+          <button type="submit" class="btn btn-primary w-100 py-2 fw-bold" style="background:#3730a3;">ডিপোজিট সাবমিট করুন →</button>
+        </form>
+      <% } else { %>
+        <div class="p-3 rounded-3 bg-success bg-opacity-10 border border-success mb-3 text-center">
+          <div class="small text-muted">উত্তোলনযোগ্য কমিশন ব্যালেন্স</div>
+          <div class="display-6 fw-bold text-success">৳<%= Number(reseller.balance || 0).toLocaleString('en-IN') %></div>
+        </div>
+        <h6 class="fw-bold mb-3">💸 কমিশন লাভ উত্তোলন রিকোয়েস্ট</h6>
+        <form action="/reseller/withdrawals/create" method="POST">
+          <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">পেমেন্ট মাধ্যম *</label>
+            <select name="method" class="form-select">
+              <option value="bKash Personal">bKash Personal</option>
+              <option value="Nagad Personal">Nagad Personal</option>
+              <option value="Rocket">Rocket</option>
+            </select>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">আপনার বিকাশ / নগদ নম্বর *</label>
+            <input type="text" name="trx_id" value="<%= reseller.phone %>" class="form-control" required />
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">উত্তোলন পরিমাণ (৳) *</label>
+            <input type="number" name="amount" min="100" max="<%= reseller.balance %>" placeholder="ন্যূনতম ৳১০০" class="form-control" required />
+          </div>
+          <button type="submit" class="btn btn-success w-100 py-2 fw-bold">উইথড্র রিকোয়েস্ট পাঠান →</button>
+        </form>
+      <% } %>
+    </div>
+  </div>
+
+  <div class="col-lg-7">
+    <div class="tbl-card">
+      <div class="tbl-card-head">
+        <h4><%= mode === 'history' ? 'সকল ওয়ালেট লেনদেন' : mode === 'deposit' ? 'ডিপোজিট লেনদেন সমূহ' : 'উইথড্রয়াল হিস্ট্রি' %> (<%= canonicalWallet ? pagination.total : transactions.length %>)</h4>
+      </div>
+      <div class="tbl-card-body">
+        <% if(canonicalWallet && mode==='history'){ %><form method="get" action="/reseller/transactions" class="d-flex gap-2 mb-3"><input class="form-control" name="type" value="<%= transactionType||'' %>" placeholder="লেনদেনের ধরন (ঐচ্ছিক)"><button class="btn btn-outline-primary">ফিল্টার</button><a href="/reseller/transactions" class="btn btn-link">সব</a></form><% } %>
+        <table class="table clean mb-0">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th><%= canonicalWallet ? (mode==='history'?'ধরন':'মাধ্যম') : 'মাধ্যম' %></th>
+              <th>নম্বর / TrxID</th>
+              <th>পরিমাণ</th>
+              <th>স্ট্যাটাস</th>
+              <th>তারিখ</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% if (!transactions.length) { %>
+              <tr><td colspan="6" class="text-center py-4 text-muted">কোনো লেনদেন পাওয়া যায়নি।</td></tr>
+            <% } %>
+            <% transactions.forEach(function(tx) { %>
+              <tr>
+                <td>#<%= tx.id %></td>
+                <td><%= canonicalWallet && mode==='history' ? tx.tx_type : tx.method %></td>
+                <td><code><%= tx.trx_id %></code></td>
+                <td class="fw-bold">৳<%= canonicalWallet ? formatPaisa(tx.amount_paisa) : Number(tx.amount).toLocaleString('en-IN') %></td>
+                <td><span class="sb <%= tx.status === 'approved' ? 'sb-6' : 'sb-1' %>"><%= tx.status %></span></td>
+                <td class="small text-muted"><%= String(tx.created_at).slice(0, 10) %></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <% if(canonicalWallet && pagination.totalPages>1){ %><nav class="mt-3"><ul class="pagination"><% if(pagination.page>1){ %><li class="page-item"><a class="page-link" href="?page=<%= pagination.page-1 %>">আগের</a></li><% } %><li class="page-item disabled"><span class="page-link"><%= pagination.page %> / <%= pagination.totalPages %></span></li><% if(pagination.page<pagination.totalPages){ %><li class="page-item"><a class="page-link" href="?page=<%= pagination.page+1 %>">পরের</a></li><% } %></ul></nav><% } %>
+  </div>
+</div>
+
+<%- include('partials/layout-bottom') %>

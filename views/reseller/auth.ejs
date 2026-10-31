@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="<%= typeof htmlLang !== 'undefined' ? htmlLang : 'bn' %>">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="pb-sid" content="<%= typeof sessionToken !== 'undefined' ? sessionToken : '' %>" />
+    <title><%= t('reseller.portalName') %> — <%= siteSettings.site_name %></title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="shortcut icon" href="<%= siteSettings.favicon || '/uploads/brand/mrtumi-placeholder-favicon.svg' %>" />
+    <script src="/frontEnd/js/pb-session.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link href="/shared/css/mrtumi-design-system.css" rel="stylesheet" />
+    <style>
+      body {
+        font-family: var(--mt-font-sans);
+        min-height: 100vh;
+        background: radial-gradient(circle at top left, #e0e7ff 0%, #f8fafc 60%, #e2e8f0 100%);
+        display: flex; align-items: center; justify-content: center; padding: 20px;
+      }
+      .auth-card { width: 100%; max-width: 485px; background: #fff; border-radius: 18px; box-shadow: 0 20px 50px rgba(15,23,42,0.09); overflow: hidden; border: 1px solid #cbd5e1; }
+      .auth-head { background: linear-gradient(135deg, #1e1b4b, #3730a3); color: #fff; padding: 24px 26px; text-align: center; }
+    </style>
+  </head>
+  <body>
+    <a href="#mainContent" class="mt-skip-link"><%= t('a11y.skipToContent') %></a>
+
+    <main id="mainContent" class="auth-card">
+      <div class="auth-head">
+        <div class="d-flex justify-content-end mb-2">
+          <%- include('../partials/lang-switch', { variant: 'dark' }) %>
+        </div>
+        <img
+          src="<%= siteSettings.logo_light %>"
+          height="46"
+          alt="<%= siteSettings.site_name %>"
+          class="mb-2"
+          data-brand-asset-status="<%= (typeof brand !== 'undefined' && brand && brand.isPlaceholderLogo) ? 'temporary-placeholder' : 'custom' %>"
+        />
+        <h1 class="h5 fw-bold mb-1 text-white">🤝 <%= t('reseller.portalName') %></h1>
+        <p class="small mb-0" style="color: #cbd5e1;"><%= t('reseller.portalSub') %></p>
+      </div>
+
+      <div class="p-4">
+        <nav class="nav nav-pills nav-fill bg-light rounded-pill p-1 mb-3" aria-label="Reseller Authentication Mode">
+          <a href="/reseller/login" class="nav-link rounded-pill py-1 small fw-bold <%= mode === 'login' ? 'active bg-primary' : 'text-dark' %>"><%= t('reseller.loginTab') %></a>
+          <a href="/reseller/register" class="nav-link rounded-pill py-1 small fw-bold <%= mode === 'register' ? 'active bg-primary' : 'text-dark' %>"><%= t('reseller.registerTab') %></a>
+        </nav>
+
+        <%- include('../partials/alert-banner', { type: 'error', message: error }) %>
+
+        <% if (mode === 'login') { %>
+          <form action="/reseller/login" method="POST">
+            <% if (typeof csrfToken !== 'undefined' && csrfToken) { %>
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+            <% } %>
+            <div class="mb-3">
+              <label for="rLoginId" class="form-label small fw-semibold"><%= locale === 'bn' ? 'মোবাইল নম্বর অথবা ইমেইল *' : 'Mobile Number or Email *' %></label>
+              <input type="text" name="identifier" id="rLoginId" class="form-control" placeholder="01XXXXXXXXX / email" autocomplete="username" required />
+            </div>
+            <div class="mb-3">
+              <label for="rLoginPass" class="form-label small fw-semibold"><%= t('admin.password') %> *</label>
+              <input type="password" name="password" id="rLoginPass" class="form-control" placeholder="••••••••" autocomplete="current-password" required />
+            </div>
+            <button type="submit" class="btn btn-primary w-100 py-2 fw-bold" style="background:#3730a3;border-color:#3730a3;"><%= t('reseller.enterDashboard') %> →</button>
+          </form>
+        <% } else { %>
+          <form action="/reseller/register" method="POST">
+            <% if (typeof csrfToken !== 'undefined' && csrfToken) { %>
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+            <% } %>
+            <div class="row g-2">
+              <div class="col-sm-6">
+                <label for="rRegName" class="form-label small fw-semibold"><%= t('store.yourName') %> *</label>
+                <input type="text" id="rRegName" name="name" class="form-control form-control-sm" required />
+              </div>
+              <div class="col-sm-6">
+                <label for="rShopName" class="form-label small fw-semibold"><%= locale === 'bn' ? 'ফেসবুক পেজ / শপের নাম *' : 'Page / Shop Name *' %></label>
+                <input type="text" id="rShopName" name="shop_name" class="form-control form-control-sm" required />
+              </div>
+              <div class="col-sm-6">
+                <label for="rRegPhone" class="form-label small fw-semibold"><%= t('store.mobileNumber') %> *</label>
+                <input type="tel" id="rRegPhone" name="phone" class="form-control form-control-sm" placeholder="01XXXXXXXXX" required />
+              </div>
+              <div class="col-sm-6">
+                <label for="rRegEmail" class="form-label small fw-semibold">Email</label>
+                <input type="email" id="rRegEmail" name="email" class="form-control form-control-sm" />
+              </div>
+              <div class="col-12">
+                <label for="rRegPass" class="form-label small fw-semibold"><%= t('admin.password') %> *</label>
+                <input type="password" id="rRegPass" name="password" class="form-control form-control-sm" minlength="6" required />
+              </div>
+            </div>
+            <button type="submit" class="btn btn-primary w-100 py-2 fw-bold mt-3" style="background:#3730a3;border-color:#3730a3;"><%= t('reseller.createAccount') %> →</button>
+          </form>
+        <% } %>
+
+        <div class="d-flex justify-content-between small mt-3 pt-2 border-top">
+          <a href="/" class="text-success text-decoration-none fw-semibold">← <%= t('admin.backToStore') %></a>
+          <a href="/vendor/login" class="text-success text-decoration-none fw-semibold"><%= t('admin.vendorPortal') %> →</a>
+          <a href="/admin/login" class="text-dark text-decoration-none fw-semibold">Admin →</a>
+        </div>
+      </div>
+    </main>
+    <script src="/shared/js/mrtumi-ui.js"></script>
+  </body>
+</html>

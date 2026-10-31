@@ -1,0 +1,94 @@
+name: Disposable DEMO browser E2E (MySQL and MariaDB)
+
+on:
+  push:
+    branches: [main, "arena/**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  demo-browser-e2e:
+    name: DEMO browser E2E — ${{ matrix.engine }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - engine: MySQL 8.0
+            image: mysql:8.0
+            root_password: root_ci_password
+            database: mrtumi_test
+            username: mrtumi_test
+            password: mrtumi_test_pw
+            root_env: MYSQL_ROOT_PASSWORD
+            health: mysqladmin ping -h 127.0.0.1 -uroot -proot_ci_password --silent
+          - engine: MariaDB 10.11
+            image: mariadb:10.11
+            root_password: root_ci_password
+            database: mrtumi_test
+            username: mrtumi_test
+            password: mrtumi_test_pw
+            root_env: MARIADB_ROOT_PASSWORD
+            health: healthcheck.sh --connect --innodb_initialized
+    services:
+      db:
+        image: ${{ matrix.image }}
+        env:
+          MYSQL_ROOT_PASSWORD: root_ci_password
+          MYSQL_DATABASE: mrtumi_test
+          MYSQL_USER: mrtumi_test
+          MYSQL_PASSWORD: mrtumi_test_pw
+          MARIADB_ROOT_PASSWORD: root_ci_password
+          MARIADB_DATABASE: mrtumi_test
+          MARIADB_USER: mrtumi_test
+          MARIADB_PASSWORD: mrtumi_test_pw
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="${{ matrix.health }}"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+    env:
+      TZ: Asia/Dhaka
+      NODE_ENV: test
+      LOG_SILENT: "true"
+      DB_CLIENT: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: "3306"
+      DB_NAME: mrtumi_test
+      DB_USER: mrtumi_test
+      DB_PASSWORD: mrtumi_test_pw
+      MYSQL_TEST_REQUIRED: "true"
+      MYSQL_TEST_HOST: 127.0.0.1
+      MYSQL_TEST_PORT: "3306"
+      MYSQL_TEST_DB: mrtumi_test
+      MYSQL_TEST_USER: mrtumi_test
+      MYSQL_TEST_PASSWORD: mrtumi_test_pw
+      QA_DB_ENGINE: ${{ matrix.engine }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.23.4"
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+      - name: Configure disposable database trigger policy
+        run: |
+          node <<'NODE'
+          const mysql = require('mysql2/promise');
+          (async()=>{const c=await mysql.createConnection({host:'127.0.0.1',user:'root',password:'root_ci_password'});try{await c.query('SET GLOBAL log_bin_trust_function_creators=1');}finally{await c.end();}})().catch(e=>{console.error(e.code,e.message);process.exitCode=1;});
+          NODE
+      - name: Run browser journeys and guaranteed disposable cleanup
+        run: node scripts/qa/demo-browser-e2e.js
+      - name: Upload per-engine screenshots, journey results, and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: demo-browser-evidence-${{ matrix.engine }}
+          path: qa-evidence/browser-final/${{ matrix.engine }}/
+          if-no-files-found: error
+          retention-days: 30

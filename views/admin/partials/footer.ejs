@@ -1,0 +1,316 @@
+    </div>
+    <!-- END wrapper -->
+
+    <!-- Right Theme Customizer Sidebar -->
+    <aside class="right-bar" aria-label="<%= t('admin.themeCustomizer') %>">
+      <div class="p-3 border-bottom d-flex justify-content-between align-items-center bg-light">
+        <h6 class="m-0 fw-bold text-uppercase" style="font-size:12px;"><%= t('admin.themeCustomizer') %></h6>
+        <button type="button" class="btn-close right-bar-toggle" aria-label="<%= t('a11y.closeModal') %>"></button>
+      </div>
+      <div class="p-3">
+        <div class="alert alert-success py-2 small">
+          <strong>Mr. Tumi</strong> — <%= locale === 'bn' ? 'সাইডবার ও টপবার থিম কাস্টমাইজ করুন' : 'Customize sidebar & topbar appearance.' %>
+        </div>
+
+        <h6 class="fw-semibold small mt-3 mb-2">Color Scheme</h6>
+        <div class="form-check form-switch mb-1">
+          <input type="checkbox" class="form-check-input" name="layout-color" value="light" id="light-mode-check" checked />
+          <label class="form-check-label" for="light-mode-check">Light Mode</label>
+        </div>
+        <div class="form-check form-switch mb-3">
+          <input type="checkbox" class="form-check-input" name="layout-color" value="dark" id="dark-mode-check" />
+          <label class="form-check-label" for="dark-mode-check">Dark Mode</label>
+        </div>
+
+        <h6 class="fw-semibold small mt-3 mb-2">Left Sidebar Color</h6>
+        <div class="form-check form-switch mb-1">
+          <input type="checkbox" class="form-check-input" name="leftbar-color" value="dark" id="dark-check" checked />
+          <label class="form-check-label" for="dark-check">Dark (Default)</label>
+        </div>
+        <div class="form-check form-switch mb-1">
+          <input type="checkbox" class="form-check-input" name="leftbar-color" value="light" id="light-check" />
+          <label class="form-check-label" for="light-check">Light</label>
+        </div>
+        <div class="form-check form-switch mb-3">
+          <input type="checkbox" class="form-check-input" name="leftbar-color" value="brand" id="brand-check" />
+          <label class="form-check-label" for="brand-check">Emerald Brand</label>
+        </div>
+
+        <h6 class="fw-semibold small mt-3 mb-2">Topbar Color</h6>
+        <div class="form-check form-switch mb-1">
+          <input type="checkbox" class="form-check-input" name="topbar-color" value="dark" id="darktopbar-check" checked />
+          <label class="form-check-label" for="darktopbar-check">Dark</label>
+        </div>
+        <div class="form-check form-switch mb-3">
+          <input type="checkbox" class="form-check-input" name="topbar-color" value="light" id="lighttopbar-check" />
+          <label class="form-check-label" for="lighttopbar-check">Light</label>
+        </div>
+
+        <div class="d-grid mt-4">
+          <button class="btn btn-forest" id="resetBtn" type="button"><%= t('common.reset') %></button>
+        </div>
+      </div>
+    </aside>
+    <div class="rightbar-overlay"></div>
+
+    <!-- Real-Time New Order Toast Notification Stack -->
+    <style>
+      .aot-stack {
+        position: fixed; bottom: 20px; right: 16px; z-index: 1080;
+        display: flex; flex-direction: column-reverse; gap: 10px;
+        max-width: min(360px, calc(100vw - 32px)); pointer-events: none;
+      }
+      .aot-toast {
+        pointer-events: auto; position: relative; background: #fff; border-radius: 14px;
+        overflow: hidden; box-shadow: 0 16px 40px rgba(15, 23, 42, 0.16), 0 0 0 1px rgba(148, 163, 184, 0.14);
+        cursor: pointer; padding: 12px 14px;
+      }
+      .aot-toast::before {
+        content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+        background: linear-gradient(90deg, #0d3b26, #15803d, #f59e0b);
+      }
+      #gemini-admin-widget * { box-sizing: border-box; }
+      #gaw-toggle {
+        position: fixed; right: 24px; bottom: 24px; z-index: 99990;
+        width: 52px; height: 52px; border-radius: 50%; border: none; cursor: pointer;
+        background: linear-gradient(135deg, #0d3b26, #15803d); color: #fff;
+        box-shadow: 0 8px 24px rgba(13, 59, 38, 0.35);
+        display: flex; align-items: center; justify-content: center; transition: transform 0.2s;
+      }
+      #gaw-toggle:hover { transform: scale(1.06); }
+      #gaw-panel {
+        position: fixed; top: 0; right: 0; width: 390px; max-width: 100vw; height: 100vh;
+        z-index: 99989; background: #fff; box-shadow: -8px 0 40px rgba(15, 23, 42, 0.15);
+        display: flex; flex-direction: column; transform: translateX(100%);
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+      #gaw-panel.open { transform: translateX(0); }
+      #gaw-overlay {
+        position: fixed; inset: 0; background: rgba(15,23,42,0.35);
+        z-index: 99988; opacity: 0; pointer-events: none; transition: opacity 0.3s;
+      }
+      #gaw-overlay.show { opacity: 1; pointer-events: auto; }
+    </style>
+
+    <div id="adminOrderToastStack" class="aot-stack" aria-live="polite"></div>
+
+    <!-- Floating Admin Assistant -->
+    <div id="gemini-admin-widget">
+      <div id="gaw-overlay"></div>
+      <aside id="gaw-panel" role="dialog" aria-label="<%= t('admin.menu.geminiAi') %>">
+        <div style="background: linear-gradient(135deg, #0d3b26, #14532d); color: #fff; padding: 16px 18px;">
+          <div class="d-flex justify-content-between align-items-start">
+            <div>
+              <h5 class="m-0 fw-bold text-white" style="font-size:15px;">🤖 <%= t('admin.menu.geminiAi') %></h5>
+              <p class="m-0 mt-1 text-white-50" style="font-size:11.5px;"><%= siteSettings.site_name %></p>
+            </div>
+            <button type="button" id="gaw-close-x" class="btn-close btn-close-white" aria-label="<%= t('a11y.closeModal') %>"></button>
+          </div>
+          <div class="d-flex gap-2 mt-2">
+            <button type="button" id="gaw-clear" class="btn btn-sm text-white" style="border:1px solid rgba(255,255,255,0.3);font-size:11px;border-radius:999px;">🗑️ <%= t('common.reset') %></button>
+            <a href="/admin/gemini-chat" class="btn btn-sm text-white" style="border:1px solid rgba(255,255,255,0.3);font-size:11px;border-radius:999px;">↗ Full View</a>
+          </div>
+        </div>
+
+        <div id="gaw-messages" style="flex:1;overflow-y:auto;padding:16px;background:#f8fafc;">
+          <div id="gaw-empty" class="text-center py-4 text-muted">
+            <div style="font-size:34px;">🤖</div>
+            <strong class="text-dark d-block mt-1"><%= siteSettings.site_name %></strong>
+            <p class="small mb-3"><%= locale === 'bn' ? 'অর্ডার, প্রোডাক্ট, স্টক বা হিসাব — যেকোনো কিছু জিজ্ঞাসা করুন।' : 'Ask about live orders, inventory, or store operations.' %></p>
+            <div class="d-flex flex-wrap gap-1 justify-content-center">
+              <button type="button" class="btn btn-sm btn-outline-success rounded-pill gaw-sug" data-q="আজ কতটি অর্ডার হয়েছে?">আজকের অর্ডার</button>
+              <button type="button" class="btn btn-sm btn-outline-success rounded-pill gaw-sug" data-q="স্টক ও প্রোডাক্ট রিপোর্ট দাও">স্টক রিপোর্ট</button>
+              <button type="button" class="btn btn-sm btn-outline-success rounded-pill gaw-sug" data-q="Fraud check কিভাবে করব?">Fraud check</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="p-2 border-top bg-white">
+          <form id="gaw-input-form" class="d-flex gap-2">
+            <label for="gaw-input" class="visually-hidden"><%= t('admin.menu.geminiAi') %></label>
+            <input type="text" id="gaw-input" class="form-control form-control-sm" placeholder="<%= locale === 'bn' ? 'প্রশ্ন লিখুন...' : 'Ask a question...' %>" />
+            <button type="submit" id="gaw-send" class="btn btn-sm text-white px-3" style="background:#0d3b26;"><%= locale === 'bn' ? 'পাঠান' : 'Send' %></button>
+          </form>
+        </div>
+      </aside>
+
+      <button type="button" id="gaw-toggle" aria-label="<%= t('admin.menu.geminiAi') %>" title="<%= t('admin.menu.geminiAi') %>">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/feather-icons/dist/feather.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts@3.44.0"></script>
+    <script src="/backEnd/js/admin-core.js"></script>
+    <script src="/shared/js/mrtumi-ui.js"></script>
+
+    <% if (flash && flash.message) { %>
+    <script>
+      document.addEventListener('DOMContentLoaded', function() {
+        if (typeof toastr !== 'undefined') {
+          toastr.options = { positionClass: 'toast-top-right', timeOut: 3500 };
+          toastr["<%= flash.type === 'error' ? 'error' : 'success' %>"](<%- JSON.stringify(flash.message) %>);
+        }
+      });
+    </script>
+    <% } %>
+
+    <!-- Global legacy-admin CSRF token binding; server-side checks remain authoritative. -->
+    <script>
+      (function() {
+        var node=document.querySelector('meta[name="csrf-token"]'); var token=node?node.content:'';
+        var unsafe=function(method){return /^(POST|PUT|PATCH|DELETE)$/i.test(method||'GET');};
+        document.addEventListener('submit',function(event){
+          var form=event.target;
+          if(!form||!unsafe(form.method)||!token||form.querySelector('input[name="_csrf"]'))return;
+          var hidden=document.createElement('input');hidden.type='hidden';hidden.name='_csrf';hidden.value=token;form.appendChild(hidden);
+        },true);
+        var nativeFetch=window.fetch.bind(window);
+        window.fetch=function(input,init){
+          init=init||{};var method=init.method||(input&&input.method)||'GET';
+          var url=typeof input==='string'?input:(input&&input.url)||'';
+          if(unsafe(method)&&token&&(!url||url.indexOf('://')<0||url.indexOf(location.origin)===0)){
+            var headers=new Headers(init.headers||(input&&input.headers)||{});
+            if(!headers.has('X-CSRF-Token'))headers.set('X-CSRF-Token',token);
+            init.headers=headers;
+          }
+          return nativeFetch(input,init);
+        };
+      })();
+    </script>
+
+    <!-- Slide-Over & Real-Time New Order Polling -->
+    <script>
+      (function() {
+        var panel = document.getElementById('gaw-panel');
+        var overlay = document.getElementById('gaw-overlay');
+        var toggle = document.getElementById('gaw-toggle');
+        var closeBtn = document.getElementById('gaw-close-x');
+        var messages = document.getElementById('gaw-messages');
+        var form = document.getElementById('gaw-input-form');
+        var input = document.getElementById('gaw-input');
+
+        function openGaw() { panel.classList.add('open'); overlay.classList.add('show'); input.focus(); }
+        function closeGaw() { panel.classList.remove('open'); overlay.classList.remove('show'); }
+
+        toggle.addEventListener('click', function() { panel.classList.contains('open') ? closeGaw() : openGaw(); });
+        closeBtn.addEventListener('click', closeGaw);
+        overlay.addEventListener('click', closeGaw);
+        document.addEventListener('keydown', function(e) {
+          if (e.key === 'Escape' && panel.classList.contains('open')) closeGaw();
+        });
+
+        function addMsg(role, text) {
+          var emp = document.getElementById('gaw-empty');
+          if (emp) emp.remove();
+          var wrap = document.createElement('div');
+          wrap.className = 'mb-2 d-flex ' + (role === 'user' ? 'justify-content-end' : 'justify-content-start');
+          var bub = document.createElement('div');
+          bub.style.maxWidth = '85%';
+          bub.style.padding = '9px 12px';
+          bub.style.borderRadius = '12px';
+          bub.style.fontSize = '12.5px';
+          bub.style.whiteSpace = 'pre-wrap';
+          if (role === 'user') {
+            bub.style.background = '#0d3b26';
+            bub.style.color = '#fff';
+          } else {
+            bub.style.background = '#fff';
+            bub.style.border = '1px solid #e2e8f0';
+            bub.style.color = '#1e293b';
+          }
+          bub.textContent = text;
+          wrap.appendChild(bub);
+          messages.appendChild(wrap);
+          messages.scrollTop = messages.scrollHeight;
+        }
+
+        function sendGaw(txt) {
+          txt = (txt || '').trim();
+          if (!txt) return;
+          addMsg('user', txt);
+          input.value = '';
+          fetch('/admin/gemini-chat/send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || '' },
+            body: JSON.stringify({ message: txt })
+          })
+          .then(function(r) { return r.json(); })
+          .then(function(d) { addMsg('bot', d.reply || 'উত্তর পাওয়া যায়নি'); })
+          .catch(function() { addMsg('bot', 'সংযোগ ব্যর্থ হয়েছে।'); });
+        }
+
+        form.addEventListener('submit', function(e) { e.preventDefault(); sendGaw(input.value); });
+        document.querySelectorAll('.gaw-sug').forEach(function(b) {
+          b.addEventListener('click', function() { sendGaw(b.getAttribute('data-q')); });
+        });
+        document.getElementById('gaw-clear').addEventListener('click', function() {
+          fetch('/admin/gemini-chat/clear', { method: 'POST', headers: { 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || '' } }).then(function() { messages.innerHTML = ''; });
+        });
+
+        // Poll New Orders every 12s
+        var lastId = parseInt(localStorage.getItem('pb_last_order_id') || '0', 10) || 0;
+        function ring() {
+          try {
+            var Ctx = window.AudioContext || window.webkitAudioContext;
+            if (!Ctx) return;
+            var ctx = new Ctx();
+            var t = ctx.currentTime;
+            [523.25, 659.25, 783.99].forEach(function(f, idx) {
+              var o = ctx.createOscillator(); var g = ctx.createGain();
+              o.frequency.value = f; o.connect(g); g.connect(ctx.destination);
+              g.gain.setValueAtTime(0.01, t + idx * 0.18);
+              g.gain.exponentialRampToValueAtTime(0.22, t + idx * 0.18 + 0.03);
+              g.gain.exponentialRampToValueAtTime(0.001, t + idx * 0.18 + 0.2);
+              o.start(t + idx * 0.18); o.stop(t + idx * 0.18 + 0.25);
+            });
+          } catch (_e) {}
+        }
+
+        function pollOrders() {
+          var url = '/admin/orders/poll-new' + (lastId > 0 ? '?after_id=' + lastId : '?init=1');
+          fetch(url, { headers: { 'Accept': 'application/json' } })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+              if (!d) return;
+              if (d.init && d.latest_id) {
+                lastId = d.latest_id;
+                localStorage.setItem('pb_last_order_id', String(lastId));
+                return;
+              }
+              if (d.orders && d.orders.length) {
+                ring();
+                var stack = document.getElementById('adminOrderToastStack');
+                d.orders.forEach(function(o) {
+                  var card = document.createElement('div');
+                  card.className = 'aot-toast';
+                  card.innerHTML =
+                    '<div class="d-flex justify-content-between align-items-center mb-1">' +
+                    '<span class="badge bg-success-subtle text-success">#' + o.invoice_id + '</span>' +
+                    '<strong class="text-success">৳' + o.amount + '</strong></div>' +
+                    '<div class="fw-semibold text-dark">' + o.customer_name + '</div>' +
+                    '<div class="text-muted small">' + o.phone + '</div>';
+                  card.onclick = function() { window.location.href = o.process_url; };
+                  stack.appendChild(card);
+                  setTimeout(function() { if (card.parentNode) card.remove(); }, 10000);
+                });
+              }
+              if (d.latest_id) {
+                lastId = d.latest_id;
+                localStorage.setItem('pb_last_order_id', String(lastId));
+              }
+            }).catch(function() {});
+        }
+        pollOrders();
+        setInterval(pollOrders, 12000);
+      })();
+    </script>
+  </body>
+</html>

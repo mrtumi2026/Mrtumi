@@ -1,0 +1,36 @@
+<%- include('partials/head', { title: pageTitle }) %>
+<%- include('partials/topbar') %>
+<%- include('partials/sidebar') %>
+<div class="content-page"><main class="content container-fluid py-3">
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <div><h1 class="h3 mb-1"><%= pageTitle %></h1><p class="text-muted mb-0"><%= locale === 'en' ? 'Preview performs validation only; no product rows are changed until the separate commit action.' : 'প্রিভিউ শুধু যাচাই করে; আলাদা কমিটের আগে কোনো পণ্যের সারি পরিবর্তন হয় না।' %></p></div>
+    <a class="btn btn-outline-secondary" href="/admin/phase06#product-csv"><%= locale === 'en' ? 'Back to CSV form' : 'CSV ফর্মে ফিরুন' %></a>
+  </div>
+  <% if (preview.valid) { %>
+    <div class="alert alert-success"><strong><%= locale === 'en' ? 'All rows passed validation.' : 'সব সারি যাচাইয়ে উত্তীর্ণ।' %></strong> <%= locale === 'en' ? `${preview.totalRows} product row(s) are ready. Nothing has been written yet.` : `${preview.totalRows}টি পণ্য সারি প্রস্তুত। এখনো কিছু লেখা হয়নি।` %></div>
+  <% } else { %>
+    <div class="alert alert-danger"><strong><%= locale === 'en' ? 'Import blocked; no catalog changes were made.' : 'ইমপোর্ট বন্ধ; ক্যাটালগে কোনো পরিবর্তন হয়নি।' %></strong> <%= locale === 'en' ? 'Fix all listed errors and run preview again. Mixed valid/invalid rows are never partially committed.' : 'সব ত্রুটি ঠিক করে আবার প্রিভিউ দিন। বৈধ/অবৈধ মিশ্র সারি আংশিকভাবে কখনো কমিট হয় না।' %></div>
+  <% } %>
+  <% if (preview.errors && preview.errors.length) { %>
+    <section class="card shadow-sm mb-4"><div class="card-header"><h2 class="h5 mb-0"><%= locale === 'en' ? 'Validation errors' : 'যাচাইয়ের ত্রুটি' %></h2></div><div class="table-responsive"><table class="table table-striped mb-0"><thead><tr><th><%= locale === 'en' ? 'CSV row' : 'CSV সারি' %></th><th>SKU</th><th><%= locale === 'en' ? 'Issue' : 'সমস্যা' %></th></tr></thead><tbody>
+      <% preview.errors.forEach(function(item) { (item.errors || []).forEach(function(error) { %><tr><td><%= item.row %></td><td><%= item.sku || '—' %></td><td><%= error %></td></tr><% }); }); %>
+    </tbody></table></div></section>
+  <% } %>
+  <% if (preview.rows && preview.rows.length) { %>
+    <section class="card shadow-sm mb-4"><div class="card-header"><h2 class="h5 mb-0"><%= locale === 'en' ? 'Rows checked' : 'যাচাই করা সারি' %></h2></div><div class="table-responsive"><table class="table table-sm table-striped mb-0"><thead><tr><th><%= locale === 'en' ? 'CSV row' : 'CSV সারি' %></th><th>SKU</th><th><%= locale === 'en' ? 'Name (Bangla)' : 'নাম (বাংলা)' %></th><th>Slug</th><th><%= locale === 'en' ? 'Regular (paisa)' : 'নিয়মিত (পয়সা)' %></th><th><%= locale === 'en' ? 'Sale (paisa)' : 'বিক্রয় (পয়সা)' %></th><th><%= locale === 'en' ? 'Validation' : 'যাচাই' %></th></tr></thead><tbody>
+      <% preview.rows.forEach(function(row) { %><tr><td><%= row.row %></td><td><%= row.sku %></td><td><%= row.nameBn %></td><td><%= row.slug %></td><td><%= row.regularPricePaisa === null ? '—' : row.regularPricePaisa %></td><td><%= row.salePricePaisa === null ? '—' : row.salePricePaisa %></td><td><%= row.errors.length ? (locale === 'en' ? 'Blocked' : 'বন্ধ') : (locale === 'en' ? 'Valid' : 'বৈধ') %></td></tr><% }); %>
+    </tbody></table></div></section>
+  <% } %>
+  <% if (preview.valid && previewId) { %>
+    <section class="card border-success shadow-sm"><div class="card-header"><h2 class="h5 mb-0"><%= locale === 'en' ? 'Explicit commit' : 'স্পষ্ট কমিট' %></h2></div><div class="card-body">
+      <p><%= locale === 'en' ? 'This separate action updates the listed existing products atomically. If any row fails at commit time, all updates and audit entries roll back.' : 'এই আলাদা কাজটি তালিকাভুক্ত বিদ্যমান পণ্যগুলো একসাথে আপডেট করবে। কমিটের সময় কোনো সারি ব্যর্থ হলে সব আপডেট ও অডিট এন্ট্রি রোলব্যাক হবে।' %></p>
+      <form method="post" action="/admin/phase06/products/import/commit">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <input type="hidden" name="preview_id" value="<%= previewId %>">
+        <textarea name="csv_text" hidden><%= csvText %></textarea>
+        <button class="btn btn-success" type="submit"><%= locale === 'en' ? `Commit ${preview.totalRows} product row(s)` : `${preview.totalRows}টি পণ্য সারি কমিট করুন` %></button>
+      </form>
+    </div></section>
+  <% } %>
+</main></div>
+<%- include('partials/footer') %>

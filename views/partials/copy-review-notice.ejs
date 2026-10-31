@@ -1,0 +1,5 @@
+<aside class="mt-copy-review-banner mb-4" role="note" aria-label="<%= typeof t === 'function' ? t('copyReview.badge') : 'Owner Review Required' %>">
+  <span class="mt-copy-review-banner__badge">⚠ <%= typeof t === 'function' ? t('copyReview.badge') : 'Owner Review Required' %></span>
+  <div class="fw-bold small mb-1"><%= typeof t === 'function' ? t('copyReview.title') : 'Policy Copy Pending Owner Approval' %></div>
+  <p class="small mb-0 text-muted"><%= typeof t === 'function' ? t('copyReview.message') : '' %></p>
+</aside>

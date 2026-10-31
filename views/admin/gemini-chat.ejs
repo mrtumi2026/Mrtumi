@@ -1,0 +1,92 @@
+<%- include('partials/head', { title: 'Gemini Assistant' }) %>
+<%- include('partials/topbar') %>
+<%- include('partials/sidebar') %>
+
+<div class="content-page">
+  <div class="content">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <div>
+        <h4 class="fw-bold mb-0">🤖 Gemini AI Store Assistant</h4>
+        <p class="text-muted small mb-0">লাইভ ডাটাবেস থেকে অর্ডার, স্টক, রেভিনিউ এবং স্টোর ম্যানেজমেন্ট সহায়তা নিন</p>
+      </div>
+      <button type="button" id="fullClearBtn" class="btn btn-outline-danger btn-sm">🗑️ Clear Conversation</button>
+    </div>
+
+    <div class="tbl-card d-flex flex-column" style="height: 72vh;">
+      <div id="fullChatBox" class="p-4 flex-grow-1" style="overflow-y: auto; background: #f8fafc;">
+        <% if (!chatHistory.length) { %>
+          <div class="text-center py-5" id="fullChatEmpty">
+            <div style="font-size: 48px;">🤖</div>
+            <h5 class="fw-bold mt-2"><%= siteSettings.site_name %> — <%= t('admin.menu.geminiAi') %></h5>
+            <p class="text-muted small">যেকোনো প্রশ্ন বাংলা বা ইংরেজিতে লিখুন অথবা নিচের কুইক প্রম্পটে ক্লিক করুন:</p>
+            <div class="d-flex flex-wrap gap-2 justify-content-center mt-3">
+              <button type="button" class="btn btn-outline-dark btn-sm rounded-pill quick-p" data-q="আজ কতটি অর্ডার হয়েছে?">📊 আজকের অর্ডার রিপোর্ট</button>
+              <button type="button" class="btn btn-outline-dark btn-sm rounded-pill quick-p" data-q="স্টক ও প্রোডাক্ট রিপোর্ট দাও">📦 প্রোডাক্ট ও স্টক স্ট্যাটাস</button>
+              <button type="button" class="btn btn-outline-dark btn-sm rounded-pill quick-p" data-q="ফান্ড ও খরচের হিসাব দেখাও">💰 ফান্ড ও খরচের হিসাব</button>
+              <button type="button" class="btn btn-outline-dark btn-sm rounded-pill quick-p" data-q="Fraud check কিভাবে করব?">🛡️ ফ্রড চেক গাইড</button>
+            </div>
+          </div>
+        <% } else { %>
+          <% chatHistory.forEach(function(m) { %>
+            <div class="mb-3 d-flex <%= m.role === 'user' ? 'justify-content-end' : 'justify-content-start' %>">
+              <div class="p-3 rounded-3" style="max-width: 75%; white-space: pre-wrap; <%= m.role === 'user' ? 'background:#243b22;color:#fff;' : 'background:#fff;border:1px solid #e2e8f0;' %>"><%= m.text %></div>
+            </div>
+          <% }) %>
+        <% } %>
+      </div>
+
+      <form id="fullChatForm" class="p-3 border-top bg-white d-flex gap-2">
+        <input type="text" id="fullChatInput" class="form-control" placeholder="আপনার প্রশ্ন লিখুন (যেমন: আজকের অর্ডার ও রেভিনিউ কত?)..." required />
+        <button type="submit" class="btn btn-forest px-4">পাঠান ➤</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function() {
+    var box = document.getElementById('fullChatBox');
+    var form = document.getElementById('fullChatForm');
+    var input = document.getElementById('fullChatInput');
+
+    function append(role, text) {
+      var emp = document.getElementById('fullChatEmpty');
+      if (emp) emp.remove();
+      var row = document.createElement('div');
+      row.className = 'mb-3 d-flex ' + (role === 'user' ? 'justify-content-end' : 'justify-content-start');
+      var card = document.createElement('div');
+      card.className = 'p-3 rounded-3';
+      card.style.maxWidth = '75%';
+      card.style.whiteSpace = 'pre-wrap';
+      if (role === 'user') { card.style.background = '#243b22'; card.style.color = '#fff'; }
+      else { card.style.background = '#fff'; card.style.border = '1px solid #e2e8f0'; }
+      card.textContent = text;
+      row.appendChild(card);
+      box.appendChild(row);
+      box.scrollTop = box.scrollHeight;
+    }
+
+    function send(msg) {
+      if (!msg) return;
+      append('user', msg);
+      input.value = '';
+      fetch('/admin/gemini-chat/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || '' },
+        body: JSON.stringify({ message: msg })
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(d) { append('bot', d.reply || 'Error'); });
+    }
+
+    form.addEventListener('submit', function(e) { e.preventDefault(); send(input.value.trim()); });
+    document.querySelectorAll('.quick-p').forEach(function(b) {
+      b.addEventListener('click', function() { send(b.getAttribute('data-q')); });
+    });
+    document.getElementById('fullClearBtn').addEventListener('click', function() {
+      fetch('/admin/gemini-chat/clear', { method: 'POST', headers: { 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || '' } }).then(function() { location.reload(); });
+    });
+  })();
+</script>
+
+<%- include('partials/footer') %>

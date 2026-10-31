@@ -1,0 +1,1072 @@
+{
+  "browser": "HeadlessChrome/92.0.4512.0",
+  "bootstrap": "5.3.3 served locally for browser QA (same pinned CDN URL/version; project source unchanged)",
+  "viewports": [
+    {
+      "width": 360,
+      "route": "/",
+      "status": 200,
+      "doc": 360,
+      "body": 360,
+      "title": "Mr. Tumi Grocery & Gift | মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 360,
+      "route": "/all-products?q=%E0%A6%B2%E0%A6%BF%E0%A6%9A%E0%A7%81",
+      "status": 200,
+      "doc": 360,
+      "body": 360,
+      "title": "\"লিচু\" অনুসন্ধানের ফলাফল | মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 360,
+      "route": "/product/desi-licu-fresh-pack-246",
+      "status": 200,
+      "doc": 360,
+      "body": 360,
+      "title": "দেশি লিচু ফ্রেশ প্যাক | মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 360,
+      "route": "/cart",
+      "status": 200,
+      "doc": 360,
+      "body": 360,
+      "title": "কার্ট | মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 360,
+      "route": "/customer/register",
+      "status": 200,
+      "doc": 360,
+      "body": 360,
+      "title": "অ্যাকাউন্ট তৈরি করুন | মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 360,
+      "route": "/contact",
+      "status": 200,
+      "doc": 360,
+      "body": 360,
+      "title": "গ্রাহক সেবা ও যোগাযোগ | মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 360,
+      "route": "/customer/login",
+      "status": 200,
+      "doc": 360,
+      "body": 360,
+      "title": "কাস্টমার লগইন | মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 360,
+      "route": "/vendor/login",
+      "status": 200,
+      "doc": 360,
+      "body": 360,
+      "title": "ভেন্ডর / সেলার প্যানেল — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 360,
+      "route": "/reseller/login",
+      "status": 200,
+      "doc": 360,
+      "body": 360,
+      "title": "রিসেলার ও ড্রপশিপিং প্যানেল — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 360,
+      "route": "/admin/login",
+      "status": 200,
+      "doc": 360,
+      "body": 360,
+      "title": "অ্যাডমিন কন্ট্রোল প্যানেল — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "route": "/",
+      "status": 200,
+      "doc": 390,
+      "body": 390,
+      "title": "Mr. Tumi Grocery & Gift | মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "route": "/all-products?q=%E0%A6%B2%E0%A6%BF%E0%A6%9A%E0%A7%81",
+      "status": 200,
+      "doc": 390,
+      "body": 390,
+      "title": "\"লিচু\" অনুসন্ধানের ফলাফল | মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "route": "/product/desi-licu-fresh-pack-246",
+      "status": 200,
+      "doc": 390,
+      "body": 390,
+      "title": "দেশি লিচু ফ্রেশ প্যাক | মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "route": "/cart",
+      "status": 200,
+      "doc": 390,
+      "body": 390,
+      "title": "কার্ট | মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "route": "/customer/register",
+      "status": 200,
+      "doc": 390,
+      "body": 390,
+      "title": "অ্যাকাউন্ট তৈরি করুন | মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "route": "/contact",
+      "status": 200,
+      "doc": 390,
+      "body": 390,
+      "title": "গ্রাহক সেবা ও যোগাযোগ | মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "route": "/customer/login",
+      "status": 200,
+      "doc": 390,
+      "body": 390,
+      "title": "কাস্টমার লগইন | মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "route": "/vendor/login",
+      "status": 200,
+      "doc": 390,
+      "body": 390,
+      "title": "ভেন্ডর / সেলার প্যানেল — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "route": "/reseller/login",
+      "status": 200,
+      "doc": 390,
+      "body": 390,
+      "title": "রিসেলার ও ড্রপশিপিং প্যানেল — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "route": "/admin/login",
+      "status": 200,
+      "doc": 390,
+      "body": 390,
+      "title": "অ্যাডমিন কন্ট্রোল প্যানেল — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 768,
+      "route": "/",
+      "status": 200,
+      "doc": 768,
+      "body": 768,
+      "title": "Mr. Tumi Grocery & Gift | মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 768,
+      "route": "/all-products?q=%E0%A6%B2%E0%A6%BF%E0%A6%9A%E0%A7%81",
+      "status": 200,
+      "doc": 768,
+      "body": 768,
+      "title": "\"লিচু\" অনুসন্ধানের ফলাফল | মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 768,
+      "route": "/product/desi-licu-fresh-pack-246",
+      "status": 200,
+      "doc": 768,
+      "body": 768,
+      "title": "দেশি লিচু ফ্রেশ প্যাক | মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 768,
+      "route": "/cart",
+      "status": 200,
+      "doc": 768,
+      "body": 768,
+      "title": "কার্ট | মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 768,
+      "route": "/customer/register",
+      "status": 200,
+      "doc": 768,
+      "body": 768,
+      "title": "অ্যাকাউন্ট তৈরি করুন | মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 768,
+      "route": "/contact",
+      "status": 200,
+      "doc": 768,
+      "body": 768,
+      "title": "গ্রাহক সেবা ও যোগাযোগ | মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 768,
+      "route": "/customer/login",
+      "status": 200,
+      "doc": 768,
+      "body": 768,
+      "title": "কাস্টমার লগইন | মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 768,
+      "route": "/vendor/login",
+      "status": 200,
+      "doc": 768,
+      "body": 768,
+      "title": "ভেন্ডর / সেলার প্যানেল — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 768,
+      "route": "/reseller/login",
+      "status": 200,
+      "doc": 768,
+      "body": 768,
+      "title": "রিসেলার ও ড্রপশিপিং প্যানেল — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 768,
+      "route": "/admin/login",
+      "status": 200,
+      "doc": 768,
+      "body": 768,
+      "title": "অ্যাডমিন কন্ট্রোল প্যানেল — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 1366,
+      "route": "/",
+      "status": 200,
+      "doc": 1366,
+      "body": 1366,
+      "title": "Mr. Tumi Grocery & Gift | মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 1366,
+      "route": "/all-products?q=%E0%A6%B2%E0%A6%BF%E0%A6%9A%E0%A7%81",
+      "status": 200,
+      "doc": 1366,
+      "body": 1366,
+      "title": "\"লিচু\" অনুসন্ধানের ফলাফল | মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 1366,
+      "route": "/product/desi-licu-fresh-pack-246",
+      "status": 200,
+      "doc": 1366,
+      "body": 1366,
+      "title": "দেশি লিচু ফ্রেশ প্যাক | মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 1366,
+      "route": "/cart",
+      "status": 200,
+      "doc": 1366,
+      "body": 1366,
+      "title": "কার্ট | মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 1366,
+      "route": "/customer/register",
+      "status": 200,
+      "doc": 1366,
+      "body": 1366,
+      "title": "অ্যাকাউন্ট তৈরি করুন | মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 1366,
+      "route": "/contact",
+      "status": 200,
+      "doc": 1366,
+      "body": 1366,
+      "title": "গ্রাহক সেবা ও যোগাযোগ | মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 1366,
+      "route": "/customer/login",
+      "status": 200,
+      "doc": 1366,
+      "body": 1366,
+      "title": "কাস্টমার লগইন | মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 1366,
+      "route": "/vendor/login",
+      "status": 200,
+      "doc": 1366,
+      "body": 1366,
+      "title": "ভেন্ডর / সেলার প্যানেল — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 1366,
+      "route": "/reseller/login",
+      "status": 200,
+      "doc": 1366,
+      "body": 1366,
+      "title": "রিসেলার ও ড্রপশিপিং প্যানেল — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 1366,
+      "route": "/admin/login",
+      "status": 200,
+      "doc": 1366,
+      "body": 1366,
+      "title": "অ্যাডমিন কন্ট্রোল প্যানেল — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 360,
+      "route": "/admin/complaints",
+      "status": 200,
+      "doc": 360,
+      "body": 360,
+      "overflow": false,
+      "title": "Customer Complaints — মি. তুমি গ্রোসারি অ্যান্ড গিফট"
+    },
+    {
+      "width": 360,
+      "route": "/admin/contact-messages",
+      "status": 200,
+      "doc": 360,
+      "body": 360,
+      "overflow": false,
+      "title": "Contact Messages — মি. তুমি গ্রোসারি অ্যান্ড গিফট"
+    },
+    {
+      "width": 360,
+      "route": "/admin/order/pending",
+      "status": 200,
+      "doc": 360,
+      "body": 360,
+      "overflow": false,
+      "title": "Pending Orders — মি. তুমি গ্রোসারি অ্যান্ড গিফট"
+    },
+    {
+      "width": 360,
+      "route": "/admin/phase06",
+      "status": 200,
+      "doc": 360,
+      "body": 360,
+      "overflow": false,
+      "title": "পণ্য, ইনভেন্টরি ও পারচেজ — মি. তুমি গ্রোসারি অ্যান্ড গিফট"
+    },
+    {
+      "width": 390,
+      "route": "/admin/complaints",
+      "status": 200,
+      "doc": 390,
+      "body": 390,
+      "overflow": false,
+      "title": "Customer Complaints — মি. তুমি গ্রোসারি অ্যান্ড গিফট"
+    },
+    {
+      "width": 390,
+      "route": "/admin/contact-messages",
+      "status": 200,
+      "doc": 390,
+      "body": 390,
+      "overflow": false,
+      "title": "Contact Messages — মি. তুমি গ্রোসারি অ্যান্ড গিফট"
+    },
+    {
+      "width": 390,
+      "route": "/admin/order/pending",
+      "status": 200,
+      "doc": 390,
+      "body": 390,
+      "overflow": false,
+      "title": "Pending Orders — মি. তুমি গ্রোসারি অ্যান্ড গিফট"
+    },
+    {
+      "width": 390,
+      "route": "/admin/phase06",
+      "status": 200,
+      "doc": 390,
+      "body": 390,
+      "overflow": false,
+      "title": "পণ্য, ইনভেন্টরি ও পারচেজ — মি. তুমি গ্রোসারি অ্যান্ড গিফট"
+    },
+    {
+      "width": 768,
+      "route": "/admin/complaints",
+      "status": 200,
+      "doc": 768,
+      "body": 768,
+      "overflow": false,
+      "title": "Customer Complaints — মি. তুমি গ্রোসারি অ্যান্ড গিফট"
+    },
+    {
+      "width": 768,
+      "route": "/admin/contact-messages",
+      "status": 200,
+      "doc": 768,
+      "body": 768,
+      "overflow": false,
+      "title": "Contact Messages — মি. তুমি গ্রোসারি অ্যান্ড গিফট"
+    },
+    {
+      "width": 768,
+      "route": "/admin/order/pending",
+      "status": 200,
+      "doc": 768,
+      "body": 768,
+      "overflow": false,
+      "title": "Pending Orders — মি. তুমি গ্রোসারি অ্যান্ড গিফট"
+    },
+    {
+      "width": 768,
+      "route": "/admin/phase06",
+      "status": 200,
+      "doc": 768,
+      "body": 768,
+      "overflow": false,
+      "title": "পণ্য, ইনভেন্টরি ও পারচেজ — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "followUp": "Confirmed after supplier form button wrap fix; viewport screenshot admin-inventory-ledger-768.png"
+    },
+    {
+      "width": 1366,
+      "route": "/admin/complaints",
+      "status": 200,
+      "doc": 1366,
+      "body": 1366,
+      "overflow": false,
+      "title": "Customer Complaints — মি. তুমি গ্রোসারি অ্যান্ড গিফট"
+    },
+    {
+      "width": 1366,
+      "route": "/admin/contact-messages",
+      "status": 200,
+      "doc": 1366,
+      "body": 1366,
+      "overflow": false,
+      "title": "Contact Messages — মি. তুমি গ্রোসারি অ্যান্ড গিফট"
+    },
+    {
+      "width": 1366,
+      "route": "/admin/order/pending",
+      "status": 200,
+      "doc": 1366,
+      "body": 1366,
+      "overflow": false,
+      "title": "Pending Orders — মি. তুমি গ্রোসারি অ্যান্ড গিফট"
+    },
+    {
+      "width": 1366,
+      "route": "/admin/phase06",
+      "status": 200,
+      "doc": 1366,
+      "body": 1366,
+      "overflow": false,
+      "title": "পণ্য, ইনভেন্টরি ও পারচেজ — মি. তুমি গ্রোসারি অ্যান্ড গিফট"
+    },
+    {
+      "width": 360,
+      "route": "/vendor/orders",
+      "status": 200,
+      "doc": 360,
+      "body": 360,
+      "title": "Vendor Orders — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 360,
+      "route": "/vendor/products",
+      "status": 200,
+      "doc": 360,
+      "body": 360,
+      "title": "My Products — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 360,
+      "route": "/vendor/withdrawals",
+      "status": 200,
+      "doc": 360,
+      "body": 360,
+      "title": "Vendor Wallet & Withdrawals — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "route": "/vendor/orders",
+      "status": 200,
+      "doc": 390,
+      "body": 390,
+      "title": "Vendor Orders — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "route": "/vendor/products",
+      "status": 200,
+      "doc": 390,
+      "body": 390,
+      "title": "My Products — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "route": "/vendor/withdrawals",
+      "status": 200,
+      "doc": 390,
+      "body": 390,
+      "title": "Vendor Wallet & Withdrawals — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 768,
+      "route": "/vendor/orders",
+      "status": 200,
+      "doc": 768,
+      "body": 768,
+      "title": "Vendor Orders — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 768,
+      "route": "/vendor/products",
+      "status": 200,
+      "doc": 768,
+      "body": 768,
+      "title": "My Products — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 768,
+      "route": "/vendor/withdrawals",
+      "status": 200,
+      "doc": 768,
+      "body": 768,
+      "title": "Vendor Wallet & Withdrawals — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 1366,
+      "route": "/vendor/orders",
+      "status": 200,
+      "doc": 1366,
+      "body": 1366,
+      "title": "Vendor Orders — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 1366,
+      "route": "/vendor/products",
+      "status": 200,
+      "doc": 1366,
+      "body": 1366,
+      "title": "My Products — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 1366,
+      "route": "/vendor/withdrawals",
+      "status": 200,
+      "doc": 1366,
+      "body": 1366,
+      "title": "Vendor Wallet & Withdrawals — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 360,
+      "route": "/reseller/dashboard",
+      "status": 200,
+      "doc": 360,
+      "body": 360,
+      "title": "Reseller Dashboard — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 360,
+      "route": "/reseller/orders",
+      "status": 200,
+      "doc": 360,
+      "body": 360,
+      "title": "My Reseller Orders — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 360,
+      "route": "/reseller/products",
+      "status": 200,
+      "doc": 360,
+      "body": 360,
+      "title": "Wholesale Catalog — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 360,
+      "route": "/reseller/transactions",
+      "status": 200,
+      "doc": 360,
+      "body": 360,
+      "title": "Reseller Deposits — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 360,
+      "route": "/reseller/deposits",
+      "status": 200,
+      "doc": 360,
+      "body": 360,
+      "title": "Reseller Deposits — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 360,
+      "route": "/reseller/withdrawals",
+      "status": 200,
+      "doc": 360,
+      "body": 360,
+      "title": "Withdraw Profit — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "route": "/reseller/dashboard",
+      "status": 200,
+      "doc": 390,
+      "body": 390,
+      "title": "Reseller Dashboard — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "route": "/reseller/orders",
+      "status": 200,
+      "doc": 390,
+      "body": 390,
+      "title": "My Reseller Orders — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "route": "/reseller/products",
+      "status": 200,
+      "doc": 390,
+      "body": 390,
+      "title": "Wholesale Catalog — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "route": "/reseller/transactions",
+      "status": 200,
+      "doc": 390,
+      "body": 390,
+      "title": "Reseller Deposits — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "route": "/reseller/deposits",
+      "status": 200,
+      "doc": 390,
+      "body": 390,
+      "title": "Reseller Deposits — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "route": "/reseller/withdrawals",
+      "status": 200,
+      "doc": 390,
+      "body": 390,
+      "title": "Withdraw Profit — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 768,
+      "route": "/reseller/dashboard",
+      "status": 200,
+      "doc": 768,
+      "body": 768,
+      "title": "Reseller Dashboard — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 768,
+      "route": "/reseller/orders",
+      "status": 200,
+      "doc": 768,
+      "body": 768,
+      "title": "My Reseller Orders — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 768,
+      "route": "/reseller/products",
+      "status": 200,
+      "doc": 768,
+      "body": 768,
+      "title": "Wholesale Catalog — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 768,
+      "route": "/reseller/transactions",
+      "status": 200,
+      "doc": 768,
+      "body": 768,
+      "title": "Reseller Deposits — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 768,
+      "route": "/reseller/deposits",
+      "status": 200,
+      "doc": 768,
+      "body": 768,
+      "title": "Reseller Deposits — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 768,
+      "route": "/reseller/withdrawals",
+      "status": 200,
+      "doc": 768,
+      "body": 768,
+      "title": "Withdraw Profit — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 1366,
+      "route": "/reseller/dashboard",
+      "status": 200,
+      "doc": 1366,
+      "body": 1366,
+      "title": "Reseller Dashboard — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 1366,
+      "route": "/reseller/orders",
+      "status": 200,
+      "doc": 1366,
+      "body": 1366,
+      "title": "My Reseller Orders — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 1366,
+      "route": "/reseller/products",
+      "status": 200,
+      "doc": 1366,
+      "body": 1366,
+      "title": "Wholesale Catalog — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 1366,
+      "route": "/reseller/transactions",
+      "status": 200,
+      "doc": 1366,
+      "body": 1366,
+      "title": "Reseller Deposits — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 1366,
+      "route": "/reseller/deposits",
+      "status": 200,
+      "doc": 1366,
+      "body": 1366,
+      "title": "Reseller Deposits — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    },
+    {
+      "width": 1366,
+      "route": "/reseller/withdrawals",
+      "status": 200,
+      "doc": 1366,
+      "body": 1366,
+      "title": "Withdraw Profit — মি. তুমি গ্রোসারি অ্যান্ড গিফট",
+      "overflow": false
+    }
+  ],
+  "flows": [
+    {
+      "name": "browser COD order creation",
+      "result": "PASS",
+      "addStatus": 200,
+      "confirmation": "/order-success/71977",
+      "methods": [
+        "cod"
+      ]
+    },
+    {
+      "name": "admin complaints inbox",
+      "result": "PASS",
+      "title": "Customer Complaints — মি. তুমি গ্রোসারি অ্যান্ড গিফট"
+    },
+    {
+      "name": "admin contact inbox",
+      "result": "PASS",
+      "messageVisible": true
+    },
+    {
+      "name": "/admin/d7/returns",
+      "result": "BLOCKED",
+      "status": 500,
+      "detail": "Internal Server Error"
+    },
+    {
+      "name": "/admin/d7/settlements",
+      "result": "BLOCKED",
+      "status": 400,
+      "detail": "No local MySQL connection/config; route returned 400 missing DB_NAME/DB_USER. No mutation attempted."
+    },
+    {
+      "name": "/admin/d7/settings",
+      "result": "BLOCKED",
+      "status": 400,
+      "detail": "No local MySQL connection/config; route returned 400 missing DB_NAME/DB_USER. No mutation attempted."
+    },
+    {
+      "name": "browse/category/search/product details",
+      "result": "PASS",
+      "details": "24 search product links; product page and size variants rendered."
+    },
+    {
+      "name": "customer registration/login/logout, history/cancellation/returns",
+      "result": "BLOCKED",
+      "details": "Local app is SQLite-only; registration POST returned HTTP 400 because customer auth requires MySQL; no customer account/order history/cancellation/return journey was possible."
+    },
+    {
+      "name": "cart quantity and stock validation",
+      "result": "PASS",
+      "details": "Browser checkout used quantity 2; isolated stock=1 fixture request for quantity 2 returned cart quantity 1. stock-validation.json."
+    },
+    {
+      "name": "contact submission and admin inbox",
+      "result": "PASS",
+      "details": "Contact message persisted and admin inbox rendered it."
+    },
+    {
+      "name": "admin pending orders and inventory/ledger screens",
+      "result": "PASS",
+      "details": "Pending order page and /admin/phase06 rendered at 360/390/768/1366. No stock/purchase mutation attempted."
+    },
+    {
+      "name": "vendor portal screens",
+      "result": "PASS",
+      "details": "Vendor logged in; orders/products/withdrawals rendered at all four widths."
+    },
+    {
+      "name": "vendor fulfillment/commission/settlement actions",
+      "result": "BLOCKED",
+      "details": "Canonical item fulfillment and settlement repositories require MySQL. No action/payout attempted."
+    },
+    {
+      "name": "reseller portal screens",
+      "result": "PASS",
+      "details": "Reseller logged in; dashboard/orders/products/transactions/deposits/withdrawals rendered at all four widths."
+    },
+    {
+      "name": "reseller financial/order actions",
+      "result": "BLOCKED",
+      "details": "SQLite mode does not provide the canonical financial workflows; no order/deposit/withdrawal mutation attempted."
+    },
+    {
+      "name": "vendor product image upload chooser",
+      "result": "PASS_SELECTION_ONLY",
+      "details": "Browser selected one PNG in the file input; create-product form was not submitted."
+    },
+    {
+      "name": "vendor/reseller/admin role isolation",
+      "result": "PASS_DENIED",
+      "details": "Independent vendor and reseller sessions redirected from sibling/admin portals to login; limited-support admin received 403. See cross-portal-security.json."
+    },
+    {
+      "name": "admin return inspection/disposition and settlement",
+      "result": "BLOCKED",
+      "details": "D7 return handler reached but SQLite cannot serve it; settlements/settings lack local MySQL DB_NAME/DB_USER. No mutation attempted."
+    }
+  ],
+  "interactions": [
+    {
+      "name": "mobile navigation drawer opens",
+      "trigger": true,
+      "show": {
+        "show": true,
+        "hidden": null,
+        "backdrop": true
+      }
+    },
+    {
+      "name": "complaint modal opens",
+      "trigger": true,
+      "state": {
+        "show": true,
+        "hidden": null,
+        "display": "block",
+        "dialog": false
+      }
+    },
+    {
+      "name": "product variant selection",
+      "result": "PASS",
+      "details": "Real page radio selection changed from 500 g to 1 kg."
+    },
+    {
+      "name": "checkout quantity",
+      "result": "PASS",
+      "details": "Browser-posted checkout used quantity 2 and order confirmation showed two units at ৳2,600 subtotal."
+    },
+    {
+      "name": "browser modal and mobile drawer",
+      "result": "PASS",
+      "details": "With pinned Bootstrap 5.3.3 JS, mobile offcanvas shows backdrop and complaint modal toggles .show at 360 px."
+    },
+    {
+      "name": "upload field",
+      "result": "PASS_SELECTION_ONLY",
+      "details": "Vendor create-product page accepted one PNG through the real file chooser API; form was not submitted and no product/file was persisted."
+    },
+    {
+      "name": "upload submission",
+      "result": "NOT_TESTED",
+      "details": "No server upload was submitted to avoid creating fixture product/media artifacts; no production data touched."
+    }
+  ],
+  "screenshots": [
+    "qa-evidence/browser-final/home-360.png",
+    "qa-evidence/browser-final/product-desi-licu-fresh-pack-246-360.png",
+    "qa-evidence/browser-final/cart-360.png",
+    "qa-evidence/browser-final/contact-360.png",
+    "qa-evidence/browser-final/home-390.png",
+    "qa-evidence/browser-final/product-desi-licu-fresh-pack-246-390.png",
+    "qa-evidence/browser-final/cart-390.png",
+    "qa-evidence/browser-final/contact-390.png",
+    "qa-evidence/browser-final/home-768.png",
+    "qa-evidence/browser-final/product-desi-licu-fresh-pack-246-768.png",
+    "qa-evidence/browser-final/cart-768.png",
+    "qa-evidence/browser-final/contact-768.png",
+    "qa-evidence/browser-final/home-1366.png",
+    "qa-evidence/browser-final/product-desi-licu-fresh-pack-246-1366.png",
+    "qa-evidence/browser-final/cart-1366.png",
+    "qa-evidence/browser-final/contact-1366.png",
+    "qa-evidence/browser-final/contact-modal-360.png",
+    "qa-evidence/browser-final/admin-inventory-ledger-360.png",
+    "qa-evidence/browser-final/admin-inventory-ledger-768.png",
+    "qa-evidence/browser-final/vendor-orders-360.png",
+    "qa-evidence/browser-final/reseller-dashboard-360.png",
+    "qa-evidence/browser-final/reseller-orders-360.png",
+    "qa-evidence/browser-final/customer-register-360.png",
+    "qa-evidence/browser-final/customer-register-390.png",
+    "qa-evidence/browser-final/customer-register-768.png",
+    "qa-evidence/browser-final/customer-register-1366.png",
+    "qa-evidence/browser-final/admin-complaints-360.png",
+    "qa-evidence/browser-final/admin-complaints-768.png",
+    "qa-evidence/browser-final/admin-contact-messages-360.png",
+    "qa-evidence/browser-final/admin-contact-messages-768.png",
+    "qa-evidence/browser-final/admin-pending-orders-360.png",
+    "qa-evidence/browser-final/admin-pending-orders-768.png",
+    "qa-evidence/browser-final/vendor-orders-768.png",
+    "qa-evidence/browser-final/reseller-dashboard-768.png"
+  ],
+  "externalAssetErrors": [
+    "External assets outside the sandbox allowlist (Google fonts, chart/toast and provider CDN resources) could not be tested. Bootstrap 5.3.3 was locally served from its exact pinned npm package for the browser run."
+  ],
+  "starting_head": "523bca6906f54971ae44e63e99a4b7430c219c50",
+  "fixture_database": "data/qa-browser.db (isolated SQLite only; not production)",
+  "browser_automation": "Puppeteer Core 10.4.0",
+  "follow_up_fixes": [
+    {
+      "file": "src/routes/storefront.js + views/store/checkout.ejs",
+      "issue": "SQLite-rendered checkout exposed active non-COD gateways and transfer fields.",
+      "fix": "COD-only UI; reject non-COD method or transfer references before order persistence.",
+      "verification": "Actual browser COD order confirmation; phase04 integration test rejects non-COD and confirms no order."
+    },
+    {
+      "file": "src/middleware/legacyAdminRbac.js",
+      "issue": "D7 returns/settlement/settings routes were unmapped and denied by the outer legacy RBAC layer.",
+      "fix": "Explicit returns review, settings, settlement prepare/approve policies; list GET uses either prepare or approve.",
+      "verification": "Dedicated policy regression tests pass; admin browser request now reaches D7 handler, then is blocked by unavailable MySQL."
+    },
+    {
+      "file": "views/admin/phase06.ejs",
+      "issue": "At 768 px supplier form’s one-column submit button widened document to 802 px.",
+      "fix": "Two-column responsive button with wrapping.",
+      "verification": "Initial real browser exposed 802px document width at 768px; after the fix, focused repeat measured document/body 768px with no overflow. Final viewport matrix updated accordingly."
+    }
+  ],
+  "post_fix_viewport_verification": {
+    "route": "/admin/phase06",
+    "browser": "HeadlessChrome/92.0.4512.0",
+    "widths": [
+      360,
+      390,
+      768,
+      1366
+    ],
+    "document_and_body_widths": {
+      "360": [
+        360,
+        360
+      ],
+      "390": [
+        390,
+        390
+      ],
+      "768": [
+        768,
+        768
+      ],
+      "1366": [
+        1366,
+        1366
+      ]
+    },
+    "result": "PASS",
+    "source": "repeat browser run after supplier form button wrapping correction"
+  }
+}

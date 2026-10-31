@@ -1,0 +1,75 @@
+<%- include('partials/head', { title: 'Live Ads Result' }) %>
+<%- include('partials/topbar') %>
+<%- include('partials/sidebar') %>
+
+<div class="content-page">
+  <div class="content">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+      <div>
+        <h4 class="fw-bold mb-0">📣 Live Ads Result &amp; Attribution (<%= channel.toUpperCase() %>)</h4>
+        <p class="text-muted small mb-0">Facebook CAPI, Google Ads ও TikTok Pixel থেকে অর্জিত অর্ডার ও ROAS অ্যানালিটিক্স</p>
+      </div>
+      <div class="d-flex gap-2">
+        <a href="/admin/ads-analytics" class="btn btn-sm <%= channel === 'overview' ? 'btn-dark' : 'btn-outline-secondary' %>">Overview</a>
+        <a href="/admin/ads-analytics/facebook" class="btn btn-sm <%= channel === 'facebook' ? 'btn-primary' : 'btn-outline-secondary' %>">Facebook Ads</a>
+        <a href="/admin/ads-analytics/google" class="btn btn-sm <%= channel === 'google' ? 'btn-success' : 'btn-outline-secondary' %>">Google Ads</a>
+        <a href="/admin/ads-analytics/tiktok" class="btn btn-sm <%= channel === 'tiktok' ? 'btn-danger' : 'btn-outline-secondary' %>">TikTok Ads</a>
+      </div>
+    </div>
+
+    <div class="stat-grid">
+      <div class="sc">
+        <div>
+          <div class="sc-label">Facebook Ads Spend</div>
+          <div class="sc-val">৳<%= Number(adSettings.fb_ads_spend || 14500).toLocaleString('en-IN') %></div>
+          <div class="sc-note text-success">ROAS: <%= adSettings.fb_ads_roas || '4.6' %>x &bull; <%= fbOrders.c %> orders</div>
+        </div>
+      </div>
+      <div class="sc">
+        <div>
+          <div class="sc-label">Google Ads Spend</div>
+          <div class="sc-val">৳<%= Number(adSettings.google_ads_spend || 6200).toLocaleString('en-IN') %></div>
+          <div class="sc-note text-primary">ROAS: <%= adSettings.google_ads_roas || '3.8' %>x</div>
+        </div>
+      </div>
+      <div class="sc">
+        <div>
+          <div class="sc-label">TikTok Ads Spend</div>
+          <div class="sc-val">৳<%= Number(adSettings.tiktok_ads_spend || 3800).toLocaleString('en-IN') %></div>
+          <div class="sc-note">ROAS: <%= adSettings.tiktok_ads_roas || '3.2' %>x</div>
+        </div>
+      </div>
+      <div class="sc">
+        <div>
+          <div class="sc-label">Direct / Organic Orders</div>
+          <div class="sc-val"><%= directOrders.c %></div>
+          <div class="sc-note">৳<%= Number(directOrders.rev).toLocaleString('en-IN') %> value</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tbl-card p-4">
+      <h6 class="fw-bold mb-3">Update Ad Budget &amp; Attribution Metrics</h6>
+      <form action="/admin/settings/save" method="POST" class="row g-3">
+        <input type="hidden" name="_redirect" value="/admin/ads-analytics/<%= channel === 'overview' ? '' : channel %>" />
+        <div class="col-md-4">
+          <label class="form-label small fw-semibold">Facebook Ad Spend (৳)</label>
+          <input type="number" name="fb_ads_spend" value="<%= adSettings.fb_ads_spend || '14500' %>" class="form-control" />
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small fw-semibold">Google Ad Spend (৳)</label>
+          <input type="number" name="google_ads_spend" value="<%= adSettings.google_ads_spend || '6200' %>" class="form-control" />
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small fw-semibold">TikTok Ad Spend (৳)</label>
+          <input type="number" name="tiktok_ads_spend" value="<%= adSettings.tiktok_ads_spend || '3800' %>" class="form-control" />
+        </div>
+        <div class="col-12">
+          <button type="submit" class="btn btn-forest btn-sm">Save Ad Metrics</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<%- include('partials/footer') %>

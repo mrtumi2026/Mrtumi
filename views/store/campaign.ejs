@@ -1,0 +1,122 @@
+<%- include('partials/header', { title: campaign.title }) %>
+
+<main id="mainContent" class="container py-4">
+  <!-- Campaign Hero -->
+  <div class="rounded-4 overflow-hidden shadow-sm mb-4 text-white p-4 p-md-5 text-center" style="background: linear-gradient(135deg, #1b4332, #14532d);">
+    <span class="badge bg-warning text-dark rounded-pill px-3 py-2 mb-3 fw-bold">🔥 সীমিত সময়ের ল্যান্ডিং পেজ স্পেশাল অফার</span>
+    <h1 class="fw-bold display-6 mb-2"><%= campaign.headline || campaign.title %></h1>
+    <p class="fs-5 text-white-50 mb-4 mx-auto" style="max-width: 680px;"><%= campaign.subheadline || campaign.hero_subtitle || '' %></p>
+    <div class="d-inline-flex align-items-center gap-3 bg-white text-dark rounded-pill px-4 py-2 mb-3 shadow">
+      <% if (campaign.regular_price > campaign.offer_price) { %>
+        <span class="text-muted text-decoration-line-through fs-5">রেগুলার মূল্য: ৳<%= campaign.regular_price %></span>
+      <% } %>
+      <span class="fs-4 fw-bold text-danger">অফার মূল্য: ৳<%= campaign.offer_price %></span>
+    </div>
+    <div>
+      <a href="#campaignOrderBox" class="btn btn-warning btn-lg fw-bold rounded-pill px-5 shadow">এখনই অর্ডার করতে ক্লিক করুন ↓</a>
+    </div>
+  </div>
+
+  <!-- Benefits & Product Showcase -->
+  <div class="row g-4 align-items-center mb-5">
+    <div class="col-md-6">
+      <img src="<%= campaign.banner_image || (product ? product.image : '/uploads/banner/banner-1.jpg') %>" class="w-100 rounded-4 shadow-sm" style="max-height: 360px; object-fit: cover;" alt="<%= campaign.title %>" />
+    </div>
+    <div class="col-md-6">
+      <div class="bg-white rounded-4 border p-4">
+        <h4 class="fw-bold mb-3 text-success">🍒 কেন আমাদের বাগান তাজা ফল নিবেন?</h4>
+        <ul class="list-unstyled mb-0">
+          <% (campaign.benefits || '১০০% ফরমালিনমুক্ত|বাগান থেকে সরাসরি সংগ্রহ|ক্যাশ অন ডেলিভারি সুবিধা').split('|').forEach(function(b) { %>
+            <li class="py-2 border-bottom d-flex align-items-center gap-2 fw-semibold">
+              <span class="badge bg-success rounded-circle p-2">✓</span> <%= b %>
+            </li>
+          <% }) %>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Direct Single-Step Order Form -->
+  <div id="campaignOrderBox" class="bg-white rounded-4 border border-2 border-success p-4 p-md-5 mx-auto shadow" style="max-width: 720px;">
+    <h3 class="fw-bold text-center text-success mb-1">অর্ডার কনফার্ম করতে নিচের ফর্মটি পূরণ করুন</h3>
+    <p class="text-center text-muted small mb-4">অগ্রিম কোনো টাকা দিতে হবে না — ফল হাতে পেয়ে ডেলিভারি ম্যানকে মূল্য পরিশোধ করুন!</p>
+
+    <% if (canonicalCampaignCheckout && !campaignCheckoutAvailable) { %>
+      <div class="alert alert-warning" role="status">অর্ডার নেওয়া যাচ্ছে না: সক্রিয় ডেলিভারি এলাকা বা COD পেমেন্ট পদ্ধতি কনফিগার করা নেই।</div>
+    <% } else { %>
+    <form action="/campaign/<%= campaign.slug %>/order" method="POST">
+      <input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>">
+      <% if (canonicalCampaignCheckout) { %><input type="hidden" name="checkout_request_key" value="<%= campaignCheckoutKey %>"><% } %>
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label fw-semibold small">আপনার পূর্ণ নাম *</label>
+          <input type="text" name="customer_name" class="form-control" placeholder="নাম লিখুন" required />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label fw-semibold small">মোবাইল নম্বর *</label>
+          <input type="tel" name="phone" class="form-control" placeholder="017XXXXXXXX" required />
+        </div>
+        <div class="col-12">
+          <label class="form-label fw-semibold small">সম্পূর্ণ ঠিকানা *</label>
+          <textarea name="address" rows="2" class="form-control" placeholder="বাসা, রোড, থানা ও জেলা লিখুন..." required></textarea>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label fw-semibold small">ডেলিভারি এরিয়া</label>
+          <% if (canonicalCampaignCheckout) { %>
+            <select name="delivery_location_id" id="campArea" class="form-select" required onchange="calcCampTotal()">
+              <option value="" data-ship="0">ডেলিভারি এরিয়া নির্বাচন করুন</option>
+              <% deliveryLocations.forEach(function(location) { const label = [location.division, location.district, location.upazila].filter(Boolean).join(' / '); %>
+                <option value="<%= location.id %>" data-ship="<%= Number(location.delivery_charge_paisa) / 100 %>"><%= label %> (৳<%= Number(location.delivery_charge_paisa) / 100 %>)</option>
+              <% }) %>
+            </select>
+          <% } else { %>
+            <select name="shipping_area" id="campArea" class="form-select" onchange="calcCampTotal()">
+              <option value="ঢাকার ভিতরে" data-ship="60">ঢাকার ভিতরে (৳60)</option>
+              <option value="ঢাকার বাইরে" data-ship="120">ঢাকার বাইরে (৳120)</option>
+            </select>
+          <% } %>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label fw-semibold small">প্যাক সংখ্যা (Quantity)</label>
+          <input type="number" name="qty" id="campQty" value="1" min="1" class="form-control" onchange="calcCampTotal()" onkeyup="calcCampTotal()" />
+        </div>
+      </div>
+
+      <div class="bg-light rounded-3 p-3 my-4 border">
+        <div class="d-flex justify-content-between small py-1">
+          <span>প্যাকেজ: <strong><%= campaign.title %></strong></span>
+          <span>৳<%= campaign.offer_price %> × <span id="campQtyLbl">1</span></span>
+        </div>
+        <div class="d-flex justify-content-between small py-1">
+          <span>ডেলিভারি চার্জ:</span>
+          <span>৳<span id="campShipLbl">60</span></span>
+        </div>
+        <div class="d-flex justify-content-between fw-bold fs-5 text-success border-top pt-2 mt-1">
+          <span>সর্বমোট ক্যাশ অন ডেলিভারি:</span>
+          <span>৳<span id="campGrandLbl"><%= Number(campaign.offer_price) + (canonicalCampaignCheckout ? 0 : 60) %></span></span>
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-success btn-lg w-100 fw-bold rounded-3 py-3" style="background:#1b4332;">
+        ✓ অর্ডার নিশ্চিত করুন (৳<span id="campBtnTotal"><%= Number(campaign.offer_price) + (canonicalCampaignCheckout ? 0 : 60) %></span>)
+      </button>
+    </form>
+    <% } %>
+  </div>
+</main>
+
+<script>
+  var campUnitPrice = <%= Number(campaign.offer_price || 0) %>;
+  function calcCampTotal() {
+    var qty = Math.max(1, parseInt(document.getElementById('campQty').value || 1));
+    var sel = document.getElementById('campArea');
+    var ship = Number(sel.options[sel.selectedIndex].getAttribute('data-ship') || 0);
+    var total = campUnitPrice * qty + ship;
+    document.getElementById('campQtyLbl').textContent = qty;
+    document.getElementById('campShipLbl').textContent = ship;
+    document.getElementById('campGrandLbl').textContent = total.toLocaleString('en-IN');
+    document.getElementById('campBtnTotal').textContent = total.toLocaleString('en-IN');
+  }
+</script>
+
+<%- include('partials/footer') %>

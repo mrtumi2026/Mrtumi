@@ -1,0 +1,302 @@
+<%- include('partials/header') %>
+
+<main id="mainContent" class="container py-4">
+  <section class="store-hero-layout" aria-label="<%= locale === 'en' ? 'Shop highlights' : 'দোকানের বিশেষ আয়োজন' %>">
+    <aside class="store-hero-categories" aria-label="<%= locale === 'en' ? 'Shop by category' : 'ক্যাটাগরি অনুযায়ী কেনাকাটা' %>">
+      <h2><i class="fas fa-list" aria-hidden="true"></i> <%= locale === 'en' ? 'Shop by category' : 'ক্যাটাগরি দেখুন' %></h2>
+      <ul>
+        <% ((featuredCategories && featuredCategories.length) ? featuredCategories : (navCategories || [])).slice(0, 8).forEach(function(cat) { %>
+          <li><a href="/category/<%= cat.slug %>"><span aria-hidden="true"><%= cat.icon || '🛒' %></span><span><%= cat.name %></span><i class="fas fa-chevron-right" aria-hidden="true"></i></a></li>
+        <% }) %>
+      </ul>
+      <a href="/all-products" class="store-category-more"><%= t('common.allProducts') %> →</a>
+    </aside>
+    <div class="store-hero-main">
+  <!-- Hero Banner Slider -->
+  <% if (heroBanners && heroBanners.length) { %>
+    <div id="heroCarousel" class="carousel slide mb-5" data-bs-ride="carousel">
+      <div class="carousel-inner">
+        <% heroBanners.forEach(function(b, idx) { %>
+          <div class="carousel-item <%= idx === 0 ? 'active' : '' %>">
+            <div class="hero-slide">
+              <img src="<%= b.image %>" alt="<%= b.title || siteSettings.site_name %>" />
+              <div class="hero-caption">
+                <span class="mt-hero-badge align-self-start mb-2">🛒 <%= t('store.heroBadge') %></span>
+                <h1 class="fw-bold display-6 mb-2 text-white" style="max-width: 620px;">
+                  <%= locale === 'en' ? t('store.heroTitle') : (b.title || t('store.heroTitle')) %>
+                </h1>
+                <p class="mb-3 fs-6" style="max-width: 560px; color: #e2e8f0;">
+                  <%= locale === 'en' ? t('store.heroSubtitle') : (b.subtitle || t('store.heroSubtitle')) %>
+                </p>
+                <div class="d-flex flex-wrap gap-2">
+                  <a href="<%= b.link || '/all-products' %>" class="btn btn-warning fw-bold px-4 py-2 rounded-pill shadow-sm">
+                    <%= t('store.shopNowBtn') %> →
+                  </a>
+                  <a href="/hot-deals" class="btn btn-outline-light fw-bold px-4 py-2 rounded-pill">
+                    🎁 <%= t('store.exploreGiftsBtn') %>
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        <% }) %>
+      </div>
+      <% if (heroBanners.length > 1) { %>
+        <button class="carousel-control-prev" type="button" data-bs-target="#heroCarousel" data-bs-slide="prev" aria-label="Previous Slide">
+          <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+        </button>
+        <button class="carousel-control-next" type="button" data-bs-target="#heroCarousel" data-bs-slide="next" aria-label="Next Slide">
+          <span class="carousel-control-next-icon" aria-hidden="true"></span>
+        </button>
+      <% } %>
+    </div>
+  <% } else { %>
+    <section class="rounded-4 p-4 p-md-5 mb-5 text-white shadow-sm" style="background: linear-gradient(135deg, #0d3b26 0%, #15803d 100%);">
+      <span class="mt-hero-badge mb-2">🛒 <%= t('store.heroBadge') %></span>
+      <h1 class="fw-bold display-6 mb-2 text-white" style="max-width: 640px;"><%= t('store.heroTitle') %></h1>
+      <p class="mb-4" style="max-width: 560px; color: #e2e8f0;"><%= t('store.heroSubtitle') %></p>
+      <div class="d-flex flex-wrap gap-2">
+        <a href="/all-products" class="btn btn-warning fw-bold px-4 py-2 rounded-pill"><%= t('store.shopNowBtn') %> →</a>
+        <a href="/contact" class="btn btn-outline-light fw-bold px-4 py-2 rounded-pill">📞 <%= t('store.contactNav') %></a>
+      </div>
+    </section>
+  <% } %>
+    </div>
+    <aside class="store-hero-promos" aria-label="<%= locale === 'en' ? 'Special offers' : 'বিশেষ অফার' %>">
+      <% if (promoBanners && promoBanners.length) { %>
+        <% promoBanners.slice(0, 2).forEach(function(promo, index) { %>
+          <a class="store-promo-card <%= index === 1 ? 'store-promo-card-warm' : '' %>" href="<%= promo.link || '/hot-deals' %>">
+            <% if (promo.image) { %><img src="<%= promo.image %>" alt="" loading="lazy"><% } %>
+            <span class="store-promo-copy"><small><%= index === 0 ? (locale === 'en' ? 'JUST FOR YOU' : 'আপনার জন্য') : (locale === 'en' ? 'SPECIAL OFFER' : 'বিশেষ অফার') %></small><strong><%= promo.title || t('store.hotDealTitle') %></strong><span><%= promo.subtitle || t('store.shopNowBtn') %> →</span></span>
+          </a>
+        <% }) %>
+      <% } else { %>
+        <a class="store-promo-card" href="/hot-deals"><span class="store-promo-emoji" aria-hidden="true">🥬</span><span class="store-promo-copy"><small><%= locale === 'en' ? 'FRESH EVERY DAY' : 'প্রতিদিনের সতেজতা' %></small><strong><%= locale === 'en' ? 'Fresh picks for your table' : 'আপনার টেবিলে টাটকা পছন্দ' %></strong><span><%= t('store.shopNowBtn') %> →</span></span></a>
+        <a class="store-promo-card store-promo-card-warm" href="/all-products?deal=gift"><span class="store-promo-emoji" aria-hidden="true">🎁</span><span class="store-promo-copy"><small><%= locale === 'en' ? 'MAKE IT A GIFT' : 'উপহার দিন ভালোবাসা' %></small><strong><%= t('common.giftCorner') %></strong><span><%= t('store.exploreGiftsBtn') %> →</span></span></a>
+      <% } %>
+    </aside>
+  </section>
+
+  <section class="store-trust-row" aria-label="<%= locale === 'en' ? 'Shopping benefits' : 'কেন আমাদের থেকে কিনবেন' %>">
+    <article><span aria-hidden="true">🚚</span><div><strong><%= locale === 'en' ? 'Cash on delivery' : 'ক্যাশ অন ডেলিভারি' %></strong><small><%= locale === 'en' ? 'Across Bangladesh' : 'সারা দেশে' %></small></div></article>
+    <article><span aria-hidden="true">🌿</span><div><strong><%= locale === 'en' ? 'Fresh & authentic' : 'খাঁটি ও তাজা পণ্য' %></strong><small><%= locale === 'en' ? 'Carefully selected' : 'যত্নে বাছাই করা' %></small></div></article>
+    <article><span aria-hidden="true">↩</span><div><strong><%= locale === 'en' ? 'Easy returns' : 'সহজ রিটার্ন' %></strong><small><%= locale === 'en' ? 'Simple support' : 'সহজ সহায়তা' %></small></div></article>
+    <article><span aria-hidden="true">🎧</span><div><strong><%= locale === 'en' ? 'Customer support' : 'কাস্টমার সাপোর্ট' %></strong><small><%= locale === 'en' ? 'Here when you need us' : 'আমরা আছি পাশে' %></small></div></article>
+  </section>
+
+  <!-- Shop by Category Grid (DB-Driven) -->
+  <% if (typeof featuredCategories !== 'undefined' && featuredCategories && featuredCategories.length) { %>
+    <section class="mb-5" aria-label="<%= t('store.categoriesTitle') %>">
+      <div class="sec-head">
+        <div>
+          <h2 class="fw-bold mb-0 fs-4"><%= t('store.categoriesTitle') %></h2>
+          <small class="text-muted"><%= t('store.categoriesSub') %></small>
+        </div>
+        <a href="/all-products" class="btn btn-outline-success btn-sm rounded-pill px-3"><%= t('common.viewAll') %> →</a>
+      </div>
+      <div class="row g-2 g-md-3">
+        <% featuredCategories.forEach(function(cat) { %>
+          <div class="col-6 col-sm-4 col-md-3 col-lg-2">
+            <a
+              href="/category/<%= cat.slug %>"
+              class="d-flex flex-column align-items-center text-center bg-white border rounded-4 p-3 h-100 text-decoration-none shadow-xs"
+              style="transition: transform 0.15s ease, border-color 0.15s ease;"
+            >
+              <span style="font-size: 28px; line-height: 1.2;" class="mb-2" aria-hidden="true"><%= cat.icon || '🛒' %></span>
+              <span class="fw-bold text-dark small mb-1"><%= cat.name %></span>
+              <span class="text-muted" style="font-size: 11.5px;">
+                <%= t('common.itemsCount', { count: fmt.number(cat.product_count || 0) }) %>
+              </span>
+            </a>
+          </div>
+        <% }) %>
+      </div>
+    </section>
+  <% } %>
+
+  <!-- Flash Sale Section (Shown ONLY when active approved Flash Sale products exist) -->
+  <% if (flashProducts && flashProducts.length) { %>
+    <section class="mb-5" aria-label="<%= t('store.flashSaleTitle') %>">
+      <div class="sec-head bg-white p-3 rounded-4 border">
+        <div class="d-flex align-items-center gap-3 flex-wrap">
+          <div>
+            <h2 class="fw-bold mb-0 fs-4 text-danger">⚡ <%= t('store.flashSaleTitle') %></h2>
+            <small class="text-muted"><%= t('store.flashSaleSub') %></small>
+          </div>
+          <% if (typeof flashCountdownIso !== 'undefined' && flashCountdownIso) { %>
+            <div class="cd-box" data-countdown="<%= flashCountdownIso %>">
+              <span class="small text-muted me-1"><%= t('store.endsIn') %>:</span>
+              <div class="cd-pill"><strong class="cd-d">00</strong><span><%= locale === 'bn' ? 'দিন' : 'D' %></span></div>
+              <div class="cd-pill"><strong class="cd-h">00</strong><span><%= locale === 'bn' ? 'ঘণ্টা' : 'H' %></span></div>
+              <div class="cd-pill"><strong class="cd-m">00</strong><span><%= locale === 'bn' ? 'মিনিট' : 'M' %></span></div>
+              <div class="cd-pill"><strong class="cd-s">00</strong><span><%= locale === 'bn' ? 'সেকেন্ড' : 'S' %></span></div>
+            </div>
+          <% } %>
+        </div>
+        <a href="/flash-sales" class="btn btn-outline-success btn-sm rounded-pill px-3"><%= t('common.viewAll') %> →</a>
+      </div>
+
+      <div class="row g-3">
+        <% flashProducts.forEach(function(p) { %>
+          <div class="col-6 col-md-4 col-lg-3">
+            <%- include('partials/product-card', { p: p, showStockMeta: true }) %>
+          </div>
+        <% }) %>
+      </div>
+    </section>
+  <% } %>
+
+  <!-- Mid Promo Banner -->
+  <% if (promoBanners && promoBanners.length) { %>
+    <section class="mb-5" aria-label="Promotional Offer">
+      <a href="<%= promoBanners[0].link || '/all-products' %>" class="text-decoration-none">
+        <div class="hero-slide" style="min-height: 210px;">
+          <img src="<%= promoBanners[0].image %>" alt="<%= promoBanners[0].title || siteSettings.site_name %>" style="height: 220px;" />
+          <div class="hero-caption">
+            <h3 class="fw-bold mb-1 text-white"><%= promoBanners[0].title %></h3>
+            <p class="mb-2" style="color: #e2e8f0;"><%= promoBanners[0].subtitle %></p>
+            <span class="btn btn-light btn-sm fw-bold align-self-start rounded-pill px-3"><%= t('store.exploreGiftsBtn') %> →</span>
+          </div>
+        </div>
+      </a>
+    </section>
+  <% } %>
+
+  <!-- Hot Deal Section (Shown ONLY when active approved Hot Deal products exist) -->
+  <% if (hotProducts && hotProducts.length) { %>
+    <section class="mb-5" aria-label="<%= t('store.hotDealTitle') %>">
+      <div class="sec-head bg-white p-3 rounded-4 border">
+        <div class="d-flex align-items-center gap-3 flex-wrap">
+          <div>
+            <h2 class="fw-bold mb-0 fs-4" style="color:#0d3b26;">🔥 <%= t('store.hotDealTitle') %></h2>
+            <small class="text-muted"><%= t('store.hotDealBadge') %></small>
+          </div>
+          <% if (typeof hotCountdownIso !== 'undefined' && hotCountdownIso) { %>
+            <div class="cd-box" data-countdown="<%= hotCountdownIso %>">
+              <div class="cd-pill" style="background:#0d3b26;"><strong class="cd-d">00</strong><span><%= locale === 'bn' ? 'দিন' : 'D' %></span></div>
+              <div class="cd-pill" style="background:#0d3b26;"><strong class="cd-h">00</strong><span><%= locale === 'bn' ? 'ঘণ্টা' : 'H' %></span></div>
+              <div class="cd-pill" style="background:#0d3b26;"><strong class="cd-m">00</strong><span><%= locale === 'bn' ? 'মিনিট' : 'M' %></span></div>
+              <div class="cd-pill" style="background:#0d3b26;"><strong class="cd-s">00</strong><span><%= locale === 'bn' ? 'সেকেন্ড' : 'S' %></span></div>
+            </div>
+          <% } %>
+        </div>
+        <a href="/hot-deals" class="btn btn-outline-success btn-sm rounded-pill px-3"><%= t('common.viewAll') %> →</a>
+      </div>
+
+      <div class="row g-3">
+        <% hotProducts.forEach(function(p) { %>
+          <div class="col-6 col-md-4 col-lg-3">
+            <%- include('partials/product-card', { p: p, showStockMeta: false }) %>
+          </div>
+        <% }) %>
+      </div>
+    </section>
+  <% } %>
+
+  <!-- Gift-Eligible Showcase (Shown ONLY when gift-flagged products exist in DB) -->
+  <% if (typeof giftProducts !== 'undefined' && giftProducts && giftProducts.length) { %>
+    <section class="mb-5" aria-label="<%= t('common.giftCorner') %>">
+      <div class="sec-head bg-white p-3 rounded-4 border" style="border-color:#fde68a !important; background:#fffbeb !important;">
+        <div>
+          <h2 class="fw-bold mb-0 fs-4" style="color:#92400e;">🎁 <%= t('common.giftCorner') %></h2>
+          <small class="text-muted"><%= t('store.trustGiftSub') %></small>
+        </div>
+        <a href="/all-products?deal=gift" class="btn btn-warning btn-sm fw-bold rounded-pill px-3"><%= t('common.viewAll') %> →</a>
+      </div>
+      <div class="row g-3">
+        <% giftProducts.slice(0, 4).forEach(function(p) { %>
+          <div class="col-6 col-md-4 col-lg-3">
+            <%- include('partials/product-card', { p: p, showStockMeta: false }) %>
+          </div>
+        <% }) %>
+      </div>
+    </section>
+  <% } %>
+
+  <!-- Category Sections -->
+  <% (categorySections || []).forEach(function(sec) { %>
+    <section class="mb-5" aria-label="<%= sec.category.name %>">
+      <div class="sec-head">
+        <h2 class="fw-bold mb-0 fs-4"><span aria-hidden="true"><%= sec.category.icon || '🛒' %></span> <%= sec.category.name %></h2>
+        <a href="/category/<%= sec.category.slug %>" class="btn btn-outline-success btn-sm rounded-pill px-3"><%= t('common.viewAll') %> →</a>
+      </div>
+      <div class="row g-3">
+        <% sec.products.slice(0, 4).forEach(function(p) { %>
+          <div class="col-6 col-md-4 col-lg-3">
+            <%- include('partials/product-card', { p: p, showStockMeta: false }) %>
+          </div>
+        <% }) %>
+      </div>
+    </section>
+  <% }) %>
+
+  <!-- Featured / Latest Products -->
+  <section class="mb-5" aria-label="<%= t('store.allProductsTitle') %>">
+    <div class="sec-head">
+      <h2 class="fw-bold mb-0 fs-4">🛒 <%= t('store.allProductsTitle') %></h2>
+      <a href="/all-products" class="btn btn-outline-success btn-sm rounded-pill px-3"><%= t('common.viewAll') %> →</a>
+    </div>
+    <% if (!allProducts || !allProducts.length) { %>
+      <%- include('../partials/empty-state', {
+        icon: '🧺',
+        title: t('store.emptyProductsTitle'),
+        description: t('store.emptyProductsSub')
+      }) %>
+    <% } else { %>
+      <div class="row g-3">
+        <% allProducts.forEach(function(p) { %>
+          <div class="col-6 col-md-4 col-lg-3">
+            <%- include('partials/product-card', { p: p, showStockMeta: false }) %>
+          </div>
+        <% }) %>
+      </div>
+    <% } %>
+  </section>
+
+  <!-- Recent Blog & Guides (Shown when published blog posts exist) -->
+  <% if (typeof recentBlogs !== 'undefined' && recentBlogs && recentBlogs.length) { %>
+    <section class="mb-5" aria-label="<%= t('store.blogHeading') %>">
+      <div class="sec-head">
+        <div>
+          <h2 class="fw-bold mb-0 fs-4">📰 <%= t('store.blogHeading') %></h2>
+          <small class="text-muted"><%= t('store.blogSub') %></small>
+        </div>
+        <a href="/blogs" class="btn btn-outline-success btn-sm rounded-pill px-3"><%= t('common.viewAll') %> →</a>
+      </div>
+      <div class="row g-3">
+        <% recentBlogs.forEach(function(b) { %>
+          <div class="col-md-4">
+            <article class="bg-white rounded-4 border overflow-hidden h-100 d-flex flex-column">
+              <img src="<%= b.image %>" alt="<%= b.title %>" style="height: 175px; object-fit: cover;" loading="lazy" />
+              <div class="p-3 d-flex flex-column flex-grow-1">
+                <div class="small text-muted mb-1"><%= fmt.date(b.created_at) %></div>
+                <h3 class="h6 fw-bold mb-2"><%= b.title %></h3>
+                <p class="small text-muted mb-3 flex-grow-1"><%= b.summary %></p>
+                <a href="/blog/<%= b.slug %>" class="text-success fw-semibold small text-decoration-none"><%= t('store.readMore') %> →</a>
+              </div>
+            </article>
+          </div>
+        <% }) %>
+      </div>
+    </section>
+  <% } %>
+
+  <!-- Customer Help & Support Quick Entry Strip -->
+  <section class="bg-white rounded-4 border p-4 mb-2" aria-label="<%= t('store.contactPageTitle') %>">
+    <div class="row align-items-center g-3">
+      <div class="col-lg-7">
+        <h2 class="h5 fw-bold mb-1">🎧 <%= t('store.contactPageTitle') %></h2>
+        <p class="small text-muted mb-0">
+          <%= t('store.contactPageSub') %> &bull; <strong><%= t('common.hotline') %>: <%= siteSettings.site_phone %></strong>
+        </p>
+      </div>
+      <div class="col-lg-5 d-flex flex-wrap justify-content-lg-end gap-2">
+        <a href="/faq" class="btn btn-outline-secondary btn-sm rounded-pill px-3">❓ <%= t('store.faqNav') %></a>
+        <a href="/track-order" class="btn btn-outline-success btn-sm rounded-pill px-3">📦 <%= t('common.trackOrder') %></a>
+        <a href="/contact" class="mt-btn mt-btn-primary btn-sm rounded-pill px-3">📞 <%= t('store.contactNav') %></a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<%- include('partials/footer') %>

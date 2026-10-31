@@ -1,0 +1,127 @@
+<%- include('partials/header', { title: t('common.cart') }) %>
+
+<main id="mainContent" class="container py-4">
+  <!-- Progress Bar -->
+  <nav aria-label="Checkout Steps" class="d-flex justify-content-center align-items-center gap-2 gap-sm-3 mb-4 small fw-bold flex-wrap">
+    <span class="badge bg-dark rounded-pill px-3 py-2"><%= t('store.cartStep1') %></span>
+    <span aria-hidden="true">→</span>
+    <a href="/customer/checkout" class="badge bg-secondary bg-opacity-25 text-dark rounded-pill px-3 py-2 text-decoration-none"><%= t('store.cartStep2') %></a>
+    <span aria-hidden="true">→</span>
+    <span class="badge bg-secondary bg-opacity-25 text-dark rounded-pill px-3 py-2"><%= t('store.cartStep3') %></span>
+  </nav>
+
+  <% if (availabilityAdjusted) { %>
+    <div class="alert alert-warning" role="status"><%= locale === 'en' ? 'Your cart was updated because product availability changed. Review the quantities before checkout.' : 'পণ্যের প্রাপ্যতা পরিবর্তিত হওয়ায় আপনার কার্ট আপডেট করা হয়েছে। চেকআউটের আগে পরিমাণ যাচাই করুন।' %></div>
+  <% } %>
+
+  <% if (!cart || !cart.length) { %>
+    <%- include('../partials/empty-state', {
+      icon: '🛒',
+      title: t('store.emptyCartTitle'),
+      description: t('store.emptyCartSub'),
+      actionUrl: '/all-products',
+      actionLabel: t('common.allProducts') + ' →'
+    }) %>
+  <% } else { %>
+    <div class="row g-4">
+      <div class="col-lg-8">
+        <div class="bg-white rounded-4 border p-4 shadow-sm">
+          <div class="d-flex justify-content-between align-items-center border-bottom pb-3 mb-3 flex-wrap gap-2">
+            <h1 class="h5 fw-bold mb-0">🧺 <%= t('store.cartItemsHeading') %> (<span class="js-cart-count"><%= cartCount %></span>)</h1>
+            <form action="/cart/clear" method="POST">
+              <input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>">
+              <button type="submit" class="btn btn-outline-danger btn-sm rounded-pill px-3"><%= t('store.clearCart') %></button>
+            </form>
+          </div>
+
+          <div class="table-responsive">
+            <table class="table align-middle mb-0">
+              <thead class="table-light small">
+                <tr>
+                  <th><%= locale === 'bn' ? 'পণ্য' : 'Product' %></th>
+                  <th class="text-center"><%= t('common.unitPrice') %></th>
+                  <th class="text-center"><%= t('common.quantity') %></th>
+                  <th class="text-end"><%= t('common.subtotal') %></th>
+                  <th><span class="visually-hidden"><%= t('common.actions') %></span></th>
+                </tr>
+              </thead>
+              <tbody id="cartPageTableBody">
+                <% cart.forEach(function(it) { %>
+                  <tr>
+                    <td>
+                      <div class="d-flex align-items-center gap-3">
+                        <img src="<%= it.image %>" style="width:60px;height:60px;border-radius:10px;object-fit:cover;" alt="" />
+                        <div>
+                          <a href="/product/<%= it.slug %>" class="fw-bold text-dark text-decoration-none"><%= it.name %></a>
+                          <div class="small text-muted"><%= it.size %><%= it.color ? (' • ' + it.color) : '' %></div>
+                        </div>
+                      </div>
+                    </td>
+                    <td class="text-center fw-semibold"><%= fmt.bdt(it.price) %></td>
+                    <td class="text-center">
+                      <div class="input-group input-group-sm mx-auto" style="width: 115px;">
+                        <button type="button" class="btn btn-outline-secondary" aria-label="<%= t('a11y.decreaseQty') %>" onclick="window.updateCartItemQty('<%= it.key %>', <%= Number(it.qty) - 1 %>)">−</button>
+                        <input type="text" readonly aria-label="<%= t('common.quantity') %>" class="form-control text-center fw-bold" value="<%= it.qty %>" />
+                        <button type="button" class="btn btn-outline-secondary" aria-label="<%= t('a11y.increaseQty') %>" onclick="window.updateCartItemQty('<%= it.key %>', <%= Number(it.qty) + 1 %>)">+</button>
+                      </div>
+                    </td>
+                    <td class="text-end fw-bold text-success"><%= fmt.bdt(it.price * it.qty) %></td>
+                    <td class="text-end">
+                      <button type="button" class="btn btn-sm btn-outline-danger" aria-label="<%= t('a11y.removeItem') %>: <%= it.name %>" onclick="window.removeCartItem('<%= it.key %>')">
+                        <i class="fas fa-trash-alt" aria-hidden="true"></i>
+                      </button>
+                    </td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-lg-4">
+        <div class="bg-white rounded-4 border p-4 shadow-sm">
+          <h2 class="h5 fw-bold border-bottom pb-2 mb-3">🧾 <%= t('store.orderSummary') %></h2>
+          <div class="d-flex justify-content-between py-2">
+            <span><%= t('common.subtotal') %>:</span>
+            <strong class="fs-5 text-success">৳<span class="js-cart-subtotal"><%= Number(cartSubtotal).toLocaleString('en-IN') %></span></strong>
+          </div>
+          <p class="small text-muted mb-3"><%= t('store.shippingCalcNote') %></p>
+          <a href="/customer/checkout" class="mt-btn mt-btn-primary w-100 py-3 rounded-3">
+            <%= t('store.proceedToCheckout') %> →
+          </a>
+          <a href="/all-products" class="btn btn-outline-secondary w-100 mt-2 rounded-3">← <%= t('common.continueShopping') %></a>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      window.onCartStateUpdated = function(state) {
+        if (!state.cart || !state.cart.length) {
+          window.location.reload();
+          return;
+        }
+        var tbody = document.getElementById('cartPageTableBody');
+        if (!tbody) return;
+        tbody.innerHTML = state.cart.map(function(it) {
+          return '<tr>' +
+            '<td><div class="d-flex align-items-center gap-3">' +
+              '<img src="' + it.image + '" style="width:60px;height:60px;border-radius:10px;object-fit:cover;" alt="" />' +
+              '<div><div class="fw-bold text-dark">' + it.name + '</div><div class="small text-muted">' + it.size + (it.color ? ' • ' + it.color : '') + '</div></div>' +
+            '</div></td>' +
+            '<td class="text-center fw-semibold">৳' + Number(it.price).toLocaleString('en-IN') + '</td>' +
+            '<td class="text-center"><div class="input-group input-group-sm mx-auto" style="width:115px;">' +
+              '<button type="button" class="btn btn-outline-secondary" aria-label="Decrease" onclick="window.updateCartItemQty(\'' + it.key + '\',' + (Number(it.qty) - 1) + ')">−</button>' +
+              '<input type="text" readonly class="form-control text-center fw-bold" value="' + it.qty + '" />' +
+              '<button type="button" class="btn btn-outline-secondary" aria-label="Increase" onclick="window.updateCartItemQty(\'' + it.key + '\',' + (Number(it.qty) + 1) + ')">+</button>' +
+            '</div></td>' +
+            '<td class="text-end fw-bold text-success">৳' + Number(it.price * it.qty).toLocaleString('en-IN') + '</td>' +
+            '<td class="text-end"><button type="button" class="btn btn-sm btn-outline-danger" aria-label="Remove" onclick="window.removeCartItem(\'' + it.key + '\')"><i class="fas fa-trash-alt"></i></button></td>' +
+          '</tr>';
+        }).join('');
+      };
+    </script>
+  <% } %>
+</main>
+
+<%- include('partials/footer') %>

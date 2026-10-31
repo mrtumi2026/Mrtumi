@@ -1,0 +1,392 @@
+<%- include('partials/header', { title: product.name }) %>
+
+<%
+  const galleryList = Array.isArray(product.gallery_images) && product.gallery_images.length
+    ? product.gallery_images
+    : [product.image];
+  const availStock = typeof product.available_stock === 'number'
+    ? product.available_stock
+    : Number(product.stock || 0);
+  const inStock = availStock > 0;
+  const stats = (typeof reviewStats !== 'undefined' && reviewStats)
+    ? reviewStats
+    : { count: reviews.length, averageRating: 0, distribution: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 } };
+  const structuredVariants = Array.isArray(product.variants) ? product.variants : [];
+  const sizeList = Array.isArray(product.size_options)
+    ? product.size_options
+    : String(product.sizes || '').split(',').map((s) => s.trim()).filter(Boolean);
+  const colorList = Array.isArray(product.color_options)
+    ? product.color_options
+    : String(product.colors || '').split(',').map((c) => c.trim()).filter(Boolean);
+%>
+
+<main id="mainContent" class="container py-4">
+  <!-- Taxonomy Breadcrumb -->
+  <nav aria-label="breadcrumb" class="mb-3 small">
+    <ol class="breadcrumb mb-0">
+      <li class="breadcrumb-item"><a href="/" class="text-success text-decoration-none"><%= t('common.home') %></a></li>
+      <li class="breadcrumb-item"><a href="/all-products" class="text-success text-decoration-none"><%= t('common.allProducts') %></a></li>
+      <% if (product.category_name && product.category_slug) { %>
+        <li class="breadcrumb-item"><a href="/category/<%= product.category_slug %>" class="text-success text-decoration-none"><%= product.category_name %></a></li>
+      <% } %>
+      <% if (product.subcategory_name && product.subcategory_slug) { %>
+        <li class="breadcrumb-item"><a href="/subcategory/<%= product.subcategory_slug %>" class="text-success text-decoration-none"><%= product.subcategory_name %></a></li>
+      <% } %>
+      <% if (product.childcategory_name && product.childcategory_slug) { %>
+        <li class="breadcrumb-item"><a href="/childcategory/<%= product.childcategory_slug %>" class="text-success text-decoration-none"><%= product.childcategory_name %></a></li>
+      <% } %>
+      <li class="breadcrumb-item active" aria-current="page"><%= product.name %></li>
+    </ol>
+  </nav>
+
+  <div class="bg-white rounded-4 border p-3 p-md-4 mb-4 shadow-xs">
+    <div class="row g-4">
+      <!-- DB-Driven Product Image Gallery (Thumbnails rendered ONLY when multiple images exist) -->
+      <div class="col-lg-5">
+        <div class="border rounded-4 overflow-hidden mb-2 bg-light position-relative">
+          <% if (product.discount_pct > 0) { %>
+            <span class="pb-disc-badge">-<%= fmt.number(product.discount_pct) %>%</span>
+          <% } %>
+          <img
+            id="mainProdImg"
+            src="<%= galleryList[0] %>"
+            alt="<%= product.name %>"
+            class="w-100"
+            style="aspect-ratio: 1/1; object-fit: cover;"
+          />
+        </div>
+
+        <% if (galleryList.length > 1) { %>
+          <div class="d-flex flex-wrap gap-2 mt-2" role="group" aria-label="Product Image Gallery">
+            <% galleryList.forEach(function(imgSrc, idx) { %>
+              <button
+                type="button"
+                class="p-0 border rounded-3 overflow-hidden bg-white js-gallery-thumb <%= idx === 0 ? 'border-success border-2' : '' %>"
+                data-src="<%= imgSrc %>"
+                aria-label="<%= product.name %> — <%= fmt.number(idx + 1) %>"
+                style="width: 70px; height: 70px;"
+              >
+                <img src="<%= imgSrc %>" alt="" style="width: 100%; height: 100%; object-fit: cover;" />
+              </button>
+            <% }) %>
+          </div>
+        <% } %>
+      </div>
+
+      <!-- Product Details, Variant Selection & Cart Actions -->
+      <div class="col-lg-7">
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+          <% if (product.is_gift_eligible) { %>
+            <span class="badge rounded-pill" style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d;">🎁 <%= t('store.giftReadyBadge') %></span>
+          <% } %>
+          <% if (product.is_flash_sale) { %>
+            <span class="badge rounded-pill bg-danger">⚡ <%= t('common.flashSale') %></span>
+          <% } %>
+          <% if (product.is_hot_deal) { %>
+            <span class="badge rounded-pill bg-warning text-dark">🔥 <%= t('common.hotDeal') %></span>
+          <% } %>
+        </div>
+
+        <h1 class="fw-bold fs-3 mb-2"><%= product.name %></h1>
+
+        <% if (product.short_desc) { %>
+          <p class="text-muted small mb-3"><%= product.short_desc %></p>
+        <% } %>
+
+        <div class="d-flex flex-wrap align-items-center gap-3 small text-muted mb-3 pb-3 border-bottom">
+          <span>
+            ⭐ <strong><%= stats.count > 0 ? fmt.number(stats.averageRating) : '—' %></strong>
+            (<%= fmt.number(stats.count) %> <%= locale === 'bn' ? 'রিভিউ' : 'reviews' %>)
+          </span>
+          <span>
+            &bull; <%= t('store.brandLabel') %>:
+            <% if (product.brand_slug) { %>
+              <a href="/brand/<%= product.brand_slug %>" class="fw-semibold text-dark text-decoration-none"><%= product.brand_name || brand.defaultProductBrand %></a>
+            <% } else { %>
+              <strong class="text-dark"><%= product.brand_name || brand.defaultProductBrand %></strong>
+            <% } %>
+          </span>
+          <% if (product.sku || product.code) { %>
+            <span>&bull; <%= t('store.skuLabel') %>: <strong class="text-dark" id="prodSkuText"><%= product.sku || product.code %></strong></span>
+          <% } %>
+          <% if (product.unit) { %>
+            <span>&bull; <%= t('store.unitLabel') %>: <strong class="text-dark"><%= product.unit %></strong></span>
+          <% } %>
+          <span>
+            &bull;
+            <span id="prodStockBadge" class="badge <%= inStock ? (product.is_low_stock ? 'bg-warning text-dark' : 'bg-success') : 'bg-danger' %>">
+              <% if (!inStock) { %>
+                <%= t('common.outOfStock') %>
+              <% } else if (product.is_low_stock) { %>
+                <%= t('store.lowStockBadge', { count: fmt.number(availStock) }) %>
+              <% } else { %>
+                <%= t('store.stockAvailableCount', { count: fmt.number(availStock) }) %>
+              <% } %>
+            </span>
+          </span>
+        </div>
+
+        <!-- Price Block -->
+        <div class="mb-3 d-flex align-items-baseline flex-wrap gap-2">
+          <% if (product.old_price > product.new_price) { %>
+            <span class="fs-5 text-muted text-decoration-line-through"><%= fmt.bdt(product.old_price) %></span>
+          <% } %>
+          <span class="display-6 fw-bold text-success" id="prodActivePrice" data-base-price="<%= product.new_price %>">
+            <%= fmt.bdt(product.new_price) %>
+          </span>
+        </div>
+
+        <!-- Valid & Approved Wholesale Tier Table (Shown ONLY when valid and approved) -->
+        <% if (product.has_valid_wholesale) { %>
+          <div class="p-3 rounded-3 bg-light border mb-3" style="max-width: 470px;">
+            <h2 class="h6 fw-bold small mb-2">📦 <%= t('store.wholesaleHeading') %></h2>
+            <div class="table-responsive" tabindex="0" role="region" aria-label="<%= locale==='en'?'Wholesale price tiers':'পাইকারি মূল্যের স্তর' %>"><table class="table table-sm mb-0 small">
+              <thead>
+                <tr>
+                  <th><%= t('store.wholesaleQtyCol') %></th>
+                  <th><%= t('store.wholesaleUnitCol') %></th>
+                  <th><%= t('store.wholesaleNoteCol') %></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><%= fmt.number(1) %> – <%= fmt.number(product.wholesale_min_qty - 1) %></td>
+                  <td><%= fmt.bdt(product.new_price) %></td>
+                  <td><%= t('store.wholesaleRegularLabel') %></td>
+                </tr>
+                <tr class="table-success fw-semibold">
+                  <td><%= fmt.number(product.wholesale_min_qty) %>+</td>
+                  <td><%= fmt.bdt(product.wholesale_price) %></td>
+                  <td><%= t('store.wholesaleTierLabel') %></td>
+                </tr>
+              </tbody>
+            </table></div>
+          </div>
+        <% } %>
+
+        <!-- Add to Cart & Variant Form -->
+        <form action="/cart/add" method="POST" id="productCartForm">
+          <input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>" />
+          <input type="hidden" name="product_id" value="<%= product.id %>" />
+
+          <% if (structuredVariants.length > 0) { %>
+            <fieldset class="mb-3">
+              <legend class="form-label fw-semibold small mb-2"><%= t('store.selectSizeVariant') %></legend>
+              <div class="d-flex flex-wrap gap-2">
+                <% structuredVariants.forEach(function(vr, idx) { %>
+                  <% const vrLabel = [vr.size_label, vr.color_label].filter(Boolean).join(' • ') || vr.variant_sku; %>
+                  <input
+                    type="radio"
+                    class="btn-check js-variant-radio"
+                    name="variant_id"
+                    id="vr_<%= vr.id %>"
+                    value="<%= vr.id %>"
+                    data-price="<%= vr.price > 0 ? vr.price : product.new_price %>"
+                    data-price-formatted="<%= fmt.bdt(vr.price > 0 ? vr.price : product.new_price) %>"
+                    data-sku="<%= vr.variant_sku %>"
+                    data-stock="<%= vr.available_stock %>"
+                    data-size="<%= vr.size_label %>"
+                    data-color="<%= vr.color_label %>"
+                    <%= idx === 0 ? 'checked' : '' %>
+                    required
+                  />
+                  <label class="btn btn-outline-success btn-sm px-3 <%= !vr.is_in_stock ? 'opacity-50' : '' %>" for="vr_<%= vr.id %>">
+                    <%= vrLabel %>
+                    <% if (vr.price > 0 && vr.price !== product.new_price) { %>
+                      (<%= fmt.bdt(vr.price) %>)
+                    <% } %>
+                    <% if (!vr.is_in_stock) { %>
+                      — <%= t('common.outOfStock') %>
+                    <% } %>
+                  </label>
+                <% }) %>
+              </div>
+            </fieldset>
+          <% } else { %>
+            <% if (sizeList.length > 0) { %>
+              <fieldset class="mb-3">
+                <legend class="form-label fw-semibold small mb-2"><%= t('store.selectSizeVariant') %></legend>
+                <div class="d-flex flex-wrap gap-2">
+                  <% sizeList.forEach(function(sz, idx) { %>
+                    <input type="radio" class="btn-check" name="size" id="sz_<%= idx %>" value="<%= sz %>" <%= idx === 0 ? 'checked' : '' %> required />
+                    <label class="btn btn-outline-success btn-sm px-3" for="sz_<%= idx %>"><%= sz %></label>
+                  <% }) %>
+                </div>
+              </fieldset>
+            <% } %>
+
+            <% if (colorList.length > 0) { %>
+              <fieldset class="mb-3">
+                <legend class="form-label fw-semibold small mb-2"><%= t('store.selectColorGrade') %></legend>
+                <div class="d-flex flex-wrap gap-2">
+                  <% colorList.forEach(function(cl, idx) { %>
+                    <input type="radio" class="btn-check" name="color" id="cl_<%= idx %>" value="<%= cl %>" <%= idx === 0 ? 'checked' : '' %> required />
+                    <label class="btn btn-outline-secondary btn-sm px-3" for="cl_<%= idx %>"><%= cl %></label>
+                  <% }) %>
+                </div>
+              </fieldset>
+            <% } %>
+          <% } %>
+
+          <div class="d-flex align-items-center gap-3 mb-4">
+            <label for="pQty" class="fw-semibold small"><%= t('common.quantity') %>:</label>
+            <div class="input-group" style="width: 148px;">
+              <button
+                class="btn btn-outline-secondary"
+                type="button"
+                aria-label="<%= t('a11y.decreaseQty') %>"
+                onclick="var q=document.getElementById('pQty');q.value=Math.max(1,parseInt(q.value||1,10)-1);"
+              >−</button>
+              <input
+                type="number"
+                id="pQty"
+                name="qty"
+                value="1"
+                min="1"
+                max="<%= Math.max(1, availStock) %>"
+                class="form-control text-center fw-bold"
+              />
+              <button
+                class="btn btn-outline-secondary"
+                type="button"
+                aria-label="<%= t('a11y.increaseQty') %>"
+                onclick="var q=document.getElementById('pQty');var mx=parseInt(q.max||999,10);q.value=Math.min(mx,parseInt(q.value||1,10)+1);"
+              >+</button>
+            </div>
+          </div>
+
+          <div class="d-flex flex-wrap gap-2 mb-4">
+            <button
+              type="submit"
+              id="prodAddCartBtn"
+              class="btn btn-outline-success px-4 py-2 fw-bold rounded-3 js-prod-add-btn"
+              <%= !inStock ? 'disabled' : '' %>
+            >
+              🛒 <%= t('store.addToCart') %>
+            </button>
+            <button
+              type="submit"
+              id="prodBuyNowBtn"
+              name="buy_now"
+              value="1"
+              class="btn btn-success px-4 py-2 fw-bold rounded-3"
+              style="background:#0d3b26;border-color:#0d3b26;"
+              <%= !inStock ? 'disabled' : '' %>
+            >
+              ⚡ <%= t('store.buyNowCheckout') %>
+            </button>
+            <button
+              type="button"
+              id="prodQuickOrderBtn"
+              class="btn btn-warning px-4 py-2 fw-bold rounded-3 js-quick-order"
+              data-id="<%= product.id %>"
+              data-name="<%= product.name %>"
+              data-price="<%= product.new_price %>"
+              data-old-price="<%= product.old_price || 0 %>"
+              data-image="<%= product.image %>"
+              data-sizes="<%= product.sizes || product.unit || 'Standard' %>"
+              data-colors="<%= product.colors || '' %>"
+              <%= !inStock ? 'disabled' : '' %>
+            >
+              🚀 <%= t('store.quickCodOrder') %>
+            </button>
+          </div>
+        </form>
+
+        <div class="pt-3 border-top small text-muted d-flex flex-wrap justify-content-between align-items-center gap-3">
+          <span>📞 <%= t('store.callToOrder') %>: <strong class="text-dark"><%= siteSettings.site_phone %></strong></span>
+          <span>🚚 <%= t('store.trustDeliveryTitle') %> &bull; <a href="/faq" class="text-success text-decoration-none"><%= t('store.faqNav') %></a></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Product Description & Approved Customer Reviews -->
+  <div class="row g-4 mb-5">
+    <div class="col-lg-7">
+      <section class="bg-white rounded-4 border p-4 h-100" aria-label="<%= t('store.productDescriptionHeading') %>">
+        <h2 class="h5 fw-bold border-bottom pb-2 mb-3">📋 <%= t('store.productDescriptionHeading') %></h2>
+        <div style="white-space: pre-line; line-height: 1.85;"><%= product.description || product.short_desc || product.name %></div>
+      </section>
+    </div>
+
+    <div class="col-lg-5">
+      <section class="bg-white rounded-4 border p-4 h-100" aria-label="<%= t('store.customerReviewsHeading') %>">
+        <div class="d-flex justify-content-between align-items-center border-bottom pb-2 mb-3">
+          <h2 class="h5 fw-bold mb-0">⭐ <%= t('store.customerReviewsHeading') %> (<%= fmt.number(stats.count) %>)</h2>
+          <% if (stats.count > 0) { %>
+            <span class="badge bg-warning text-dark fs-6"><%= fmt.number(stats.averageRating) %> ★</span>
+          <% } %>
+        </div>
+
+        <% if (!reviews.length) { %>
+          <p class="text-muted small mb-3"><%= t('store.noReviewsYet') %></p>
+        <% } else { %>
+          <div class="mb-3" style="max-height: 300px; overflow-y: auto;">
+            <% reviews.forEach(function(rv) { %>
+              <div class="border-bottom pb-2 mb-2">
+                <div class="d-flex justify-content-between align-items-center">
+                  <div>
+                    <strong class="small"><%= rv.customer_name %></strong>
+                    <span class="badge bg-success-subtle text-success ms-1" style="font-size:10px;">✓ <%= t('store.verifiedReviewBadge') %></span>
+                  </div>
+                  <span class="text-warning small" aria-label="<%= rv.rating %> out of 5 stars"><%= '★'.repeat(Math.min(5, Math.max(1, Number(rv.rating || 5)))) %></span>
+                </div>
+                <p class="small text-secondary mb-1 mt-1"><%= rv.comment %></p>
+                <% if (rv.created_at) { %>
+                  <div class="text-muted" style="font-size: 11px;"><%= fmt.date(rv.created_at) %></div>
+                <% } %>
+              </div>
+            <% }) %>
+          </div>
+        <% } %>
+
+        <!-- Submit New Review (Stored as 'pending' until approved) -->
+        <form action="/api/review" method="POST" class="mt-3 pt-3 border-top">
+          <input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>" />
+          <input type="hidden" name="product_id" value="<%= product.id %>" />
+          <h3 class="h6 fw-bold small mb-2"><%= t('store.writeReviewHeading') %></h3>
+          <div class="row g-2">
+            <div class="col-sm-7">
+              <label for="revCustomerName" class="visually-hidden"><%= t('store.yourName') %></label>
+              <input type="text" id="revCustomerName" name="customer_name" class="form-control form-control-sm" placeholder="<%= t('store.yourName') %> *" required />
+            </div>
+            <div class="col-sm-5">
+              <label for="revRating" class="visually-hidden"><%= t('store.ratingLabel') %></label>
+              <select id="revRating" name="rating" class="form-select form-select-sm">
+                <option value="5"><%= t('store.rating5') %></option>
+                <option value="4"><%= t('store.rating4') %></option>
+                <option value="3"><%= t('store.rating3') %></option>
+                <option value="2"><%= t('store.rating2') %></option>
+                <option value="1"><%= t('store.rating1') %></option>
+              </select>
+            </div>
+            <div class="col-12">
+              <label for="revComment" class="visually-hidden"><%= t('store.yourMessage') %></label>
+              <textarea id="revComment" name="comment" rows="2" class="form-control form-control-sm" placeholder="<%= t('store.yourMessage') %>" required></textarea>
+            </div>
+            <div class="col-12">
+              <button type="submit" class="mt-btn mt-btn-primary btn-sm"><%= t('store.submitReviewBtn') %></button>
+            </div>
+          </div>
+        </form>
+      </section>
+    </div>
+  </div>
+
+  <!-- Related Products -->
+  <% if (relatedProducts && relatedProducts.length) { %>
+    <section aria-label="<%= t('store.relatedProductsHeading') %>">
+      <h2 class="h5 fw-bold mb-3">🛒 <%= t('store.relatedProductsHeading') %></h2>
+      <div class="row g-3">
+        <% relatedProducts.slice(0, 4).forEach(function(rp) { %>
+          <div class="col-6 col-md-3">
+            <%- include('partials/product-card', { p: rp, showStockMeta: false }) %>
+          </div>
+        <% }) %>
+      </div>
+    </section>
+  <% } %>
+</main>
+
+<%- include('partials/footer') %>

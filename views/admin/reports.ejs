@@ -1,0 +1,80 @@
+<%- include('partials/head', { title: reportTitle }) %>
+<%- include('partials/topbar') %>
+<%- include('partials/sidebar') %>
+
+<div class="content-page">
+  <div class="content">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+      <div>
+        <h4 class="fw-bold mb-0">📈 <%= reportTitle %></h4>
+        <p class="text-muted small mb-0">বিস্তারিত ব্যবসায়িক রিপোর্ট ও CSV এক্সপোর্ট</p>
+      </div>
+      <div class="d-flex gap-2">
+        <a href="/admin/reports/<%= type %>?export=csv" class="btn btn-forest btn-sm">⬇ Export CSV</a>
+        <button onclick="window.print()" class="btn btn-outline-dark btn-sm">🖨️ Print</button>
+      </div>
+    </div>
+
+    <!-- Report Switcher Tabs -->
+    <div class="d-flex flex-wrap gap-2 mb-3">
+      <a href="/admin/reports/orders" class="btn btn-sm <%= type === 'orders' ? 'btn-dark' : 'btn-outline-secondary bg-white' %>">Order Report</a>
+      <a href="/admin/reports/purchases" class="btn btn-sm <%= type === 'purchases' ? 'btn-dark' : 'btn-outline-secondary bg-white' %>">Purchase Report</a>
+      <a href="/admin/reports/expenses" class="btn btn-sm <%= type === 'expenses' ? 'btn-dark' : 'btn-outline-secondary bg-white' %>">Expense Report</a>
+      <a href="/admin/reports/stock" class="btn btn-sm <%= type === 'stock' ? 'btn-dark' : 'btn-outline-secondary bg-white' %>">Stock Report</a>
+      <a href="/admin/reports/profit-loss" class="btn btn-sm <%= type === 'profit-loss' ? 'btn-dark' : 'btn-outline-secondary bg-white' %>">Profit &amp; Loss</a>
+    </div>
+
+    <div class="fin-strip mb-3">
+      <div class="fin-item">
+        <div class="fin-item-label">Gross Order Value</div>
+        <div class="fin-item-val">৳<%= Number(summary.totalSales).toLocaleString('en-IN') %></div>
+      </div>
+      <div class="fin-item">
+        <div class="fin-item-label">Delivered Revenue</div>
+        <div class="fin-item-val text-success">৳<%= Number(summary.completedSales).toLocaleString('en-IN') %></div>
+      </div>
+      <div class="fin-item">
+        <div class="fin-item-label">Total Purchases</div>
+        <div class="fin-item-val">৳<%= Number(summary.totalPurchases).toLocaleString('en-IN') %></div>
+      </div>
+      <div class="fin-item">
+        <div class="fin-item-label">Total Expenses</div>
+        <div class="fin-item-val text-danger">৳<%= Number(summary.totalExpenses).toLocaleString('en-IN') %></div>
+      </div>
+    </div>
+
+    <div class="tbl-card">
+      <div class="tbl-card-head">
+        <h4><%= reportTitle %> Data (<%= rows.length %>)</h4>
+      </div>
+      <div class="tbl-card-body">
+        <table class="table clean mb-0">
+          <thead>
+            <tr>
+              <% columns.forEach(function(c) { %>
+                <th><%= c.replace(/_/g, ' ') %></th>
+              <% }) %>
+            </tr>
+          </thead>
+          <tbody>
+            <% rows.forEach(function(r) { %>
+              <tr>
+                <% columns.forEach(function(c) { %>
+                  <td>
+                    <% if (['amount','unit_cost','total_cost','purchase_price','new_price'].includes(c)) { %>
+                      <strong>৳<%= Number(r[c] || 0).toLocaleString('en-IN') %></strong>
+                    <% } else { %>
+                      <%= r[c] %>
+                    <% } %>
+                  </td>
+                <% }) %>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<%- include('partials/footer') %>

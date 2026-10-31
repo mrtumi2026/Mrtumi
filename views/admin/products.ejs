@@ -1,0 +1,106 @@
+<%- include('partials/head', { title: pageTitle }) %>
+<%- include('partials/topbar') %>
+<%- include('partials/sidebar') %>
+
+<div class="content-page">
+  <div class="content">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+      <div>
+        <h4 class="fw-bold mb-0"><%= pageTitle %> (<%= products.length %>)</h4>
+        <p class="text-muted small mb-0">স্টোরের সকল পণ্যের মূল্য, স্টক, ফ্ল্যাশ সেল ও স্ট্যাটাস পরিচালনা করুন</p>
+      </div>
+      <a href="/admin/products/create" class="btn btn-forest btn-sm">+ Add New Product</a>
+    </div>
+
+    <div class="tbl-card">
+      <div class="tbl-card-head">
+        <div class="d-flex gap-2 flex-wrap">
+          <a href="/admin/inhouse-products/manage" class="btn btn-sm <%= mode === 'inhouse' ? 'btn-dark' : 'btn-outline-secondary' %>">Inhouse</a>
+          <a href="/admin/products/manage" class="btn btn-sm <%= mode === 'vendor' ? 'btn-dark' : 'btn-outline-secondary' %>">Vendor</a>
+          <a href="/admin/products/wholesale" class="btn btn-sm <%= mode === 'wholesale' ? 'btn-dark' : 'btn-outline-secondary' %>">Wholesale</a>
+          <a href="/admin/products/pending" class="btn btn-sm <%= mode === 'pending' ? 'btn-dark' : 'btn-outline-secondary' %>">Pending</a>
+        </div>
+        <form action="" method="GET" class="d-flex gap-2">
+          <input type="text" name="q" value="<%= searchQuery %>" class="form-control form-control-sm" placeholder="Search name or code..." />
+          <button type="submit" class="btn btn-sm btn-outline-dark">Search</button>
+        </form>
+      </div>
+
+      <div class="tbl-card-body">
+        <table class="table clean mb-0">
+          <thead>
+            <tr>
+              <th>Code</th>
+              <th>Product</th>
+              <th>Category</th>
+              <th>Price</th>
+              <th>Wholesale</th>
+              <th>Stock</th>
+              <th>Deals</th>
+              <th>Status</th>
+              <th class="text-end">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% if (!products.length) { %>
+              <tr><td colspan="9" class="text-center py-4 text-muted">কোনো প্রোডাক্ট পাওয়া যায়নি।</td></tr>
+            <% } %>
+            <% products.forEach(function(p) { %>
+              <tr>
+                <td class="text-muted small"><%= p.code %></td>
+                <td>
+                  <div class="d-flex align-items-center gap-2">
+                    <img src="<%= p.image %>" class="p-thumb" alt="" />
+                    <div>
+                      <a href="/product/<%= p.slug %>" target="_blank" class="fw-semibold text-dark text-decoration-none"><%= p.name %></a>
+                      <% if (p.vendor_name) { %><div class="text-muted" style="font-size:11px;">Vendor: <%= p.vendor_name %></div><% } %>
+                    </div>
+                  </div>
+                </td>
+                <td><%= p.category_name || '—' %></td>
+                <td>
+                  <% if (p.old_price > p.new_price) { %><del class="text-muted small me-1">৳<%= p.old_price %></del><% } %>
+                  <strong class="text-success">৳<%= p.new_price %></strong>
+                </td>
+                <td>
+                  <% if (p.wholesale_price > 0) { %>
+                    <span class="small">৳<%= p.wholesale_price %> (<%= p.wholesale_min_qty %>+)</span>
+                  <% } else { %>—<% } %>
+                </td>
+                <td>
+                  <span class="sb <%= p.stock < 10 ? 'sb-7' : 'sb-6' %>"><%= p.stock %></span>
+                </td>
+                <td>
+                  <% if (p.is_flash_sale) { %><span class="badge bg-warning text-dark">Flash</span><% } %>
+                  <% if (p.is_hot_deal) { %><span class="badge bg-danger">Hot</span><% } %>
+                </td>
+                <td>
+                  <form action="/admin/products/toggle/<%= p.id %>" method="POST" class="d-inline">
+                    <button type="submit" class="btn btn-sm py-0 px-2 <%= p.status ? 'btn-success' : 'btn-secondary' %>" style="font-size:11px;">
+                      <%= p.status ? 'Active' : 'Inactive' %>
+                    </button>
+                  </form>
+                </td>
+                <td class="text-end" style="white-space:nowrap;">
+                  <% if (p.approval_status === 'pending') { %>
+                    <form action="/admin/products/approve/<%= p.id %>" method="POST" class="d-inline">
+                      <button type="submit" class="btn btn-sm btn-success py-1 px-2">Approve</button>
+                    </form>
+                  <% } %>
+                  <a href="/admin/products/edit/<%= p.id %>" class="btn btn-sm btn-outline-primary py-1 px-2"><i class="fas fa-edit"></i></a>
+                  <% if (!mysqlMode) { %>
+                    <form action="/admin/products/delete/<%= p.id %>" method="POST" class="d-inline">
+                      <button type="button" class="btn btn-sm btn-outline-danger py-1 px-2 delete-confirm"><i class="fas fa-trash"></i></button>
+                    </form>
+                  <% } %>
+                </td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<%- include('partials/footer') %>

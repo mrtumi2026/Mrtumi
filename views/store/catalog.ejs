@@ -1,0 +1,301 @@
+<%- include('partials/header', { title: pageTitle }) %>
+
+<%
+  const fs = (typeof filterState !== 'undefined' && filterState) ? filterState : {};
+  const fc = (typeof facets !== 'undefined' && facets) ? facets : { categories: [], brands: [] };
+  const totalCount = typeof totalProducts === 'number' ? totalProducts : products.length;
+  const formAction = typeof actionPath === 'string' ? actionPath : '/all-products';
+  const hasActiveFilters = Boolean(
+    fs.q || fs.category || fs.subcategory || fs.childcategory || fs.brand || fs.deal || fs.min_price || fs.max_price || fs.in_stock
+  );
+  const currentCatForSub = activeCategory || (activeSubcategory && activeSubcategory.parentCategory) || (activeChildcategory && activeChildcategory.parentCategory) || null;
+%>
+
+<main id="mainContent" class="container py-4">
+  <!-- Breadcrumb Navigation -->
+  <nav aria-label="breadcrumb" class="mb-3 small">
+    <ol class="breadcrumb mb-0">
+      <li class="breadcrumb-item"><a href="/" class="text-success text-decoration-none"><%= t('common.home') %></a></li>
+      <li class="breadcrumb-item"><a href="/all-products" class="text-success text-decoration-none"><%= t('common.allProducts') %></a></li>
+      <% if (currentCatForSub) { %>
+        <li class="breadcrumb-item <%= (!activeSubcategory && !activeChildcategory) ? 'active' : '' %>">
+          <% if (activeSubcategory || activeChildcategory) { %>
+            <a href="/category/<%= currentCatForSub.slug %>" class="text-success text-decoration-none"><%= currentCatForSub.name %></a>
+          <% } else { %>
+            <%= currentCatForSub.name %>
+          <% } %>
+        </li>
+      <% } %>
+      <% if (activeSubcategory) { %>
+        <li class="breadcrumb-item active" aria-current="page"><%= activeSubcategory.name %></li>
+      <% } else if (activeChildcategory) { %>
+        <li class="breadcrumb-item">
+          <a href="/subcategory/<%= activeChildcategory.parentSubcategory.slug %>" class="text-success text-decoration-none"><%= activeChildcategory.parentSubcategory.name %></a>
+        </li>
+        <li class="breadcrumb-item active" aria-current="page"><%= activeChildcategory.name %></li>
+      <% } else if (activeBrand) { %>
+        <li class="breadcrumb-item active" aria-current="page"><%= activeBrand.name %></li>
+      <% } else if (!currentCatForSub) { %>
+        <li class="breadcrumb-item active" aria-current="page"><%= pageTitle %></li>
+      <% } %>
+    </ol>
+  </nav>
+
+  <!-- Validated Countdown Banner on Promo Listing Pages (Shown ONLY when backed by valid future setting) -->
+  <% if (typeof promoCountdownIso !== 'undefined' && promoCountdownIso && products.length) { %>
+    <div class="bg-white border rounded-4 p-3 mb-3 d-flex align-items-center justify-content-between flex-wrap gap-2">
+      <span class="fw-bold text-danger small">⏳ <%= t('store.endsIn') %>:</span>
+      <div class="cd-box" data-countdown="<%= promoCountdownIso %>">
+        <div class="cd-pill"><strong class="cd-d">00</strong><span><%= locale === 'bn' ? 'দিন' : 'D' %></span></div>
+        <div class="cd-pill"><strong class="cd-h">00</strong><span><%= locale === 'bn' ? 'ঘণ্টা' : 'H' %></span></div>
+        <div class="cd-pill"><strong class="cd-m">00</strong><span><%= locale === 'bn' ? 'মিনিট' : 'M' %></span></div>
+        <div class="cd-pill"><strong class="cd-s">00</strong><span><%= locale === 'bn' ? 'সেকেন্ড' : 'S' %></span></div>
+      </div>
+    </div>
+  <% } %>
+
+  <!-- Subcategory / Childcategory Quick Chips When Inside a Category -->
+  <% if (currentCatForSub && currentCatForSub.subcategories && currentCatForSub.subcategories.length) { %>
+    <div class="mb-3 d-flex flex-wrap align-items-center gap-2">
+      <span class="small fw-semibold text-muted"><%= t('store.filterSubcategory') %>:</span>
+      <a
+        href="/category/<%= currentCatForSub.slug %>"
+        class="btn btn-sm rounded-pill <%= (!activeSubcategory && !activeChildcategory) ? 'btn-success' : 'btn-outline-secondary' %>"
+      >
+        <%= t('common.viewAll') %>
+      </a>
+      <% currentCatForSub.subcategories.forEach(function(sc) { %>
+        <a
+          href="/subcategory/<%= sc.slug %>"
+          class="btn btn-sm rounded-pill <%= (activeSubcategory && activeSubcategory.slug === sc.slug) ? 'btn-success' : 'btn-outline-success' %>"
+        >
+          <%= sc.name %>
+        </a>
+        <% (sc.childcategories || []).forEach(function(cc) { %>
+          <a
+            href="/childcategory/<%= cc.slug %>"
+            class="btn btn-sm rounded-pill <%= (activeChildcategory && activeChildcategory.slug === cc.slug) ? 'btn-dark' : 'btn-outline-dark' %>"
+          >
+            <%= cc.name %>
+          </a>
+        <% }) %>
+      <% }) %>
+    </div>
+  <% } %>
+
+  <!-- Top Search, Sort & Mobile Filter Trigger Strip -->
+  <%- include('../partials/filter-bar', {
+    title: pageTitle + ' (' + fmt.number(totalCount) + ')',
+    subtitle: subtitle,
+    actionUrl: formAction,
+    searchName: 'q',
+    searchValue: searchQuery,
+    searchPlaceholder: t('store.searchPlaceholder'),
+    sortName: 'sort',
+    sortValue: sort,
+    sortOptions: [
+      { value: 'newest', label: t('store.sortNewest') },
+      { value: 'price_asc', label: t('store.sortPriceAsc') },
+      { value: 'price_desc', label: t('store.sortPriceDesc') },
+      { value: 'best_selling', label: t('store.sortBestSelling') },
+      { value: 'name_asc', label: t('store.sortNameAsc') }
+    ]
+  }) %>
+
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <div class="small text-muted">
+      <%= t('store.showingResults', { shown: fmt.number(products.length), total: fmt.number(totalCount) }) %>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+      <% if (hasActiveFilters) { %>
+        <a href="/all-products" class="btn btn-outline-danger btn-sm rounded-pill px-3">✕ <%= t('store.clearFilters') %></a>
+      <% } %>
+      <button
+        type="button"
+        class="btn btn-outline-dark btn-sm rounded-pill px-3 d-lg-none"
+        data-bs-toggle="offcanvas"
+        data-bs-target="#catalogFilterDrawer"
+        aria-controls="catalogFilterDrawer"
+      >
+        <i class="fas fa-sliders me-1" aria-hidden="true"></i> <%= t('store.openFiltersMobile') %>
+      </button>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <!-- Desktop Facet Filter Sidebar -->
+    <aside class="col-lg-3 d-none d-lg-block" aria-label="<%= t('store.filterHeading') %>">
+      <form action="/all-products" method="GET" class="bg-white rounded-4 border p-3">
+        <div class="d-flex justify-content-between align-items-center border-bottom pb-2 mb-3">
+          <h2 class="h6 fw-bold mb-0">🎛️ <%= t('store.filterHeading') %></h2>
+          <% if (hasActiveFilters) { %>
+            <a href="/all-products" class="small text-danger text-decoration-none"><%= t('store.clearFilters') %></a>
+          <% } %>
+        </div>
+
+        <input type="hidden" name="q" value="<%= fs.q || '' %>" />
+        <input type="hidden" name="sort" value="<%= sort || 'newest' %>" />
+
+        <div class="mb-3">
+          <label for="deskFilterCategory" class="form-label small fw-semibold"><%= t('store.filterCategory') %></label>
+          <select id="deskFilterCategory" name="category" class="form-select form-select-sm">
+            <option value=""><%= t('common.viewAll') %></option>
+            <% (fc.categories || []).forEach(function(cat) { %>
+              <option value="<%= cat.slug %>" <%= fs.category === cat.slug ? 'selected' : '' %>>
+                <%= cat.name %> (<%= fmt.number(cat.product_count || 0) %>)
+              </option>
+            <% }) %>
+          </select>
+        </div>
+
+        <% if (fc.brands && fc.brands.length) { %>
+          <div class="mb-3">
+            <label for="deskFilterBrand" class="form-label small fw-semibold"><%= t('store.filterBrand') %></label>
+            <select id="deskFilterBrand" name="brand" class="form-select form-select-sm">
+              <option value=""><%= t('common.viewAll') %></option>
+              <% fc.brands.forEach(function(b) { %>
+                <option value="<%= b.slug %>" <%= fs.brand === b.slug ? 'selected' : '' %>>
+                  <%= b.name %> (<%= fmt.number(b.product_count || 0) %>)
+                </option>
+              <% }) %>
+            </select>
+          </div>
+        <% } %>
+
+        <div class="mb-3">
+          <label for="deskFilterDeal" class="form-label small fw-semibold"><%= t('store.filterDealType') %></label>
+          <select id="deskFilterDeal" name="deal" class="form-select form-select-sm">
+            <option value=""><%= t('store.filterAllDeals') %></option>
+            <option value="flash" <%= fs.deal === 'flash' ? 'selected' : '' %>>⚡ <%= t('common.flashSale') %></option>
+            <option value="hot" <%= fs.deal === 'hot' ? 'selected' : '' %>>🔥 <%= t('common.hotDeal') %></option>
+            <option value="gift" <%= fs.deal === 'gift' ? 'selected' : '' %>>🎁 <%= t('store.filterGiftEligible') %></option>
+            <option value="wholesale" <%= fs.deal === 'wholesale' ? 'selected' : '' %>>📦 <%= t('store.filterWholesale') %></option>
+          </select>
+        </div>
+
+        <div class="mb-3">
+          <span class="form-label small fw-semibold d-block"><%= t('store.filterPriceRange') %></span>
+          <div class="row g-2">
+            <div class="col-6">
+              <label for="deskMinPrice" class="visually-hidden"><%= t('store.filterMinPrice') %></label>
+              <input type="number" min="0" id="deskMinPrice" name="min_price" value="<%= fs.min_price || '' %>" class="form-control form-control-sm" placeholder="<%= t('store.filterMinPrice') %>" />
+            </div>
+            <div class="col-6">
+              <label for="deskMaxPrice" class="visually-hidden"><%= t('store.filterMaxPrice') %></label>
+              <input type="number" min="0" id="deskMaxPrice" name="max_price" value="<%= fs.max_price || '' %>" class="form-control form-control-sm" placeholder="<%= t('store.filterMaxPrice') %>" />
+            </div>
+          </div>
+        </div>
+
+        <div class="form-check mb-3">
+          <input class="form-check-input" type="checkbox" id="deskInStock" name="in_stock" value="1" <%= fs.in_stock === '1' ? 'checked' : '' %> />
+          <label class="form-check-label small fw-semibold" for="deskInStock"><%= t('store.filterInStockOnly') %></label>
+        </div>
+
+        <button type="submit" class="mt-btn mt-btn-primary w-100 btn-sm"><%= t('store.applyFilters') %></button>
+      </form>
+    </aside>
+
+    <!-- Product Grid & Pagination -->
+    <section class="col-lg-9" aria-label="<%= pageTitle %>">
+      <% if (!products.length) { %>
+        <%- include('../partials/empty-state', {
+          icon: '🔍',
+          title: t('store.emptyProductsTitle'),
+          description: t('store.emptyProductsSub'),
+          actionUrl: '/all-products',
+          actionLabel: t('common.allProducts')
+        }) %>
+      <% } else { %>
+        <div class="row g-3">
+          <% products.forEach(function(p) { %>
+            <div class="col-6 col-md-4">
+              <%- include('partials/product-card', { p: p, showStockMeta: true }) %>
+            </div>
+          <% }) %>
+        </div>
+
+        <% if (typeof totalPages === 'number' && totalPages > 1) { %>
+          <%- include('../partials/pagination', {
+            currentPage: page,
+            totalPages: totalPages,
+            baseUrl: paginationBaseUrl || '/all-products'
+          }) %>
+        <% } %>
+      <% } %>
+    </section>
+  </div>
+
+  <!-- Mobile Filter Offcanvas Drawer (<992px) -->
+  <div class="offcanvas offcanvas-end" tabindex="-1" id="catalogFilterDrawer" aria-labelledby="catalogFilterDrawerLabel">
+    <div class="offcanvas-header border-bottom">
+      <h5 class="offcanvas-title fw-bold h6 mb-0" id="catalogFilterDrawerLabel">🎛️ <%= t('store.filterHeading') %></h5>
+      <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="<%= t('a11y.closeModal') %>"></button>
+    </div>
+    <div class="offcanvas-body">
+      <form action="/all-products" method="GET">
+        <input type="hidden" name="q" value="<%= fs.q || '' %>" />
+        <input type="hidden" name="sort" value="<%= sort || 'newest' %>" />
+
+        <div class="mb-3">
+          <label for="mobFilterCategory" class="form-label small fw-semibold"><%= t('store.filterCategory') %></label>
+          <select id="mobFilterCategory" name="category" class="form-select form-select-sm">
+            <option value=""><%= t('common.viewAll') %></option>
+            <% (fc.categories || []).forEach(function(cat) { %>
+              <option value="<%= cat.slug %>" <%= fs.category === cat.slug ? 'selected' : '' %>><%= cat.name %></option>
+            <% }) %>
+          </select>
+        </div>
+
+        <% if (fc.brands && fc.brands.length) { %>
+          <div class="mb-3">
+            <label for="mobFilterBrand" class="form-label small fw-semibold"><%= t('store.filterBrand') %></label>
+            <select id="mobFilterBrand" name="brand" class="form-select form-select-sm">
+              <option value=""><%= t('common.viewAll') %></option>
+              <% fc.brands.forEach(function(b) { %>
+                <option value="<%= b.slug %>" <%= fs.brand === b.slug ? 'selected' : '' %>><%= b.name %></option>
+              <% }) %>
+            </select>
+          </div>
+        <% } %>
+
+        <div class="mb-3">
+          <label for="mobFilterDeal" class="form-label small fw-semibold"><%= t('store.filterDealType') %></label>
+          <select id="mobFilterDeal" name="deal" class="form-select form-select-sm">
+            <option value=""><%= t('store.filterAllDeals') %></option>
+            <option value="flash" <%= fs.deal === 'flash' ? 'selected' : '' %>>⚡ <%= t('common.flashSale') %></option>
+            <option value="hot" <%= fs.deal === 'hot' ? 'selected' : '' %>>🔥 <%= t('common.hotDeal') %></option>
+            <option value="gift" <%= fs.deal === 'gift' ? 'selected' : '' %>>🎁 <%= t('store.filterGiftEligible') %></option>
+            <option value="wholesale" <%= fs.deal === 'wholesale' ? 'selected' : '' %>>📦 <%= t('store.filterWholesale') %></option>
+          </select>
+        </div>
+
+        <div class="mb-3">
+          <span class="form-label small fw-semibold d-block"><%= t('store.filterPriceRange') %></span>
+          <div class="row g-2">
+            <div class="col-6">
+              <label for="mobMinPrice" class="visually-hidden"><%= t('store.filterMinPrice') %></label>
+              <input type="number" min="0" id="mobMinPrice" name="min_price" value="<%= fs.min_price || '' %>" class="form-control form-control-sm" placeholder="<%= t('store.filterMinPrice') %>" />
+            </div>
+            <div class="col-6">
+              <label for="mobMaxPrice" class="visually-hidden"><%= t('store.filterMaxPrice') %></label>
+              <input type="number" min="0" id="mobMaxPrice" name="max_price" value="<%= fs.max_price || '' %>" class="form-control form-control-sm" placeholder="<%= t('store.filterMaxPrice') %>" />
+            </div>
+          </div>
+        </div>
+
+        <div class="form-check mb-4">
+          <input class="form-check-input" type="checkbox" id="mobInStock" name="in_stock" value="1" <%= fs.in_stock === '1' ? 'checked' : '' %> />
+          <label class="form-check-label small fw-semibold" for="mobInStock"><%= t('store.filterInStockOnly') %></label>
+        </div>
+
+        <div class="d-grid gap-2">
+          <button type="submit" class="mt-btn mt-btn-primary"><%= t('store.applyFilters') %></button>
+          <a href="/all-products" class="btn btn-outline-secondary btn-sm"><%= t('store.clearFilters') %></a>
+        </div>
+      </form>
+    </div>
+  </div>
+</main>
+
+<%- include('partials/footer') %>

@@ -1,0 +1,33 @@
+<%- include('partials/layout-top', { title: 'Reseller Profile' }) %>
+
+<div class="tbl-card p-4" style="max-width: 650px;">
+  <h5 class="fw-bold border-bottom pb-2 mb-3">🤝 রিসেলার প্রোফাইল ও ফেসবুক পেজ সেটিংস</h5>
+  <form action="/reseller/profile" method="POST" class="row g-3">
+    <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
+    <div class="col-md-6">
+      <label class="form-label small fw-semibold">আপনার নাম *</label>
+      <input type="text" name="name" value="<%= reseller.name %>" class="form-control" required />
+    </div>
+    <div class="col-md-6">
+      <label class="form-label small fw-semibold">ফেসবুক পেজ / শপের নাম</label>
+      <input type="text" name="shop_name" value="<%= reseller.shop_name %>" class="form-control" />
+    </div>
+    <div class="col-md-6">
+      <label class="form-label small fw-semibold">মোবাইল নম্বর *</label>
+      <input type="text" name="phone" value="<%= reseller.phone %>" class="form-control" required <%= typeof canonicalProfile !== 'undefined' && canonicalProfile ? 'readonly' : '' %> />
+    </div>
+    <div class="col-md-6">
+      <label class="form-label small fw-semibold">ইমেইল</label>
+      <input type="email" name="email" value="<%= reseller.email %>" class="form-control" />
+    </div>
+    <div class="col-12">
+      <label class="form-label small fw-semibold">নতুন পাসওয়ার্ড (পরিবর্তন করতে চাইলে দিন)</label>
+      <input type="password" name="new_password" class="form-control" placeholder="কমপক্ষে ৬ অক্ষর" />
+    </div>
+    <div class="col-12">
+      <button type="submit" class="btn btn-primary px-4 py-2 fw-bold" style="background:#3730a3;">প্রোফাইল আপডেট করুন</button>
+    </div>
+  </form>
+</div>
+
+<%- include('partials/layout-bottom') %>

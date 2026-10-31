@@ -1,0 +1,256 @@
+<%- include('partials/head', { title: pageTitle }) %>
+<%- include('partials/topbar') %>
+<%- include('partials/sidebar') %>
+
+<div class="content-page">
+  <div class="content">
+    <div class="db-heading">
+      <h1>⚙️ <%= pageTitle %></h1>
+      <p>সকল পরিবর্তন তাৎক্ষণিক ডাটাবেসে সংরক্ষিত হবে এবং কাস্টমার সাইটে কার্যকর হবে</p>
+    </div>
+
+    <% if (section === 'custom_sms') { %>
+      <div class="row g-3">
+        <div class="col-lg-5">
+          <form action="/admin/sms/custom-send" method="POST" class="tbl-card p-4">
+            <h6 class="fw-bold mb-3">Send Instant SMS (BulkSMSBD)</h6>
+            <div class="mb-3">
+              <label class="form-label small fw-semibold">Recipient Phone Numbers (comma separated) *</label>
+              <input type="text" name="recipient" id="smsRecipients" class="form-control" placeholder="01711..., 01815..." required />
+              <div class="form-text">নিচের কাস্টমার তালিকা থেকে ক্লিক করে যোগ করতে পারেন।</div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label small fw-semibold">SMS Message *</label>
+              <textarea name="message" rows="4" class="form-control" required placeholder="প্রিয় গ্রাহক, মি. তুমি গ্রোসারি অ্যান্ড গিফট-এ চলছে বিশেষ অফার!"></textarea>
+            </div>
+            <button type="submit" class="btn btn-forest w-100">📨 Send SMS Now</button>
+
+            <div class="mt-3 pt-2 border-top">
+              <small class="fw-bold text-muted d-block mb-1">Quick Add Customer:</small>
+              <div class="d-flex flex-wrap gap-1">
+                <% customers.slice(0, 8).forEach(function(c) { %>
+                  <button type="button" class="btn btn-sm btn-light border py-0 px-2" onclick="var el=document.getElementById('smsRecipients');el.value = el.value ? (el.value + ', ' + '<%= c.phone %>') : '<%= c.phone %>';">
+                    + <%= c.name %>
+                  </button>
+                <% }) %>
+              </div>
+            </div>
+          </form>
+        </div>
+        <div class="col-lg-7">
+          <div class="tbl-card">
+            <div class="tbl-card-head"><h4>Recent Sent SMS Logs (<%= logs.length %>)</h4></div>
+            <div class="tbl-card-body">
+              <table class="table clean mb-0">
+                <thead><tr><th>Recipient</th><th>Message</th><th>Status</th><th>Date</th></tr></thead>
+                <tbody>
+                  <% if (!logs.length) { %><tr><td colspan="4" class="text-center py-4 text-muted">কোনো SMS পাঠানো হয়নি।</td></tr><% } %>
+                  <% logs.forEach(function(l) { %>
+                    <tr>
+                      <td class="fw-semibold"><%= l.recipient %></td>
+                      <td><%= l.message %></td>
+                      <td><span class="sb sb-6"><%= l.status %></span></td>
+                      <td class="small text-muted"><%= l.created_at %></td>
+                    </tr>
+                  <% }) %>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    <% } else if (section === 'sitemap') { %>
+      <div class="tbl-card p-4">
+        <h6 class="fw-bold mb-2">Live XML Sitemap</h6>
+        <p class="small text-muted">আপনার স্টোরের সকল ক্যাটাগরি ও প্রোডাক্ট নিয়ে স্বয়ংক্রিয়ভাবে Sitemap তৈরি হচ্ছে:</p>
+        <div class="d-flex gap-2 align-items-center">
+          <code class="p-2 bg-light border rounded">/sitemap.xml</code>
+          <a href="/sitemap.xml" target="_blank" class="btn btn-forest btn-sm">↗ View Live Sitemap.xml</a>
+        </div>
+      </div>
+
+    <% } else if (section === 'cron_jobs') { %>
+      <div class="tbl-card p-4">
+        <h6 class="fw-bold mb-3">Scheduled Cron Jobs</h6>
+        <div class="mb-3 p-3 bg-light rounded border">
+          <div class="fw-semibold">1. Steadfast &amp; Pathao Courier Status Auto-Sync</div>
+          <code class="small">*/15 * * * * curl -s https://yourdomain.com/admin/steadfast/dashboard-widget</code>
+        </div>
+        <div class="p-3 bg-light rounded border">
+          <div class="fw-semibold">2. Abandoned Checkout Reminder</div>
+          <code class="small">0 * * * * node scripts/abandoned-reminder.js</code>
+        </div>
+      </div>
+
+    <% } else if (section === 'license' || section === 'updates') { %>
+      <div class="tbl-card p-4">
+        <span class="badge bg-success mb-2">Mr. Tumi Grocery &amp; Gift Platform</span>
+        <h5 class="fw-bold"><%= siteSettings.site_name %> — Node.js + Express + MySQL Ready</h5>
+        <p class="text-muted small mb-2">
+          সকল মডিউল, অর্ডার, ইনভেন্টরি ও সেটিংস পূর্ণ নিয়ন্ত্রণে রয়েছে।
+        </p>
+        <% if (typeof brand !== 'undefined' && brand && brand.isPlaceholderLogo) { %>
+          <div class="mt-copy-review-banner mt-3">
+            <span class="mt-copy-review-banner__badge"><%= brand.placeholderBadge %></span>
+            <div class="small"><%= brand.placeholderNotice %></div>
+          </div>
+        <% } %>
+      </div>
+
+    <% } else { %>
+      <form action="/admin/settings/save" method="POST" enctype="multipart/form-data" class="tbl-card p-4">
+        <input type="hidden" name="_redirect" value="<%= currentPath %>" />
+
+        <div class="row g-3">
+          <% if (section === 'general' || section === 'contact') { %>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Store Name (বাংলা / English)</label>
+              <input type="text" name="site_name" value="<%= siteSettings.site_name || '' %>" class="form-control" />
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Tagline</label>
+              <input type="text" name="site_tagline" value="<%= siteSettings.site_tagline || '' %>" class="form-control" />
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold">Hotline Phone</label>
+              <input type="text" name="site_phone" value="<%= siteSettings.site_phone || '' %>" class="form-control" />
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold">WhatsApp Number</label>
+              <input type="text" name="site_whatsapp" value="<%= siteSettings.site_whatsapp || '' %>" class="form-control" />
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold">Support Email</label>
+              <input type="email" name="site_email" value="<%= siteSettings.site_email || '' %>" class="form-control" />
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Office / Orchard Address</label>
+              <input type="text" name="site_address" value="<%= siteSettings.site_address || '' %>" class="form-control" />
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small fw-semibold">Inside Dhaka Shipping (৳)</label>
+              <input type="number" name="inside_dhaka_charge" value="<%= siteSettings.inside_dhaka_charge || '60' %>" class="form-control" />
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small fw-semibold">Outside Dhaka Shipping (৳)</label>
+              <input type="number" name="outside_dhaka_charge" value="<%= siteSettings.outside_dhaka_charge || '120' %>" class="form-control" />
+            </div>
+            <div class="col-12">
+              <label class="form-label small fw-semibold">Top Notice Bar Text (হোমপেজ স্ক্রলিং নোটিশ)</label>
+              <textarea name="special_notice" rows="2" class="form-control"><%= siteSettings.special_notice || '' %></textarea>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Upload New Logo (Optional)</label>
+              <input type="file" name="logo_file" accept="image/*" class="form-control" />
+            </div>
+
+          <% } else if (section === 'sale_notification' || section === 'popup_offer') { %>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Verified Order Social Proof Toast</label>
+              <select name="sale_notification_enabled" class="form-select">
+                <option value="1" <%= siteSettings.sale_notification_enabled !== '0' ? 'selected' : '' %>>Enabled (Show on Storefront)</option>
+                <option value="0" <%= siteSettings.sale_notification_enabled === '0' ? 'selected' : '' %>>Disabled</option>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Promotional Welcome Popup</label>
+              <select name="popup_offer_enabled" class="form-select">
+                <option value="1" <%= siteSettings.popup_offer_enabled === '1' ? 'selected' : '' %>>Enabled</option>
+                <option value="0" <%= siteSettings.popup_offer_enabled !== '1' ? 'selected' : '' %>>Disabled</option>
+              </select>
+            </div>
+            <div class="col-12">
+              <label class="form-label small fw-semibold">Popup Offer Headline</label>
+              <input type="text" name="popup_offer_title" value="<%= siteSettings.popup_offer_title || '' %>" class="form-control" />
+            </div>
+
+          <% } else if (section === 'sms_gateway') { %>
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold">BulkSMSBD API Key</label>
+              <input type="text" name="bulksms_api_key" value="<%= siteSettings.bulksms_api_key || '' %>" class="form-control" />
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold">Sender ID</label>
+              <input type="text" name="bulksms_sender_id" value="<%= siteSettings.bulksms_sender_id || '' %>" class="form-control" />
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold">Current Balance (tk)</label>
+              <input type="text" name="bulksms_balance" value="<%= siteSettings.bulksms_balance || '' %>" class="form-control" />
+            </div>
+
+          <% } else if (section === 'fraud_api' || section === 'order_restriction') { %>
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold">BD Courier API Key</label>
+              <input type="text" name="bdcourier_api_key" value="<%= siteSettings.bdcourier_api_key || '' %>" class="form-control" />
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold">BD Courier Plan Name</label>
+              <input type="text" name="bdcourier_plan" value="<%= siteSettings.bdcourier_plan || '' %>" class="form-control" />
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold">Max Orders Per Hour (Per Phone)</label>
+              <input type="number" name="max_orders_per_hour" value="<%= siteSettings.max_orders_per_hour || '5' %>" class="form-control" />
+            </div>
+
+          <% } else if (section === 'email') { %>
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold">SMTP Host</label>
+              <input type="text" name="smtp_host" value="<%= siteSettings.smtp_host || '' %>" class="form-control" />
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold">SMTP Port</label>
+              <input type="text" name="smtp_port" value="<%= siteSettings.smtp_port || '587' %>" class="form-control" />
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold">SMTP Username</label>
+              <input type="text" name="smtp_user" value="<%= siteSettings.smtp_user || '' %>" class="form-control" />
+            </div>
+
+          <% } else if (section === 'seo') { %>
+            <div class="col-12">
+              <label class="form-label small fw-semibold">Meta Title</label>
+              <input type="text" name="seo_meta_title" value="<%= siteSettings.seo_meta_title || '' %>" class="form-control" />
+            </div>
+            <div class="col-12">
+              <label class="form-label small fw-semibold">Meta Description</label>
+              <textarea name="seo_meta_description" rows="3" class="form-control"><%= siteSettings.seo_meta_description || '' %></textarea>
+            </div>
+            <div class="col-12">
+              <label class="form-label small fw-semibold">Meta Keywords</label>
+              <input type="text" name="seo_keywords" value="<%= siteSettings.seo_keywords || '' %>" class="form-control" />
+            </div>
+
+          <% } else { %>
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold">Google Tag Manager ID</label>
+              <input type="text" name="gtm_id" value="<%= siteSettings.gtm_id || '' %>" class="form-control" />
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold">Facebook Pixel ID</label>
+              <input type="text" name="fb_pixel_id" value="<%= siteSettings.fb_pixel_id || '' %>" class="form-control" />
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold">TikTok Pixel ID</label>
+              <input type="text" name="tiktok_pixel_id" value="<%= siteSettings.tiktok_pixel_id || '' %>" class="form-control" />
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Facebook CAPI Access Token</label>
+              <input type="text" name="fb_capi_token" value="<%= siteSettings.fb_capi_token || '' %>" class="form-control" />
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Gemini AI Model</label>
+              <input type="text" name="gemini_model" value="<%= siteSettings.gemini_model || 'gemini-2.5-flash' %>" class="form-control" />
+            </div>
+          <% } %>
+        </div>
+
+        <div class="mt-4 pt-3 border-top">
+          <button type="submit" class="btn btn-forest px-4">💾 Save Settings</button>
+        </div>
+      </form>
+    <% } %>
+  </div>
+</div>
+
+<%- include('partials/footer') %>

@@ -1,0 +1,55 @@
+<%
+  const barTitle = typeof title !== 'undefined' ? title : '';
+  const barSubtitle = typeof subtitle !== 'undefined' ? subtitle : '';
+  const formAction = typeof actionUrl !== 'undefined' && actionUrl ? actionUrl : '';
+  const qName = typeof searchName !== 'undefined' && searchName ? searchName : 'q';
+  const qVal = typeof searchValue !== 'undefined' ? searchValue : '';
+  const qPlaceholder = typeof searchPlaceholder !== 'undefined' && searchPlaceholder
+    ? searchPlaceholder
+    : (typeof t === 'function' ? t('common.search') : 'Search...');
+  const sName = typeof sortName !== 'undefined' ? sortName : '';
+  const sVal = typeof sortValue !== 'undefined' ? sortValue : '';
+  const sOptions = Array.isArray(typeof sortOptions !== 'undefined' ? sortOptions : null) ? sortOptions : [];
+%>
+<div class="mt-filter-bar mb-4">
+  <div>
+    <% if (barTitle) { %><h2 class="fw-bold mb-1 fs-4 text-dark"><%= barTitle %></h2><% } %>
+    <% if (barSubtitle) { %><p class="text-muted small mb-0"><%= barSubtitle %></p><% } %>
+  </div>
+
+  <form action="<%= formAction %>" method="GET" class="d-flex flex-wrap gap-2 align-items-center">
+    <% if (typeof showSearch === 'undefined' || showSearch) { %>
+      <label class="visually-hidden" for="mtFilterSearchInput"><%= qPlaceholder %></label>
+      <input
+        type="search"
+        id="mtFilterSearchInput"
+        name="<%= qName %>"
+        value="<%= qVal %>"
+        class="form-control form-control-sm"
+        style="min-width: 190px;"
+        placeholder="<%= qPlaceholder %>"
+      />
+    <% } else if (qVal) { %>
+      <input type="hidden" name="<%= qName %>" value="<%= qVal %>" />
+    <% } %>
+
+    <% if (sName && sOptions.length) { %>
+      <label class="visually-hidden" for="mtFilterSortSelect"><%= typeof t === 'function' ? t('a11y.filterRecords') : 'Sort' %></label>
+      <select
+        id="mtFilterSortSelect"
+        name="<%= sName %>"
+        class="form-select form-select-sm"
+        style="width: auto; min-width: 170px;"
+        onchange="this.form.submit()"
+      >
+        <% sOptions.forEach(function(opt) { %>
+          <option value="<%= opt.value %>" <%= sVal === opt.value ? 'selected' : '' %>><%= opt.label %></option>
+        <% }) %>
+      </select>
+    <% } %>
+
+    <% if (typeof showSearch === 'undefined' || showSearch) { %>
+      <button type="submit" class="btn btn-sm btn-dark px-3"><%= typeof t === 'function' ? t('common.search') : 'Search' %></button>
+    <% } %>
+  </form>
+</div>

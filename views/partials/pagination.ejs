@@ -1,0 +1,31 @@
+<%
+  const curPage = Math.max(1, Number(typeof currentPage !== 'undefined' ? currentPage : 1));
+  const maxPages = Math.max(1, Number(typeof totalPages !== 'undefined' ? totalPages : 1));
+  const base = typeof baseUrl !== 'undefined' && baseUrl ? baseUrl : '?';
+  const sep = base.includes('?') ? '&' : '?';
+  const navLabel = typeof t === 'function' ? t('a11y.pagination') : 'Pagination';
+  const formatNum = (typeof fmt !== 'undefined' && fmt && typeof fmt.number === 'function')
+    ? fmt.number
+    : function(n) { return String(n); };
+%>
+<% if (maxPages > 1) { %>
+  <nav aria-label="<%= navLabel %>" class="mt-4 d-flex justify-content-center">
+    <ul class="pagination pagination-sm mb-0 gap-1">
+      <li class="page-item <%= curPage <= 1 ? 'disabled' : '' %>">
+        <a class="page-link rounded-2" href="<%= base %><%= sep %>page=<%= curPage - 1 %>" aria-label="Previous">&laquo;</a>
+      </li>
+      <% for (let p = 1; p <= maxPages; p++) { %>
+        <li class="page-item <%= p === curPage ? 'active' : '' %>">
+          <a
+            class="page-link rounded-2"
+            href="<%= base %><%= sep %>page=<%= p %>"
+            aria-current="<%= p === curPage ? 'page' : 'false' %>"
+          ><%= formatNum(p) %></a>
+        </li>
+      <% } %>
+      <li class="page-item <%= curPage >= maxPages ? 'disabled' : '' %>">
+        <a class="page-link rounded-2" href="<%= base %><%= sep %>page=<%= curPage + 1 %>" aria-label="Next">&raquo;</a>
+      </li>
+    </ul>
+  </nav>
+<% } %>

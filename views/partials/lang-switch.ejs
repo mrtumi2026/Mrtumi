@@ -1,0 +1,23 @@
+<%
+  const switchVariant = typeof variant !== 'undefined' && variant === 'dark' ? 'mt-lang-switch--dark' : '';
+  const curLocale = typeof locale !== 'undefined' ? locale : 'bn';
+  const bnUrl = (typeof switchUrls !== 'undefined' && switchUrls && switchUrls.bn) ? switchUrls.bn : '/locale/bn';
+  const enUrl = (typeof switchUrls !== 'undefined' && switchUrls && switchUrls.en) ? switchUrls.en : '/locale/en';
+  const ariaLabel = typeof t === 'function' ? t('lang.switcherAria') : 'Switch Language';
+%>
+<div class="mt-lang-switch <%= switchVariant %>" role="group" aria-label="<%= ariaLabel %>">
+  <a
+    href="<%= bnUrl %>"
+    class="mt-lang-switch__item <%= curLocale === 'bn' ? 'is-active' : '' %>"
+    lang="bn"
+    hreflang="bn"
+    aria-current="<%= curLocale === 'bn' ? 'true' : 'false' %>"
+  >বাংলা</a>
+  <a
+    href="<%= enUrl %>"
+    class="mt-lang-switch__item <%= curLocale === 'en' ? 'is-active' : '' %>"
+    lang="en"
+    hreflang="en"
+    aria-current="<%= curLocale === 'en' ? 'true' : 'false' %>"
+  >EN</a>
+</div>

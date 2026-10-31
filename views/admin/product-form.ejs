@@ -1,0 +1,134 @@
+<%- include('partials/head', { title: pageTitle }) %>
+<%- include('partials/topbar') %>
+<%- include('partials/sidebar') %>
+
+<div class="content-page">
+  <div class="content">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <div>
+        <h4 class="fw-bold mb-0"><%= pageTitle %></h4>
+        <p class="text-muted small mb-0">নতুন পণ্য যোগ অথবা বিদ্যমান পণ্যের তথ্য আপডেট করুন</p>
+      </div>
+      <a href="/admin/inhouse-products/manage" class="btn btn-outline-secondary btn-sm">← Back to Products</a>
+    </div>
+
+    <form
+      action="<%= product ? ('/admin/products/edit/' + product.id) : '/admin/products/create' %>"
+      method="POST"
+      enctype="multipart/form-data"
+      class="tbl-card p-4"
+    >
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label fw-semibold small">Product Name (বাংলা / English) *</label>
+          <input type="text" name="name" value="<%= product ? product.name : '' %>" class="form-control" required placeholder="যেমন: দিনাজপুরের গাছপাকা বোম্বাই লিচু" />
+        </div>
+        <div class="col-md-3">
+          <label class="form-label fw-semibold small">SKU / Product Code</label>
+          <input type="text" name="code" value="<%= product ? product.code : '' %>" class="form-control" placeholder="Auto if empty" />
+        </div>
+        <div class="col-md-3">
+          <label class="form-label fw-semibold small">Category *</label>
+          <select name="category_id" class="form-select" required>
+            <% categories.forEach(function(c) { %>
+              <option value="<%= c.id %>" <%= (product && product.category_id === c.id) ? 'selected' : '' %>><%= c.name %></option>
+            <% }) %>
+          </select>
+        </div>
+
+        <div class="col-md-3">
+          <label class="form-label fw-semibold small">Brand</label>
+          <select name="brand_id" class="form-select">
+            <% brands.forEach(function(b) { %>
+              <option value="<%= b.id %>" <%= (product && product.brand_id === b.id) ? 'selected' : '' %>><%= b.name %></option>
+            <% }) %>
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label fw-semibold small">Seller Type / Vendor</label>
+          <select name="vendor_id" class="form-select">
+            <option value="">Inhouse Product (নিজস্ব)</option>
+            <% vendors.forEach(function(v) { %>
+              <option value="<%= v.id %>" <%= (product && product.vendor_id === v.id) ? 'selected' : '' %>><%= v.shop_name %></option>
+            <% }) %>
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label fw-semibold small">Regular / Old Price (৳)</label>
+          <input type="number" step="0.01" name="old_price" value="<%= product ? product.old_price : '1500' %>" class="form-control" />
+        </div>
+        <div class="col-md-3">
+          <label class="form-label fw-semibold small">Sale Price (৳) *</label>
+          <input type="number" step="0.01" name="new_price" value="<%= product ? product.new_price : '1250' %>" class="form-control" required />
+        </div>
+
+        <div class="col-md-3">
+          <label class="form-label fw-semibold small">Purchase Cost (৳)</label>
+          <input type="number" step="0.01" name="purchase_price" value="<%= product ? product.purchase_price : '900' %>" class="form-control" />
+        </div>
+        <div class="col-md-3">
+          <label class="form-label fw-semibold small">Wholesale Price (৳)</label>
+          <input type="number" step="0.01" name="wholesale_price" value="<%= product ? product.wholesale_price : '0' %>" class="form-control" />
+        </div>
+        <div class="col-md-3">
+          <label class="form-label fw-semibold small">Wholesale Min Qty</label>
+          <input type="number" name="wholesale_min_qty" value="<%= product ? product.wholesale_min_qty : '5' %>" class="form-control" />
+        </div>
+        <div class="col-md-3">
+          <label class="form-label fw-semibold small">Current Stock *</label>
+          <input type="number" name="stock" value="<%= product ? product.stock : '100' %>" class="form-control" required />
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label fw-semibold small">Sizes / Weight Variants (comma separated)</label>
+          <input type="text" name="sizes" value="<%= product ? product.sizes : '৫০০ গ্রাম,১ কেজি,২ কেজি' %>" class="form-control" />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label fw-semibold small">Colors / Grade Options (comma separated)</label>
+          <input type="text" name="colors" value="<%= product ? product.colors : 'লাল,গোলাপি' %>" class="form-control" />
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label fw-semibold small">Upload Product Photo</label>
+          <input type="file" name="image_file" accept="image/*" class="form-control" />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label fw-semibold small">Or Image Path / URL</label>
+          <input type="text" name="image_url" value="<%= product ? product.image : '/uploads/product/lychee-fresh.jpg' %>" class="form-control" />
+        </div>
+
+        <div class="col-12">
+          <label class="form-label fw-semibold small">Short Summary</label>
+          <input type="text" name="short_desc" value="<%= product ? product.short_desc : '' %>" class="form-control" placeholder="বাগান থেকে সরাসরি সংগৃহীত ১০০% ফরমালিনমুক্ত তাজা ফল।" />
+        </div>
+
+        <div class="col-12">
+          <label class="form-label fw-semibold small">Full Description</label>
+          <textarea name="description" rows="5" class="form-control"><%= product ? product.description : '' %></textarea>
+        </div>
+
+        <div class="col-12 d-flex flex-wrap gap-4 pt-2">
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" name="is_flash_sale" value="1" id="swFlash" <%= (!product || product.is_flash_sale) ? 'checked' : '' %> />
+            <label class="form-check-label fw-semibold" for="swFlash">Show in Flash Sale</label>
+          </div>
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" name="is_hot_deal" value="1" id="swHot" <%= (!product || product.is_hot_deal) ? 'checked' : '' %> />
+            <label class="form-check-label fw-semibold" for="swHot">Show in Hot Deal</label>
+          </div>
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" name="is_wholesale" value="1" id="swWhole" <%= (product && product.is_wholesale) ? 'checked' : '' %> />
+            <label class="form-check-label fw-semibold" for="swWhole">Enable Wholesale</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-4 pt-3 border-top d-flex gap-2">
+        <button type="submit" class="btn btn-forest px-4"><%= product ? 'Update Product' : 'Save & Publish Product' %></button>
+        <a href="/admin/inhouse-products/manage" class="btn btn-outline-secondary">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<%- include('partials/footer') %>

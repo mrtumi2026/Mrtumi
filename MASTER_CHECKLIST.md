@@ -1,0 +1,168 @@
+# MASTER CHECKLIST — Mr. Tumi Grocery & Gift
+
+**Allowed Status Values (Rule 25):**  
+`NOT STARTED` | `IN PROGRESS` | `IMPLEMENTED` | `TESTED AND PASSED` | `FAILED` | `BLOCKED` | `OWNER APPROVAL REQUIRED`
+
+---
+
+## Phase & Feature Inventory
+
+### PHASE 01 — Reference Audit & Requirements
+| ID | Feature / Deliverable | Status | Notes |
+|---|---|---|---|
+| P01-01 | Admin sidebar & menu inventory (screenshot vs DOM evidence) | `TESTED AND PASSED` | `docs/PHASE_01_REFERENCE_AUDIT.md` §2 |
+| P01-02 | Admin dashboard 9-band layout specification | `TESTED AND PASSED` | `docs/PHASE_01_REFERENCE_AUDIT.md` §3 |
+| P01-03 | Customer storefront audit checklist | `TESTED AND PASSED` | `docs/PHASE_01_REFERENCE_AUDIT.md` §4 |
+| P01-04 | Mandatory module functional requirements & dependency map | `TESTED AND PASSED` | `docs/PHASE_01_REFERENCE_AUDIT.md` §6–§7 |
+| P01-05 | Unverified items list, risk register & owner decision log | `TESTED AND PASSED` | `docs/PHASE_01_REFERENCE_AUDIT.md` §8–§10 |
+| P01-06 | Initial governance documents (`MASTER_CHECKLIST.md`, `PROJECT_STATUS.md`, `DECISIONS.md`, `INTEGRATION_STATUS.md`, `DEPLOYMENT.md`) | `TESTED AND PASSED` | Verified in commit `3611777` |
+| P01-07 | Owner review & core business-rule sign-off | `TESTED AND PASSED` | Confirmed by owner |
+
+### PHASE 02 — Architecture, GitHub & Development Foundation
+| ID | Feature / Deliverable | Status | Notes |
+|---|---|---|---|
+| P02-01 | BestWebHostBD confirmed (`Node.js` + `SSH` + `MySQL-only`) vs `UNVERIFIED` audit (`docs/CPANEL_COMPATIBILITY.md`) | `TESTED AND PASSED` | Strictly separates confirmed facts from `U-01`–`U-08` |
+| P02-02 | Finalized architecture specification (`docs/ARCHITECTURE.md` — Express + EJS + Production MySQL) | `TESTED AND PASSED` | Covers all 13 mandatory architecture pillars |
+| P02-03 | Non-destructive SQLite-to-MySQL migration plan (`docs/MYSQL_MIGRATION_PLAN.md`) | `TESTED AND PASSED` | Audits all 50 tables + SQL idioms, DDL, `paisa` math, rollback & verification |
+| P02-04 | Clean folder conventions, application startup `app.js`, `.gitignore`, `.env.example` & secret removal | `IN PROGRESS` | Local startup wrapper, assigned-port behavior, upload-root behavior and production guard are tested. Hosting-specific startup/port/restart compatibility remains owner-managed and unverified; it is not a blocker for website-code completion. See `DEPLOYMENT.md` and `docs/CPANEL_COMPATIBILITY.md` without treating them as hosting verification. |
+| P02-05 | Dev / test / prod config (`src/config/env.js`: blocks SQLite in `production`, enforces `Asia/Dhaka`, `BDT`, `bn`/`en`) | `TESTED AND PASSED` | Verified in `tests/phase02-foundation.test.js` |
+| P02-06 | Linting, EJS compilation, secret scanner (`scripts/check-foundation.js`) & GitHub Actions CI | `TESTED AND PASSED` | Verified via `npm run verify` |
+| P02-07 | Explicit owner approval gate to begin Phase 03 implementation | `TESTED AND PASSED` | Approved by owner to execute Phase 03 |
+
+### PHASE 03 — Database, Backend & API Foundation
+| ID | Feature / Deliverable | Status | Notes |
+|---|---|---|---|
+| P03-01 | `mysql2` connection pool + versioned reversible MySQL migrations & rollback CLI | `TESTED AND PASSED` | `src/db/mysqlPool.js`, `src/db/migrator.js`, `scripts/migrate.js` (`0001`–`0003`) |
+| P03-02 | Foreign keys, indexes, constraints & minor-unit (`paisa` `BIGINT`) money schema | `TESTED AND PASSED` | `71` `InnoDB` `utf8mb4_unicode_ci` tables + `src/utils/money.js` |
+| P03-03 | MySQL transaction wrapper (`FOR UPDATE`) & idempotency middleware | `TESTED AND PASSED` | `withTransaction`, `lockRowsById`, `idempotencyRepository.js`, `inventoryFoundationRepository.js` |
+| P03-04 | Auth, RBAC, CSRF, rate limiting, validation & consistent API/error format | `TESTED AND PASSED` | `src/middleware/{csrf,rateLimit,rbac,errorHandler}.js` + Phase 03 async repos |
+| P03-05 | Structured PII-redacting logger, `/health` endpoint & MySQL 8.0 CI test suite | `TESTED AND PASSED` | `src/utils/logger.js`, `src/routes/apiFoundation.js`, `.github/workflows/ci.yml` |
+| P03-06 | Explicit owner approval gate to begin Phase 04 implementation | `TESTED AND PASSED` | Approved by owner to execute Phase 04 |
+
+### PHASE 04 — Branding, Design System & Bilingual UI
+| ID | Feature / Deliverable | Status | Notes |
+|---|---|---|---|
+| P04-01 | **Mr. Tumi Grocery & Gift** brand identity & temporary placeholder assets (`public/uploads/brand/`, `src/i18n/brand.js`) | `TESTED AND PASSED` | Zero reference `"ফল বাজার"` identity in UI; temporary placeholder SVGs active awaiting official owner logo files |
+| P04-02 | Bangla (`bn` default) & English (`en`) language switching + 1:1 parity dictionaries (`src/i18n/`, `/locale/:lang`) | `TESTED AND PASSED` | Persisted in session + `mrtumi_lang` cookie; legal/policy copy flagged for owner review (`copy-review-notice.ejs`) |
+| P04-03 | Responsive design system, WCAG AA tokens, accessible sidebar/mobile nav & reusable EJS components | `IN PROGRESS` | Existing mobile navigation and shared components remain; added small-screen hardening for storefront/admin/vendor/reseller shells, forms, table overflow/keyboard focus, checkout summary, dialogs, reduced motion, and 320px–desktop breakpoints. Static responsive-contract and bilingual route tests pass; no browser engine is installed in this workspace, so actual rendered 320/360/375/576/768/992/desktop viewport checks remain required before this row can return to `TESTED AND PASSED`. See `docs/MOBILE_RESPONSIVE_AUDIT.md`. |
+| P04-04 | Bangladesh currency (`৳`), South Asian grouping, Bangla numerals & `Asia/Dhaka` timestamp formatters | `TESTED AND PASSED` | `src/utils/formatters.js`, verified in `tests/phase04-ui-i18n.test.js` |
+| P04-05 | Explicit owner approval gate to begin Phase 05 implementation | `TESTED AND PASSED` | Approved by owner to execute Phase 05 |
+
+### PHASE 05 — Customer Storefront
+| ID | Feature / Deliverable | Status | Notes |
+|---|---|---|---|
+| P05-01 | Grocery & Gift homepage (DB banners, featured categories, validated Flash Sale & Hot Deal, gift showcase, blogs) | `TESTED AND PASSED` | `views/store/home.ejs` + MySQL-first `storefrontRepository.js` (zero fabricated countdowns/metrics) |
+| P05-02 | Category, subcategory, childcategory, brand, search, price/stock/deal filters, 5 sort modes & pagination | `TESTED AND PASSED` | `views/store/catalog.ejs`, `/category/:slug`, `/subcategory/:slug`, `/childcategory/:slug`, `/brand/:slug` |
+| P05-03 | Product detail page (DB gallery, `product_variants`/options, approved wholesale tier guard, cart entry points, related items) | `TESTED AND PASSED` | `views/store/product.ejs` + live MySQL 8.0 & local verification (`tests/phase05-*.test.js`) |
+| P05-04 | Contact, FAQ, About, policy pages (`copy-review-notice`), blog, moderated approved reviews, Product JSON-LD, `/sitemap.xml` & `/robots.txt` | `TESTED AND PASSED` | `views/store/page.ejs`, `/about`, `/faq`, `/contact`, `/blogs`, `/sitemap.xml`, `/robots.txt` |
+| P05-05 | Explicit owner approval gate to begin Phase 06 implementation | `TESTED AND PASSED` | Owner's latest prompt explicitly authorized Phases 06–20 implementation; production deployment remains separately gated |
+
+### PHASE 06 — Products, Inventory, Purchases & Suppliers
+| ID | Feature / Deliverable | Status | Notes |
+|---|---|---|---|
+| P06-01 | Product create/edit with unique SKU, bilingual names, category → subcategory → child-category validation, paisa prices, optional opening stock ledger, archive/restore and raster upload hardening | `TESTED AND PASSED` | Catalog and bounded variant edits use transactional audit; variant SKU stays globally unique/immutable and deactivation preserves references. Bilingual dependent category → subcategory → child-category selectors validate and persist existing taxonomy links; exact-SHA CI run `40829421817` covers authenticated rendering and relationship rejection. Gallery reorder and request-owned raster upload/path assignment are implemented; upload uses random custom-root files, signature validation, narrow post-Multer CSRF and transaction-coupled audit, never deletes existing/shared files. Gallery authenticated MySQL 8.0/MariaDB 10.11 CI passed run `40817516521` on feature SHA `15df7e4b708fd2af7fe4a880a735372b7afd6d3d`. The admin catalog/inventory view now adds escaped SKU/name search, allowlisted deterministic sort, 25-row pagination and low-stock filtering using the pre-existing `available <= threshold` rule; zero threshold behavior is preserved, with no valuation/lot/expiry assumption. SQLite tests pass; MySQL 8.0 and MariaDB 10.11 test suites, including bilingual rendered route coverage, passed exact-SHA CI run `40820208249` on `c708ef95c4310fbbf978f1c2556fd53be1854c30`. Variant-specific stock adjustment has prior exact-SHA CI evidence in run `40687427992`; update-only CSV CI evidence is run `40677200320`. The exact P06-01 CRUD/archive/raster-upload deliverable is tested and passed on current dual-engine CI run [`40828055353`](https://github.com/mrtumi2026/Mrtumi/actions/runs/40828055353), SHA `21b44d6d37d63d23f013be3a6aed1a823d190e21`. Dependent bilingual selectors, relational create/edit validation, persisted edit values, and authenticated HTTP route coverage (RBAC, CSRF, valid/mismatched selection and rendered edit state) passed local SQLite and exact-final-SHA MySQL 8.0/MariaDB 10.11 CI run [`40829421817`](https://github.com/mrtumi2026/Mrtumi/actions/runs/40829421817) on `d669723784ec6fe796dd431ba4abf8fc1411b6ec`. Phase 06 remains open for its separately tracked acceptance and owner-policy blockers; variant receiving and canonical option taxonomy remain separate gates.
+| P06-02 | Warehouse/vendor inventory reads, reason-required negative-safe adjustments, immutable `stock_ledger` movements, low-stock threshold display, MySQL row locks and audit | `TESTED AND PASSED` | Product adjustments and concurrent locking passed MySQL CI (`40277859457`). Per-variant warehouse adjustment validates reason and whole quantity, locks the variant row in MySQL, prevents reductions below reservations, leaves parent aggregate stock unchanged, and atomically writes variant balance, `stock_ledger.variant_id`, and audit; SQLite and authenticated MySQL HTTP tests passed exact-SHA MySQL 8.0/MariaDB 10.11 run `40687427992`. The admin inventory page now offers search, sort, bounded pages and a threshold-based low-stock filter showing warehouse/vendor balances and reserved/available quantities without valuation; SQLite tests and exact-SHA MySQL 8.0/MariaDB 10.11 CI passed run `40820208249` on `c708ef95c4310fbbf978f1c2556fd53be1854c30`. A read-only newest-first stock-movement report now supports bounded 25-row pages and product filtering, and shows variant identity without cost/valuation; SQLite tests and authenticated MySQL rendered-route coverage passed exact-SHA dual-engine CI run [`40826203164`](https://github.com/mrtumi2026/Mrtumi/actions/runs/40826203164) on `d52671c7543320845439e89f0c6bda85903e1c3a`. The read-only quantity summary now reports non-archived parent product warehouse/vendor totals and all variant totals separately, including active/inactive counts, low-stock and no-available counts; the JSON inventory report omits cost/valuation fields. Tests cover empty/data accuracy, no writes, auth/permission denial and bilingual rendering. Exact-SHA dual-engine CI run [`40828055353`](https://github.com/mrtumi2026/Mrtumi/actions/runs/40828055353) passed on `21b44d6d37d63d23f013be3a6aed1a823d190e21`. Variant receiving remains blocked pending owner contract; see Phase 06 reconciliation. |
+| P06-03 | Supplier create, multi-line draft purchase order, partial/full receipt, receipt idempotency and atomic stock/ledger update | `TESTED AND PASSED` | Supplier create/profile lifecycle and paginated supplier history are verified. The history view is bounded (100 POs/page) and does not calculate payables, settlements or balances. Its separate receipt form validates bounded per-line quantities client-side and server-side, uses CSRF plus a generated idempotency key, reports the stock/ledger effect, and returns to supplier history after success. Receipt DB changes, ledger and audit now commit/rollback together in MySQL and SQLite; same-key replay remains valid after terminal receipt state without double stock. Local rollback/idempotency tests and authenticated MySQL HTTP success/deny/CSRF/missing/over-receipt/replay tests passed MySQL 8.0 and MariaDB 10.11 exact-SHA CI run `40685759244` on `d092da4`. Purchase-create audit atomicity is implemented in both adapters with rollback tests; exact-SHA MySQL 8.0/MariaDB 10.11 CI run `40686470558` passed on `fba59c8b9615322fca5d14f39d70e460eaae1492`. The defined supplier-create, multi-line draft PO and product-level partial/full receipt/idempotency contract is tested and passed in exact-SHA MySQL 8.0/MariaDB 10.11 run [`40828055353`](https://github.com/mrtumi2026/Mrtumi/actions/runs/40828055353) on `21b44d6d37d63d23f013be3a6aed1a823d190e21`. Variant receiving, PO transitions, returns/payables and lot/expiry are outside this verified slice and remain blocked pending owner decisions. |
+| P06-04 | Checkout stock reservation/release, low-stock thresholds & CSV import/export | `TESTED AND PASSED` | Update-only CSV preview/commit/export passed run `40677200320`; the existing threshold-based search/filter passed run `40820208249`. Checkout reservation at order submission and authorized release on cancellation are covered by the Phase 07/08 live HTTP suites; persistent-cart load now revalidates availability, caps quantities/removes unavailable lines and preserves the notice, passing exact-SHA MySQL 8.0/MariaDB 10.11 run [`40832104419`](https://github.com/mrtumi2026/Mrtumi/actions/runs/40832104419) on `b4f7c9596bf75f9213260a845be5dcef22eb11cb`. No replenishment policy is inferred. |
+| P06-05 | Phase 06 complete acceptance, batch/lot/expiry policy decision and live MySQL 8.0 approval | `IN PROGRESS` | Owner accepted the current milestone and approved moving into Phase 07; acceptance gaps and the unresolved batch/expiry requirement remain tracked in `docs/PHASE_06_PRODUCTS_INVENTORY_PURCHASES_SUPPLIERS.md` |
+
+### PHASE 07 — Customer Accounts, Cart & Checkout
+| ID | Feature / Deliverable | Status | Notes |
+|---|---|---|---|
+| P07-01 | Customer registration, login, logout, password recovery & address book | `IN PROGRESS` | MySQL-backed registration/login, regenerated sessions, POST logout, and customer-scoped address create/list/delete implemented; owner confirmed 2026-10-29 that create/list/delete suffice and checkout remains free-text, so address update and saved-address selection are outside current scope. MySQL 8.0/MariaDB 10.11 exact-SHA run [40853917205](https://github.com/mrtumi2026/Mrtumi/actions/runs/40853917205) covers authenticated owner create/delete in addition to prior ownership, invalid/missing IDs, malformed root/structured-field payloads, and foreign checkout-ID rejection in runs [40851625889](https://github.com/mrtumi2026/Mrtumi/actions/runs/40851625889) and [40852550003](https://github.com/mrtumi2026/Mrtumi/actions/runs/40852550003). Password recovery remains blocked pending D6 and an authorized verified channel. Login/registration session-ID regeneration and logout invalidation evidence is in [40849680828](https://github.com/mrtumi2026/Mrtumi/actions/runs/40849680828). |
+| P07-02 | Guest checkout, BD phone validation & persistent cart sync | `IN PROGRESS` | Cart add and update now reject malformed/out-of-range quantities, cap valid quantities to current stock, and remove zero-stock/missing variants. Cart-add strict validation accepts only scalar whole quantities 1–99 (defaulting to 1 only when omitted/blank); SQLite guest HTTP tests verify zero, negative, fractional, >99, trailing-text, array and object values are rejected without cart mutation. MySQL route regressions for the same cases passed exact-SHA CI run [`40832104419`](https://github.com/mrtumi2026/Mrtumi/actions/runs/40832104419). Prior guest/authenticated MySQL HTTP tests verify CSRF, update invalid input, stock cap/removal and persistence; exact-SHA CI run `40498016622` passed on `15f96ea7bdbec7fd02ef62d7f2f91e1d47bf1558`. Saved authenticated carts are now revalidated on cart load: stale items are removed, quantities are capped to the current variant and parent availability, and the cart page reports the adjustment. Exact-SHA MySQL 8.0/MariaDB 10.11 run [`40832104419`](https://github.com/mrtumi2026/Mrtumi/actions/runs/40832104419) passed this regression. Cross-customer read/clear isolation, login and registration guest-cart merge, deterministic concurrent add/update, and injected rollback passed both MySQL 8.0 and MariaDB 10.11 on exact SHA `8415057664887551841bcad7717093f3f1955a0c` (run [`40835813740`](https://github.com/mrtumi2026/Mrtumi/actions/runs/40835813740)). Test-first runs reproduced same-line add lost update (`2` instead of `3`) on SHA `04ff967bb844844b5e76640422ae1273d5059f7b` and separate-line update lost update (`1` instead of `2`) on SHA `20d4dbd7463dae9c4c5750fb7fe8aa18db90468b`; both were fixed with line-scoped transactions. Account recovery, legal/retention, provider, checkout configuration and remaining lifecycle criteria remain open. Audit regression addendum: malformed null/undefined checkout-cart entries now raise validation HTTP 400 rather than raw TypeError (test-first red/green); login/register cart merge, guest/authenticated cart isolation, and line-scoped concurrent mutation assertions passed exact-SHA CI run [40849680828](https://github.com/mrtumi2026/Mrtumi/actions/runs/40849680828) on `1e6d35101d4f1585d9519d2f342a75566f4dcac6`. |
+| P07-03 | Configurable delivery zones/fees, server-only total math & duplicate order lock | `IN PROGRESS` | Requires active owner-configured `delivery_locations` and COD gateway; server computes paisa totals, reserves inventory and uses request-hash idempotency; no defaults are seeded. Exact-SHA MySQL 8.0/MariaDB 10.11 run [40851625889](https://github.com/mrtumi2026/Mrtumi/actions/runs/40851625889) verifies injected failure while clearing an authenticated saved cart rolls back the order and inventory reservation, preserves the cart, and allows a same-key retry to commit one order and clear the cart atomically. Existing replay protection and preservation of later cart additions remain covered. Actual target database delivery/COD rows remain unverified; no production configuration was changed. |
+| P07-04 | Terms/privacy consent handling at checkout | `IN PROGRESS` | Required order confirmation and optional recovery opt-in exist; coded checkout slice passed live MySQL CI `40301701753`; approved legal copy/retention policy remain blockers |
+
+### PHASE 08 — Order Management, Incomplete Orders, OTP & Advance Payment
+| ID | Feature / Deliverable | Status | Notes |
+|---|---|---|---|
+| P08-01 | Order state machine, `order_status_history`, notes & authorized item edits | `IN PROGRESS` | MySQL row-locked transitions/history/audit and guarded admin UI; canonical checkout now creates/reserves orders; bounded transactional expiry worker releases expired holds to `expired` with ledger/audit, leaves order status unchanged and adds live-MySQL replay/concurrency/rollback coverage (live MySQL CI passed run `40505110579` on implementation SHA `23a9f13944f842a193f45027c132b17701ab4efa`); notes/item edits and expired-order disposition/re-reservation remain open |
+| P08-02 | Cancellation, returns, refund initiation & stock restoration | `IN PROGRESS` | Admin cancellation/failure releases reservations and shipment consumes stock; final `returned`/restock is disabled pending explicit owner policy; refund approval is internal only, no provider settlement |
+| P08-03 | Consent-aware incomplete checkout capture & duplicate order detection | `IN PROGRESS` | Optional explicit recovery consent, no default capture/message consent, withdrawal/erasure; checkout request-hash migration and replay protection tested in live MySQL CI `40301701753`; remaining acceptance is open |
+| P08-04 | Admin-configurable Order OTP verification (expiry, attempt cap, cooldown, rate limit) | `IN PROGRESS` | Repository OTP protections remain; admin HTTP endpoint exposes summary only; checkout blocks when OTP is enabled because customer verification/delivery is not wired; SMS blocked |
+| P08-05 | Admin-configurable advance payment (fixed/%) + remaining COD balance & min/max order rules | `IN PROGRESS` | Integer-paisa math/settings exist; checkout blocks any non-zero advance until a verified provider collection path exists; coded checkout slice passed live MySQL CI `40301701753`; remaining acceptance is open |
+
+### PHASE 09 — Admin Dashboard, Users & Permissions
+| ID | Feature / Deliverable | Status | Notes |
+|---|---|---|---|
+| P09-01 | Reference-inspired dashboard powered 100% by real DB queries | `IN PROGRESS` | MySQL repository, explicit route permissions and full-stack MySQL HTTP tests passed CI `40308315393` on `448d2e6a1c60b36422ba825f486a78eea872d58e`. Provider metrics remain explicitly unavailable |
+| P09-02 | Staff accounts, roles & granular server-side permission middleware | `IN PROGRESS` | Migration `0008` adds catalog keys without grants; MySQL staff/role lifecycle, distinct grant/role-assignment permissions, audit and session revocation passed CI `40308315393`. Owner must decide who receives grants; full legacy admin route coverage remains |
+| P09-03 | Permission-filtered sidebar navigation & immutable `audit_logs` | `IN PROGRESS` | Selected sidebar/profile links are grant-filtered; read-only audit UI/API and append-only MySQL triggers remain. Legacy blog create/delete with transactional audit and rollback coverage passed exact-SHA MySQL 8.0 CI run `40505110579` on `23a9f13944f842a193f45027c132b17701ab4efa`. Remaining legacy links, privileged DDL limits, runtime grants and retention decision remain open |
+
+### PHASE 10 — Courier & Delivery Integrations
+| ID | Feature / Deliverable | Status | Notes |
+|---|---|---|---|
+| P10-01 | Unified `CourierAdapter` architecture, duplicate booking lock & redacted logs | `NOT STARTED` | Scheduled for Phase 10 |
+| P10-02 | Steadfast Courier adapter, tracking sync, webhook & COD settlement | `BLOCKED` | Adapter in P10; live test blocked until API keys supplied |
+| P10-03 | Pathao Courier adapter (city/zone/area, shipment, webhook) | `BLOCKED` | Adapter in P10; live test blocked until API keys supplied |
+| P10-04 | RedX Courier adapter & internal Delivery Rider / Division→District→Upazila module | `BLOCKED` | Adapter in P10; live test blocked until API keys supplied |
+
+### PHASE 11 — Payment Gateways
+| ID | Feature / Deliverable | Status | Notes |
+|---|---|---|---|
+| P11-01 | Unified `PaymentGateway` ledger, server-to-server callback verification & idempotency | `NOT STARTED` | Scheduled for Phase 11 |
+| P11-02 | bKash Tokenized Checkout adapter (sandbox + prod config) | `BLOCKED` | Adapter in P11; sandbox/live test needs bKash credentials |
+| P11-03 | ShurjoPay adapter (sandbox + prod config) | `BLOCKED` | Adapter in P11; sandbox/live test needs ShurjoPay credentials |
+| P11-04 | UddoktaPay adapter + Manual Payment verification + COD reconciliation | `BLOCKED` | Adapter in P11; sandbox/live test needs UddoktaPay credentials |
+
+### PHASE 12 — Fraud Checking, Order Restriction & IP Blocking
+| ID | Feature / Deliverable | Status | Notes |
+|---|---|---|---|
+| P12-01 | BDCourier fraud-checker API adapter + manual lookup interface | `BLOCKED` | Adapter in P12; live lookup needs BDCourier API key |
+| P12-02 | Configurable risk thresholds, manual-review queue & velocity limits | `NOT STARTED` | Scheduled for Phase 12 |
+| P12-03 | Temporary (TTL) & permanent IP/phone restrictions (CGNAT-safe) + block/unblock audit | `NOT STARTED` | Scheduled for Phase 12 |
+
+### PHASE 13 — Bulk SMS & Notifications
+| ID | Feature / Deliverable | Status | Notes |
+|---|---|---|---|
+| P13-01 | BulkSMSBD official API adapter, retry queue & delivery status tracking | `BLOCKED` | Adapter in P13; live send needs BulkSMSBD key & Sender ID |
+| P13-02 | Bilingual (`bn`/`en`) SMS templates, OTP & order alerts, phone masking in logs | `NOT STARTED` | Scheduled for Phase 13 |
+
+### PHASE 14 — Pixels, Tag Manager & Visitor Attribution
+| ID | Feature / Deliverable | Status | Notes |
+|---|---|---|---|
+| P14-01 | Meta Pixel + Facebook Conversions API (`event_id` deduplication) | `NOT STARTED` | Scheduled for Phase 14 |
+| P14-02 | Google Tag Manager & TikTok Pixel integration | `NOT STARTED` | Scheduled for Phase 14 |
+| P14-03 | UTM/platform visitor tracking, consent handling & verified-only `Purchase` events | `IN PROGRESS` | First-party session UTM capture and order consent provenance are implemented behind `ANALYTICS_ATTRIBUTION_ENABLED=false` by default; user opt-in is CSRF-protected and revocable. Migration/order persistence, consent HTTP behavior and no-consent behavior passed exact-SHA MySQL CI run `40483319058` on `5f77f4077125ef40c48c71c1f5bed5284a3be128`. No external event or Purchase dispatch is implemented |
+
+### PHASE 15 — Landing Pages, Promotions & Content
+| ID | Feature / Deliverable | Status | Notes |
+|---|---|---|---|
+| P15-01 | Reusable multi-product landing-page themes with draft/preview/publish workflow | `NOT STARTED` | Uses shared validated checkout engine |
+| P15-02 | Banners, sliders, popup offers, privacy-safe sales notification popup & coupon validity rules | `NOT STARTED` | Scheduled for Phase 15 |
+
+### PHASE 16 — Wholesale, Multivendor & Reseller
+| ID | Feature / Deliverable | Status | Notes |
+|---|---|---|---|
+| P16-01 | Wholesale buyer onboarding, approval, MOQ/pack rules & tiered pricing | `NOT STARTED` | Scheduled for Phase 16 |
+| P16-02 | Isolated Multivendor portal, separate vendor stock, product moderation & commission ledger | `NOT STARTED` | Approved (`ADR-006`) |
+| P16-03 | Isolated Reseller portal using Mr. Tumi warehouse stock, margin attribution & return reversal | `NOT STARTED` | Approved (`ADR-006`) |
+
+### PHASE 17 — POS, CRM & HRM
+| ID | Feature / Deliverable | Status | Notes |
+|---|---|---|---|
+| P17-01 | POS barcode/SKU search, cashier shift open/close reconciliation, receipts & POS returns | `NOT STARTED` | Scheduled for Phase 17 |
+| P17-02 | CRM customer profiles, order history, support notes & complaints | `NOT STARTED` | Scheduled for Phase 17 |
+| P17-03 | HRM employees, departments, attendance, shifts, leaves, documents & approved SME payroll | `NOT STARTED` | Approved (`ADR-008`) |
+
+### PHASE 18 — Reports, Finance & System Settings
+| ID | Feature / Deliverable | Status | Notes |
+|---|---|---|---|
+| P18-01 | Fund/account ledger, expense categories & reconciled P&L (Revenue ≠ Profit) | `NOT STARTED` | Scheduled for Phase 18 |
+| P18-02 | Order, purchase, stock, courier COD, gateway, vendor/reseller & refund reports + CSV | `NOT STARTED` | Scheduled for Phase 18 |
+| P18-03 | Site, email/SMTP, SEO, sitemap, cron monitor, error log, cache clear & update status | `NOT STARTED` | Scheduled for Phase 18 |
+
+### PHASE 19 — Customer & Admin Android WebView Apps
+| ID | Feature / Deliverable | Status | Notes |
+|---|---|---|---|
+| P19-01 | Customer Android WebView project source (deep links, safe payment redirects, offline UI) | `NOT STARTED` | Scheduled for Phase 19 |
+| P19-02 | Admin Android WebView project source (role-aware, session timeout, zero embedded secrets) | `NOT STARTED` | Scheduled for Phase 19 |
+| P19-03 | Build instructions, keystore signing guide & release documentation | `NOT STARTED` | Scheduled for Phase 19 |
+
+### PHASE 20 — Application QA & Security Audit (Hosting/Live Deployment Out of Scope)
+| ID | Feature / Deliverable | Status | Notes |
+|---|---|---|---|
+| P20-01 | Full unit, integration, RBAC, financial reconciliation & critical-path E2E test suite execution | `IN PROGRESS` | Application QA remains incomplete: cross-phase critical-path E2E, financial reconciliation and systematic failure-recovery evidence are outstanding. Hosting/live deployment and host-specific QA are explicitly out of scope. MySQL 8.0 and MariaDB 10.11 CI evidence is retained against the exact SHA for each tested change; local MySQL-dependent skips remain reported as skipped, never passed. |
+| P20-02 | Application security audit (CSRF, XSS, SQLi, upload safety, dependency audit, PII redaction) | `IN PROGRESS` | CI foundation/secret checks and selected route/security tests exist; systematic auth/RBAC/CSRF/XSS/SQLi/upload/dependency/PII audit and regression suite remain outstanding. Hosting-specific configuration is not being verified as part of this phase. Exact-final-SHA CI is required for changed code. |
+| P20-03 | `INTEGRATION_STATUS.md`, release-independent QA checklist & recovery verification where required by architecture | `IN PROGRESS` | Keep integration truth and application release QA documentation accurate. Hosting/live deployment, cPanel facts, staging smoke tests and production actions are owner-managed and explicitly out of scope; no hosting or production access occurred. Assess whether this architecture requires an isolated disposable backup/restore rehearsal before implementing one; do not perform production backup/restore. Canonical Phase 19 remains the separate Android WebView phase (`NOT STARTED`) |

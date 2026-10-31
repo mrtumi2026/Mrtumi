@@ -1,0 +1,127 @@
+<% const formatPaisa = value => { const n=BigInt(String(value||0)); const whole=n/100n; const cents=(n%100n).toString().padStart(2,'0'); return whole.toLocaleString('en-IN')+'.'+cents; }; %>
+<%- include('partials/layout-top', { title: 'Reseller Dashboard' }) %>
+
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+  <div>
+    <h4 class="fw-bold mb-0">
+      🤝 <%= reseller.name %> (<%= reseller.shop_name || 'Reseller Partner' %>)
+      <% if (reseller.verified) { %>
+        <span class="badge bg-success ms-1" style="font-size:11px;">✓ Verified Partner</span>
+      <% } else { %>
+        <span class="badge bg-warning text-dark ms-1" style="font-size:11px;">⏳ Verification Pending</span>
+      <% } %>
+    </h4>
+    <p class="text-muted small mb-0">পাইকারি দামে কাস্টমারের ঠিকানায় সরাসরি ড্রপশিপ অর্ডার পাঠান এবং লাভ উত্তোলন করুন</p>
+  </div>
+  <div class="d-flex gap-2">
+    <% if(!canonicalDashboard){ %><a href="/reseller/orders/create" class="btn btn-primary btn-sm fw-bold">+ নতুন কাস্টমার অর্ডার তৈরি করুন</a><% } %>
+    <a href="/reseller/products" class="btn btn-outline-dark btn-sm">📦 পাইকারি ক্যাটালগ</a>
+  </div>
+</div>
+
+<div class="stat-grid mb-4">
+  <div class="sc">
+    <div class="sc-ico" style="background:#f0fdf4;"><i class="fas fa-coins text-success"></i></div>
+    <div>
+      <div class="sc-label"><%= canonicalDashboard ? 'ওয়ালেট' : 'কমিশন ওয়ালেট ব্যালেন্স' %></div>
+      <div class="sc-val"><%= canonicalDashboard ? 'নীতিমালা নির্ধারিত নয়' : '৳'+Number(reseller.balance || 0).toLocaleString('en-IN') %></div>
+      <div class="sc-note"><%= canonicalDashboard ? 'ব্যবহারযোগ্য ব্যালেন্স দেখানো হচ্ছে না' : 'উত্তোলনযোগ্য লাভ' %></div>
+    </div>
+  </div>
+  <div class="sc">
+    <div class="sc-ico" style="background:#eff6ff;"><i class="fas fa-shield-alt text-primary"></i></div>
+    <div>
+      <div class="sc-label"><%= canonicalDashboard ? 'ডিপোজিট' : 'সিকিউরিটি ডিপোজিট' %></div>
+      <div class="sc-val"><%= canonicalDashboard ? 'ইতিহাসে দেখুন' : '৳'+Number(reseller.deposit_amount || 0).toLocaleString('en-IN') %></div>
+      <div class="sc-note"><%= canonicalDashboard ? 'ডিপোজিট লেনদেন দেখুন' : 'অ্যাক্টিভ ব্যালেন্স' %></div>
+    </div>
+  </div>
+  <div class="sc">
+    <div class="sc-ico" style="background:#fffbeb;"><i class="fas fa-truck-fast text-warning"></i></div>
+    <div>
+      <div class="sc-label">মোট রিসেলার অর্ডার</div>
+      <div class="sc-val"><%= totalOrders %></div>
+      <div class="sc-note"><%= deliveredCount %> ডেলিভারড • <%= pendingCount %> চলমান</div>
+    </div>
+  </div>
+  <div class="sc">
+    <div class="sc-ico" style="background:#faf5ff;"><i class="fas fa-chart-line text-info"></i></div>
+    <div>
+      <div class="sc-label"><%= canonicalDashboard ? 'রেকর্ডকৃত অর্ডার মার্জিন' : 'মোট অর্জিত প্রফিট' %></div>
+      <div class="sc-val"><%= canonicalDashboard ? 'ওয়ালেট হিসাব নয়' : '৳'+Number(totalEstimatedProfit).toLocaleString('en-IN') %></div>
+      <div class="sc-note"><%= canonicalDashboard ? 'কোনো কমিশন গণনা করা হয়নি' : 'অর্ডার মার্জিন থেকে' %></div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-7">
+    <div class="tbl-card">
+      <div class="tbl-card-head">
+        <h4><%= canonicalDashboard ? 'জনপ্রিয় পণ্য' : 'জনপ্রিয় পাইকারি প্রোডাক্ট (রিসেলার মার্জিনসহ)' %></h4>
+        <a href="/reseller/products" class="link-green">সব দেখুন →</a>
+      </div>
+      <div class="tbl-card-body">
+        <table class="table clean mb-0 align-middle">
+          <thead>
+            <tr>
+              <th>পণ্য</th>
+              <% if(canonicalDashboard){ %><th>উপলভ্য স্টক</th><% } else { %><th>রিসেলার পাইকারি মূল্য</th><th>খুচরা মূল্য</th><th>সম্ভাব্য লাভ</th><th></th><% } %>
+            </tr>
+          </thead>
+          <tbody>
+            <% hotProducts.forEach(function(p) {
+                 const estProfit = canonicalDashboard ? null : Math.max(0, Number(p.new_price) - Number(p.reseller_cost));
+            %>
+              <tr>
+                <td>
+                  <div class="d-flex align-items-center gap-2">
+                    <img src="<%= p.image %>" class="p-thumb" alt="" />
+                    <span class="fw-semibold"><%= p.name %></span>
+                  </div>
+                </td>
+                <% if(canonicalDashboard){ %><td><%= Number(p.available_stock||0) %></td><% } else { %><td class="fw-bold text-primary">৳<%= Number(p.reseller_cost).toLocaleString('en-IN') %></td><td>৳<%= Number(p.new_price).toLocaleString('en-IN') %></td><td><span class="badge bg-success-subtle text-success">+৳<%= estProfit %>+</span></td><td class="text-end"><a href="/reseller/orders/create?product_id=<%= p.id %>" class="btn btn-sm btn-primary py-0 px-2">অর্ডার করুন</a></td><% } %>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="tbl-card">
+      <div class="tbl-card-head">
+        <h4>সাম্প্রতিক রিসেলার অর্ডার</h4>
+        <a href="/reseller/orders" class="link-green">সব অর্ডার →</a>
+      </div>
+      <div class="tbl-card-body">
+        <table class="table clean mb-0">
+          <thead>
+            <tr>
+              <th>ইনভয়েস</th>
+              <th>কাস্টমার</th>
+              <th><%= canonicalDashboard ? 'অর্ডার মার্জিন (ওয়ালেট নয়)' : 'আপনার লাভ' %></th>
+              <th>স্ট্যাটাস</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% if (!recentOrders.length) { %>
+              <tr><td colspan="4" class="text-center py-4 text-muted">এখনো কোনো অর্ডার নেই।</td></tr>
+            <% } %>
+            <% recentOrders.forEach(function(o) { %>
+              <tr>
+                <td class="fw-bold"><% if(canonicalDashboard){ %><a href="/reseller/orders/<%= o.id %>">#<%= o.invoice_id %></a><% } else { %>#<%= o.invoice_id %><% } %></td>
+                <td><%= o.customer_name %></td>
+                <td class="fw-bold text-success"><%= canonicalDashboard ? '৳'+formatPaisa(o.reseller_margin_paisa) : '+৳'+Number(o.reseller_profit || 0).toLocaleString('en-IN') %></td>
+                <td><span class="sb <%= o.badge_class %>"><%= o.status_label %></span></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<%- include('partials/layout-bottom') %>

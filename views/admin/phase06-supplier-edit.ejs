@@ -1,0 +1,27 @@
+<%- include('partials/head', { title: pageTitle }) %>
+<%- include('partials/topbar') %>
+<%- include('partials/sidebar') %>
+<div class="content-page"><main class="content container-fluid py-3" id="mainContent">
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <div><h1 class="h3 mb-1"><%= pageTitle %></h1><p class="text-muted mb-0"><%= locale==='en'?'Edit supplier contact details or availability for new purchase orders. Existing orders and balances are not changed.':'নতুন ক্রয় অর্ডারের জন্য সরবরাহকারীর যোগাযোগের তথ্য বা সক্রিয় অবস্থা সম্পাদনা করুন। পুরোনো অর্ডার ও ব্যালেন্স বদলাবে না।' %></p></div>
+    <a class="btn btn-outline-secondary" href="/admin/phase06#suppliers"><%= locale==='en'?'Back to suppliers':'সরবরাহকারী তালিকায় ফিরুন' %></a>
+  </div>
+  <div class="alert alert-info"><%= locale==='en'?'Deactivation prevents this supplier from being selected for new purchase orders. It does not delete supplier records or alter purchase history, receipts, stock, or financial balances.':'নিষ্ক্রিয় করলে নতুন ক্রয় অর্ডারে সরবরাহকারীটি বাছাই করা যাবে না। এতে সরবরাহকারী রেকর্ড, ক্রয় ইতিহাস, রিসিপ্ট, স্টক বা আর্থিক ব্যালেন্স মুছবে বা বদলাবে না।' %></div>
+  <section class="card shadow-sm"><div class="card-header"><h2 class="h5 mb-0"><%= locale==='en'?'Supplier details':'সরবরাহকারীর তথ্য' %></h2></div><div class="card-body">
+    <form method="post" action="/admin/phase06/suppliers/<%= supplier.id %>" class="row g-3">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="col-md-6"><label class="form-label" for="supplier-name"><%= locale==='en'?'Supplier name':'সরবরাহকারীর নাম' %> *</label><input class="form-control" id="supplier-name" name="name" maxlength="191" required value="<%= supplier.name %>"></div>
+      <div class="col-md-3"><label class="form-label" for="supplier-code"><%= locale==='en'?'Supplier code':'সরবরাহকারী কোড' %></label><input class="form-control" id="supplier-code" name="supplier_code" maxlength="48" value="<%= supplier.supplier_code||'' %>"></div>
+      <div class="col-md-3"><label class="form-label" for="supplier-status"><%= locale==='en'?'Availability':'সক্রিয় অবস্থা' %></label><select class="form-select" id="supplier-status" name="status" required><option value="1" <%= Number(supplier.status)===1?'selected':'' %>><%= locale==='en'?'Active':'সক্রিয়' %></option><option value="0" <%= Number(supplier.status)===0?'selected':'' %>><%= locale==='en'?'Inactive':'নিষ্ক্রিয়' %></option></select></div>
+      <div class="col-md-6"><label class="form-label" for="supplier-company"><%= locale==='en'?'Company':'প্রতিষ্ঠান' %></label><input class="form-control" id="supplier-company" name="company" maxlength="191" value="<%= supplier.company||'' %>"></div>
+      <div class="col-md-6"><label class="form-label" for="supplier-contact"><%= locale==='en'?'Contact person':'যোগাযোগের ব্যক্তি' %></label><input class="form-control" id="supplier-contact" name="contact_person" maxlength="191" value="<%= supplier.contact_person||'' %>"></div>
+      <div class="col-md-6"><label class="form-label" for="supplier-phone"><%= locale==='en'?'Phone':'ফোন' %> *</label><input class="form-control" id="supplier-phone" name="phone" maxlength="32" required value="<%= supplier.phone %>"></div>
+      <div class="col-md-6"><label class="form-label" for="supplier-email"><%= locale==='en'?'Email':'ইমেইল' %></label><input class="form-control" id="supplier-email" name="email" type="email" maxlength="191" value="<%= supplier.email||'' %>"></div>
+      <div class="col-md-6"><label class="form-label" for="supplier-business-id"><%= locale==='en'?'Business identifier':'ব্যবসায়িক পরিচিতি' %></label><input class="form-control" id="supplier-business-id" name="tax_or_trade_id" maxlength="100" value="<%= supplier.tax_or_trade_id||'' %>"></div>
+      <div class="col-md-6"><label class="form-label" for="supplier-address"><%= locale==='en'?'Address':'ঠিকানা' %></label><textarea class="form-control" id="supplier-address" name="address" maxlength="4000" rows="2"><%= supplier.address||'' %></textarea></div>
+      <div class="col-12"><label class="form-label" for="supplier-notes"><%= locale==='en'?'Notes (non-financial)':'নোট (আর্থিক নয়)' %></label><textarea class="form-control" id="supplier-notes" name="notes" maxlength="4000" rows="3"><%= supplier.notes||'' %></textarea></div>
+      <div class="col-12 d-flex gap-2"><button class="btn btn-success" type="submit"><%= locale==='en'?'Save supplier':'সরবরাহকারী সংরক্ষণ' %></button><a class="btn btn-outline-secondary" href="/admin/phase06#suppliers"><%= locale==='en'?'Cancel':'বাতিল' %></a></div>
+    </form>
+  </div></section>
+</main></div>
+<%- include('partials/footer') %>

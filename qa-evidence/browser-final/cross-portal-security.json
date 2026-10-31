@@ -1,0 +1,11 @@
+{
+  "browser": "HeadlessChrome/92.0.4512.0",
+  "fixture": "isolated data/qa-browser.db",
+  "checks": [
+    {"session": "vendor", "requested": "/reseller/dashboard", "final": "/reseller/login", "http": 200, "result": "PASS_DENIED"},
+    {"session": "vendor", "requested": "/admin/dashboard", "final": "/admin/login", "http": 200, "result": "PASS_DENIED"},
+    {"session": "reseller", "requested": "/vendor/dashboard", "final": "/vendor/login", "http": 200, "result": "PASS_DENIED"},
+    {"session": "reseller", "requested": "/admin/dashboard", "final": "/admin/login", "http": 200, "result": "PASS_DENIED"},
+    {"session": "limited support admin", "requested": "/admin/complaints", "http": 403, "result": "PASS_DENIED"}
+  ]
+}

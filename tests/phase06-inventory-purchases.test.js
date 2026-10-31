@@ -1,0 +1,559 @@
+'use strict';
+
+const path = require('path');
+const os = require('os');
+const fs = require('fs');
+const { describe, test, before, after } = require('node:test');
+const assert = require('node:assert/strict');
+
+const TEST_DB_PATH = path.join(os.tmpdir(), `mrtumi.phase06.${process.pid}.test.db`);
+process.env.NODE_ENV = 'test';
+process.env.DB_CLIENT = 'sqlite';
+process.env.SQLITE_PATH = TEST_DB_PATH;
+process.env.SEED_DEMO_DATA = 'false';
+process.env.LOG_SILENT = 'true';
+
+const db = require('../src/db/database');
+const repo = require('../src/repositories/phase06Repository');
+const { ValidationError, AppError } = require('../src/utils/errors');
+
+before(() => {
+  db.initializeDatabase();
+  db.run("INSERT INTO categories (name, slug, status) VALUES (?, ?, 1)", 'Test groceries', 'phase06-test-grocery');
+});
+after(() => {
+  try { db.rawDb.close(); } catch (_e) {}
+  for (const ext of ['', '-shm', '-wal']) {
+    try { fs.unlinkSync(TEST_DB_PATH + ext); } catch (_e) {}
+  }
+});
+
+describe('Phase 06 — Product, Inventory Ledger, Supplier & Purchase Receiving', () => {
+  test('inventory summaries handle an empty catalog without exposing valuation', async () => {
+    assert.deepEqual(await repo.getInventorySummary(), {
+      products:{product_count:0,warehouse_on_hand:0,warehouse_reserved:0,warehouse_available:0,vendor_on_hand:0,vendor_reserved:0,vendor_available:0,low_stock_products:0,no_available_products:0},
+      variants:{variant_count:0,active_variant_count:0,inactive_variant_count:0,warehouse_on_hand:0,warehouse_reserved:0,warehouse_available:0,no_available_variants:0},
+    });
+    assert.deepEqual(await repo.listInventory(),[]);
+  });
+
+  test('product creation uses unique SKU, validates money and writes opening stock ledger once', async () => {
+    const created = await repo.createProduct({
+      sku: 'P06-TEST-001', name_bn: 'পরীক্ষা পণ্য', name_en: 'Test Product', slug: 'phase06-test-product',
+      category_id: 1, regular_price_bdt: '120.00', sale_price_bdt: '100.50', cost_price_bdt: '70.25',
+      unit_label: '1 pc', opening_stock: '8', low_stock_threshold: '3'
+    }, { id: 7 });
+    assert.ok(created.id > 0);
+    assert.equal(db.get('SELECT stock FROM products WHERE id=?', created.id).stock, 8);
+    assert.equal(db.get("SELECT COUNT(*) AS n FROM stock_ledger WHERE product_id=? AND movement_type='opening'", created.id).n, 1);
+    const summary=await repo.getInventorySummary();
+    assert.deepEqual(summary.products,{product_count:1,warehouse_on_hand:8,warehouse_reserved:0,warehouse_available:8,vendor_on_hand:0,vendor_reserved:0,vendor_available:0,low_stock_products:0,no_available_products:0});
+    const inventoryRows=await repo.listInventory();
+    assert.equal(inventoryRows[0].warehouse_available,8);
+    assert.equal(inventoryRows[0].cost_price_paisa,undefined);
+    assert.equal(inventoryRows[0].remaining_value_paisa,undefined);
+    await assert.rejects(() => repo.createProduct({
+      sku: 'P06-TEST-001', name_bn: 'দ্বিতীয়', slug: 'phase06-test-product-2', category_id: 1,
+      regular_price_bdt: '1', sale_price_bdt: '1', cost_price_bdt: '0'
+    }), /SKU already exists/);
+    await assert.rejects(() => repo.createProduct({
+      sku: 'P06-BAD-001', name_bn: 'Invalid', slug: 'phase06-test-invalid-price', category_id: 1,
+      regular_price_bdt: '1.001', sale_price_bdt: '2', cost_price_bdt: '0'
+    }), ValidationError);
+  });
+
+  test('inventory catalog search, allowlisted sorting, low-stock filter and bounded pagination are deterministic', async () => {
+    for(let index=1;index<=30;index++){
+      const suffix=String(index).padStart(3,'0');
+      await repo.createProduct({sku:`P06-PAGE-${suffix}`,name_bn:`পেজ ${suffix}`,name_en:`Paging ${suffix}`,slug:`p06-page-${suffix}`,
+        category_id:1,regular_price_bdt:'10',sale_price_bdt:'10',cost_price_bdt:'5',opening_stock:String(index),low_stock_threshold:'5'});
+    }
+    const first=await repo.listInventoryPage({q:'P06-PAGE-',sort:'sku',page:'1'});
+    assert.deepEqual([first.total,first.rows.length,first.page,first.totalPages,first.hasPrevious,first.hasNext],[30,25,1,2,false,true]);
+    assert.equal(first.rows[0].sku,'P06-PAGE-001');
+    const second=await repo.listInventoryPage({q:'P06-PAGE-',sort:'sku',page:'2'});
+    assert.deepEqual([second.rows.length,second.page,second.hasNext],[5,2,false]);
+    const low=await repo.listInventoryPage({q:'P06-PAGE-',filter:'low',sort:'available'});
+    assert.equal(low.total,5);
+    assert.ok(low.rows.every((row)=>Number(row.warehouse_available)<=Number(row.low_stock_threshold)));
+    await repo.createProduct({sku:'P06-PAGE-ZERO',name_bn:'শূন্য স্টক',name_en:'Zero stock',slug:'p06-page-zero',category_id:1,
+      regular_price_bdt:'10',sale_price_bdt:'10',cost_price_bdt:'5'});
+    const zeroThreshold=await repo.listInventoryPage({q:'P06-PAGE-ZERO',filter:'low'});
+    assert.equal(zeroThreshold.total,1,'zero stock at a zero threshold preserves the existing admin LOW comparison');
+    const summary=await repo.getInventorySummary();
+    assert.equal(summary.products.product_count,32);
+    assert.equal(summary.products.low_stock_products,6,'summary uses the existing warehouse-available <= threshold rule');
+    assert.equal(summary.products.no_available_products,1);
+    const escaped=await repo.listInventoryPage({q:'P06-PAGE-%'});
+    assert.equal(escaped.total,0,'LIKE wildcards in user text are treated literally');
+    const invalid=await repo.listInventoryPage({sort:'name;DROP TABLE products',page:'-3'});
+    assert.equal(invalid.sort,'newest');assert.equal(invalid.page,1);
+  });
+
+  test('stock movement report is read-only, filterable by product and page-bounded', async () => {
+    const ledgerCountBefore = Number(db.get('SELECT COUNT(*) AS n FROM stock_ledger').n);
+    const first = await repo.listStockLedger({ ledger_page: '1' });
+    assert.equal(first.page, 1);
+    assert.equal(first.pageSize, 25);
+    assert.equal(first.rows.length, 25);
+    assert.ok(first.total >= 31, 'opening stock events from the catalog fixture are included');
+    assert.equal(first.hasPrevious, false);
+    assert.equal(first.hasNext, true);
+    assert.ok(first.rows.every((row, index, rows) => index === 0 || Number(rows[index - 1].id) > Number(row.id)), 'movement rows are newest-first with deterministic IDs');
+
+    const product = db.get("SELECT id FROM products WHERE code='P06-PAGE-001'");
+    const filtered = await repo.listStockLedger({ ledger_product_id: String(product.id), ledger_page: '999' });
+    assert.equal(filtered.productId, Number(product.id));
+    assert.equal(filtered.total, 1);
+    assert.equal(filtered.page, 1, 'out-of-range page is clamped to the available movement pages');
+    assert.equal(filtered.rows[0].movement_type, 'opening');
+    assert.equal(filtered.rows[0].sku, 'P06-PAGE-001');
+    assert.equal(filtered.rows[0].unit_cost_paisa, undefined, 'report excludes valuation fields');
+    await assert.rejects(() => repo.listStockLedger({ ledger_product_id: 'bad-id' }), ValidationError);
+    assert.equal(Number(db.get('SELECT COUNT(*) AS n FROM stock_ledger').n), ledgerCountBefore, 'report reads do not write stock ledger rows');
+  });
+
+  test('product catalog edits preserve stock and are transactionally audited with validation and rollback', async () => {
+    const product = db.get("SELECT id FROM products WHERE code='P06-TEST-001'");
+    const stockBefore = db.get('SELECT stock,stock_reserved,vendor_stock_on_hand FROM products WHERE id=?', product.id);
+    const ledgerBefore = Number(db.get('SELECT COUNT(*) AS n FROM stock_ledger WHERE product_id=?', product.id).n);
+    const input = {
+      name_bn:'সম্পাদিত পণ্য', name_en:'Edited product', slug:'phase06-test-product-edited', product_type:'grocery',
+      category_id:1, brand_id:'', unit_label:'500 g', regular_price_bdt:'130.00', sale_price_bdt:'115.25', cost_price_bdt:'70.25',
+      wholesale_price_bdt:'90.00', wholesale_min_qty:'5', low_stock_threshold:'4', image_url:'/uploads/custom/edited.webp',
+      short_desc_bn:'নতুন সংক্ষিপ্ত বিবরণ', short_desc_en:'New short description', description_bn:'বাংলা বিবরণ', description_en:'English description',
+    };
+    const updated = await repo.updateProduct(product.id, input, { id:7, ip:'192.0.2.10' });
+    assert.equal(updated.sku, 'P06-TEST-001', 'SKU remains a stable product identifier');
+    const persisted = db.get('SELECT name,name_en,slug,old_price,new_price,purchase_price,stock,stock_reserved,vendor_stock_on_hand,unit FROM products WHERE id=?', product.id);
+    assert.deepEqual(persisted, {
+      name:'সম্পাদিত পণ্য', name_en:'Edited product', slug:'phase06-test-product-edited', old_price:130, new_price:115.25,
+      purchase_price:70.25, stock:stockBefore.stock, stock_reserved:stockBefore.stock_reserved,
+      vendor_stock_on_hand:stockBefore.vendor_stock_on_hand, unit:'500 g',
+    });
+    assert.equal(Number(db.get('SELECT COUNT(*) AS n FROM stock_ledger WHERE product_id=?', product.id).n), ledgerBefore, 'catalog edit must not append or overwrite stock movements');
+    const audit = db.get("SELECT actor_id,before_json,after_json FROM audit_logs WHERE action='product.update' AND entity_id=? ORDER BY id DESC LIMIT 1", String(product.id));
+    assert.equal(audit.actor_id, 7);
+    assert.equal(JSON.parse(audit.before_json).name_bn, 'পরীক্ষা পণ্য');
+    assert.equal(JSON.parse(audit.after_json).nameBn, 'সম্পাদিত পণ্য');
+
+    await assert.rejects(() => repo.updateProduct(product.id, { ...input, slug:'phase06-test-product-edited', regular_price_bdt:'10', sale_price_bdt:'12' }), ValidationError);
+    await assert.rejects(() => repo.updateProduct(product.id, { ...input, slug:'!!!' }), ValidationError);
+    await assert.rejects(() => repo.updateProduct(999999, input), (err) => err.code === 'NOT_FOUND');
+    const second = await repo.createProduct({ sku:'P06-EDIT-OTHER', name_bn:'অন্য পণ্য', slug:'phase06-edit-other', category_id:1,
+      regular_price_bdt:'20', sale_price_bdt:'20', cost_price_bdt:'10' });
+    await assert.rejects(() => repo.updateProduct(product.id, { ...input, slug:'phase06-edit-other' }), (err) => err.code === 'DUPLICATE_PRODUCT_SLUG');
+    assert.ok(second.id > 0);
+
+    db.rawDb.exec("CREATE TRIGGER p06_fail_product_update BEFORE INSERT ON audit_logs WHEN NEW.action='product.update' BEGIN SELECT RAISE(ABORT,'fixture product audit failure'); END");
+    try {
+      await assert.rejects(() => repo.updateProduct(product.id, { ...input, name_en:'Must roll back' }));
+    } finally {
+      db.rawDb.exec('DROP TRIGGER IF EXISTS p06_fail_product_update');
+    }
+    assert.equal(db.get('SELECT name_en FROM products WHERE id=?', product.id).name_en, 'Edited product', 'audit failure must roll product changes back');
+  });
+
+  test('variant catalog create/update preserves SKU and inventory, uses paisa, soft-disables without deleting, and rolls audit failures back', async () => {
+    const product = db.get("SELECT id FROM products WHERE code='P06-TEST-001'");
+    const created = await repo.createProductVariant(product.id, { variant_sku:'P06-TEST-001-500G',size_label:'500 g',color_label:'Green',price_bdt:'123.45' }, { id:7 });
+    assert.ok(created.id > 0);
+    assert.equal(created.pricePaisa,12345);
+    assert.equal(created.stockOnHand,0);
+    assert.equal(Number(db.get('SELECT price FROM product_variants WHERE id=?',created.id).price),123.45);
+    const auditCreate = db.get("SELECT actor_id,after_json FROM audit_logs WHERE action='product.variant.create' AND entity_id=?",String(created.id));
+    assert.equal(auditCreate.actor_id,7);
+    assert.equal(JSON.parse(auditCreate.after_json).variantSku,'P06-TEST-001-500G');
+    await assert.rejects(() => repo.createProductVariant(product.id,{variant_sku:'P06-TEST-001-500G',size_label:'1 kg',price_bdt:'1.00'}),(err)=>err.code==='CONFLICT');
+    await assert.rejects(() => repo.createProductVariant(product.id,{variant_sku:'P06-TEST-INVALID',price_bdt:'1.001'}),ValidationError);
+    await assert.rejects(() => repo.updateProductVariant(product.id,created.id,{size_label:'1 kg',color_label:'Blue',price_bdt:'0.00'}),ValidationError,'partial updates cannot silently activate or reset omitted fields');
+
+    db.run('UPDATE product_variants SET stock_on_hand=?,stock_reserved=? WHERE id=?',8,3,created.id);
+    const updated = await repo.updateProductVariant(product.id,created.id,{size_label:'1 kg',color_label:'Blue',price_bdt:'0.00',status:'0'},{id:7});
+    assert.deepEqual([updated.variantSku,updated.sizeLabel,updated.colorLabel,updated.pricePaisa,updated.stockOnHand,updated.stockReserved,updated.status],
+      ['P06-TEST-001-500G','1 kg','Blue',0,8,3,0]);
+    const persisted = db.get('SELECT variant_sku,size_label,color_label,ROUND(price*100) AS price_paisa,stock_on_hand,stock_reserved,status FROM product_variants WHERE id=?',created.id);
+    assert.deepEqual(persisted,{variant_sku:'P06-TEST-001-500G',size_label:'1 kg',color_label:'Blue',price_paisa:0,stock_on_hand:8,stock_reserved:3,status:0});
+    const auditUpdate = db.get("SELECT before_json,after_json FROM audit_logs WHERE action='product.variant.update' AND entity_id=? ORDER BY id DESC LIMIT 1",String(created.id));
+    assert.equal(JSON.parse(auditUpdate.before_json).variant_sku,'P06-TEST-001-500G');
+    assert.equal(JSON.parse(auditUpdate.after_json).stockReserved,3);
+
+    db.rawDb.exec("CREATE TRIGGER p06_fail_variant_update BEFORE INSERT ON audit_logs WHEN NEW.action='product.variant.update' BEGIN SELECT RAISE(ABORT,'fixture variant audit failure'); END");
+    try {
+      await assert.rejects(() => repo.updateProductVariant(product.id,created.id,{size_label:'Must roll back',color_label:'Blue',price_bdt:'2.00',status:'1'}));
+    } finally { db.rawDb.exec('DROP TRIGGER IF EXISTS p06_fail_variant_update'); }
+    assert.equal(db.get('SELECT size_label FROM product_variants WHERE id=?',created.id).size_label,'1 kg');
+
+    db.rawDb.exec("CREATE TRIGGER p06_fail_variant_create BEFORE INSERT ON audit_logs WHEN NEW.action='product.variant.create' BEGIN SELECT RAISE(ABORT,'fixture variant audit failure'); END");
+    try {
+      await assert.rejects(() => repo.createProductVariant(product.id,{variant_sku:'P06-TEST-ROLLBACK',price_bdt:'2.00'}));
+    } finally { db.rawDb.exec('DROP TRIGGER IF EXISTS p06_fail_variant_create'); }
+    assert.equal(Number(db.get("SELECT COUNT(*) AS n FROM product_variants WHERE variant_sku='P06-TEST-ROLLBACK'").n),0);
+  });
+
+  test('gallery reorder accepts only the complete current product image set and rolls back with audit failures', async () => {
+    const product = db.get("SELECT id FROM products WHERE code='P06-TEST-001'");
+    const first='/uploads/product/lychee-fresh.jpg';
+    const second='/uploads/product/lychee-box.jpg';
+    db.run('UPDATE products SET image=?,gallery=? WHERE id=?',first,JSON.stringify([first,second]),product.id);
+    const beforeFiles=[first,second].map((image)=>path.join(__dirname,'..','public',image.slice(1)));
+    assert.ok(beforeFiles.every((file)=>fs.existsSync(file)));
+    assert.deepEqual((await repo.getProductGalleryForEdit(product.id)).paths,[first,second]);
+    await assert.rejects(()=>repo.updateProductGallery(999999,{gallery_paths:[first]}),(err)=>err.code==='NOT_FOUND');
+    await assert.rejects(()=>repo.updateProductGallery(product.id,{gallery_paths:[first,'/uploads/product/../secret.jpg']}),ValidationError);
+    await assert.rejects(()=>repo.updateProductGallery(product.id,{gallery_paths:[first,'/uploads/product/mango-organic.jpg']}),ValidationError,'a valid image not assigned to this product is rejected');
+    await assert.rejects(()=>repo.updateProductGallery(product.id,{gallery_paths:[first]}),ValidationError,'reorder must be a complete list');
+
+    const updated=await repo.updateProductGallery(product.id,{gallery_paths:[second,first]},{id:7,ip:'192.0.2.7'});
+    assert.deepEqual(updated.galleryPaths,[second,first]);
+    assert.deepEqual(db.get('SELECT image AS image_url,gallery AS gallery_json FROM products WHERE id=?',product.id),
+      {image_url:second,gallery_json:JSON.stringify([second,first])});
+    const audit=db.get("SELECT actor_id,before_json,after_json FROM audit_logs WHERE action='product.gallery.reorder' AND entity_id=? ORDER BY id DESC LIMIT 1",String(product.id));
+    assert.equal(audit.actor_id,7);
+    assert.deepEqual(JSON.parse(audit.before_json).galleryPaths,[first,second]);
+    assert.deepEqual(JSON.parse(audit.after_json).galleryPaths,[second,first]);
+    assert.ok(beforeFiles.every((file)=>fs.existsSync(file)),'gallery reorder never removes shared image files');
+
+    db.rawDb.exec("CREATE TRIGGER p06_fail_gallery_audit BEFORE INSERT ON audit_logs WHEN NEW.action='product.gallery.reorder' BEGIN SELECT RAISE(ABORT,'fixture gallery audit failure'); END");
+    try { await assert.rejects(()=>repo.updateProductGallery(product.id,{gallery_paths:[first,second]})); }
+    finally { db.rawDb.exec('DROP TRIGGER IF EXISTS p06_fail_gallery_audit'); }
+    assert.deepEqual(db.get('SELECT image AS image_url,gallery AS gallery_json FROM products WHERE id=?',product.id),
+      {image_url:second,gallery_json:JSON.stringify([second,first])},'audit failure rolls gallery fields back atomically');
+    db.run('UPDATE products SET gallery=? WHERE id=?',JSON.stringify(['https://example.invalid/private?token=hidden']),product.id);
+    const blocked=await repo.getProductGalleryForEdit(product.id);
+    assert.equal(blocked.blockedCount,1);
+    assert.deepEqual(blocked.paths,[second],'only independently validated current paths are returned; the unsafe legacy URL itself is not exposed');
+    await assert.rejects(()=>repo.updateProductGallery(product.id,{gallery_paths:[first]}),ValidationError);
+    db.run('UPDATE products SET image=?,gallery=? WHERE id=?',first,JSON.stringify([first,second]),product.id);
+  });
+
+  test('gallery upload assignment accepts only existing owned-root raster paths and rolls assignment back on audit failure',async()=>{
+    const product=db.get("SELECT id,image,gallery FROM products WHERE code='P06-TEST-001'");
+    const upload=require('../src/middleware/upload');
+    const root=upload.resolveUploadBase();
+    const nonce=`p06-${process.pid}-${Date.now()}`;
+    const imageName=`${nonce}.png`,rollbackName=`${nonce}-rollback.png`;
+    const imageFile=path.join(root,imageName),rollbackFile=path.join(root,rollbackName);
+    const outsideFile=path.join(os.tmpdir(),`${nonce}-outside.png`),symlinkFile=path.join(root,`${nonce}-link.png`);
+    const imagePath=`/uploads/custom/${imageName}`,rollbackPath=`/uploads/custom/${rollbackName}`,symlinkPath=`/uploads/custom/${path.basename(symlinkFile)}`;
+    const pngHeader=Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a,0x00]);
+    db.run("UPDATE products SET image='',gallery='[]' WHERE id=?",product.id);
+    fs.writeFileSync(imageFile,pngHeader); fs.writeFileSync(rollbackFile,pngHeader);fs.writeFileSync(outsideFile,pngHeader);fs.symlinkSync(outsideFile,symlinkFile);
+    try{
+      const result=await repo.appendProductGalleryImages(product.id,[imagePath],{id:7});
+      assert.deepEqual(result,{productId:product.id,imageUrl:imagePath,galleryPaths:[imagePath],addedPaths:[imagePath]});
+      assert.deepEqual(db.get('SELECT image,gallery FROM products WHERE id=?',product.id),{image:imagePath,gallery:JSON.stringify([imagePath])});
+      const audit=db.get("SELECT actor_id,action,after_json FROM audit_logs WHERE action='product.gallery.upload' AND entity_id=? ORDER BY id DESC LIMIT 1",String(product.id));
+      assert.equal(audit.actor_id,7); assert.equal(audit.action,'product.gallery.upload');
+      assert.deepEqual(JSON.parse(audit.after_json).addedPaths,[imagePath]);
+      await assert.rejects(()=>repo.appendProductGalleryImages(product.id,['/uploads/custom/../secret.png']),ValidationError);
+      await assert.rejects(()=>repo.appendProductGalleryImages(product.id,[symlinkPath]),ValidationError,'a symlink escaping the approved root is rejected');
+      await assert.rejects(()=>repo.appendProductGalleryImages(product.id,['/uploads/product/lychee-box.jpg']),ValidationError,'assignment accepts only request-owned uploads under custom root');
+      await assert.rejects(()=>repo.appendProductGalleryImages(product.id,['/uploads/custom/not-found.png']),ValidationError);
+      const galleryBefore=db.get('SELECT image,gallery FROM products WHERE id=?',product.id);
+      db.rawDb.exec("CREATE TRIGGER p06_fail_gallery_upload_audit BEFORE INSERT ON audit_logs WHEN NEW.action='product.gallery.upload' BEGIN SELECT RAISE(ABORT,'fixture gallery upload audit failure'); END");
+      try{await assert.rejects(()=>repo.appendProductGalleryImages(product.id,[rollbackPath]));}
+      finally{db.rawDb.exec('DROP TRIGGER IF EXISTS p06_fail_gallery_upload_audit');}
+      assert.deepEqual(db.get('SELECT image,gallery FROM products WHERE id=?',product.id),galleryBefore,'audit failure leaves gallery assignment unchanged');
+      assert.equal(Number(db.get("SELECT COUNT(*) AS n FROM audit_logs WHERE action='product.gallery.upload' AND entity_id=?",String(product.id)).n),1,'no partial upload audit record is written');
+    }finally{
+      db.run('UPDATE products SET image=?,gallery=? WHERE id=?',product.image,product.gallery,product.id);
+      for(const [file,pathValue] of [[imageFile,imagePath],[rollbackFile,rollbackPath]]){
+        const references=Number(db.get('SELECT COUNT(*) AS n FROM products WHERE image=? OR gallery LIKE ?',pathValue,`%${pathValue}%`).n);
+        assert.equal(references,0,'test-owned image is unreferenced before cleanup');
+        if(fs.existsSync(file))fs.unlinkSync(file);
+      }
+      if(fs.existsSync(symlinkFile))fs.unlinkSync(symlinkFile);
+      if(fs.existsSync(outsideFile))fs.unlinkSync(outsideFile);
+    }
+  });
+
+  test('gallery upload HTTP enforces auth, permission, CSRF, raster checks and file cleanup on rollback in SQLite mode',async()=>{
+    const express=require('express');
+    const {deriveCsrfToken}=require('../src/middleware/csrf');
+    const {legacyAdminRbac,legacyAdminCsrf}=require('../src/middleware/legacyAdminRbac');
+    const {createErrorHandler}=require('../src/middleware/errorHandler');
+    const phase06Routes=require('../src/routes/phase06');
+    const upload=require('../src/middleware/upload');
+    const root=upload.resolveUploadBase(),product=db.get("SELECT id,image,gallery FROM products WHERE code='P06-TEST-001'");
+    const original={image:product.image,gallery:product.gallery};
+    const initialFiles=new Set(fs.readdirSync(root));
+    const assigned=[];
+    const nonce='phase06-gallery-http-test-nonce';
+    const token=deriveCsrfToken('phase06-gallery-http-session',nonce);
+    const app=express();
+    app.use(express.urlencoded({extended:false}));app.use(express.json());
+    app.use((req,_res,next)=>{
+      req.sessionID='phase06-gallery-http-session';
+      const identity=String(req.headers['x-test-auth']||'granted');
+      req.session=identity==='anonymous'?{}:{_csrfNonce:nonce,adminUser:{id:7}};
+      req.adminUser=identity==='anonymous'?null:{id:7,role_slug:'phase06_test',permissions:identity==='no-grant'?[]:['inventory.manage']};
+      req.locale='en';req.csrfToken=()=>token;req.flash=()=>{};next();
+    });
+    app.use(legacyAdminRbac);app.use(legacyAdminCsrf);app.use(phase06Routes);app.use(createErrorHandler());
+    const server=await new Promise((resolve)=>{const instance=app.listen(0,'127.0.0.1',()=>resolve(instance));});
+    const send=async({auth='granted',csrf=true,file={name:'../unsafe.png',type:'image/png',bytes:Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a,0x00])}}={})=>{
+      const form=new FormData();if(csrf)form.append('_csrf',token);
+      if(file)form.append('gallery_images',new Blob([file.bytes],{type:file.type}),file.name);
+      const response=await fetch(`http://127.0.0.1:${server.address().port}/admin/phase06/products/${product.id}/gallery/upload`,{
+        method:'POST',headers:{accept:'application/json','x-test-auth':auth},body:form});
+      const text=await response.text();let json=null;try{json=JSON.parse(text);}catch{}
+      return {status:response.status,text,json};
+    };
+    try{
+      db.run("UPDATE products SET image='',gallery='[]' WHERE id=?",product.id);
+      assert.equal((await send({auth:'anonymous'})).status,401,'anonymous request is rejected before multipart upload storage');
+      assert.equal((await send({auth:'no-grant'})).status,403,'inventory.manage is required before file storage');
+      const noCsrf=await send({csrf:false});assert.equal(noCsrf.status,403,'multipart CSRF is enforced after parsing');
+      assert.deepEqual(new Set(fs.readdirSync(root)),initialFiles,'CSRF failure removes the just-uploaded file');
+      assert.equal((await send({file:{name:'unsafe.svg',type:'image/svg+xml',bytes:Buffer.from('<svg/>')}})).status,400);
+      assert.deepEqual(new Set(fs.readdirSync(root)),initialFiles,'rejected extension/MIME leaves no file');
+      assert.equal((await send({file:{name:'fake.png',type:'image/png',bytes:Buffer.from('not an image')}})).status,400);
+      assert.deepEqual(new Set(fs.readdirSync(root)),initialFiles,'invalid signature is removed');
+      const success=await send();assert.equal(success.status,200,success.text.slice(0,250));
+      const pathValue=success.json.gallery.addedPaths[0];assigned.push(pathValue);
+      assert.match(pathValue,/^\/uploads\/custom\/[A-Za-z0-9][A-Za-z0-9._-]*\.png$/);
+      assert.deepEqual(db.get('SELECT image,gallery FROM products WHERE id=?',product.id),{image:pathValue,gallery:JSON.stringify([pathValue])});
+      const beforeFiles=new Set(fs.readdirSync(root));
+      db.rawDb.exec("CREATE TRIGGER p06_http_fail_gallery_upload BEFORE INSERT ON audit_logs WHEN NEW.action='product.gallery.upload' BEGIN SELECT RAISE(ABORT,'fixture gallery upload audit failure'); END");
+      try{const failed=await send({file:{name:'rollback.png',type:'image/png',bytes:Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a,0x00])}});assert.equal(failed.status,500);}
+      finally{db.rawDb.exec('DROP TRIGGER IF EXISTS p06_http_fail_gallery_upload');}
+      assert.deepEqual(new Set(fs.readdirSync(root)),beforeFiles,'audit rollback removes only the upload from the failed request');
+      assert.deepEqual(db.get('SELECT image,gallery FROM products WHERE id=?',product.id),{image:pathValue,gallery:JSON.stringify([pathValue])});
+    }finally{
+      db.rawDb.exec('DROP TRIGGER IF EXISTS p06_http_fail_gallery_upload');
+      await new Promise((resolve)=>server.close(resolve));
+      db.run('UPDATE products SET image=?,gallery=? WHERE id=?',original.image,original.gallery,product.id);
+      for(const imagePath of assigned){
+        const file=path.join(root,path.basename(imagePath));
+        assert.equal(path.dirname(path.resolve(file)),fs.realpathSync(root));
+        assert.equal(Number(db.get('SELECT COUNT(*) AS n FROM products WHERE image=? OR gallery LIKE ?',imagePath,`%${imagePath}%`).n),0,'only unreferenced test-owned files are removed');
+        if(fs.existsSync(file))fs.unlinkSync(file);
+      }
+    }
+  });
+
+  test('supplier creation validates fields and atomically records its audit event', async () => {
+    const input = { name:'Verified supplier', supplier_code:'P06-SUP-AUDIT', phone:'+8801712345678', email:'supplier-audit@example.com', tax_or_trade_id:'BD-TIN-123' };
+    const created = await repo.createSupplier(input, { id:7, ip:'192.0.2.8' });
+    assert.ok(created.id > 0);
+    const persisted = db.get('SELECT name,supplier_code,email,tax_or_trade_id FROM suppliers WHERE id=?',created.id);
+    assert.deepEqual(persisted,{name:'Verified supplier',supplier_code:'P06-SUP-AUDIT',email:'supplier-audit@example.com',tax_or_trade_id:'BD-TIN-123'});
+    const audit = db.get("SELECT actor_id,after_json FROM audit_logs WHERE action='supplier.create' AND entity_id=?",String(created.id));
+    assert.equal(audit.actor_id,7);
+    assert.equal(JSON.parse(audit.after_json).name,input.name);
+    await assert.rejects(() => repo.createSupplier({...input,supplier_code:'P06-SUP-INVALID',email:'bad-email'}),ValidationError);
+    assert.equal(db.get("SELECT COUNT(*) AS n FROM suppliers WHERE supplier_code='P06-SUP-INVALID'").n,0);
+
+    db.rawDb.exec("CREATE TRIGGER p06_fail_supplier_audit BEFORE INSERT ON audit_logs WHEN NEW.action='supplier.create' BEGIN SELECT RAISE(ABORT,'fixture supplier audit failure'); END");
+    try {
+      await assert.rejects(() => repo.createSupplier({...input,supplier_code:'P06-SUP-ROLLBACK'}));
+    } finally {
+      db.rawDb.exec('DROP TRIGGER IF EXISTS p06_fail_supplier_audit');
+    }
+    assert.equal(db.get("SELECT COUNT(*) AS n FROM suppliers WHERE supplier_code='P06-SUP-ROLLBACK'").n,0,'audit failure must roll back supplier insert');
+  });
+
+  test('supplier edit and activation lifecycle preserves purchase history and balances with atomic audit rollback', async () => {
+    const suffix=`${process.pid}-${Date.now()}`;
+    const supplier=await repo.createSupplier({name:'Lifecycle supplier',supplier_code:`P06-LIFE-${suffix}`,phone:'+8801712345678',email:'lifecycle@example.com'}, {id:7});
+    const product=db.get("SELECT id FROM products WHERE code='P06-TEST-001'");
+    const purchase=await repo.createPurchase({supplier_id:supplier.id,reference_no:`P06-LIFE-PO-${suffix}`,lines:[{product_id:product.id,ordered_qty:2,unit_cost_bdt:'4.25'}]},{id:7});
+    const balanceBefore=db.get('SELECT balance_due FROM suppliers WHERE id=?',supplier.id).balance_due;
+    const fields={supplier_code:`P06-LIFE-${suffix}`,name:'Lifecycle supplier updated',company:'Updated company',contact_person:'Buyer',phone:'+8801712345679',
+      email:'updated@example.com',address:'New address',tax_or_trade_id:'BD-LIFE-1',notes:'Contact note',status:'0'};
+    const inactive=await repo.updateSupplier(supplier.id,fields,{id:7,ip:'192.0.2.10'});
+    assert.equal(inactive.status,0);
+    assert.equal(db.get('SELECT status FROM suppliers WHERE id=?',supplier.id).status,0);
+    assert.equal(db.get('SELECT id FROM purchases WHERE id=? AND supplier_id=?',purchase.id,supplier.id).id,purchase.id,'deactivation retains purchase FK/history');
+    assert.equal(db.get('SELECT balance_due FROM suppliers WHERE id=?',supplier.id).balance_due,balanceBefore,'supplier availability does not mutate financial balance');
+    await assert.rejects(()=>repo.createPurchase({supplier_id:supplier.id,lines:[{product_id:product.id,ordered_qty:1,unit_cost_bdt:'1.00'}]}),(err)=>err.statusCode===404,'inactive suppliers cannot be used for new orders');
+    const active=await repo.updateSupplier(supplier.id,{...fields,status:'1'},{id:7});
+    assert.equal(active.status,1,'supplier can be reactivated without changing linked history');
+    assert.equal(db.get('SELECT status FROM suppliers WHERE id=?',supplier.id).status,1);
+    const events=db.all("SELECT actor_id,before_json,after_json FROM audit_logs WHERE action='supplier.update' AND entity_id=? ORDER BY id",String(supplier.id));
+    assert.equal(events.length,2);
+    assert.equal(JSON.parse(events[0].before_json).status,1);
+    assert.equal(JSON.parse(events[0].after_json).status,0);
+    assert.equal(JSON.parse(events[1].before_json).status,0);
+    assert.equal(JSON.parse(events[1].after_json).status,1);
+    await assert.rejects(()=>repo.updateSupplier(supplier.id,{...fields,email:'invalid'}, {id:7}),ValidationError);
+    await assert.rejects(()=>repo.updateSupplier(supplier.id,{...fields,status:'2'}, {id:7}),ValidationError);
+    const duplicate=await repo.createSupplier({name:'Second lifecycle supplier',supplier_code:`P06-OTHER-${suffix}`,phone:'+8801712345680'});
+    await assert.rejects(()=>repo.updateSupplier(duplicate.id,{...fields,supplier_code:`P06-LIFE-${suffix}`,status:'1'}),(err)=>err.statusCode===409);
+
+    db.rawDb.exec("CREATE TRIGGER p06_fail_supplier_update_audit BEFORE INSERT ON audit_logs WHEN NEW.action='supplier.update' BEGIN SELECT RAISE(ABORT,'fixture supplier update audit failure'); END");
+    try { await assert.rejects(()=>repo.updateSupplier(supplier.id,{...fields,name:'Must roll back',status:'0'},{id:7})); }
+    finally { db.rawDb.exec('DROP TRIGGER IF EXISTS p06_fail_supplier_update_audit'); }
+    assert.deepEqual(db.get('SELECT name,status FROM suppliers WHERE id=?',supplier.id),{name:'Lifecycle supplier updated',status:1},'audit failure rolls supplier edit/status back');
+    assert.equal(db.get('SELECT id FROM purchases WHERE id=? AND supplier_id=?',purchase.id,supplier.id).id,purchase.id);
+  });
+
+  test('per-variant stock adjustments preserve reservations and atomically couple ledger and audit',async()=>{
+    const product=db.get("SELECT id FROM products WHERE code='P06-TEST-001'");
+    const variant=await repo.createProductVariant(product.id,{variant_sku:`P06-VAR-STOCK-${process.pid}-${Date.now()}`,size_label:'500 g',color_label:'',price_bdt:'5.00'},{id:7});
+    db.run('UPDATE product_variants SET stock_on_hand=5,stock_reserved=2 WHERE id=?',variant.id);
+    const inventorySummary=await repo.getInventorySummary();
+    assert.deepEqual(inventorySummary.variants,{variant_count:2,active_variant_count:1,inactive_variant_count:1,warehouse_on_hand:13,warehouse_reserved:5,warehouse_available:8,no_available_variants:0},'all variant balances are summarized separately from parent products, with active/inactive counts');
+    const movement=await repo.adjustVariantStock(product.id,variant.id,{qty_delta:3,reason:'Verified variant count'},{id:7});
+    assert.deepEqual(movement,{productId:product.id,variantId:variant.id,previousBalance:5,reservedBalance:2,qtyDelta:3,balanceAfter:8,stockPool:'warehouse'});
+    assert.equal(Number(db.get('SELECT stock_on_hand FROM product_variants WHERE id=?',variant.id).stock_on_hand),8);
+    assert.deepEqual(db.get("SELECT product_id,variant_id,qty_delta,balance_after,reason FROM stock_ledger WHERE variant_id=? ORDER BY id DESC LIMIT 1",variant.id),
+      {product_id:product.id,variant_id:variant.id,qty_delta:3,balance_after:8,reason:'Verified variant count'});
+    const movementReport=await repo.listStockLedger({ledger_product_id:String(product.id)});
+    const reportedVariantMovement=movementReport.rows.find((row)=>Number(row.variant_id)===Number(variant.id));
+    assert.equal(reportedVariantMovement.variant_sku,db.get('SELECT variant_sku FROM product_variants WHERE id=?',variant.id).variant_sku,'movement report resolves the variant SKU');
+    assert.equal(reportedVariantMovement.qty_delta,3);
+    assert.deepEqual(JSON.parse(db.get("SELECT after_json FROM audit_logs WHERE action='inventory.variant.adjust' AND entity_id=? ORDER BY id DESC LIMIT 1",String(variant.id)).after_json),{...movement,reason:'Verified variant count'});
+    await assert.rejects(()=>repo.adjustVariantStock(product.id,variant.id,{qty_delta:-7,reason:'Would break reservation'}),(err)=>err.statusCode===409);
+    await assert.rejects(()=>repo.adjustVariantStock(product.id+1,variant.id,{qty_delta:1,reason:'Wrong owner'}),(err)=>err.statusCode===404);
+    const ledgerBefore=Number(db.get('SELECT COUNT(*) AS n FROM stock_ledger WHERE variant_id=?',variant.id).n);
+    const auditBefore=Number(db.get("SELECT COUNT(*) AS n FROM audit_logs WHERE action='inventory.variant.adjust' AND entity_id=?",String(variant.id)).n);
+    db.rawDb.exec("CREATE TRIGGER p06_fail_variant_stock_audit BEFORE INSERT ON audit_logs WHEN NEW.action='inventory.variant.adjust' BEGIN SELECT RAISE(ABORT,'fixture variant stock audit failure'); END");
+    try{await assert.rejects(()=>repo.adjustVariantStock(product.id,variant.id,{qty_delta:1,reason:'Audit rollback fixture'},{id:7}));}
+    finally{db.rawDb.exec('DROP TRIGGER IF EXISTS p06_fail_variant_stock_audit');}
+    assert.equal(Number(db.get('SELECT stock_on_hand FROM product_variants WHERE id=?',variant.id).stock_on_hand),8);
+    assert.equal(Number(db.get('SELECT COUNT(*) AS n FROM stock_ledger WHERE variant_id=?',variant.id).n),ledgerBefore);
+    assert.equal(Number(db.get("SELECT COUNT(*) AS n FROM audit_logs WHERE action='inventory.variant.adjust' AND entity_id=?",String(variant.id)).n),auditBefore);
+  });
+
+  test('authorized adjustments are reasoned, ledger-backed, audited atomically and cannot make stock negative', async () => {
+    const product = db.get("SELECT id FROM products WHERE code='P06-TEST-001'");
+    const result = await repo.adjustStock({ product_id: product.id, stock_pool: 'warehouse', qty_delta: -2, reason: 'Damaged during count' }, { id: 7, ip:'192.0.2.2' });
+    assert.equal(result.balanceAfter, 6);
+    assert.equal(db.get("SELECT reason FROM stock_ledger WHERE product_id=? AND movement_type='adjustment' ORDER BY id DESC LIMIT 1", product.id).reason, 'Damaged during count');
+    const audit = db.get("SELECT actor_id,after_json FROM audit_logs WHERE action='inventory.adjust' AND entity_id=? ORDER BY id DESC LIMIT 1", String(product.id));
+    assert.equal(audit.actor_id, 7);
+    assert.deepEqual(JSON.parse(audit.after_json), { ...result, reason:'Damaged during count' });
+    await assert.rejects(() => repo.adjustStock({ product_id: product.id, qty_delta: -99, reason: 'Invalid correction' }), AppError);
+    await assert.rejects(() => repo.adjustStock({ product_id: product.id, stock_pool:'unknown', qty_delta: 1, reason:'Wrong pool' }), ValidationError);
+    await assert.rejects(() => repo.adjustStock({ product_id: product.id, qty_delta: 1, reason: '' }), ValidationError);
+
+    const ledgerBefore=Number(db.get("SELECT COUNT(*) AS n FROM stock_ledger WHERE product_id=? AND movement_type='adjustment'",product.id).n);
+    const auditBefore=Number(db.get("SELECT COUNT(*) AS n FROM audit_logs WHERE action='inventory.adjust' AND entity_id=?",String(product.id)).n);
+    db.rawDb.exec("CREATE TRIGGER p06_fail_inventory_audit BEFORE INSERT ON audit_logs WHEN NEW.action='inventory.adjust' BEGIN SELECT RAISE(ABORT,'fixture inventory audit failure'); END");
+    try {
+      await assert.rejects(() => repo.adjustStock({ product_id:product.id,qty_delta:1,reason:'Audit rollback fixture' },{id:7}));
+    } finally {
+      db.rawDb.exec('DROP TRIGGER IF EXISTS p06_fail_inventory_audit');
+    }
+    assert.equal(Number(db.get('SELECT stock FROM products WHERE id=?',product.id).stock),6,'audit failure rolls stock back');
+    assert.equal(Number(db.get("SELECT COUNT(*) AS n FROM stock_ledger WHERE product_id=? AND movement_type='adjustment'",product.id).n),ledgerBefore,'audit failure rolls ledger back');
+    assert.equal(Number(db.get("SELECT COUNT(*) AS n FROM audit_logs WHERE action='inventory.adjust' AND entity_id=?",String(product.id)).n),auditBefore,'failed audit is not partially recorded');
+  });
+
+  test('purchase order creation leaves stock unchanged; partial and duplicate-safe receipts update stock atomically', async () => {
+    const supplier = await repo.createSupplier({ name: 'Phase 06 Supplier', supplier_code: 'P06-SUP-01', phone: '+8801712345678', email: 'supplier@example.com' }, { id: 7 });
+    const product = await repo.createProduct({
+      sku: 'P06-TEST-002', name_bn: 'পারচেজ পরীক্ষার পণ্য', name_en: 'Receipt Test', slug: 'phase06-receipt-product',
+      category_id: 1, regular_price_bdt: '10', sale_price_bdt: '10', cost_price_bdt: '5', opening_stock: '2'
+    });
+    const failedReference=`P06-PO-AUDIT-ROLLBACK-${process.pid}-${Date.now()}`;
+    const purchaseAuditBefore=Number(db.get("SELECT COUNT(*) AS n FROM audit_logs WHERE action='purchase.create'").n);
+    db.rawDb.exec("CREATE TRIGGER p06_fail_purchase_create_audit BEFORE INSERT ON audit_logs WHEN NEW.action='purchase.create' BEGIN SELECT RAISE(ABORT,'fixture purchase create audit failure'); END");
+    try { await assert.rejects(()=>repo.createPurchase({supplier_id:supplier.id,reference_no:failedReference,lines:[{product_id:product.id,ordered_qty:2,unit_cost_bdt:'4.50'}]},{id:7})); }
+    finally { db.rawDb.exec('DROP TRIGGER IF EXISTS p06_fail_purchase_create_audit'); }
+    assert.equal(Number(db.get('SELECT COUNT(*) AS n FROM purchases WHERE reference_no=?',failedReference).n),0,'purchase audit failure rolls draft order back');
+    assert.equal(Number(db.get("SELECT COUNT(*) AS n FROM audit_logs WHERE action='purchase.create'").n),purchaseAuditBefore,'failed draft leaves no purchase audit row');
+    const po = await repo.createPurchase({ supplier_id: supplier.id, lines: [{ product_id: product.id, ordered_qty: 5, unit_cost_bdt: '4.50' }] }, { id: 7 });
+    assert.equal(db.get('SELECT stock FROM products WHERE id=?', product.id).stock, 2, 'draft PO must not increase stock');
+    const item = db.get('SELECT id FROM purchase_items WHERE purchase_id=?', po.id);
+    const first = await repo.receivePurchase(po.id, { idempotency_key: 'p06-receipt-part-1', lines: [{ purchase_item_id: item.id, received_qty: 3 }] }, { id: 7 });
+    assert.equal(first.status, 'partially_received');
+    assert.equal(db.get('SELECT stock FROM products WHERE id=?', product.id).stock, 5);
+    const replay = await repo.receivePurchase(po.id, { idempotency_key: 'p06-receipt-part-1', lines: [{ purchase_item_id: item.id, received_qty: 3 }] }, { id: 7 });
+    assert.equal(replay.replayed, true);
+    assert.equal(db.get('SELECT stock FROM products WHERE id=?', product.id).stock, 5, 'duplicate receipt must not double stock');
+    assert.equal(Number(db.get("SELECT COUNT(*) AS n FROM audit_logs WHERE action='purchase.receive' AND entity_id=?",String(po.id)).n),2,'accepted receipt and replay each leave an audit record');
+    await assert.rejects(() => repo.receivePurchase(po.id, { idempotency_key: 'p06-receipt-part-1', lines: [{ purchase_item_id: item.id, received_qty: 2 }] }), (err) => err.code === 'IDEMPOTENCY_PAYLOAD_MISMATCH');
+    const ledgerBeforeFailedReceipt=Number(db.get('SELECT COUNT(*) AS n FROM stock_ledger WHERE product_id=?',product.id).n);
+    const receiptRowsBeforeFailedReceipt=Number(db.get('SELECT COUNT(*) AS n FROM purchase_receipts WHERE purchase_id=?',po.id).n);
+    const auditRowsBeforeFailedReceipt=Number(db.get("SELECT COUNT(*) AS n FROM audit_logs WHERE action='purchase.receive' AND entity_id=?",String(po.id)).n);
+    db.rawDb.exec("CREATE TRIGGER p06_fail_purchase_receipt_audit BEFORE INSERT ON audit_logs WHEN NEW.action='purchase.receive' BEGIN SELECT RAISE(ABORT,'fixture receipt audit failure'); END");
+    try { await assert.rejects(()=>repo.receivePurchase(po.id,{idempotency_key:'p06-receipt-part-2',lines:[{purchase_item_id:item.id,received_qty:2}]},{id:7})); }
+    finally { db.rawDb.exec('DROP TRIGGER IF EXISTS p06_fail_purchase_receipt_audit'); }
+    assert.equal(Number(db.get('SELECT stock FROM products WHERE id=?',product.id).stock),5,'audit failure rolls receipt stock back');
+    assert.equal(Number(db.get('SELECT received_qty FROM purchase_items WHERE id=?',item.id).received_qty),3,'audit failure rolls received quantity back');
+    assert.equal(Number(db.get('SELECT COUNT(*) AS n FROM stock_ledger WHERE product_id=?',product.id).n),ledgerBeforeFailedReceipt,'audit failure rolls receipt ledger back');
+    assert.equal(Number(db.get('SELECT COUNT(*) AS n FROM purchase_receipts WHERE purchase_id=?',po.id).n),receiptRowsBeforeFailedReceipt,'audit failure rolls receipt record back');
+    assert.equal(Number(db.get("SELECT COUNT(*) AS n FROM audit_logs WHERE action='purchase.receive' AND entity_id=?",String(po.id)).n),auditRowsBeforeFailedReceipt,'failed receipt does not leave an audit row');
+    const final = await repo.receivePurchase(po.id, { idempotency_key: 'p06-receipt-part-2', lines: [{ purchase_item_id: item.id, received_qty: 2 }] }, { id: 7 });
+    assert.equal(final.status, 'received');
+    assert.equal(db.get('SELECT stock FROM products WHERE id=?', product.id).stock, 7);
+    const finalReplay=await repo.receivePurchase(po.id,{idempotency_key:'p06-receipt-part-2',lines:[{purchase_item_id:item.id,received_qty:2}]},{id:7});
+    assert.equal(finalReplay.replayed,true,'a final receipt replays after the PO reaches received state');
+    assert.equal(db.get('SELECT stock FROM products WHERE id=?',product.id).stock,7,'final receipt replay cannot add stock again');
+
+    const stockBefore=Number(db.get('SELECT stock FROM products WHERE id=?',product.id).stock);
+    const ledgerBefore=Number(db.get('SELECT COUNT(*) AS n FROM stock_ledger WHERE product_id=?',product.id).n);
+    const auditBefore=Number(db.get("SELECT COUNT(*) AS n FROM audit_logs WHERE entity_type IN ('purchase','supplier') AND entity_id IN (?,?)",String(po.id),String(supplier.id)).n);
+    const history=await repo.getSupplierPurchaseHistory(supplier.id);
+    assert.equal(history.supplier.id,supplier.id);
+    assert.equal(history.purchases.length,1);
+    assert.equal(history.purchases[0].referenceNo,po.referenceNo);
+    assert.equal(history.purchases[0].status,'received');
+    assert.equal(history.purchases[0].lineCount,1);
+    assert.equal(history.purchases[0].orderedQty,5);
+    assert.equal(history.purchases[0].receivedQty,5);
+    assert.deepEqual(history.purchases[0].lines.map(({sku,orderedQty,receivedQty})=>({sku,orderedQty,receivedQty})),[
+      {sku:'P06-TEST-002',orderedQty:5,receivedQty:5},
+    ]);
+    assert.equal(history.purchases[0].receipts.length,2);
+    assert.deepEqual(history.purchases[0].receipts.map((row)=>row.totalQty).sort(),[2,3]);
+    assert.equal(Object.keys(history.purchases[0]).some((key)=>/payable|balance|paid|cost|amount/i.test(key)),false,'history API does not invent or expose supplier settlement calculations');
+    assert.equal(Number(db.get('SELECT stock FROM products WHERE id=?',product.id).stock),stockBefore,'read-only history cannot change stock');
+    assert.equal(Number(db.get('SELECT COUNT(*) AS n FROM stock_ledger WHERE product_id=?',product.id).n),ledgerBefore,'read-only history cannot add ledger events');
+    assert.equal(Number(db.get("SELECT COUNT(*) AS n FROM audit_logs WHERE entity_type IN ('purchase','supplier') AND entity_id IN (?,?)",String(po.id),String(supplier.id)).n),auditBefore,'read-only history cannot add audit events');
+    const laterPage=await repo.getSupplierPurchaseHistory(supplier.id,2);
+    assert.deepEqual(laterPage.purchases,[]);
+    assert.equal(laterPage.hasPreviousPurchases,true);
+    assert.equal(laterPage.page,2);
+    await assert.rejects(()=>repo.getSupplierPurchaseHistory(supplier.id,'0'),ValidationError,'invalid history pages are rejected');
+    await assert.rejects(()=>repo.getSupplierPurchaseHistory(999999999),(err)=>err.statusCode===404,'missing suppliers return not found');
+  });
+
+  test('product taxonomy selectors load linked options, persist valid edit values and reject unrelated or missing parents', async () => {
+    const categoryB=Number(db.run('INSERT INTO categories (name,slug,status) VALUES (?,?,1)','Other category','phase06-other-category').lastInsertRowid);
+    const subA=Number(db.run('INSERT INTO subcategories (category_id,name,slug,status) VALUES (?,?,?,1)',1,'Sub A','phase06-sub-a').lastInsertRowid);
+    const subB=Number(db.run('INSERT INTO subcategories (category_id,name,slug,status) VALUES (?,?,?,1)',categoryB,'Sub B','phase06-sub-b').lastInsertRowid);
+    const childA=Number(db.run('INSERT INTO childcategories (subcategory_id,name,slug,status) VALUES (?,?,?,1)',subA,'Child A','phase06-child-a').lastInsertRowid);
+    const childB=Number(db.run('INSERT INTO childcategories (subcategory_id,name,slug,status) VALUES (?,?,?,1)',subB,'Child B','phase06-child-b').lastInsertRowid);
+    const options=await repo.listProductEditOptions();
+    assert.ok(options.subcategories.some((row)=>Number(row.id)===subA&&Number(row.category_id)===1));
+    assert.ok(options.childcategories.some((row)=>Number(row.id)===childA&&Number(row.subcategory_id)===subA));
+    const product=await repo.createProduct({sku:'P06-TAXONOMY',name_bn:'শ্রেণি পণ্য',name_en:'Taxonomy product',slug:'p06-taxonomy-product',category_id:1,
+      subcategory_id:subA,childcategory_id:childA,regular_price_bdt:'20',sale_price_bdt:'18',cost_price_bdt:'10'});
+    let loaded=await repo.getProductForEdit(product.id);
+    assert.deepEqual([Number(loaded.category_id),Number(loaded.subcategory_id),Number(loaded.childcategory_id)],[1,subA,childA]);
+    const edit={name_bn:'শ্রেণি পণ্য',name_en:'Taxonomy product',slug:'p06-taxonomy-product-updated',product_type:'grocery',category_id:categoryB,
+      subcategory_id:subB,childcategory_id:childB,unit_label:'1 pc',regular_price_bdt:'20',sale_price_bdt:'18',cost_price_bdt:'10'};
+    await repo.updateProduct(product.id,edit,{id:7});
+    loaded=await repo.getProductForEdit(product.id);
+    assert.deepEqual([Number(loaded.category_id),Number(loaded.subcategory_id),Number(loaded.childcategory_id)],[categoryB,subB,childB]);
+    await assert.rejects(()=>repo.updateProduct(product.id,{...edit,subcategory_id:subA}, {id:7}),/does not belong/);
+    await assert.rejects(()=>repo.updateProduct(product.id,{...edit,childcategory_id:childA}, {id:7}),/does not belong/);
+    await assert.rejects(()=>repo.updateProduct(product.id,{...edit,subcategory_id:'not-an-id'}, {id:7}),ValidationError);
+    await assert.rejects(()=>repo.updateProduct(product.id,{...edit,subcategory_id:'',childcategory_id:childB}, {id:7}),/required when selecting/);
+    await assert.rejects(()=>repo.createProduct({sku:'P06-TAXONOMY-BAD',name_bn:'ভুল',slug:'p06-taxonomy-bad',category_id:categoryB,subcategory_id:subA,
+      regular_price_bdt:'1',sale_price_bdt:'1',cost_price_bdt:'0'}),/does not belong/);
+    await assert.rejects(()=>repo.createProduct({sku:'P06-TAXONOMY-MISSING',name_bn:'ভুল',slug:'p06-taxonomy-missing',subcategory_id:subA,
+      regular_price_bdt:'1',sale_price_bdt:'1',cost_price_bdt:'0'}),/category is required/);
+    await assert.rejects(()=>repo.createProduct({sku:'P06-TAXONOMY-CHILD',name_bn:'ভুল',slug:'p06-taxonomy-child',category_id:1,childcategory_id:childA,
+      regular_price_bdt:'1',sale_price_bdt:'1',cost_price_bdt:'0'}),/subcategory is required/);
+    db.run('UPDATE subcategories SET status=0 WHERE id=?',subA);
+    await assert.rejects(()=>repo.createProduct({sku:'P06-TAXONOMY-INACTIVE',name_bn:'ভুল',slug:'p06-taxonomy-inactive',category_id:1,subcategory_id:subA,
+      regular_price_bdt:'1',sale_price_bdt:'1',cost_price_bdt:'0'}),/inactive/);
+  });
+
+  test('archiving preserves product identity and safe upload rejects SVG signatures', async () => {
+    const product = db.get("SELECT id FROM products WHERE code='P06-TEST-001'");
+    await repo.archiveProduct(product.id, true, { id: 7 });
+    assert.equal(db.get('SELECT is_archived FROM products WHERE id=?', product.id).is_archived, 1);
+    await repo.archiveProduct(product.id, false, { id: 7 });
+    assert.equal(db.get('SELECT is_archived FROM products WHERE id=?', product.id).is_archived, 0);
+    const upload = require('../src/middleware/upload');
+    const fake = path.join(os.tmpdir(), `mrtumi-svg-signature-${process.pid}.upload`);
+    fs.writeFileSync(fake, '<svg xmlns="http://www.w3.org/2000/svg"></svg>');
+    try { assert.equal(upload.hasValidRasterMagicBytes(fake), false); } finally { fs.unlinkSync(fake); }
+  });
+});

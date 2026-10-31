@@ -1,0 +1,110 @@
+<%- include('partials/header', { title: 'অর্ডার সফল হয়েছে' }) %>
+
+<main id="mainContent" class="container py-5">
+  <!-- Progress Bar -->
+  <div class="d-flex justify-content-center align-items-center gap-3 mb-4 small fw-bold">
+    <span class="badge bg-success rounded-pill px-3 py-2">১. কার্ট</span>
+    <span>→</span>
+    <span class="badge bg-success rounded-pill px-3 py-2">২. চেকআউট</span>
+    <span>→</span>
+    <span class="badge bg-dark rounded-pill px-3 py-2">৩. কনফার্মেশন ✓</span>
+  </div>
+
+  <div class="bg-white rounded-4 border p-4 p-md-5 mx-auto shadow-sm" style="max-width: 780px;">
+    <div class="text-center mb-4">
+      <div class="d-inline-flex align-items-center justify-content-center rounded-circle bg-success bg-opacity-10 text-success mb-3" style="width: 72px; height: 72px; font-size: 34px;">
+        <i class="fas fa-check"></i>
+      </div>
+      <h2 class="fw-bold text-success mb-1">ধন্যবাদ! আপনার অর্ডারটি সফলভাবে গৃহীত হয়েছে 🎉</h2>
+      <p class="text-muted mb-2">আমাদের প্রতিনিধি শীঘ্রই কল করে অর্ডার কনফার্ম করবেন।</p>
+      <div class="d-inline-block bg-light border rounded-pill px-4 py-2 fw-bold">
+        ইনভয়েস নম্বর: <span class="text-success">#<%= order.invoice_id %></span>
+      </div>
+    </div>
+
+    <div class="row g-3 bg-light rounded-3 p-3 mb-4 small">
+      <div class="col-sm-6">
+        <div class="text-muted">গ্রাহকের নাম ও মোবাইল:</div>
+        <div class="fw-bold fs-6"><%= order.customer_name %> (<%= order.phone %>)</div>
+        <div class="text-secondary mt-1"><%= order.address %></div>
+      </div>
+      <div class="col-sm-6 text-sm-end">
+        <div class="text-muted">পেমেন্ট পদ্ধতি:</div>
+        <div class="fw-bold"><%= order.payment_method %></div>
+        <% if (order.trx_id) { %>
+          <div class="text-success">TrxID: <%= order.trx_id %></div>
+        <% } %>
+        <div class="mt-1">স্ট্যাটাস: <span class="badge bg-warning text-dark"><%= order.status.toUpperCase() %></span></div>
+      </div>
+    </div>
+
+    <div class="table-responsive mb-3">
+      <table class="table align-middle small">
+        <thead class="table-light">
+          <tr>
+            <th>পণ্য</th>
+            <th class="text-center">প্যাক/সাইজ</th>
+            <th class="text-center">পরিমাণ</th>
+            <th class="text-end">মূল্য</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% items.forEach(function(it) { %>
+            <tr>
+              <td>
+                <div class="d-flex align-items-center gap-2">
+                  <img src="<%= it.product_image || '/uploads/product/lychee-fresh.jpg' %>" style="width:42px;height:42px;border-radius:8px;object-fit:cover;" alt="" />
+                  <span class="fw-semibold"><%= it.product_name %></span>
+                </div>
+              </td>
+              <td class="text-center"><%= it.size || '১ কেজি' %></td>
+              <td class="text-center"><%= it.qty %></td>
+              <td class="text-end fw-bold">৳<%= Number(it.price * it.qty).toLocaleString('en-IN') %></td>
+            </tr>
+          <% }) %>
+        </tbody>
+        <tfoot>
+          <tr>
+            <td colspan="3" class="text-end">সাবটোটাল:</td>
+            <td class="text-end">৳<%= Number(order.subtotal).toLocaleString('en-IN') %></td>
+          </tr>
+          <tr>
+            <td colspan="3" class="text-end">ডেলিভারি চার্জ (<%= order.shipping_area %>):</td>
+            <td class="text-end">৳<%= Number(order.shipping_charge).toLocaleString('en-IN') %></td>
+          </tr>
+          <% if (order.discount > 0) { %>
+            <tr class="text-danger">
+              <td colspan="3" class="text-end">ডিসকাউন্ট ছাড়:</td>
+              <td class="text-end">-৳<%= Number(order.discount).toLocaleString('en-IN') %></td>
+            </tr>
+          <% } %>
+          <tr class="fs-5 fw-bold text-success">
+            <td colspan="3" class="text-end">সর্বমোট প্রদেয়:</td>
+            <td class="text-end">৳<%= Number(order.amount).toLocaleString('en-IN') %></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <div class="d-flex justify-content-center gap-3 flex-wrap pt-2">
+      <a href="/track-order?q=<%= order.invoice_id %>" class="btn btn-outline-success rounded-pill px-4">
+        <i class="fas fa-truck-fast me-1"></i> অর্ডার ট্র্যাক করুন
+      </a>
+      <button type="button" onclick="window.print()" class="btn btn-outline-secondary rounded-pill px-4">
+        <i class="fas fa-print me-1"></i> রশিদ প্রিন্ট করুন
+      </button>
+      <% if (order.status === 'pending') { %>
+        <form action="/order/<%= order.invoice_id %>/cancel" method="POST" onsubmit="return confirm('আপনি কি অর্ডারটি বাতিল করতে নিশ্চিত?');">
+          <button type="submit" class="btn btn-outline-danger rounded-pill px-4">
+            <i class="fas fa-times me-1"></i> অর্ডার বাতিল করুন
+          </button>
+        </form>
+      <% } %>
+      <a href="/" class="btn btn-success rounded-pill px-4" style="background:#1b4332;">
+        আরও কেনাকাটা করুন →
+      </a>
+    </div>
+  </div>
+</main>
+
+<%- include('partials/footer') %>
