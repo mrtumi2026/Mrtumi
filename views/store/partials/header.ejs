@@ -179,13 +179,7 @@
           <a href="/hot-deals" class="pb-cat-link">🔥 <%= locale === 'en' ? 'Hot Deals' : 'হট ডিল' %></a>
           <a href="/all-products" class="pb-cat-link"><%= locale === 'en' ? 'Grocery' : 'গ্রোসারি' %></a>
           <a href="/all-products?deal=gift" class="pb-cat-link"><%= locale === 'en' ? 'Gift Items' : 'গিফট আইটেম' %></a>
-          <a href="/blogs" class="pb-cat-link"><%= t('common.blogs') %></a>
           <a href="/all-products" class="pb-cat-link"><%= t('common.allProducts') %></a>
-          <% navCategories.forEach(function(cat) { %>
-            <a href="/category/<%= cat.slug %>" class="pb-cat-link <%= currentPath === ('/category/' + cat.slug) ? 'active' : '' %>">
-              <span aria-hidden="true"><%= cat.icon || '🛒' %></span> <%= cat.name %>
-            </a>
-          <% }) %>
           <a href="/blogs" class="pb-cat-link <%= currentPath === '/blogs' ? 'active' : '' %>"><%= t('common.blogs') %></a>
           <a href="/faq" class="pb-cat-link <%= currentPath === '/faq' ? 'active' : '' %>"><%= t('store.faqNav') %></a>
           <a href="/contact" class="pb-cat-link <%= currentPath === '/contact' ? 'active' : '' %>"><%= t('store.contactNav') %></a>
