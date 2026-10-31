@@ -21,7 +21,8 @@ describe('Vendor portal live MySQL/MariaDB repository integration', () => {
     const passwordHash = await bcrypt.hash('VendorIntegrationPassword!2026', 10);
     const vendorA = await client.execute("INSERT INTO vendors(shop_name,owner_name,phone,email,password_hash,verified,status) VALUES(?,?,?,?,?,1,1)", [`Portal A ${suffix}`, 'Owner A', `013${suffix}111`, `portal-a-${suffix}@example.invalid`, passwordHash]);
     const vendorB = await client.execute("INSERT INTO vendors(shop_name,owner_name,phone,email,password_hash,verified,status) VALUES(?,?,?,?,?,1,1)", [`Portal B ${suffix}`, 'Owner B', `014${suffix}111`, `portal-b-${suffix}@example.invalid`, passwordHash]);
-    const category = await client.queryOne('SELECT id FROM categories WHERE status=1 ORDER BY id LIMIT 1');
+    const categoryId = (await client.execute('INSERT INTO categories(name_bn,name_en,slug,status) VALUES(?,?,?,1)', ['Vendor portal test', 'Vendor portal test', `vendor-portal-${suffix}`])).insertId;
+    const category = { id: categoryId };
     const productA = await vendorPortalRepo.saveProduct(vendorA.insertId, { name: `Vendor A item ${suffix}`, category_id: category.id, old_price: '15.25', new_price: '12.50', stock: 8 });
     const productB = await vendorPortalRepo.saveProduct(vendorB.insertId, { name: `Vendor B item ${suffix}`, category_id: category.id, old_price: '8.00', new_price: '7.00', stock: 4 });
     assert.deepEqual((await vendorPortalRepo.listProducts(vendorA.insertId)).map(p => Number(p.id)), [productA]);
@@ -61,5 +62,6 @@ describe('Vendor portal live MySQL/MariaDB repository integration', () => {
     await client.execute('DELETE FROM vendor_product_history WHERE vendor_id IN (?,?)', [vendorA.insertId, vendorB.insertId]);
     await client.execute('DELETE FROM products WHERE id IN (?,?)', [productA, productB]);
     await client.execute('DELETE FROM vendors WHERE id IN (?,?)', [vendorA.insertId, vendorB.insertId]);
+    await client.execute('DELETE FROM categories WHERE id=?', [categoryId]);
   });
 });
