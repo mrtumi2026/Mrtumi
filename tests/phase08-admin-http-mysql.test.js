@@ -93,6 +93,7 @@ describe('Phase 08 — authenticated MySQL admin HTTP, RBAC, CSRF, replay and au
     assert.equal(deniedCsrf.status,403);
     const badTransition=await request(`/admin/phase08/orders/${orderId}/status`,{method:'POST',cookie:orderStaff,csrf:orderToken,body:{status:'shipped',reason:'invalid jump',request_key:'p08-http-invalid'}});
     assert.equal(badTransition.status,409);
+    const auditBefore = Number((await db.queryOne("SELECT COUNT(*) AS n FROM audit_logs WHERE action='order.status.confirmed' AND entity_id=?",[String(orderId)])).n);
     const key=`p08-http-confirm-${orderId}`;
     const concurrent=await Promise.all([1,2].map(()=>request(`/admin/phase08/orders/${orderId}/status`,{method:'POST',cookie:orderStaff,csrf:orderToken,body:{status:'confirmed',reason:'confirm fixture',request_key:key}})));
     assert.ok(concurrent.every(x=>x.status===200));assert.equal(concurrent.filter(x=>x.json.replayed).length,1,'concurrent same-key transition has one replay');
@@ -129,6 +130,6 @@ describe('Phase 08 — authenticated MySQL admin HTTP, RBAC, CSRF, replay and au
 
     const noSettingsCsrf=await request('/admin/phase08/settings',{method:'POST',cookie:settingsStaff,body:{advance_payment_mode:'percent',advance_payment_value:20}});assert.equal(noSettingsCsrf.status,403);
     const invalidSettings=await request('/admin/phase08/settings',{method:'POST',cookie:settingsStaff,csrf:settingsToken,body:{advance_payment_mode:'unverified',advance_payment_value:20}});assert.equal(invalidSettings.status,400);
-    assert.equal(Number((await db.queryOne("SELECT COUNT(*) AS n FROM audit_logs WHERE action='order.status.confirmed' AND entity_id=?",[String(orderId)])).n),1,'order transition audit is written once despite HTTP replay');
+    assert.equal(Number((await db.queryOne("SELECT COUNT(*) AS n FROM audit_logs WHERE action='order.status.confirmed' AND entity_id=?",[String(orderId)])).n),auditBefore+1,'order transition audit is written once despite HTTP replay');
   });
 });
