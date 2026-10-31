@@ -1108,6 +1108,13 @@ router.post('/customer/checkout', requireCsrf, asyncHandler(async (req, res) => 
     cart_backup_json,
   } = req.body;
 
+  // Legacy SQLite mode must remain COD-only as well; never accept a provider or
+  // manual-transfer name/transaction reference as evidence of payment.
+  if (String(payment_method || '').trim().toLowerCase() !== 'cod' || String(trx_id || '').trim() || String(sender_number || '').trim()) {
+    req.flash('error', 'Only cash on delivery is currently available. Do not submit online payment details.');
+    return res.redirect('/customer/checkout');
+  }
+
   let cart = Array.isArray(req.session.cart) ? req.session.cart : [];
   if (!cart.length && cart_backup_json) {
     try {

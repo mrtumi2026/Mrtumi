@@ -1,16 +1,32 @@
-# Part 2 QA evidence status
+# Final browser, viewport, and E2E QA status
 
-Date: 2026-10-31
+Date: 2026-10-31 (Asia/Dhaka)
 
-## Automated evidence completed
+## Browser execution and evidence
 
-- `npm run verify`: foundation checker passed; 164 Node tests, 140 passed, 0 failed, 24 skipped because local MySQL/MariaDB is unavailable.
-- `tests/d7-workflows.test.js` includes responsive CSS contract checks for mobile breakpoints, max-width containment, and scrollable tables. This is a static CSS contract, not a rendered viewport test.
-- `git diff --check` passed at the time of this note.
-- `npm audit`: 0 reported vulnerabilities after the tested EJS upgrade.
+- Actual browser: **HeadlessChrome/92.0.4512.0**, driven by Puppeteer Core 10.4.0. The isolated app used SQLite at `data/qa-browser.db`; no production data or provider was touched.
+- Rendered route checks covered **360, 390, 768, and 1366 CSS px**. Bootstrap **5.3.3** CSS/JS was served locally to the browser from its exact pinned npm package because the sandbox blocks the app's CDN host. Google fonts and third-party chart/toast/provider assets were not available and remain unverified.
+- Evidence: `qa-evidence/browser-final/README.md`, `final-real-browser.json`, `stock-validation.json`, `cross-portal-security.json`, and screenshots in `qa-evidence/browser-final/`.
+- 92 route/viewport measurements were recorded. Home, product, contact, cart/checkout, admin complaints/contact/pending orders/inventory, vendor and reseller pages had no horizontal overflow after a confirmed 768 px inventory form defect was fixed and rechecked.
+- Real interactions: browse/search, product variant selection, cart add, COD checkout/order confirmation, contact message and admin inbox, responsive mobile drawer/modal, inventory screens, vendor/reseller page access and cross-portal denial. Upload field selection was tested; upload submission was not.
 
-## Browser execution limitation
+## Journey outcomes
 
-A real Chromium browser run was attempted with Playwright Core and the packaged headless Chromium binary against the local development server. Chromium exited before opening a page because this sandbox lacks OS libraries `libnspr4.so`, `libnss3.so`, and `libnssutil3.so`. No screenshot or browser-flow result is claimed. The temporary browser packages were not added to project dependencies.
+- **PASS:** browsing/search/product detail; cart add and constrained-stock check; COD order creation (actual local confirmation); COD-only UI and rejection of non-COD/transfer details; contact message submission/inbox; admin complaints and pending order screens; inventory/ledger screen rendering; vendor and reseller login/page rendering; limited-admin and cross-portal denial.
+- **BLOCKED:** customer registration/login/logout, customer history/cancellation/returns/evidence/status, admin return inspection/disposition, vendor item fulfillment and canonical settlement workflows. The corresponding customer/D7/vendor repository flows require MySQL; no local MySQL/MariaDB service is installed. Admin D7 settings/settlement endpoints also returned missing `DB_NAME`/`DB_USER` in this isolated environment. No mutation/payment/refund/payout/provider action was attempted.
+- **NOT TESTED:** upload submission (only file selection), and behavior of external fonts/charts/toast/provider assets under production network access. See the evidence README for details.
 
-Database integration was subsequently verified on exact SHA `a492685c92e0d67a0fc47f7008a420b67db28749`: MySQL 8.0 and MariaDB 10.11 CI run `41212148766` both passed. The browser flows listed above and true rendered viewport tests still require execution in an environment with Chromium's OS libraries; they remain launch sign-off blockers.
+## Defects fixed during QA
+
+1. Checkout's legacy SQLite rendering exposed configured non-COD gateway options and transfer fields. UI now offers COD only; backend rejects every non-COD/transaction-reference submission before order persistence. Integration regression passes.
+2. D7 return, settings and settlement URLs had no explicit legacy RBAC mapping. They now have permission-specific policies; settlement listing accepts either `settlements.prepare` or `settlements.approve`, while mutation authority remains separate. Unit regressions pass. Runtime D7 data routes remain blocked by missing MySQL.
+3. Real 768 px rendering showed the supplier submit button expanding `/admin/phase06` from 768 to 802 px. The button now wraps responsively; a repeat real-browser run measured 768/768 with no overflow.
+
+## Automated verification
+
+- `npm run verify`: foundation check **948 passed, 0 failed**; Node suite **167 total, 143 passed, 0 failed, 24 skipped**. Skips are MySQL/MariaDB integration cases, which must run in CI.
+- Database CI had passed on the pre-QA starting SHA `523bca6906f54971ae44e63e99a4b7430c219c50`, but the code fixes above change the source SHA. Exact-final-SHA MySQL 8.0 and MariaDB 10.11 CI is therefore still required after commit/push.
+
+## Launch sign-off
+
+**Not 100% complete.** Browser evidence is real but local MySQL-dependent customer returns/cancellation, admin inspection/disposition, canonical vendor fulfillment/settlement and exact-final-SHA database CI remain blockers. Approved limitations remain: COD only; no real payments/refunds/payouts/delivery/provider actions; no unverified COD refund destination; settlement approval internal only; no category returns or staff permission changes without owner approval; no invented commercial policy or entitlements.

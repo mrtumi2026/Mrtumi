@@ -81,20 +81,13 @@
             <p class="text-muted small mb-3"><%= t('store.paymentMethodSub') %></p>
 
             <div class="row g-2">
-              <% if (canonicalMysqlCheckout) { %>
-                <% if (gateways && gateways.length) { %>
-                  <div class="col-md-6"><label class="pay-option active w-100 d-flex align-items-start gap-2">
-                    <input type="radio" name="payment_method" value="cod" class="form-check-input mt-1" checked />
-                    <div><div class="fw-bold small"><%= gateways[0].name %></div><div class="text-muted" style="font-size:11.5px;"><%= isEn ? 'Pay the configured COD due on delivery. No online payment is accepted.' : 'ডেলিভারির সময় প্রদেয় অর্থ দিন। অনলাইন পেমেন্ট বর্তমানে চালু নেই।' %></div></div>
-                  </label></div>
-                <% } else { %><div class="col-12 alert alert-warning"><%= isEn ? 'Checkout is unavailable: COD is not enabled in payment settings.' : 'চেকআউট করা যাচ্ছে না: পেমেন্ট সেটিংসে COD চালু নেই।' %></div><% } %>
+              <% if (canonicalMysqlCheckout && (!gateways || !gateways.length)) { %>
+                <div class="col-12 alert alert-warning"><%= isEn ? 'Checkout is unavailable: COD is not enabled in payment settings.' : 'চেকআউট করা যাচ্ছে না: পেমেন্ট সেটিংসে COD চালু নেই।' %></div>
               <% } else { %>
-                <% gateways.forEach(function(gw, idx) { %>
-                  <div class="col-md-6"><label class="pay-option w-100 d-flex align-items-start gap-2 <%= idx === 0 ? 'active' : '' %>" onclick="selectGateway(this, '<%= gw.type %>', <%- JSON.stringify(gw.account_number || '') %>, <%- JSON.stringify(gw.instructions || '') %>)">
-                    <input type="radio" name="payment_method" value="<%= gw.name %>" class="form-check-input mt-1" <%= idx === 0 ? 'checked' : '' %> />
-                    <div><div class="fw-bold small"><%= gw.name %></div><div class="text-muted" style="font-size:11.5px;"><%= gw.instructions || 'নিরাপদ লেনদেন' %></div></div>
-                  </label></div>
-                <% }) %>
+                <div class="col-md-6"><label class="pay-option active w-100 d-flex align-items-start gap-2">
+                  <input type="radio" name="payment_method" value="cod" class="form-check-input mt-1" checked />
+                  <div><div class="fw-bold small"><%= typeof isEn !== 'undefined' && isEn ? 'Cash on delivery' : 'ক্যাশ অন ডেলিভারি' %></div><div class="text-muted" style="font-size:11.5px;"><%= typeof isEn !== 'undefined' && isEn ? 'Pay the configured COD due on delivery. No online payment is accepted.' : 'ডেলিভারির সময় প্রদেয় অর্থ দিন। অনলাইন পেমেন্ট বর্তমানে চালু নেই।' %></div></div>
+                </label></div>
               <% } %>
             </div>
 

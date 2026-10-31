@@ -33,6 +33,13 @@ function policyForAdminRoute(method, pathname) {
   if (has(path,'/admin/users')) return { key:write && !/toggle|delete/.test(path)?'staff.manage':'staff.manage', ...(write&&!/toggle|delete/.test(path)?{also:['staff.assign_role']}:{}) ,audit:false };
   if (has(path,'/admin/roles') || has(path,'/admin/permissions')) return { key:'roles.manage', audit:false };
   if (path==='/admin/phase08' || has(path,'/admin/phase08/orders')) return { key:'orders.manage', audit:false };
+  if (has(path,'/admin/d7/returns')) return { key:'returns.review', audit:write };
+  if (has(path,'/admin/d7/settlements')) {
+    if (!write) return { anyOf:['settlements.prepare','settlements.approve'], audit:false };
+    if (/\/adjustments\/[^/]+\/decision$|\/[^/]+\/approve$/.test(path)) return { key:'settlements.approve', audit:true };
+    return { key:'settlements.prepare', audit:true };
+  }
+  if (has(path,'/admin/d7/settings')) return { key:'settings.manage', audit:write };
   if (has(path,'/admin/phase08/refunds')) return { key:'refunds.review', audit:false };
   if (has(path,'/admin/phase08/incomplete')) return { key:write?'checkout.recovery.manage':'checkout.recovery.view', audit:false };
   if (has(path,'/admin/phase08/settings')) return { key:'settings.manage', audit:false };
@@ -81,7 +88,9 @@ function legacyAdminRbac(req, _res, next) {
   if (policy.exempt) return next();
   if (policy.unmapped) return next(new AuthorizationError('This admin route is blocked pending an explicit permission policy.'));
   const required=[policy.key,...(policy.also||[])].filter(Boolean);
-  if (required.every(key=>hasPermission(req.adminUser,key))) return next();
+  const allowed=(required.length > 0 && required.every(key=>hasPermission(req.adminUser,key))) ||
+    (Array.isArray(policy.anyOf) && policy.anyOf.some(key=>hasPermission(req.adminUser,key)));
+  if (allowed) return next();
   return next(new AuthorizationError('Insufficient permissions for this admin route.'));
 }
 

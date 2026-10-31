@@ -416,4 +416,45 @@ describe('Phase 04 — Branding, Design System, Accessibility & Bilingual UI (`b
       process.env.NODE_ENV = prevNodeEnv;
     }
   });
+
+  test('9. Legacy SQLite checkout displays COD only and rejects every non-COD/payment-reference submission', async () => {
+    const product = sqliteDb.get('SELECT id, stock FROM products WHERE status = 1 ORDER BY id LIMIT 1');
+    assert.ok(product && product.stock > 0, 'fixture product is available');
+    const productPage = await httpRequest(baseUrl, `/product/${sqliteDb.get('SELECT slug FROM products WHERE id = ?', product.id).slug}`);
+    let cookie = mergeCookies('', productPage.headers['set-cookie']);
+    const csrf = productPage.text.match(/name="_csrf" value="([^"]+)"/)?.[1];
+    assert.ok(csrf, 'product page exposes CSRF token');
+    const added = await httpRequest(baseUrl, '/cart/add', {
+      method: 'POST', headers: { Cookie: cookie },
+      body: { _csrf: csrf, product_id: String(product.id), qty: '1' },
+    });
+    cookie = mergeCookies(cookie, added.headers['set-cookie']);
+    assert.equal(added.status, 302);
+
+    const checkout = await httpRequest(baseUrl, '/customer/checkout', { headers: { Cookie: cookie } });
+    cookie = mergeCookies(cookie, checkout.headers['set-cookie']);
+    const checkoutCsrf = checkout.text.match(/name="_csrf" value="([^"]+)"/)?.[1];
+    assert.ok(checkoutCsrf, `checkout form exposes CSRF token (status ${checkout.status}, location ${checkout.headers.location || 'none'}, body ${checkout.text.slice(0, 200)})`);
+    assert.match(checkout.text, /name="payment_method" value="cod"/);
+    assert.doesNotMatch(checkout.text, /bKash পেমেন্ট|ShurjoPay|UddoktaPay|aamarPay|Nagad Manual|Rocket Personal/);
+
+    const before = sqliteDb.get('SELECT COUNT(*) AS count FROM orders').count;
+    const blocked = await httpRequest(baseUrl, '/customer/checkout', {
+      method: 'POST', headers: { Cookie: cookie },
+      body: { _csrf: checkoutCsrf, customer_name: 'QA Payment Guard', phone: '01719998888', address: 'QA fixture address', shipping_area: 'ঢাকার ভিতরে', payment_method: 'bKash পেমেন্ট', trx_id: 'FAKE-TRANSFER' },
+    });
+    assert.equal(blocked.status, 302);
+    assert.equal(blocked.headers.location, '/customer/checkout');
+    assert.equal(sqliteDb.get('SELECT COUNT(*) AS count FROM orders').count, before, 'rejected payment attempt creates no order');
+
+    const accepted = await httpRequest(baseUrl, '/customer/checkout', {
+      method: 'POST', headers: { Cookie: cookie },
+      body: { _csrf: checkoutCsrf, customer_name: 'QA COD Buyer', phone: '01719998888', address: 'QA fixture address', shipping_area: 'ঢাকার ভিতরে', payment_method: 'cod' },
+    });
+    assert.equal(accepted.status, 302);
+    assert.match(accepted.headers.location, /^\/order-success\//);
+    const order = sqliteDb.get('SELECT payment_method, payment_status FROM orders ORDER BY id DESC LIMIT 1');
+    assert.equal(order.payment_method, 'cod');
+    assert.equal(order.payment_status, 'unpaid');
+  });
 });
