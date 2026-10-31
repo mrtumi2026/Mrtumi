@@ -8,6 +8,4 @@
   <text x="68" y="29" font-family="'Hind Siliguri', 'Inter', system-ui, sans-serif" font-weight="800" font-size="21" fill="#ffffff">Mr. Tumi</text>
   <text x="157" y="29" font-family="'Inter', system-ui, sans-serif" font-weight="700" font-size="15" fill="#fcd34d">Grocery &amp; Gift</text>
   <text x="68" y="49" font-family="'Hind Siliguri', 'Noto Sans Bengali', sans-serif" font-weight="500" font-size="12.5" fill="#cbd5e1">মি. তুমি গ্রোসারি অ্যান্ড গিফট</text>
-  <rect x="234" y="36" width="82" height="18" rx="9" fill="#451a03" stroke="#f59e0b" stroke-width="1"/>
-  <text x="275" y="48" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-weight="700" font-size="8.5" fill="#fde68a">PLACEHOLDER</text>
 </svg>

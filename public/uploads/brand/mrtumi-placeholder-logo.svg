@@ -13,6 +13,4 @@
 
   <!-- Bangla Subtitle + Explicit Placeholder Pill -->
   <text x="68" y="49" font-family="'Hind Siliguri', 'Noto Sans Bengali', sans-serif" font-weight="600" font-size="12.5" fill="#334155">মি. তুমি গ্রোসারি অ্যান্ড গিফট</text>
-  <rect x="234" y="36" width="82" height="18" rx="9" fill="#fef3c7" stroke="#d97706" stroke-width="1"/>
-  <text x="275" y="48" text-anchor="middle" font-family="'Inter', system-ui, sans-serif" font-weight="700" font-size="8.5" fill="#92400e">PLACEHOLDER</text>
 </svg>
