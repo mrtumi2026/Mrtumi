@@ -619,6 +619,18 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
     }
   });
 
+  test('5b. Phase 07 MySQL checkout enforces active customer phone/IP block records', { skip: !MYSQL_HOST ? SKIP_REASON : false }, async () => {
+    const product=await client.queryOne('SELECT id FROM products WHERE slug=?',['artisan-date-gift-box']);
+    const phone=`017${String(Date.now()).slice(-8)}`;const requestKey=`p07-checkout-block-${Date.now()}`;
+    await client.execute('INSERT INTO ip_blocks(target_type,ip_or_phone,reason,status) VALUES(?,?,?,1)',['phone',phone,'P07 blocklist regression']);
+    try {
+      await assert.rejects(()=>checkoutRepo.createOrder({customer_name:'Blocked checkout',phone,address:'House 6, Block Road',delivery_location_id:deliveryLocationId,payment_method:'cod'},{locale:'en',requestKey,cart:[{product_id:product.id,qty:1}]}),(err)=>err.code==='CONFLICT'&&/blocked from placing orders/.test(err.message));
+      assert.equal(Number((await client.queryOne('SELECT COUNT(*) AS n FROM orders WHERE idempotency_key=?',[requestKey])).n),0,'blocked checkout does not persist an order');
+    } finally {
+      await client.execute('DELETE FROM ip_blocks WHERE target_type=? AND ip_or_phone=?',['phone',phone]);
+    }
+  });
+
   test('6. Phase 07 checkout order, lines, reservation and audit roll back together on injected audit failure', { skip: !MYSQL_HOST ? SKIP_REASON : false }, async () => {
     const product = await client.queryOne('SELECT id,vendor_stock_reserved FROM products WHERE slug=?', ['artisan-date-gift-box']);
     const requestKey = `p07-checkout-rollback-${Date.now()}`;

@@ -100,6 +100,8 @@ async function createOrder(input,options={}){
   return await mysql.withTransaction(async tx=>{
     const replay=await tx.queryOne('SELECT id,invoice_no,checkout_request_hash FROM orders WHERE idempotency_key=?',[key]);
     if(replay){if(replay.checkout_request_hash!==payloadHash)throw new ConflictError('This checkout request key was already used with different order details.');return{id:Number(replay.id),invoiceNo:replay.invoice_no,replayed:true};}
+    const blocked=await tx.queryOne('SELECT id FROM ip_blocks WHERE status=1 AND ip_or_phone IN (?,?) LIMIT 1 FOR UPDATE',[phone,String(ip||'').slice(0,64)]);
+    if(blocked)throw new ConflictError('This phone number or IP address is blocked from placing orders.');
     const cod=await tx.queryOne("SELECT code FROM payment_gateways WHERE code='cod' AND status=1 FOR UPDATE");
     if(!cod)throw new ConflictError('Cash-on-delivery is not enabled in the configured payment methods.');
     const zone=await tx.queryOne('SELECT id,division,district,upazila,delivery_charge_paisa FROM delivery_locations WHERE id=? AND status=1 FOR UPDATE',[zoneId]);
