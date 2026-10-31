@@ -43,7 +43,6 @@ describe('Reseller portal canonical MySQL/MariaDB integration',()=>{
     if(orderA){await client.execute('DELETE FROM order_items WHERE order_id=?',[orderA]);await client.execute('DELETE FROM orders WHERE id=?',[orderA]);}
     if(orderB)await client.execute('DELETE FROM orders WHERE id=?',[orderB]);
     await client.execute("DELETE FROM reseller_transactions WHERE reseller_id IN (?,?) AND trx_id=?",[a.insertId,b.insertId,`T-${suffix}`]);
-    await client.execute("DELETE FROM audit_logs WHERE actor_type='reseller' AND actor_id IN (?,?,?)",[a.insertId,b.insertId,registered&&registered.id||0]);
     await client.execute('DELETE FROM resellers WHERE id IN (?,?,?)',[a.insertId,b.insertId,registered&&registered.id||0]);
     await client.execute('DELETE FROM products WHERE sku=?',[`RP-${suffix}`]);
    }
