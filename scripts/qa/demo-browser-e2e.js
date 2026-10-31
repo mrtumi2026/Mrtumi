@@ -16,6 +16,7 @@ const results = { engine, startedAt: new Date().toISOString(), journeys: [], cle
   'COD orders are test records only. No payment, courier, SMS, OTP, email, refund, or payout operation is invoked.',
 ] };
 const suffix = crypto.randomBytes(4).toString('hex');
+const phoneSuffix = crypto.randomBytes(4).readUInt32BE(0).toString().padStart(10, '0').slice(-8);
 const demoTag = `DEMO-E2E-${suffix}`;
 const demoPassword = `QaOnly-${crypto.randomBytes(12).toString('hex')}!`;
 let pool, db, server, browser;
@@ -93,7 +94,7 @@ async function main() {
   });
 
   async function registerCustomer(index) {
-    const phone = `01${3 + index}${suffix.padEnd(8, '0').slice(0, 8)}${index}`.slice(0, 11);
+    const phone = `01${3 + index}${phoneSuffix}`;
     const email = `demo-customer-${index}-${suffix}@example.invalid`;
     customerPhones[index - 1] = phone;
     await page.goto(`${baseUrl}/customer/register`, { waitUntil: 'domcontentloaded' });
@@ -106,8 +107,10 @@ async function main() {
     await page.screenshot({ path: path.join(outDir, `customer-${index}-registration.png`), fullPage: true });
     const responsePromise = page.waitForNavigation({ waitUntil: 'domcontentloaded' });
     await registrationForm.locator('button[type="submit"],button:not([type])').first().click();
-    await responsePromise;
-    assert(page.url().endsWith('/customer/account'), `registration did not establish account; url=${page.url()}`);
+    const registrationResponse = await responsePromise;
+    await page.screenshot({ path: path.join(outDir, `customer-${index}-registration-result.png`), fullPage: true });
+    const registrationBody = await page.locator('body').innerText().catch(() => '');
+    assert(page.url().endsWith('/customer/account'), `registration did not establish account; HTTP=${registrationResponse?.status()} url=${page.url()} body=${registrationBody.slice(0, 600)}`);
     await page.context().clearCookies();
     await page.goto(`${baseUrl}/customer/login`, { waitUntil: 'domcontentloaded' });
     await page.locator('input[name="phone"]').fill(phone);
@@ -213,12 +216,18 @@ async function main() {
       await form.locator('input[name="password"]').fill(demoPassword);
       await form.locator('button[type="submit"],button:not([type])').first().click();
       await page.waitForLoadState('domcontentloaded').catch(() => {});
-      if (!page.url().includes('/vendor/dashboard')) {
+      if (!page.url().includes('/vendor/orders')) {
         const body = await page.locator('body').innerText().catch(() => '');
-        attempts.push({ vendorId: ids.vendors[i - 1], status: 'BLOCKED', url: page.url(), response: body.slice(0, 240) });
-      } else {
-        attempts.push({ vendorId: ids.vendors[i - 1], status: 'PASS' });
+        attempts.push({ vendorId: ids.vendors[i - 1], status: 'FAIL', url: page.url(), response: body.slice(0, 240) });
+        continue;
       }
+      const ownOrder = await db.queryOne('SELECT invoice_no FROM orders WHERE id=?', [ids.orders[i - 1]]);
+      const foreignOrder = await db.queryOne('SELECT invoice_no FROM orders WHERE id=?', [ids.orders[i === 1 ? 1 : 0]]);
+      const portalText = await page.locator('body').innerText();
+      assert(portalText.includes(ownOrder.invoice_no), `vendor ${i} cannot see assigned DEMO order ${ownOrder.invoice_no}`);
+      assert(!portalText.includes(foreignOrder.invoice_no), `vendor ${i} can see foreign vendor order ${foreignOrder.invoice_no}`);
+      await page.screenshot({ path: path.join(outDir, `vendor-${i}-orders.png`), fullPage: true });
+      attempts.push({ vendorId: ids.vendors[i - 1], status: 'PASS', ownOrder: ownOrder.invoice_no, foreignOrderHidden: foreignOrder.invoice_no });
     }
     if (attempts.some(a => a.status === 'BLOCKED')) throw Object.assign(new Error(`BLOCKED: both synthetic vendors were individually tested; MySQL vendor login uses legacy SQLite db.get and cannot authenticate. Observations=${JSON.stringify(attempts)}`), { code: 'BLOCKED_VENDOR_LEGACY_SQLITE_AUTH' });
     assert(attempts.every(a => a.status === 'PASS'), 'one or more vendor logins failed');

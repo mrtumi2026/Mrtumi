@@ -41,9 +41,22 @@ router.get('/vendor/login', (req, res) => {
   res.render('vendor/auth', { mode: 'login', error: null });
 });
 
-router.post('/vendor/login', requireCsrf, (req, res) => {
+router.post('/vendor/login', requireCsrf, async (req, res, next) => {
   const identifier = String(req.body.identifier || '').trim();
   const password = String(req.body.password || '');
+
+  if (mysqlActive()) {
+    try {
+      const { queryOne } = require('../db/mysqlPool');
+      const vendor = await queryOne('SELECT id,shop_name,owner_name,phone,email,password_hash,status FROM vendors WHERE (email=? OR phone=?) AND status=1 LIMIT 1', [identifier, identifier]);
+      if (!vendor || !vendor.password_hash || !await bcrypt.compare(password, vendor.password_hash)) {
+        return res.status(400).render('vendor/auth', { mode: 'login', error: 'Vendor email/mobile or password is incorrect.' });
+      }
+      req.session.vendorUser = { id: Number(vendor.id), shop_name: vendor.shop_name, owner_name: vendor.owner_name, phone: vendor.phone, email: vendor.email };
+      req.flash('success', `Welcome, ${vendor.shop_name}!`);
+      return res.redirect('/vendor/orders');
+    } catch (error) { return next(error); }
+  }
 
   const vendor = db.get(
     'SELECT * FROM vendors WHERE email = ? OR phone = ? LIMIT 1',

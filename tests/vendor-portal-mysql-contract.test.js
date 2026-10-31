@@ -36,6 +36,17 @@ test('vendor repository queries enforce vendor ownership on product and order-it
   assert.match(source, /withTransaction\(/);
 });
 
+test('vendor MySQL login authenticates against the canonical vendors table without invoking SQLite', () => {
+  const source = fs.readFileSync(path.join(root, 'src/routes/vendorPanel.js'), 'utf8');
+  const route = source.slice(source.indexOf("router.post('/vendor/login'"), source.indexOf("router.get('/vendor/register'"));
+  assert.match(route, /if \(mysqlActive\(\)\)/);
+  assert.match(route, /SELECT id,shop_name,owner_name,phone,email,password_hash,status FROM vendors/);
+  assert.match(route, /await bcrypt\.compare\(password, vendor\.password_hash\)/);
+  assert.match(route, /return res\.redirect\('\/vendor\/orders'\)/);
+  const mysqlBranch = route.slice(route.indexOf('if (mysqlActive())'), route.indexOf('\n  const vendor = db.get'));
+  assert.doesNotMatch(mysqlBranch, /db\.get\(/);
+});
+
 test('vendor route preserves CSRF and keeps legacy parent-order mutation fail-closed', () => {
   const source = fs.readFileSync(path.join(root, 'src/routes/vendorPanel.js'), 'utf8');
   assert.match(source, /router\.post\('\/vendor\/order-items\/:itemId\/fulfillment', requireCsrf/);
