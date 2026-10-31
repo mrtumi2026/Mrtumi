@@ -248,6 +248,43 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     await db.execute('DELETE FROM subcategories WHERE id IN (?,?)',[sub.insertId,otherSub.insertId]);
   });
 
+  test('vendor/reseller directories use minimized read-only MySQL queries under existing global admin permissions; D3 mutations remain blocked',async(t)=>{
+    if(!MYSQL_HOST)return t.skip(SKIP);
+    csrfToken=await fetchCsrf(dashboardCookie);
+    const suffix=Date.now();
+    const passwordSentinel=`P09-DO-NOT-RENDER-${suffix}`;
+    const vendorPending=await db.execute('INSERT INTO vendors(shop_name,owner_name,phone,password_hash,commission_rate_bps,balance_paisa,verified,status) VALUES(?,?,?,?,?,?,0,1)',[`P09 Pending Vendor ${suffix}`,'P09 Vendor Owner',`014${String(suffix).slice(-8)}`,passwordSentinel,1250,123450]);
+    const vendorVerified=await db.execute('INSERT INTO vendors(shop_name,owner_name,phone,password_hash,commission_rate_bps,balance_paisa,verified,status) VALUES(?,?,?,?,?,?,1,1)',[`P09 Verified Vendor ${suffix}`,'P09 Vendor Owner',`015${String(suffix).slice(-8)}`,passwordSentinel,1000,10000]);
+    const resellerPending=await db.execute('INSERT INTO resellers(name,shop_name,phone,password_hash,balance_paisa,deposit_paisa,verified,status) VALUES(?,?,?,?,?,?,0,1)',[`P09 Pending Reseller ${suffix}`,'P09 Reseller Shop',`012${String(suffix).slice(-8)}`,passwordSentinel,65432,0]);
+    const resellerVerified=await db.execute('INSERT INTO resellers(name,shop_name,phone,password_hash,balance_paisa,deposit_paisa,verified,status) VALUES(?,?,?,?,?,?,1,1)',[`P09 Verified Reseller ${suffix}`,'P09 Reseller Shop',`013${String(suffix).slice(-8)}`,passwordSentinel,10000,0]);
+    const {cookie:noGrantCookie,token:noGrantToken}=await noGrantSession();
+    assert.equal((await request('/admin/vendors',{cookie:noGrantCookie,accept:'text/html'})).status,403,'vendor directory requires the existing vendors.manage grant');
+    assert.equal((await request('/admin/resellers',{cookie:noGrantCookie,accept:'text/html'})).status,403,'reseller directory requires the existing resellers.manage grant');
+    const vendors=await request('/admin/vendors',{accept:'text/html'});assert.equal(vendors.status,200,vendors.text.slice(0,250));
+    assert.match(vendors.text,new RegExp(`P09 Verified Vendor ${suffix}`));assert.doesNotMatch(vendors.text,new RegExp(`P09 Pending Vendor ${suffix}`));
+    assert.match(vendors.text,/12\.5/,'vendor commission basis points render as the legacy percentage');assert.match(vendors.text,/৳1,234\.5/,'vendor integer-paisa balance renders as BDT');
+    assert.equal(vendors.text.includes(passwordSentinel),false,'vendor password hashes are not selected/rendered');
+    assert.equal(vendors.text.includes('/admin/vendors/create'),false,'MySQL vendor directory has no create form');
+    assert.equal(vendors.text.includes('/admin/vendors/verify/'),false,'MySQL vendor directory has no verification mutation control');
+    assert.equal(vendors.text.includes('/admin/vendors/delete/'),false,'MySQL vendor directory has no delete control');
+    const pendingVendors=await request('/admin/vendor-verifications',{accept:'text/html'});assert.equal(pendingVendors.status,200);assert.match(pendingVendors.text,new RegExp(`P09 Pending Vendor ${suffix}`));assert.doesNotMatch(pendingVendors.text,new RegExp(`P09 Verified Vendor ${suffix}`));
+    const resellers=await request('/admin/resellers',{accept:'text/html'});assert.equal(resellers.status,200,resellers.text.slice(0,250));
+    assert.match(resellers.text,new RegExp(`P09 Verified Reseller ${suffix}`));assert.doesNotMatch(resellers.text,new RegExp(`P09 Pending Reseller ${suffix}`));
+    assert.match(resellers.text,/৳654\.32/,'reseller integer-paisa balance renders as BDT');
+    assert.equal(resellers.text.includes(passwordSentinel),false,'reseller password hashes are not selected/rendered');
+    assert.equal(resellers.text.includes('/admin/resellers/create'),false,'MySQL reseller directory has no create form');
+    assert.equal(resellers.text.includes('/admin/resellers/verify/'),false,'MySQL reseller directory has no verification mutation control');
+    assert.equal(resellers.text.includes('/admin/resellers/delete/'),false,'MySQL reseller directory has no delete control');
+    const pendingResellers=await request('/admin/reseller-verifications',{accept:'text/html'});assert.equal(pendingResellers.status,200);assert.match(pendingResellers.text,new RegExp(`P09 Pending Reseller ${suffix}`));assert.doesNotMatch(pendingResellers.text,new RegExp(`P09 Verified Reseller ${suffix}`));
+
+    const deniedVerify=await request(`/admin/vendors/verify/${vendorPending.insertId}`,{method:'POST',cookie:noGrantCookie,token:noGrantToken});assert.equal(deniedVerify.status,403,'vendor verification remains permission-gated');
+    const blockedVerify=await request(`/admin/vendors/verify/${vendorPending.insertId}`,{method:'POST'});assert.equal(blockedVerify.status,503,'vendor verification remains unavailable in MySQL pending D3 approval');
+    const blockedResellerVerify=await request(`/admin/resellers/verify/${resellerPending.insertId}`,{method:'POST'});assert.equal(blockedResellerVerify.status,503,'tenant-sensitive reseller verification is not enabled in MySQL pending D3');
+    assert.equal(Number((await db.queryOne('SELECT verified FROM vendors WHERE id=?',[vendorPending.insertId])).verified),0);
+    assert.equal(Number((await db.queryOne('SELECT verified FROM resellers WHERE id=?',[resellerPending.insertId])).verified),0);
+    assert.ok(await db.queryOne('SELECT id FROM vendors WHERE id=?',[vendorVerified.insertId]));assert.ok(await db.queryOne('SELECT id FROM resellers WHERE id=?',[resellerVerified.insertId]));
+  });
+
   test('legacy catalog routes use MySQL taxonomy/product/review repositories with permission, CSRF, audit and retained-history checks',async(t)=>{
     if(!MYSQL_HOST)return t.skip(SKIP);
     csrfToken=await fetchCsrf(dashboardCookie);

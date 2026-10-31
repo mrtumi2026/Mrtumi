@@ -61,6 +61,8 @@ The present legacy admin surface is platform-wide; it does not claim tenant isol
 
 For each choice, also specify whether list/read, verification, financial withdrawals, and support actions share the same scope. Until decided, do not claim tenant-scoped admin access or expand non-Super-Admin grants for these operations.
 
+**Bounded read-only migration (2026-10-31):** the four existing vendor/reseller directory GETs (`/admin/vendors`, `/admin/vendor-verifications`, `/admin/resellers`, `/admin/reseller-verifications`) are classified as category 1 under the task's read-only/non-tenant-scoped criterion because their current documented behavior is a platform-wide directory and they introduce no new route, grant, mutation, or tenant scope. Their MySQL implementation preserves the existing `vendors.manage` / `resellers.manage` gates, selects only display fields, and hides MySQL-mode mutation controls. This is not an owner choice on D3 and does not establish tenant isolation. Vendor/reseller admin verification, create/delete, finance, withdrawals/deposits, and transaction/order actions remain outside this migration and fail closed in MySQL mode pending route-specific review and required D3 scope approval. Self-service portal routes remain outside this slice pending separate schema and authorization review; no portal scope or behavior is changed.
+
 ### D4 — Production database privilege and account-separation review
 
 **Plan only; no production access, query, permission change, or migration is authorized by this document.** A deployment owner must approve access and scope before evidence is collected.

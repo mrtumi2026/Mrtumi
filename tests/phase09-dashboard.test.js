@@ -149,6 +149,22 @@ describe('Phase 09 dashboard repository contract', () => {
     assert.equal(policyForAdminRoute('POST','/admin/reviews/approve/1').key,'catalog.manage');
   });
 
+  test('vendor/reseller MySQL admin directories stay read-only and retain existing platform-wide permission gates',()=>{
+    const directory=require('../src/repositories/adminPartnerDirectoryRepository');
+    assert.equal(typeof directory.listVendors,'function');assert.equal(typeof directory.listResellers,'function');
+    const source=fs.readFileSync(path.join(__dirname,'../src/routes/adminOperations.js'),'utf8');
+    assert.match(source,/adminPartnerDirectoryRepository\.listVendors\(\{ pendingOnly \}\)/);
+    assert.match(source,/adminPartnerDirectoryRepository\.listResellers\(\{ pendingOnly: unverifiedOnly \}\)/);
+    assert.match(source,/createAction: mysqlMode \? null : '\/admin\/vendors\/create'/);
+    assert.match(source,/customActionPrefix: mysqlMode \? null : '\/admin\/vendors\/verify'/);
+    assert.match(source,/createAction: mysqlMode \? null : '\/admin\/resellers\/create'/);
+    assert.match(source,/customActionPrefix: mysqlMode \? null : '\/admin\/resellers\/verify'/);
+    assert.equal(policyForAdminRoute('GET','/admin/vendors').key,'vendors.manage');
+    assert.equal(policyForAdminRoute('GET','/admin/vendor-verifications').key,'vendors.manage');
+    assert.equal(policyForAdminRoute('GET','/admin/resellers').key,'resellers.manage');
+    assert.equal(policyForAdminRoute('GET','/admin/reseller-verifications').key,'resellers.manage');
+  });
+
   test('Legacy supplier/purchase routes use Phase 06 repositories or remain safely blocked in MySQL mode',()=>{
     const source=fs.readFileSync(path.join(__dirname,'../src/routes/adminOperations.js'),'utf8');
     assert.match(source,/phase06Repository\.createSupplier/);

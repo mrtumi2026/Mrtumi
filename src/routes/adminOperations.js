@@ -9,6 +9,7 @@ const adminComplaintRepository = require('../repositories/adminComplaintReposito
 const adminFinanceReadRepository = require('../repositories/adminFinanceReadRepository');
 const adminCustomerRepository = require('../repositories/adminCustomerRepository');
 const phase06Repository = require('../repositories/phase06Repository');
+const adminPartnerDirectoryRepository = require('../repositories/adminPartnerDirectoryRepository');
 const { asyncHandler } = require('../utils/asyncHandler');
 const { requireAdmin } = require('../middleware/auth');
 const { ConflictError, ValidationError } = require('../utils/errors');
@@ -789,19 +790,23 @@ router.post('/admin/expenses/delete/:id', (req, res) => {
 });
 
 // ─── Vendors & Resellers ───
-router.get('/admin/vendors', (_req, res) => renderVendors(res, false));
-router.get('/admin/vendor-verifications', (_req, res) => renderVendors(res, true));
+router.get('/admin/vendors', asyncHandler(async (_req, res) => renderVendors(res, false)));
+router.get('/admin/vendor-verifications', asyncHandler(async (_req, res) => renderVendors(res, true)));
 
-function renderVendors(res, pendingOnly) {
-  const rows = pendingOnly
-    ? db.all('SELECT * FROM vendors WHERE verified = 0 ORDER BY id DESC')
-    : db.all('SELECT * FROM vendors ORDER BY id DESC');
+async function renderVendors(res, pendingOnly) {
+  const mysqlMode = env.db.client === 'mysql';
+  const rows = mysqlMode
+    ? await adminPartnerDirectoryRepository.listVendors({ pendingOnly })
+    : pendingOnly
+      ? db.all('SELECT * FROM vendors WHERE verified = 0 ORDER BY id DESC')
+      : db.all('SELECT * FROM vendors ORDER BY id DESC');
   res.render('admin/crud-module', {
     pageTitle: pendingOnly ? 'Vendor Verifications' : 'All Vendors',
     subtitle: 'মাল্টি-ভেন্ডর সেলার অ্যাকাউন্ট, কমিশন রেট এবং ভেরিফিকেশন',
-    createAction: '/admin/vendors/create',
-    deletePrefix: '/admin/vendors/delete',
-    customActionPrefix: '/admin/vendors/verify',
+    mysqlMode,
+    createAction: mysqlMode ? null : '/admin/vendors/create',
+    deletePrefix: mysqlMode ? null : '/admin/vendors/delete',
+    customActionPrefix: mysqlMode ? null : '/admin/vendors/verify',
     customActionLabel: 'Verify Vendor',
     columns: [
       { key: 'id', label: '#' },
@@ -908,20 +913,24 @@ router.post('/admin/vendor-withdrawals/delete/:id', (req, res) => {
 });
 
 // Resellers
-router.get('/admin/resellers', (_req, res) => renderResellers(res, false));
-router.get('/admin/reseller-verifications', (_req, res) => renderResellers(res, true));
+router.get('/admin/resellers', asyncHandler(async (_req, res) => renderResellers(res, false)));
+router.get('/admin/reseller-verifications', asyncHandler(async (_req, res) => renderResellers(res, true)));
 
-function renderResellers(res, unverifiedOnly) {
-  const rows = unverifiedOnly
-    ? db.all('SELECT * FROM resellers WHERE verified = 0 ORDER BY id DESC')
-    : db.all('SELECT * FROM resellers ORDER BY id DESC');
+async function renderResellers(res, unverifiedOnly) {
+  const mysqlMode = env.db.client === 'mysql';
+  const rows = mysqlMode
+    ? await adminPartnerDirectoryRepository.listResellers({ pendingOnly: unverifiedOnly })
+    : unverifiedOnly
+      ? db.all('SELECT * FROM resellers WHERE verified = 0 ORDER BY id DESC')
+      : db.all('SELECT * FROM resellers ORDER BY id DESC');
   res.render('admin/crud-module', {
     pageTitle: unverifiedOnly ? 'Reseller Verifications' : 'All Resellers',
     subtitle: 'রিসেলার পার্টনার অ্যাকাউন্ট ও ব্যালেন্স ব্যবস্থাপনা',
-    createAction: '/admin/resellers/create',
-    customActionPrefix: '/admin/resellers/verify',
+    mysqlMode,
+    createAction: mysqlMode ? null : '/admin/resellers/create',
+    customActionPrefix: mysqlMode ? null : '/admin/resellers/verify',
     customActionLabel: 'Verify',
-    deletePrefix: '/admin/resellers/delete',
+    deletePrefix: mysqlMode ? null : '/admin/resellers/delete',
     columns: [
       { key: 'id', label: '#' },
       { key: 'name', label: 'Reseller Name' },
