@@ -140,10 +140,10 @@ async function findResellerById(id, poolOverride = null, config = env) {
 async function findCustomerById(id, poolOverride = null, config = env) {
   if (!id) return null;
   if (!isMysqlMode(config) && !poolOverride) {
-    return sqliteDb.get('SELECT * FROM customers WHERE id = ?', id) || null;
+    return sqliteDb.get('SELECT id,name,phone,email,status,is_blocked FROM customers WHERE id = ? AND status = 1 AND is_blocked = 0', id) || null;
   }
   const client = getClient(poolOverride);
-  return client.queryOne('SELECT * FROM `customers` WHERE `id` = ? LIMIT 1', [id]);
+  return client.queryOne('SELECT `id`,`name`,`phone`,`email`,`status`,`is_blocked` FROM `customers` WHERE `id` = ? AND `status`=1 AND `is_blocked`=0 LIMIT 1', [id]);
 }
 
 async function loadLayoutNavigationContext(isAdminPath = false, poolOverride = null, config = env) {

@@ -22,6 +22,8 @@ function policyForAdminRoute(method, pathname) {
   if (has(path,'/admin/gemini-chat')) return { key:'assistant.report', audit:false };
   if (has(path,'/admin/smsgeteway/balance') || has(path,'/admin/bdcourier/my-plan') || has(path,'/admin/steadfast/dashboard-widget')) return { key:'dashboard.view', audit:false };
 
+  if (has(path,'/admin/privacy/requests')) return { key:'privacy.review', audit:false };
+  if (has(path,'/admin/privacy')) return { key:'privacy.manage', audit:false };
   if (has(path,'/admin/audit-logs')) return { key:'audit_logs.view', audit:false };
   if (has(path,'/admin/phase09/access')) {
     if(path.includes('/staff')&&write&&verb!=='PATCH')return {key:'staff.manage',also:['staff.assign_role'],audit:false};

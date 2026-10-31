@@ -146,7 +146,7 @@ router.get('/vendor/dashboard', (req, res) => {
   ).c;
 
   const orderLines = db.all(
-    `SELECT oi.*, o.invoice_id, o.customer_name, o.phone, o.status AS order_status, o.created_at
+    `SELECT oi.price, oi.qty, o.status AS order_status
      FROM order_items oi
      JOIN products p ON p.id = oi.product_id
      JOIN orders o ON o.id = oi.order_id
@@ -336,7 +336,7 @@ router.get('/vendor/orders', async (req, res, next) => {
   if (mysqlActive()) { try { const vendor = await require('../db/mysqlPool').queryOne('SELECT id,shop_name,owner_name,commission_rate_bps/100 AS commission_rate FROM vendors WHERE id=? AND status=1', [req.session.vendorUser.id]); if (!vendor) return res.redirect('/vendor/login'); return res.render('vendor/orders', { vendor, orderLines: await vendorPortal.listOrderItems(vendor.id) }); } catch (error) { return next(error); } }
   const vendor = db.get('SELECT * FROM vendors WHERE id = ?', req.session.vendorUser.id);
   const orderLines = db.all(
-    `SELECT oi.*, o.id AS order_id, o.invoice_id, o.customer_name, o.phone, o.address,
+    `SELECT oi.*, o.id AS order_id, o.invoice_id,
             o.status AS order_status, o.courier_name, o.courier_tracking_id, o.created_at
      FROM order_items oi
      JOIN products p ON p.id = oi.product_id

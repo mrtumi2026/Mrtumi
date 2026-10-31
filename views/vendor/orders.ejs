@@ -33,8 +33,7 @@
               <small class="text-muted"><%= String(ol.created_at).slice(0, 10) %></small>
             </td>
             <td>
-              <div class="fw-semibold"><%= ol.customer_name %> (<%= ol.phone %>)</div>
-              <small class="text-muted"><%= ol.address %></small>
+              <div class="small text-muted">Customer contact details are restricted to protect privacy.</div>
             </td>
             <td><%= ol.product_name %> <span class="badge bg-light text-dark border"><%= ol.size %> × <%= ol.qty %></span></td>
             <td>৳<%= gross.toLocaleString('en-IN') %></td>

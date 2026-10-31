@@ -10,6 +10,7 @@ const { asyncHandler } = require('../utils/asyncHandler');
 const { createRateLimiter } = require('../middleware/rateLimit');
 const storefrontRepo = require('../repositories/storefrontRepository');
 const customerRepo = require('../repositories/customerRepository');
+const customerPrivacyRepo = require('../repositories/privacyRepository');
 const { env } = require('../config/env');
 const { ValidationError } = require('../utils/errors');
 const { captureAttribution, consentGranted } = require('../analytics/attribution');
@@ -48,16 +49,19 @@ function safeLocalReturnPath(value) {
   }
 }
 
-router.post('/analytics/consent', publicFormLimiter, requireCsrf, (req, res) => {
+router.post('/analytics/consent', publicFormLimiter, requireCsrf, asyncHandler(async (req, res) => {
   if (env.analyticsAttributionEnabled !== true) return res.sendStatus(404);
   const choice = String(req.body.choice || '');
   if (!['accept', 'reject', 'withdraw'].includes(choice)) return res.status(400).send('Choose an available analytics preference.');
   const granted = choice === 'accept';
+  if (storefrontRepo.isMysqlMode() && req.customerUser?.id) {
+    await customerPrivacyRepo.setConsent(req.customerUser.id,'analytics',granted?'grant':'withdraw',{ip:req.ip||'',userAgent:req.get('user-agent')||''});
+  }
   req.session.analyticsConsent = granted;
   req.session.analyticsConsentChoice = granted ? 'accepted' : choice === 'withdraw' ? 'withdrawn' : 'rejected';
   if (!granted) delete req.session.analyticsAttribution;
   return res.redirect(303, safeLocalReturnPath(req.body.return_to));
-});
+}));
 
 function escapeXml(str) {
   return String(str || '')
@@ -945,6 +949,7 @@ router.post('/order/quick-submit', publicFormLimiter, requireCsrf, asyncHandler(
   }
 
   const successUrl = `/order-success/${inv}`;
+  req.session.checkoutLastInvoice = String(inv);
   if (wantsJson(req)) {
     return res.json({
       success: true,
@@ -1088,6 +1093,7 @@ router.post('/customer/checkout', requireCsrf, asyncHandler(async (req, res) => 
       note: req.body.note, coupon_code: matches(replayKey) ? String(req.body.coupon_code || '') : (req.session.appliedCoupon?.code || ''),
     }, { locale: req.locale, sessionCustomer: req.customerUser || null, ip: req.ip, requestKey: expected, cart: sourceCart, incompleteOrderId, sessionSid: req.sessionID, analyticsConsent: consentGranted(req.session, env.analyticsAttributionEnabled), attribution: req.session.analyticsAttribution || null });
     if (!isReplay) { req.session.checkoutLastCart = JSON.parse(JSON.stringify(sourceCart)); req.session.checkoutLastRequestKey = expected; req.session.checkoutLastRecoveryId = incompleteOrderId; delete req.session.incompleteCheckoutId; req.session.cart = []; delete req.session.appliedCoupon; if (!(storefrontRepo.isMysqlMode() && req.customerUser?.id)) await persistCustomerCart(req); }
+    req.session.checkoutLastInvoice = String(result.invoiceNo);
     return res.redirect(`/order-success/${encodeURIComponent(result.invoiceNo)}`);
   }
   const {
@@ -1224,10 +1230,12 @@ router.post('/customer/checkout', requireCsrf, asyncHandler(async (req, res) => 
   req.session.cart = [];
   delete req.session.appliedCoupon;
 
+  req.session.checkoutLastInvoice = String(inv);
   return res.redirect(`/order-success/${inv}`);
 }));
 
 router.get('/order-success/:invoiceId', asyncHandler(async (req, res) => {
+  if (String(req.session.checkoutLastInvoice || '') !== String(req.params.invoiceId || '')) return res.redirect('/');
   if (storefrontRepo.isMysqlMode()) {
     const result = await checkoutRepo.getOrderForSuccess(req.params.invoiceId);
     if (!result) return res.redirect('/');
@@ -1245,8 +1253,9 @@ router.get('/order-success/:invoiceId', asyncHandler(async (req, res) => {
   return res.render('store/order-success', { order, items });
 }));
 
-router.post('/order/:invoiceId/cancel', (req, res) => {
+router.post('/order/:invoiceId/cancel', requireCsrf, (req, res) => {
   if (storefrontRepo.isMysqlMode()) return res.status(409).json({ success:false, message:'Customer cancellation is paused on MySQL until invoice ownership verification is available. Contact support; authorized admins can cancel pending orders.' });
+  if (String(req.session.checkoutLastInvoice || '') !== String(req.params.invoiceId || '')) return res.redirect('/track-order');
   const order = db.get('SELECT * FROM orders WHERE invoice_id = ?', req.params.invoiceId);
   if (!order) return res.redirect('/track-order');
 
@@ -1273,22 +1282,9 @@ router.post('/order/:invoiceId/cancel', (req, res) => {
 
 router.get(['/track-order', '/order-track', '/site/order-track'], (req, res) => {
   const query = String(req.query.q || '').trim().replace(/^#/, '');
-  let orders = [];
-  if (query && !storefrontRepo.isMysqlMode()) {
-    orders = db.all(
-      `SELECT o.*, COALESCE(os.name, o.status) AS status_label, COALESCE(os.color, '#f59e0b') AS status_color
-       FROM orders o
-       LEFT JOIN order_statuses os ON os.slug = o.status
-       WHERE o.invoice_id = ? OR o.phone = ?
-       ORDER BY o.id DESC`,
-      query,
-      query
-    );
-    for (const o of orders) {
-      o.items = db.all('SELECT * FROM order_items WHERE order_id = ?', o.id);
-    }
-  }
-  res.render('store/track-order', { query, orders });
+  // Order details are available only in the authenticated, ownership-scoped customer account.
+  const orders = [];
+  res.render('store/track-order', { query: '', orders });
 });
 
 router.get('/campaign/:slug', (req, res) => {
@@ -1337,6 +1333,7 @@ router.post('/campaign/:slug/order', (req, res) => {
     Number(campaign.offer_price),
     orderQty
   );
+  req.session.checkoutLastInvoice = String(inv);
   return res.redirect(`/order-success/${inv}`);
 });
 
@@ -1506,24 +1503,6 @@ router.post(
     const fmt = res.locals.fmt;
     const isEn = req.locale === 'en';
 
-    const numMatch = msg.match(/\d{5,11}/);
-    if (numMatch && !storefrontRepo.isMysqlMode()) {
-      const token = numMatch[0];
-      const ord = db.get(
-        'SELECT * FROM orders WHERE invoice_id = ? OR phone = ? ORDER BY id DESC LIMIT 1',
-        token,
-        token
-      );
-      if (ord) {
-        return res.json({
-          success: true,
-          reply: isEn
-            ? `📦 Order Found!\n• Invoice: #${ord.invoice_id}\n• Customer: ${ord.customer_name}\n• Total: ${fmt.bdt(ord.amount)}\n• Status: ${String(ord.status || '').toUpperCase()}${ord.courier_tracking_id ? '\n• Courier Tracking: ' + ord.courier_tracking_id : ''}`
-            : `📦 অর্ডার পাওয়া গেছে!\n• ইনভয়েস: #${ord.invoice_id}\n• নাম: ${ord.customer_name}\n• মোট মূল্য: ${fmt.bdt(ord.amount)}\n• বর্তমান স্ট্যাটাস: ${String(ord.status || '').toUpperCase()}${ord.courier_tracking_id ? '\n• কুরিয়ার ট্র্যাকিং: ' + ord.courier_tracking_id : ''}`,
-        });
-      }
-    }
-
     if (
       q.includes('দাম') ||
       q.includes('price') ||
@@ -1551,16 +1530,16 @@ router.post(
       return res.json({
         success: true,
         reply: isEn
-          ? '📦 Visit /track-order or send your Invoice ID / mobile number here to check your order status.'
-          : '📦 অর্ডার ট্র্যাক করতে /track-order পেজে যান অথবা আপনার ইনভয়েস বা মোবাইল নম্বর এখানে লিখে পাঠান!',
+          ? '📦 Sign in to your customer account to view your own orders and delivery status.'
+          : '📦 নিজের অর্ডার ও ডেলিভারি অবস্থা দেখতে কাস্টমার অ্যাকাউন্টে সাইন ইন করুন।',
       });
     }
 
     return res.json({
       success: true,
       reply: isEn
-        ? 'Welcome to Mr. Tumi Grocery & Gift! 😊\nHow can we help you today?\n• Ask for product prices & availability\n• Track an order via /track-order\n• Visit /contact or use Feedback & Complaint for support.'
-        : 'স্বাগতম মি. তুমি গ্রোসারি অ্যান্ড গিফট-এ! 😊\nআপনি নিচের যেকোনো বিষয়ে জানতে পারেন:\n• পণ্যের দাম ও স্টক তথ্য জানতে নাম লিখুন\n• অর্ডার ট্র্যাক করতে ইনভয়েস বা মোবাইল নম্বর লিখুন\n• সহায়তা বা অভিযোগের জন্য /contact পেজ দেখুন।',
+        ? 'Welcome to Mr. Tumi Grocery & Gift! 😊\nHow can we help you today?\n• Ask for product prices & availability\n• Sign in to view your own order status\n• Visit /contact or use Feedback & Complaint for support.'
+        : 'স্বাগতম মি. তুমি গ্রোসারি অ্যান্ড গিফট-এ! 😊\nআপনি নিচের যেকোনো বিষয়ে জানতে পারেন:\n• পণ্যের দাম ও স্টক তথ্য জানতে নাম লিখুন\n• নিজের অর্ডার দেখতে অ্যাকাউন্টে সাইন ইন করুন\n• সহায়তা বা অভিযোগের জন্য /contact পেজ দেখুন।',
     });
   })
 );

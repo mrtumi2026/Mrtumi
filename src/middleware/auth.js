@@ -5,6 +5,7 @@ const {
   findActiveAdminById,
   findVendorById,
   findResellerById,
+  findCustomerById,
   loadLayoutNavigationContext,
 } = require('../repositories/authRepository');
 const { hasPermission } = require('./rbac');
@@ -73,7 +74,12 @@ async function attachGlobals(req, res, next) {
       if (freshR) resellerUser = freshR;
     }
 
-    const customerUser = req.session.customerUser || null;
+    let customerUser = req.session.customerUser || null;
+    if (req.path.startsWith('/customer') && customerUser && customerUser.id) {
+      const freshCustomer = await findCustomerById(customerUser.id);
+      customerUser = freshCustomer || null;
+      if (!freshCustomer) delete req.session.customerUser;
+    }
 
     req.adminUser = adminUser;
     req.vendorUser = vendorUser;
@@ -175,7 +181,8 @@ function requireReseller(req, res, next) {
 }
 
 function requireCustomer(req, res, next) {
-  if (!req.session || !req.session.customerUser) {
+  if (!req.session || !req.session.customerUser || (req.customerUser !== undefined && !req.customerUser)) {
+    if (req.session) delete req.session.customerUser;
     return res.redirect('/customer/login');
   }
   return next();

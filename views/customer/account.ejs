@@ -4,6 +4,8 @@
     <h1 class="h3 mb-0"><%= isEn ? 'My account' : 'আমার অ্যাকাউন্ট' %></h1>
     <div class="d-flex gap-2 flex-wrap">
       <a class="btn btn-outline-success" href="/customer/account/orders"><%= isEn ? 'Order history' : 'অর্ডারের ইতিহাস' %></a>
+      <a class="btn btn-outline-primary" href="/customer/account/privacy-requests"><%= isEn ? 'Privacy & data rights' : 'গোপনীয়তা ও তথ্য অধিকার' %></a>
+      <a class="btn btn-link" href="/customer/account/privacy/data"><%= isEn ? 'View my data' : 'আমার তথ্য দেখুন' %></a>
       <form method="post" action="/customer/logout"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button class="btn btn-outline-secondary"><%= isEn ? 'Log out' : 'লগআউট' %></button></form>
     </div>
   </div>

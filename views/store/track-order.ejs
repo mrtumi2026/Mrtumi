@@ -7,19 +7,10 @@
       <p class="text-muted small"><%= t('store.trackSub') %></p>
     </div>
 
-    <form action="/track-order" method="GET" class="d-flex gap-2 mb-4 mx-auto" style="max-width: 520px;" role="search">
-      <label for="trackOrderQuery" class="visually-hidden"><%= t('store.trackInputPlaceholder') %></label>
-      <input
-        type="search"
-        id="trackOrderQuery"
-        name="q"
-        value="<%= query || '' %>"
-        class="form-control form-control-lg"
-        placeholder="<%= t('store.trackInputPlaceholder') %>"
-        required
-      />
-      <button type="submit" class="mt-btn mt-btn-primary px-4" style="white-space:nowrap;"><%= t('common.search') %></button>
-    </form>
+    <div class="alert alert-info mb-4 mx-auto" style="max-width: 620px;">
+      <%= locale === 'en' ? 'For your privacy, order details are available only after signing in to the customer account that placed the order.' : 'আপনার গোপনীয়তার জন্য, অর্ডারকারী কাস্টমার অ্যাকাউন্টে সাইন ইন করার পরেই অর্ডারের তথ্য দেখা যাবে।' %>
+    </div>
+    <div class="text-center"><a class="mt-btn mt-btn-primary" href="/customer/login"><%= locale === 'en' ? 'Sign in to your account' : 'আপনার অ্যাকাউন্টে সাইন ইন করুন' %></a></div>
 
     <% if (query && (!orders || !orders.length)) { %>
       <%- include('../partials/alert-banner', { type: 'warning', message: t('store.trackNotFound') }) %>

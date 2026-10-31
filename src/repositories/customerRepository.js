@@ -22,7 +22,7 @@ function mysqlClient() {
   if (env.db.client !== 'mysql') throw new Error('Customer account functions require the MySQL production adapter.');
   return createQueryClient(getPool());
 }
-async function registerCustomer({ name, phone, password, email = '' }) {
+async function registerCustomer({ name, phone, password, email = '', policyVersion = '', evidence = {} }) {
   const cleanName = String(name || '').trim();
   if (cleanName.length < 2 || cleanName.length > 191) throw new ValidationError('Name must contain 2–191 characters.');
   const cleanPhone = normalizeBdPhone(phone);
@@ -30,15 +30,69 @@ async function registerCustomer({ name, phone, password, email = '' }) {
   if (cleanEmail && (cleanEmail.length > 191 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail))) throw new ValidationError('Enter a valid email address of at most 191 characters.');
   const hash = await bcrypt.hash(validatePassword(password), 12);
   try {
-    const result = await mysqlClient().execute(
-      'INSERT INTO `customers` (`name`, `phone`, `email`, `password_hash`) VALUES (?, ?, ?, ?)',
-      [cleanName, cleanPhone, cleanEmail || null, hash]
-    );
-    return { id: result.insertId, name: cleanName, phone: cleanPhone };
+    return await withTransaction(async (tx) => {
+      const result = await tx.execute(
+        'INSERT INTO `customers` (`name`, `phone`, `email`, `password_hash`) VALUES (?, ?, ?, ?)',
+        [cleanName, cleanPhone, cleanEmail || null, hash]
+      );
+      const id = result.insertId;
+      if (policyVersion) {
+        const policy = await tx.queryOne("SELECT version FROM privacy_policy_versions WHERE version=? AND status='published' FOR UPDATE", [String(policyVersion)]);
+        if (!policy) throw new ConflictError('The privacy notice changed. Reload the registration form and review the current version.');
+        await tx.execute('INSERT INTO customer_policy_acceptances(customer_id,policy_version,source,evidence_json) VALUES(?,?,?,?)', [id, policy.version, 'registration', JSON.stringify({ accepted: true, ip: String(evidence.ip || '').slice(0,64), userAgent: String(evidence.userAgent || '').slice(0,255) })]);
+        await tx.execute("INSERT INTO audit_logs(actor_type,actor_id,action,entity_type,entity_id,after_json,ip_address,user_agent) VALUES('customer',?,'privacy.policy.accepted','customer_policy_acceptance',?,?,?,?)", [id, String(id), JSON.stringify({ policy_version: policy.version, source: 'registration' }), String(evidence.ip || '').slice(0,64), String(evidence.userAgent || '').slice(0,255)]);
+      }
+      await tx.execute("INSERT INTO audit_logs(actor_type,actor_id,action,entity_type,entity_id,after_json,ip_address,user_agent) VALUES('customer',?,'customer.account.registered','customer',?,?,?,?)", [id, String(id), JSON.stringify({ account_created: true, policy_accepted: Boolean(policyVersion) }), String(evidence.ip || '').slice(0,64), String(evidence.userAgent || '').slice(0,255)]);
+      return { id, name: cleanName, phone: cleanPhone };
+    });
   } catch (err) {
     if (err.code === 'DB_DUPLICATE_ENTRY') throw new ConflictError('An account already exists for this phone number.');
     throw err;
   }
+}
+async function issueCustomerRecovery(identifier, channel, deliver, { pool = null } = {}) {
+  if (!['email','phone'].includes(channel) || typeof deliver !== 'function') throw new ValidationError('A verified recovery channel and configured delivery provider are required.');
+  const key = String(identifier || '').trim();
+  if (!key || key.length > 191) return { accepted: true };
+  const match = channel === 'phone' ? normalizeBdPhone(key) : key.toLowerCase();
+  if (channel === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(match)) return { accepted: true };
+  const rawToken = require('node:crypto').randomBytes(32).toString('base64url');
+  const tokenHash = require('node:crypto').createHash('sha256').update(rawToken).digest('hex');
+  let issue = null;
+  await withTransaction(async (tx) => {
+    const verifiedColumn = channel === 'email' ? 'email_verified_at' : 'phone_verified_at';
+    const customer = await tx.queryOne(`SELECT id,${channel} AS destination FROM customers WHERE ${channel}=? AND ${verifiedColumn} IS NOT NULL AND status=1 AND is_blocked=0 LIMIT 1 FOR UPDATE`, [match]);
+    if (!customer) return;
+    const result = await tx.execute('INSERT INTO customer_recovery_tokens(customer_id,channel,token_hash,expires_at) VALUES(?,?,?,DATE_ADD(CURRENT_TIMESTAMP,INTERVAL 20 MINUTE))',[customer.id,channel,tokenHash]);
+    await tx.execute("INSERT INTO audit_logs(actor_type,actor_id,action,entity_type,entity_id,after_json) VALUES('system',?,'customer.recovery.issued','customer_recovery_token',?,?)",[customer.id,String(result.insertId),JSON.stringify({channel,expires_minutes:20})]);
+    issue = { id:result.insertId,customerId:Number(customer.id),destination:customer.destination };
+  },{pool});
+  if (!issue) return { accepted:true };
+  try { await deliver({ channel, destination:issue.destination, token:rawToken, expiresInSeconds:1200 }); }
+  catch (_error) {
+    const db=createQueryClient(pool||getPool());
+    await db.execute('UPDATE customer_recovery_tokens SET revoked_at=CURRENT_TIMESTAMP WHERE id=? AND consumed_at IS NULL',[issue.id]);
+    return { accepted:true };
+  }
+  return { accepted:true };
+}
+async function consumeCustomerRecoveryToken(token, password, { pool = null } = {}) {
+  const raw=String(token||'');
+  if(!raw||raw.length>160)throw new ValidationError('Recovery link is invalid or expired.');
+  const tokenHash=require('node:crypto').createHash('sha256').update(raw).digest('hex');
+  const passwordHash=await bcrypt.hash(validatePassword(password),12);
+  return withTransaction(async tx=>{
+    const row=await tx.queryOne('SELECT id,customer_id,expires_at,consumed_at,revoked_at FROM customer_recovery_tokens WHERE token_hash=? FOR UPDATE',[tokenHash]);
+    if(!row||row.consumed_at||row.revoked_at||new Date(row.expires_at).getTime()<=Date.now())throw new ValidationError('Recovery link is invalid or expired.');
+    const customer=await tx.queryOne('SELECT id FROM customers WHERE id=? AND status=1 AND is_blocked=0 FOR UPDATE',[row.customer_id]);
+    if(!customer)throw new ValidationError('Recovery link is invalid or expired.');
+    await tx.execute('UPDATE customers SET password_hash=? WHERE id=?',[passwordHash,row.customer_id]);
+    await tx.execute('UPDATE customer_recovery_tokens SET consumed_at=CURRENT_TIMESTAMP WHERE id=?',[row.id]);
+    await tx.execute('UPDATE customer_recovery_tokens SET revoked_at=CURRENT_TIMESTAMP WHERE customer_id=? AND id<>? AND consumed_at IS NULL AND revoked_at IS NULL',[row.customer_id,row.id]);
+    await tx.execute("DELETE FROM web_sessions WHERE actor_type='customer' AND actor_id=?",[row.customer_id]);
+    await tx.execute("INSERT INTO audit_logs(actor_type,actor_id,action,entity_type,entity_id,after_json) VALUES('customer',?,'customer.recovery.completed','customer',?,?)",[row.customer_id,String(row.customer_id),JSON.stringify({password_changed:true,active_sessions_revoked:true})]);
+    return {customerId:Number(row.customer_id)};
+  },{pool});
 }
 async function authenticateCustomer(phone, password) {
   const cleanPhone = normalizeBdPhone(phone);
@@ -94,7 +148,7 @@ async function getOrderDetails(customerId, orderId) {
   );
   return { order, items };
 }
-async function saveAddress(customerId, input) {
+async function saveAddress(customerId, input, evidence = {}) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new ValidationError('Enter a valid address.');
   const fields = ['label', 'recipient_name', 'recipient_phone', 'division', 'district', 'upazila', 'street_address'];
   const values = Object.fromEntries(fields.map((key) => {
@@ -106,16 +160,25 @@ async function saveAddress(customerId, input) {
   values.recipient_phone = normalizeBdPhone(values.recipient_phone);
   if (values.label.length > 64 || values.division.length > 80 || values.district.length > 80 || values.upazila.length > 80) throw new ValidationError('Address fields exceed their allowed length.');
   const isDefault = input.is_default === '1' || input.is_default === true;
+  const owner = requirePositiveInt(customerId, 'customer ID');
   return withTransaction(async (tx) => {
-    await tx.queryOne('SELECT `id` FROM `customers` WHERE `id` = ? FOR UPDATE', [customerId]);
-    if (isDefault) await tx.execute('UPDATE `customer_addresses` SET `is_default` = 0 WHERE `customer_id` = ?', [customerId]);
-    const result = await tx.execute('INSERT INTO `customer_addresses` (`customer_id`, `label`, `recipient_name`, `recipient_phone`, `division`, `district`, `upazila`, `street_address`, `is_default`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', [customerId, values.label || 'Home', values.recipient_name, values.recipient_phone, values.division, values.district, values.upazila, values.street_address, isDefault ? 1 : 0]);
+    const customer = await tx.queryOne('SELECT `id` FROM `customers` WHERE `id` = ? FOR UPDATE', [owner]);
+    if (!customer) throw new NotFoundError('Customer account not found.');
+    if (isDefault) await tx.execute('UPDATE `customer_addresses` SET `is_default` = 0 WHERE `customer_id` = ?', [owner]);
+    const result = await tx.execute('INSERT INTO `customer_addresses` (`customer_id`, `label`, `recipient_name`, `recipient_phone`, `division`, `district`, `upazila`, `street_address`, `is_default`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', [owner, values.label || 'Home', values.recipient_name, values.recipient_phone, values.division, values.district, values.upazila, values.street_address, isDefault ? 1 : 0]);
+    await tx.execute("INSERT INTO audit_logs(actor_type,actor_id,action,entity_type,entity_id,after_json,ip_address,user_agent) VALUES('customer',?,'customer.address.created','customer_address',?,?,?,?)",[owner,String(result.insertId),JSON.stringify({changed_fields:fields,is_default:isDefault}),String(evidence.ip||'').slice(0,64),String(evidence.userAgent||'').slice(0,255)]);
     return result.insertId;
   });
 }
-async function deleteAddress(customerId, addressId) {
-  const result = await mysqlClient().execute('DELETE FROM `customer_addresses` WHERE `id` = ? AND `customer_id` = ?', [addressId, customerId]);
-  if (!result.affectedRows) throw new NotFoundError('Address not found.');
+async function deleteAddress(customerId, addressId, evidence = {}) {
+  const owner = requirePositiveInt(customerId, 'customer ID');
+  const id = requirePositiveInt(addressId, 'address ID');
+  return withTransaction(async (tx) => {
+    const address=await tx.queryOne('SELECT `id`,`is_default` FROM `customer_addresses` WHERE `id`=? AND `customer_id`=? FOR UPDATE',[id,owner]);
+    if(!address)throw new NotFoundError('Address not found.');
+    await tx.execute('DELETE FROM `customer_addresses` WHERE `id`=? AND `customer_id`=?',[id,owner]);
+    await tx.execute("INSERT INTO audit_logs(actor_type,actor_id,action,entity_type,entity_id,before_json,after_json,ip_address,user_agent) VALUES('customer',?,'customer.address.deleted','customer_address',?,?,NULL,?,?)",[owner,String(id),JSON.stringify({is_default:Boolean(address.is_default)}),String(evidence.ip||'').slice(0,64),String(evidence.userAgent||'').slice(0,255)]);
+  });
 }
 function normalizeCartLines(sessionCart, { additive = false } = {}) {
   if (!Array.isArray(sessionCart)) return [];
@@ -231,4 +294,4 @@ async function clearCart(customerId) {
     await tx.execute('DELETE FROM `customer_cart_items` WHERE `customer_id`=?', [customerId]);
   });
 }
-module.exports = { normalizeBdPhone, validatePassword, registerCustomer, authenticateCustomer, getProfile, listAddresses, listOrders, getOrderDetails, saveAddress, deleteAddress, mergeCart, listCart, addCartLine, setCartLine, removeCartLine, reconcileCart, replaceCart, clearCart };
+module.exports = { normalizeBdPhone, validatePassword, registerCustomer, issueCustomerRecovery, consumeCustomerRecoveryToken, authenticateCustomer, getProfile, listAddresses, listOrders, getOrderDetails, saveAddress, deleteAddress, mergeCart, listCart, addCartLine, setCartLine, removeCartLine, reconcileCart, replaceCart, clearCart };

@@ -322,6 +322,8 @@
                     <li><a href="/admin/features/manage"><i data-feather="grid"></i> <%= locale === 'bn' ? 'ফিচার বার' : 'Feature Bar' %></a></li>
                     <li><a href="/admin/contact/manage"><i data-feather="phone"></i> <%= locale === 'bn' ? 'যোগাযোগ তথ্য' : 'Contact' %></a></li>
                     <li><a href="/admin/page/manage"><i data-feather="file-text"></i> <%= t('admin.menu.cmsPages') %></a></li>
+                    <% if(hasPermission('privacy.manage')){ %><li><a href="/admin/privacy/policies"><i data-feather="shield"></i> <%= locale==='bn'?'গোপনীয়তা নীতি ও সম্মতি':'Privacy policy & consent' %></a></li><% } %>
+                    <% if(hasPermission('privacy.review')){ %><li><a href="/admin/privacy/requests"><i data-feather="user-check"></i> <%= locale==='bn'?'তথ্য অধিকার অনুরোধ':'Privacy requests' %></a></li><% } %>
                   </ul>
                 </div>
               </li>
