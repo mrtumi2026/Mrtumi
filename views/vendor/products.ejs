@@ -33,7 +33,7 @@
                 <img src="<%= p.image %>" class="p-thumb" alt="" />
                 <div>
                   <div class="fw-semibold"><%= p.name %></div>
-                  <small class="text-muted">Code: <%= p.code %></small>
+                  <small class="text-muted">SKU: <%= p.sku || p.code %></small><br><span class="badge <%= Number(p.status) ? 'bg-success' : 'bg-secondary' %>"><%= Number(p.status) ? 'Active' : 'Inactive' %></span>
                 </div>
               </div>
             </td>
@@ -44,7 +44,7 @@
               <% } %>
               <strong class="text-success">৳<%= p.new_price %></strong>
             </td>
-            <td><span class="sb <%= p.stock > 10 ? 'sb-6' : 'sb-7' %>"><%= p.stock %></span></td>
+            <td><span class="sb <%= p.stock > 10 ? 'sb-6' : 'sb-7' %>"><%= p.stock %></span><form action="/vendor/products/<%= p.id %>/inventory" method="POST" class="d-flex gap-1 mt-1"><input type="hidden" name="_csrf" value="<%= csrfToken || '' %>"><input name="quantity" type="number" min="0" value="<%= p.stock %>" class="form-control form-control-sm" aria-label="Inventory quantity"><input name="reason" type="hidden" value="Vendor portal stock count"><button class="btn btn-sm btn-outline-success" type="submit">Save stock</button></form></td>
             <td><%= p.sold_count || 0 %></td>
             <td>
               <span class="sb <%= p.approval_status === 'approved' ? 'sb-6' : 'sb-1' %>">
@@ -54,9 +54,9 @@
             <td class="text-end">
               <a href="/product/<%= p.slug %>" target="_blank" class="btn btn-sm btn-outline-secondary py-1 px-2" title="View on Storefront"><i class="fas fa-external-link-alt"></i></a>
               <a href="/vendor/products/edit/<%= p.id %>" class="btn btn-sm btn-outline-primary py-1 px-2"><i class="fas fa-edit"></i></a>
-              <form action="/vendor/products/delete/<%= p.id %>" method="POST" class="d-inline" onsubmit="return confirm('পণ্যটি ডিলিট করতে চান?');">
-                <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
-                <button type="submit" class="btn btn-sm btn-outline-danger py-1 px-2"><i class="fas fa-trash"></i></button>
+              <form action="/vendor/products/<%= p.id %>/status" method="POST" class="d-inline">
+                <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>"><input type="hidden" name="status" value="<%= Number(p.status) ? 0 : 1 %>">
+                <button type="submit" class="btn btn-sm <%= Number(p.status) ? 'btn-outline-danger' : 'btn-outline-success' %> py-1 px-2"><%= Number(p.status) ? 'Deactivate' : 'Activate' %></button>
               </form>
             </td>
           </tr>

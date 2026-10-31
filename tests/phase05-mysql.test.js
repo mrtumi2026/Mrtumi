@@ -44,6 +44,7 @@ const { migrateUp, migrateDown } = require('../src/db/migrator');
 const storefrontRepo = require('../src/repositories/storefrontRepository');
 const checkoutRepo = require('../src/repositories/checkoutRepository');
 const customerRepo = require('../src/repositories/customerRepository');
+const vendorPortalRepo = require('../src/repositories/vendorPortalRepository');
 const { bdtToPaisa } = require('../src/utils/money');
 
 const SKIP_REASON =
@@ -1064,5 +1065,44 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
     } finally {
       await client.execute(`DROP TRIGGER IF EXISTS \`${triggerName}\``);
     }
+  });
+
+  test('13. Vendor portal products and mixed-vendor item fulfillment are tenant-scoped and transactional', { skip: !MYSQL_HOST ? SKIP_REASON : false }, async () => {
+    const suffix = String(Date.now()).slice(-8);
+    const passwordHash = await bcrypt.hash('VendorIntegrationPassword!2026', 10);
+    const vendorA = await client.execute("INSERT INTO vendors(shop_name,owner_name,phone,email,password_hash,verified,status) VALUES(?,?,?,?,?,1,1)", [`Portal A ${suffix}`, 'Owner A', `013${suffix}111`, `portal-a-${suffix}@example.invalid`, passwordHash]);
+    const vendorB = await client.execute("INSERT INTO vendors(shop_name,owner_name,phone,email,password_hash,verified,status) VALUES(?,?,?,?,?,1,1)", [`Portal B ${suffix}`, 'Owner B', `014${suffix}111`, `portal-b-${suffix}@example.invalid`, passwordHash]);
+    const category = await client.queryOne('SELECT id FROM categories WHERE status=1 ORDER BY id LIMIT 1');
+    const productA = await vendorPortalRepo.saveProduct(vendorA.insertId, { name: `Vendor A item ${suffix}`, category_id: category.id, old_price: '15.25', new_price: '12.50', stock: 8 });
+    const productB = await vendorPortalRepo.saveProduct(vendorB.insertId, { name: `Vendor B item ${suffix}`, category_id: category.id, old_price: '8.00', new_price: '7.00', stock: 4 });
+    assert.deepEqual((await vendorPortalRepo.listProducts(vendorA.insertId)).map(p => Number(p.id)), [productA]);
+    await assert.rejects(() => vendorPortalRepo.saveProduct(vendorB.insertId, { name: 'Forbidden edit', category_id: category.id }, { id: productA }), { code: 'NOT_FOUND' });
+    await vendorPortalRepo.adjustInventory(vendorA.insertId, productA, 11, 'Received vendor stock');
+    const inventory = await client.queryOne('SELECT vendor_stock_on_hand FROM products WHERE id=? AND vendor_id=?', [productA, vendorA.insertId]);
+    assert.equal(Number(inventory.vendor_stock_on_hand), 11);
+
+    const order = await client.execute("INSERT INTO orders(invoice_no,customer_name,customer_phone,shipping_address,subtotal_paisa,discount_paisa,shipping_paisa,total_paisa,payment_method,payment_status,order_status,order_channel) VALUES(?,?,?,'Test address',1950,0,0,1950,'cod','unpaid','pending','storefront')", [`VPORTAL-${suffix}`, 'Portal customer', `015${suffix}111`]);
+    const itemA = await client.execute("INSERT INTO order_items(order_id,product_id,vendor_id,product_name,unit_price_paisa,qty,line_total_paisa) VALUES(?,?,?,'A line',1250,1,1250)", [order.insertId, productA, vendorA.insertId]);
+    const itemB = await client.execute("INSERT INTO order_items(order_id,product_id,vendor_id,product_name,unit_price_paisa,qty,line_total_paisa) VALUES(?,?,?,'B line',700,1,700)", [order.insertId, productB, vendorB.insertId]);
+    await assert.rejects(() => vendorPortalRepo.transitionOrderItem(vendorB.insertId, itemA.insertId, 'processing'), { code: 'NOT_FOUND' });
+    const triggerName = `fail_vendor_history_${suffix}`;
+    await client.execute(`CREATE TRIGGER ${triggerName} BEFORE INSERT ON vendor_order_item_history FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='intentional vendor history test failure'`);
+    try { await assert.rejects(() => vendorPortalRepo.transitionOrderItem(vendorA.insertId, itemA.insertId, 'processing')); }
+    finally { await client.execute(`DROP TRIGGER IF EXISTS ${triggerName}`); }
+    const rolledBack = await client.queryOne('SELECT fulfillment_status FROM order_items WHERE id=?', [itemA.insertId]);
+    assert.equal(rolledBack.fulfillment_status, 'pending', 'failed history insert rolls item transition back');
+    const movedA = await vendorPortalRepo.transitionOrderItem(vendorA.insertId, itemA.insertId, 'processing');
+    assert.equal(movedA.parentStatus, 'processing');
+    await assert.rejects(() => vendorPortalRepo.transitionOrderItem(vendorA.insertId, itemA.insertId, 'dispatched'), { code: 'CONFLICT' });
+    await vendorPortalRepo.transitionOrderItem(vendorB.insertId, itemB.insertId, 'processing');
+    await vendorPortalRepo.transitionOrderItem(vendorA.insertId, itemA.insertId, 'ready');
+    await vendorPortalRepo.transitionOrderItem(vendorA.insertId, itemA.insertId, 'dispatched');
+    const stillProcessing = await client.queryOne('SELECT order_status FROM orders WHERE id=?', [order.insertId]);
+    assert.equal(stillProcessing.order_status, 'processing', 'one vendor dispatching cannot mark the mixed-vendor order shipped');
+    await vendorPortalRepo.transitionOrderItem(vendorB.insertId, itemB.insertId, 'ready');
+    const shipped = await vendorPortalRepo.transitionOrderItem(vendorB.insertId, itemB.insertId, 'dispatched');
+    assert.equal(shipped.parentStatus, 'shipped');
+    const histories = await client.queryOne('SELECT COUNT(*) AS n FROM vendor_order_item_history WHERE order_id=?', [order.insertId]);
+    assert.equal(Number(histories.n), 6);
   });
 });

@@ -4,6 +4,9 @@ const db = require('../db/database');
 const { requireVendor } = require('../middleware/auth');
 const { requireCsrf } = require('../middleware/csrf');
 const upload = require('../middleware/upload');
+const { env } = require('../config/env');
+const vendorPortal = require('../repositories/vendorPortalRepository');
+const mysqlActive = () => env.db.client === 'mysql';
 
 const router = express.Router();
 
@@ -186,8 +189,9 @@ router.get('/vendor/dashboard', (req, res) => {
 });
 
 // ─── Vendor Products Management ───
-router.get('/vendor/products', (req, res) => {
+router.get('/vendor/products', async (req, res, next) => {
   const vendorId = req.session.vendorUser.id;
+  if (mysqlActive()) { try { return res.render('vendor/products', { products: await vendorPortal.listProducts(vendorId) }); } catch (error) { return next(error); } }
   const products = db.all(
     `SELECT p.*, c.name AS category_name
      FROM products p
@@ -199,13 +203,15 @@ router.get('/vendor/products', (req, res) => {
   res.render('vendor/products', { products });
 });
 
-router.get('/vendor/products/create', (_req, res) => {
+router.get('/vendor/products/create', async (_req, res, next) => {
+  if (mysqlActive()) { try { const sql = require('../db/mysqlPool'); const [categories, brands] = await Promise.all([sql.queryAll('SELECT id,name_bn AS name,status FROM categories WHERE status=1 ORDER BY sort_order,id'), sql.queryAll('SELECT id,name_bn AS name,status FROM brands WHERE status=1 ORDER BY id')]); return res.render('vendor/product-form', { product: null, categories, brands }); } catch (error) { return next(error); } }
   const categories = db.all('SELECT * FROM categories WHERE status = 1 ORDER BY sort_order ASC');
   const brands = db.all('SELECT * FROM brands WHERE status = 1');
   res.render('vendor/product-form', { product: null, categories, brands });
 });
 
-router.post('/vendor/products/create', upload.single('image'), requireCsrfAndCleanupUploadedFile, (req, res) => {
+router.post('/vendor/products/create', upload.single('image'), requireCsrfAndCleanupUploadedFile, async (req, res, next) => {
+  if (mysqlActive()) { try { await vendorPortal.saveProduct(req.session.vendorUser.id, { ...req.body, image_url: req.file ? `/uploads/custom/${req.file.filename}` : req.body.image_url }); req.flash('success', 'Product submitted for review.'); return res.redirect('/vendor/products'); } catch (error) { return next(error); } }
   const vendor = db.get('SELECT * FROM vendors WHERE id = ?', req.session.vendorUser.id);
   const b = req.body;
   const imgPath = req.file ? `/uploads/custom/${req.file.filename}` : '/uploads/product/lychee-fresh.jpg';
@@ -246,7 +252,8 @@ router.post('/vendor/products/create', upload.single('image'), requireCsrfAndCle
   res.redirect('/vendor/products');
 });
 
-router.get('/vendor/products/edit/:id', (req, res) => {
+router.get('/vendor/products/edit/:id', async (req, res, next) => {
+  if (mysqlActive()) { try { const sql = require('../db/mysqlPool'); const product = (await vendorPortal.listProducts(req.session.vendorUser.id)).find(row => Number(row.id) === Number(req.params.id)); if (!product) return res.redirect('/vendor/products'); const [categories, brands] = await Promise.all([sql.queryAll('SELECT id,name_bn AS name,status FROM categories WHERE status=1 ORDER BY sort_order,id'), sql.queryAll('SELECT id,name_bn AS name,status FROM brands WHERE status=1 ORDER BY id')]); return res.render('vendor/product-form', { product, categories, brands }); } catch (error) { return next(error); } }
   const product = db.get(
     'SELECT * FROM products WHERE id = ? AND vendor_id = ?',
     req.params.id,
@@ -258,7 +265,8 @@ router.get('/vendor/products/edit/:id', (req, res) => {
   res.render('vendor/product-form', { product, categories, brands });
 });
 
-router.post('/vendor/products/edit/:id', upload.single('image'), requireCsrfAndCleanupUploadedFile, (req, res) => {
+router.post('/vendor/products/edit/:id', upload.single('image'), requireCsrfAndCleanupUploadedFile, async (req, res, next) => {
+  if (mysqlActive()) { try { await vendorPortal.saveProduct(req.session.vendorUser.id, { ...req.body, image_url: req.file ? `/uploads/custom/${req.file.filename}` : req.body.image_url }, { id: req.params.id }); req.flash('success', 'Product updated.'); return res.redirect('/vendor/products'); } catch (error) { return next(error); } }
   const existing = db.get(
     'SELECT * FROM products WHERE id = ? AND vendor_id = ?',
     req.params.id,
@@ -296,14 +304,27 @@ router.post('/vendor/products/edit/:id', upload.single('image'), requireCsrfAndC
   res.redirect('/vendor/products');
 });
 
-router.post('/vendor/products/delete/:id', requireCsrf, (req, res) => {
+router.post('/vendor/products/:id/inventory', requireCsrf, async (req, res, next) => {
+  if (mysqlActive()) { try { await vendorPortal.adjustInventory(req.session.vendorUser.id, req.params.id, req.body.quantity, req.body.reason); req.flash('success', 'Inventory adjusted and recorded.'); return res.redirect('/vendor/products'); } catch (error) { return next(error); } }
+  req.flash('error', 'Inventory ledger operation is unavailable in legacy mode.'); return res.redirect('/vendor/products');
+});
+
+router.post('/vendor/products/:id/status', requireCsrf, async (req, res, next) => {
+  if (mysqlActive()) { try { await vendorPortal.setProductStatus(req.session.vendorUser.id, req.params.id, req.body.status); req.flash('success', 'Product status updated.'); return res.redirect('/vendor/products'); } catch (error) { return next(error); } }
+  if (req.body.status === '0') db.run('UPDATE products SET status=0 WHERE id=? AND vendor_id=?', req.params.id, req.session.vendorUser.id); else db.run('UPDATE products SET status=1 WHERE id=? AND vendor_id=?', req.params.id, req.session.vendorUser.id);
+  return res.redirect('/vendor/products');
+});
+
+router.post('/vendor/products/delete/:id', requireCsrf, async (req, res, next) => {
+  if (mysqlActive()) { try { await vendorPortal.setProductStatus(req.session.vendorUser.id, req.params.id, 0); req.flash('success', 'Product deactivated.'); return res.redirect('/vendor/products'); } catch (error) { return next(error); } }
   db.run('DELETE FROM products WHERE id = ? AND vendor_id = ?', req.params.id, req.session.vendorUser.id);
   req.flash('success', 'প্রোডাক্ট মুছে ফেলা হয়েছে।');
   res.redirect('/vendor/products');
 });
 
 // ─── Vendor Orders ───
-router.get('/vendor/orders', (req, res) => {
+router.get('/vendor/orders', async (req, res, next) => {
+  if (mysqlActive()) { try { const vendor = await require('../db/mysqlPool').queryOne('SELECT id,shop_name,owner_name,commission_rate_bps/100 AS commission_rate FROM vendors WHERE id=? AND status=1', [req.session.vendorUser.id]); if (!vendor) return res.redirect('/vendor/login'); return res.render('vendor/orders', { vendor, orderLines: await vendorPortal.listOrderItems(vendor.id) }); } catch (error) { return next(error); } }
   const vendor = db.get('SELECT * FROM vendors WHERE id = ?', req.session.vendorUser.id);
   const orderLines = db.all(
     `SELECT oi.*, o.id AS order_id, o.invoice_id, o.customer_name, o.phone, o.address,
@@ -318,8 +339,18 @@ router.get('/vendor/orders', (req, res) => {
   res.render('vendor/orders', { vendor, orderLines });
 });
 
-// Vendor authority to transition a parent order is not defined or approved. Fail closed in every
-// database mode; do not query or mutate orders until D3 and fulfillment/history semantics are approved.
+router.get('/vendor/order-items/:itemId', async (req, res, next) => {
+  if (!mysqlActive()) return res.status(404).send('Not found');
+  try { return res.json({ item: await vendorPortal.getOrderItem(req.session.vendorUser.id, req.params.itemId) }); } catch (error) { return next(error); }
+});
+
+// Explicitly scoped item fulfillment; parent-order status is derived in the repository from all lines.
+router.post('/vendor/order-items/:itemId/fulfillment', requireCsrf, async (req, res, next) => {
+  if (!mysqlActive()) { req.flash('error', 'Item fulfillment is only available through the MySQL workflow.'); return res.redirect('/vendor/orders'); }
+  try { await vendorPortal.transitionOrderItem(req.session.vendorUser.id, req.params.itemId, req.body.fulfillment_status, { note: req.body.note }); req.flash('success', 'Order item fulfillment updated.'); return res.redirect('/vendor/orders'); } catch (error) { if (error.statusCode === 404) { req.flash('error', 'Order item not found.'); return res.redirect('/vendor/orders'); } return next(error); }
+});
+
+// Legacy parent-order endpoint remains fail-closed in every database mode.
 router.post('/vendor/orders/mark-ready/:orderId', requireCsrf, (req, res) => {
   req.flash('error', 'অর্ডারের স্ট্যাটাস পরিবর্তন নীতিমালা অনুমোদিত না হওয়া পর্যন্ত বন্ধ রয়েছে।');
   return res.redirect('/vendor/orders');

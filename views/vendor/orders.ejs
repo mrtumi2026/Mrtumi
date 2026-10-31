@@ -2,7 +2,7 @@
 
 <div class="mb-3">
   <h4 class="fw-bold mb-0">🛒 আমার পণ্যের অর্ডারসমূহ (<%= orderLines.length %>)</h4>
-  <p class="text-muted small mb-0">অর্ডার প্যাকিং সম্পন্ন করে রেডি মার্ক করুন — ডেলিভারি শেষে কমিশন বাদে নিট টাকা আপনার ওয়ালেটে জমা হবে</p>
+  <p class="text-muted small mb-0">শুধু আপনার অর্ডার আইটেমের fulfillment এগিয়ে নিন; parent order status সব vendor item থেকে স্বয়ংক্রিয়ভাবে গণনা হয়।</p>
 </div>
 
 <div class="tbl-card">
@@ -41,13 +41,13 @@
             <td class="fw-bold text-success">৳<%= net.toLocaleString('en-IN') %></td>
             <td><span class="sb <%= ol.order_status === 'completed' ? 'sb-6' : 'sb-1' %>"><%= ol.order_status %></span></td>
             <td class="text-end">
-              <% if (ol.order_status === 'pending') { %>
-                <form action="/vendor/orders/mark-ready/<%= ol.order_id %>" method="POST" class="d-inline">
-                  <input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>" />
-                  <button type="submit" class="btn btn-sm btn-success py-1 px-2">📦 Mark Ready to Ship</button>
-                </form>
-              <% } else { %>
-                <span class="small text-muted"><%= ol.courier_tracking_id || 'প্রসেসিংয়ে আছে' %></span>
+              <% if (typeof ol.fulfillment_status === 'undefined') { %>
+                <% if (ol.order_status === 'pending') { %><form action="/vendor/orders/mark-ready/<%= ol.order_id %>" method="POST" class="d-inline"><input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>" /><button type="submit" class="btn btn-sm btn-success py-1 px-2">Mark Ready (disabled)</button></form><% } %>
+              <% } else { const nextFulfillment = ({pending:'processing', processing:'ready', ready:'dispatched'})[ol.fulfillment_status]; %>
+                <span class="small me-2"><%= ol.fulfillment_status %></span>
+                <% if (nextFulfillment && !['cancelled','delivered'].includes(ol.order_status)) { %>
+                  <form action="/vendor/order-items/<%= ol.order_item_id %>/fulfillment" method="POST" class="d-inline"><input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>" /><input type="hidden" name="fulfillment_status" value="<%= nextFulfillment %>"><button type="submit" class="btn btn-sm btn-success py-1 px-2">Move to <%= nextFulfillment %></button></form>
+                <% } %>
               <% } %>
             </td>
           </tr>
