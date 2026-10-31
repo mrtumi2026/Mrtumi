@@ -1104,5 +1104,13 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
     assert.equal(shipped.parentStatus, 'shipped');
     const histories = await client.queryOne('SELECT COUNT(*) AS n FROM vendor_order_item_history WHERE order_id=?', [order.insertId]);
     assert.equal(Number(histories.n), 6);
+    await client.execute('DELETE FROM vendor_order_status_history WHERE order_id=?', [order.insertId]);
+    await client.execute('DELETE FROM vendor_order_item_history WHERE order_id=?', [order.insertId]);
+    await client.execute('DELETE FROM order_items WHERE order_id=?', [order.insertId]);
+    await client.execute('DELETE FROM orders WHERE id=?', [order.insertId]);
+    await client.execute('DELETE FROM stock_ledger WHERE product_id IN (?,?)', [productA, productB]);
+    await client.execute('DELETE FROM vendor_product_history WHERE vendor_id IN (?,?)', [vendorA.insertId, vendorB.insertId]);
+    await client.execute('DELETE FROM products WHERE id IN (?,?)', [productA, productB]);
+    await client.execute('DELETE FROM vendors WHERE id IN (?,?)', [vendorA.insertId, vendorB.insertId]);
   });
 });
