@@ -274,6 +274,13 @@ async function main() {
     results.finishedAt = new Date().toISOString();
     fs.writeFileSync(path.join(outDir, 'journey-results.json'), `${JSON.stringify(results, null, 2)}\n`);
     fs.writeFileSync(path.join(outDir, 'runner.log'), [`Engine: ${engine}`, `Tag: ${demoTag}`, `Started: ${results.startedAt}`, ...results.journeys.map(j => `${j.status} ${j.name}${j.error ? ` — ${j.error}` : ''}`), `Cleanup: ${results.cleanup.status}${results.cleanup.error ? ` — ${results.cleanup.error}` : ''}`, `Runner failure: ${results.runnerFailure || 'none'}`].join('\n') + '\n');
+    const statusSummary = JSON.stringify({ engine, journeys: results.journeys.map(({ name, status, error }) => ({ name, status, error })), cleanup: results.cleanup, runnerFailure: results.runnerFailure || null }).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A').slice(0, 5000);
+    process.stdout.write(`::notice title=DEMO E2E evidence summary::${statusSummary}\n`);
+    if (failure) {
+      const annotation = String(results.runnerFailure || failure.message).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A').slice(0, 3000);
+      process.stdout.write(`::error title=DEMO E2E runner failure::${annotation}\n`);
+      console.error('DEMO E2E runner failure:', results.runnerFailure);
+    }
   }
   const failures = results.journeys.filter(j => j.status === 'FAIL');
   if (failure || failures.length || results.cleanup.status !== 'PASS') process.exitCode = 1;
