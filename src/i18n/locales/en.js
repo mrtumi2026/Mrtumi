@@ -105,6 +105,7 @@ module.exports = {
     endsIn: 'Ends in',
     hotDealTitle: 'Hot Deals & Value Combos',
     hotDealBadge: 'Special Offer',
+    browseCategories: 'Browse categories',
     categoriesTitle: 'Shop by Category',
     categoriesSub: 'Browse everyday grocery staples and curated gift collections',
     allProductsTitle: 'Groceries & Gift Collection',
