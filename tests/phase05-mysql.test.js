@@ -970,7 +970,7 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
     const item=await client.queryOne('SELECT product_id,variant_id,unit_price_paisa,qty,line_total_paisa FROM order_items WHERE order_id=?',[order.id]);
     assert.deepEqual([Number(item.product_id),Number(item.variant_id),Number(item.unit_price_paisa),Number(item.qty),Number(item.line_total_paisa)],[Number(inhouseProdId),Number(variant5KgId),88000,1,88000]);
     assert.equal(Number((await client.queryOne('SELECT COUNT(*) AS n FROM order_status_history WHERE order_id=?',[order.id])).n),1,'canonical initial status history is written');
-    assert.equal(Number((await client.queryOne("SELECT COUNT(*) AS n FROM stock_reservations WHERE order_id=? AND status='active'",[order.id])).n),1,'canonical inventory reservation is created');
+    assert.equal(Number((await client.queryOne("SELECT COUNT(*) AS n FROM stock_reservations WHERE reservation_key=? AND status='active'",[`order:${order.id}`])).n),1,'canonical inventory reservation is created');
     assert.equal(Number((await client.queryOne('SELECT stock_reserved FROM product_variants WHERE id=?',[variant5KgId])).stock_reserved),Number(before.stock_reserved)+1);
     assert.equal(Number((await client.queryOne('SELECT quantity FROM customer_cart_items WHERE customer_id=? AND product_id=? AND variant_id=?',[customer.id,inhouseProdId,variant5KgId])).quantity),2,'quick order does not consume unrelated saved-cart contents');
 
