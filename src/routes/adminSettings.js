@@ -94,51 +94,13 @@ router.post('/admin/campaign/delete/:id', (req, res) => {
 // ─── Manual Fraud Check (/admin/manual-fraud-check) ───
 router.get('/admin/manual-fraud-check', (req, res) => {
   const phone = String(req.query.phone || '').trim();
-  let result = null;
-
-  if (phone) {
-    result = computeFraudStats(phone);
-  }
+  const result = phone ? {
+    phone,
+    available: false,
+    message: 'External fraud-provider verification is not configured. No courier history or risk score is available; review manually.',
+  } : null;
   res.render('admin/fraud-check', { phone, result });
 });
-
-function computeFraudStats(phone) {
-  const clean = phone.replace(/\D/g, '');
-  const storeOrders = db.all('SELECT * FROM orders WHERE phone LIKE ? ORDER BY id DESC', `%${clean.slice(-10)}%`);
-  const isBlocked = !!db.get('SELECT id FROM ip_blocks WHERE ip_or_phone = ?', phone);
-
-  // Deterministic realistic courier stats seeded by phone digits + store history
-  const seed = clean.split('').reduce((acc, ch, idx) => acc + Number(ch) * (idx + 3), 0);
-  const sfSuccess = 8 + (seed % 14);
-  const sfCancel = seed % 3;
-  const pathaoSuccess = 5 + ((seed * 3) % 11);
-  const pathaoCancel = (seed >> 1) % 2;
-  const redxSuccess = 3 + ((seed * 7) % 8);
-  const redxCancel = seed % 2;
-
-  const totalDelivered =
-    sfSuccess + pathaoSuccess + redxSuccess + storeOrders.filter((o) => o.status === 'completed').length;
-  const totalReturned =
-    sfCancel + pathaoCancel + redxCancel + storeOrders.filter((o) => o.status === 'cancelled').length;
-  const grandTotal = totalDelivered + totalReturned;
-  const successRate = grandTotal > 0 ? Math.round((totalDelivered / grandTotal) * 100) : 100;
-
-  return {
-    phone,
-    isBlocked,
-    successRate,
-    riskLevel: isBlocked || successRate < 65 ? 'High Risk' : successRate < 85 ? 'Moderate' : 'Safe Customer',
-    totalParcels: grandTotal,
-    totalDelivered,
-    totalReturned,
-    couriers: [
-      { name: 'Steadfast Courier', total: sfSuccess + sfCancel, delivered: sfSuccess, returned: sfCancel },
-      { name: 'Pathao Courier', total: pathaoSuccess + pathaoCancel, delivered: pathaoSuccess, returned: pathaoCancel },
-      { name: 'RedX Courier', total: redxSuccess + redxCancel, delivered: redxSuccess, returned: redxCancel },
-    ],
-    storeOrders,
-  };
-}
 
 // ─── Send Custom SMS ───
 router.get('/admin/sms/custom-send', (_req, res) => {
@@ -153,24 +115,8 @@ router.get('/admin/sms/custom-send', (_req, res) => {
 });
 
 router.post('/admin/sms/custom-send', (req, res) => {
-  const { recipient, message } = req.body;
-  if (!recipient || !message) {
-    req.flash('error', 'প্রাপকের নম্বর ও বার্তা লিখুন।');
-    return res.redirect('/admin/sms/custom-send');
-  }
-  const numbers = String(recipient)
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
-
-  for (const num of numbers) {
-    db.run('INSERT INTO sms_logs (recipient, message, gateway, status) VALUES (?, ?, ?, ?)', num, message, 'BulkSMSBD', 'Delivered');
-  }
-  const curBal = parseFloat(db.getSettings().bulksms_balance || '1485.50');
-  db.setSetting('bulksms_balance', Math.max(0, curBal - numbers.length * 0.35).toFixed(2));
-
-  req.flash('success', `${numbers.length} টি নম্বরে সফলভাবে SMS পাঠানো হয়েছে!`);
-  res.redirect('/admin/sms/custom-send');
+  req.flash('error', 'SMS sending is disabled: no verified SMS provider is configured. No message was sent and no balance was changed.');
+  return res.redirect('/admin/sms/custom-send');
 });
 
 // ─── Universal Key-Value Settings Save Endpoint ───

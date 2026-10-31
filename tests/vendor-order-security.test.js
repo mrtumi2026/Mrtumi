@@ -39,7 +39,10 @@ async function request(route, { method = 'GET', body = null, token = csrfToken }
     body: body ? new URLSearchParams(body).toString() : undefined,
     redirect: 'manual',
   });
-  return { response, text: await response.text() };
+  const text = await response.text();
+  const tokenMatch = text.match(/name="_csrf" value="([^"]+)"/);
+  if (tokenMatch) csrfToken = tokenMatch[1];
+  return { response, text };
 }
 
 before(async () => {

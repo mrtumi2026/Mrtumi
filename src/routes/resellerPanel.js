@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const db = require('../db/database');
 const { requireReseller } = require('../middleware/auth');
 const { requireCsrf } = require('../middleware/csrf');
+const { createRateLimiter } = require('../middleware/rateLimit');
 const { env } = require('../config/env');
 const resellerPortal = require('../repositories/resellerPortalRepository');
 const mysqlActive = () => env.db.client === 'mysql';
@@ -20,6 +21,7 @@ function rotateResellerSession(req, reseller, callback) {
 }
 
 const router = express.Router();
+const resellerAuthLimiter = createRateLimiter({ keyPrefix: 'reseller_auth', windowMs: 60_000, max: 8 });
 
 function generateInvoiceId() {
   for (let i = 0; i < 10; i++) {
@@ -42,7 +44,7 @@ router.get('/reseller/login', (req, res) => {
   res.render('reseller/auth', { mode: 'login', error: null });
 });
 
-router.post('/reseller/login', requireCsrf, async (req, res, next) => {
+router.post('/reseller/login', resellerAuthLimiter, requireCsrf, async (req, res, next) => {
   const identifier = String(req.body.identifier || '').trim();
   if (mysqlActive()) { try { const reseller = await resellerPortal.authenticate(identifier, req.body.password); if (!reseller) return res.status(401).render('reseller/auth', { mode: 'login', error: 'রিসেলার লগইন তথ্য সঠিক নয় অথবা অ্যাকাউন্ট নিষ্ক্রিয়।' }); return rotateResellerSession(req, reseller, error => { if (error) return next(error); req.flash('success', `স্বাগতম রিসেলার প্যানেলে, ${reseller.name}!`); return res.redirect('/reseller/dashboard'); }); } catch (error) { return next(error); } }
   const password = String(req.body.password || '');
@@ -59,7 +61,7 @@ router.post('/reseller/login', requireCsrf, async (req, res, next) => {
     });
   }
 
-  const valid = Boolean(reseller.password_hash) && bcrypt.compareSync(password, reseller.password_hash);
+  const valid = Boolean(reseller.password_hash) && await bcrypt.compare(password, reseller.password_hash);
 
   if (!valid) {
     return res.render('reseller/auth', {

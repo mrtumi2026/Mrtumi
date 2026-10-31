@@ -25,7 +25,7 @@
         <input type="hidden" name="checkout_request_key" value="<%= checkoutRequestKey %>" />
         <input type="hidden" name="coupon_code" id="checkoutCouponCode" value="<%= appliedCoupon ? appliedCoupon.code : '' %>" />
       <% } else { %>
-        <input type="hidden" name="cart_backup_json" id="ckCartBackupJson" value='<%- JSON.stringify(cart) %>' />
+        <input type="hidden" name="cart_backup_json" id="ckCartBackupJson" value='<%= JSON.stringify(cart) %>' />
       <% } %>
 
       <div class="row g-4">

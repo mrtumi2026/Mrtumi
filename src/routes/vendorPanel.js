@@ -3,12 +3,24 @@ const bcrypt = require('bcryptjs');
 const db = require('../db/database');
 const { requireVendor } = require('../middleware/auth');
 const { requireCsrf } = require('../middleware/csrf');
+const { createRateLimiter } = require('../middleware/rateLimit');
 const upload = require('../middleware/upload');
 const { env } = require('../config/env');
 const vendorPortal = require('../repositories/vendorPortalRepository');
 const mysqlActive = () => env.db.client === 'mysql';
 
 const router = express.Router();
+const vendorAuthLimiter = createRateLimiter({ keyPrefix: 'vendor_auth', windowMs: 60_000, max: 8 });
+
+function establishVendorSession(req, vendor, callback) {
+  const preserved = { cart: Array.isArray(req.session.cart) ? req.session.cart : [], locale: req.session.locale };
+  req.session.regenerate((error) => {
+    if (error) return callback(error);
+    Object.assign(req.session, preserved);
+    req.session.vendorUser = { id: Number(vendor.id), shop_name: vendor.shop_name, owner_name: vendor.owner_name, phone: vendor.phone, email: vendor.email };
+    req.session.save(callback);
+  });
+}
 
 function requireCsrfAndCleanupUploadedFile(req, res, next) {
   return requireCsrf(req, res, (error) => {
@@ -41,7 +53,7 @@ router.get('/vendor/login', (req, res) => {
   res.render('vendor/auth', { mode: 'login', error: null });
 });
 
-router.post('/vendor/login', requireCsrf, async (req, res, next) => {
+router.post('/vendor/login', vendorAuthLimiter, requireCsrf, async (req, res, next) => {
   const identifier = String(req.body.identifier || '').trim();
   const password = String(req.body.password || '');
 
@@ -52,9 +64,11 @@ router.post('/vendor/login', requireCsrf, async (req, res, next) => {
       if (!vendor || !vendor.password_hash || !await bcrypt.compare(password, vendor.password_hash)) {
         return res.status(400).render('vendor/auth', { mode: 'login', error: 'Vendor email/mobile or password is incorrect.' });
       }
-      req.session.vendorUser = { id: Number(vendor.id), shop_name: vendor.shop_name, owner_name: vendor.owner_name, phone: vendor.phone, email: vendor.email };
-      req.flash('success', `Welcome, ${vendor.shop_name}!`);
-      return res.redirect('/vendor/orders');
+      return establishVendorSession(req, vendor, (error) => {
+        if (error) return next(error);
+        req.flash('success', `Welcome, ${vendor.shop_name}!`);
+        return res.redirect('/vendor/orders');
+      });
     } catch (error) { return next(error); }
   }
 
@@ -70,7 +84,7 @@ router.post('/vendor/login', requireCsrf, async (req, res, next) => {
     });
   }
 
-  const valid = Boolean(vendor.password_hash) && bcrypt.compareSync(password, vendor.password_hash);
+  const valid = Boolean(vendor.password_hash) && await bcrypt.compare(password, vendor.password_hash);
 
   if (!valid) {
     return res.render('vendor/auth', {
@@ -79,15 +93,11 @@ router.post('/vendor/login', requireCsrf, async (req, res, next) => {
     });
   }
 
-  req.session.vendorUser = {
-    id: vendor.id,
-    shop_name: vendor.shop_name,
-    owner_name: vendor.owner_name,
-    phone: vendor.phone,
-    email: vendor.email,
-  };
-  req.flash('success', `স্বাগতম, ${vendor.shop_name}!`);
-  res.redirect('/vendor/dashboard');
+  return establishVendorSession(req, vendor, (error) => {
+    if (error) return next(error);
+    req.flash('success', `স্বাগতম, ${vendor.shop_name}!`);
+    return res.redirect('/vendor/dashboard');
+  });
 });
 
 router.get('/vendor/register', (req, res) => {
@@ -389,6 +399,7 @@ router.get('/vendor/withdrawals', (req, res) => {
 });
 
 router.post('/vendor/withdrawals/request', requireCsrf, (req, res) => {
+  if (mysqlActive()) return res.status(409).render('vendor/unsupported-operation', { message: 'Withdrawal requests are disabled until transactional, locked balance settlement and approval workflows are implemented. No balance was changed.' });
   const vendor = db.get('SELECT * FROM vendors WHERE id = ?', req.session.vendorUser.id);
   const amount = Number(req.body.amount || 0);
   const method = String(req.body.method || 'bKash').trim();

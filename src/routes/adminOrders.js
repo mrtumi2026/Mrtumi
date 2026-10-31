@@ -289,21 +289,8 @@ router.post('/admin/order/:id/item-update/:itemId', asyncHandler(async (req, res
   res.redirect(`/admin/order/view/${orderId}`);
 }));
 
-router.post('/admin/order/:id/send-courier', (req, res) => {
-  if(env.db.client==='mysql')return res.status(409).json({error:'PROVIDER_ACTION_DISABLED',message:'Courier booking is disabled until an approved provider workflow is configured.'});
-  const order = db.get('SELECT * FROM orders WHERE id = ?', req.params.id);
-  if (order) {
-    const courierName = String(req.body.courier_name || 'Steadfast Courier');
-    const trk = `${courierName.slice(0, 3).toUpperCase()}-${order.invoice_id}-${Math.floor(100 + Math.random() * 900)}`;
-    db.run(
-      "UPDATE orders SET status = 'in-courier', courier_name = ?, courier_tracking_id = ?, is_seen = 1 WHERE id = ?",
-      courierName,
-      trk,
-      order.id
-    );
-    req.flash('success', `অর্ডার #${order.invoice_id} সফলভাবে ${courierName}-এ বুকিং হয়েছে! Tracking: ${trk}`);
-  }
-  res.redirect(`/admin/order/view/${req.params.id}`);
+router.post('/admin/order/:id/send-courier', (_req, res) => {
+  return res.status(409).json({ error: 'PROVIDER_ACTION_DISABLED', message: 'Courier booking is disabled until a verified provider workflow returns an actual booking and tracking reference. No booking was made.' });
 });
 
 // ─── Printable Invoice ───
@@ -357,8 +344,9 @@ router.post('/admin/order/update/:id', asyncHandler(async (req, res) => {
   const total = Math.max(0, Number(order.subtotal) + ship - disc);
 
   let tracking = courier_tracking_id || order.courier_tracking_id || '';
-  if (courier_name && !tracking && status === 'in-courier') {
-    tracking = `${courier_name.slice(0, 3).toUpperCase()}-${order.invoice_id}-${Math.floor(100 + Math.random() * 900)}`;
+  if (status === 'in-courier' && !tracking) {
+    req.flash('error', 'Courier status cannot be set without a verified provider tracking reference.');
+    return res.redirect(`/admin/order/view/${req.params.id}`);
   }
 
   db.run(
@@ -454,25 +442,17 @@ router.post('/admin/order/bulk-action', asyncHandler(async (req, res) => {
     return res.redirect(req.get('Referrer') || '/admin/order/all');
   }
 
+  if (action.startsWith('courier:')) {
+    req.flash('error', 'Bulk courier booking is disabled until a verified provider workflow is configured. No bookings were made.');
+    return res.redirect(req.get('Referrer') || '/admin/order/all');
+  }
+
   if (action === 'delete') {
     for (const id of ids) {
       db.run('DELETE FROM order_items WHERE order_id = ?', id);
       db.run('DELETE FROM orders WHERE id = ?', id);
     }
     req.flash('success', `${ids.length} টি অর্ডার ডিলিট করা হয়েছে।`);
-  } else if (action.startsWith('courier:')) {
-    const courierName = action.split(':')[1];
-    for (const id of ids) {
-      const ord = db.get('SELECT invoice_id FROM orders WHERE id = ?', id);
-      const trk = `${courierName.slice(0, 3).toUpperCase()}-${ord ? ord.invoice_id : id}-${Math.floor(100 + Math.random() * 900)}`;
-      db.run(
-        "UPDATE orders SET status = 'in-courier', courier_name = ?, courier_tracking_id = ?, is_seen = 1 WHERE id = ?",
-        courierName,
-        trk,
-        id
-      );
-    }
-    req.flash('success', `${ids.length} টি অর্ডার সফলভাবে ${courierName}-এ পাঠানো হয়েছে!`);
   } else {
     for (const id of ids) {
       db.run('UPDATE orders SET status = ?, is_seen = 1 WHERE id = ?', action, id);

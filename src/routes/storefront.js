@@ -22,6 +22,8 @@ const publicFormLimiter = createRateLimiter({
   windowMs: 60_000,
   max: 20,
 });
+const authAttemptLimiter = createRateLimiter({ keyPrefix: 'portal_auth', windowMs: 60_000, max: 8 });
+const storeAssistantLimiter = createRateLimiter({ keyPrefix: 'store_assistant', windowMs: 60_000, max: 20 });
 const quickQuoteLimiter = createRateLimiter({
   keyPrefix: 'store_quick_quote',
   windowMs: 60_000,
@@ -1300,10 +1302,10 @@ router.get('/campaign/:slug', (req, res) => {
   const product =
     db.get('SELECT * FROM products WHERE id = ?', campaign.product_id) ||
     db.get('SELECT * FROM products LIMIT 1');
-  return res.render('store/campaign', { campaign, product });
+  return res.render('store/campaign', { campaign, product, csrfToken: req.csrfToken() });
 });
 
-router.post('/campaign/:slug/order', (req, res) => {
+router.post('/campaign/:slug/order', publicFormLimiter, requireCsrf, (req, res) => {
   const campaign = db.get('SELECT * FROM campaigns WHERE slug = ?', req.params.slug);
   if (!campaign) return res.redirect('/');
   const product = db.get('SELECT * FROM products WHERE id = ?', campaign.product_id);
@@ -1504,6 +1506,7 @@ router.get(
 // ─── Customer Support Assistant, Complaint, Contact, Newsletter, Review & SEO ───
 router.post(
   '/api/store-assistant',
+  storeAssistantLimiter,
   asyncHandler(async (req, res) => {
     const msg = String(req.body.message || '').trim();
     const q = msg.toLowerCase();

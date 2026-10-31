@@ -36,7 +36,7 @@
                 <div
                   class="border rounded-3 p-2 h-100 bg-white shadow-xs"
                   style="cursor: pointer; transition: border-color 0.15s;"
-                  onclick='addToPosCart(<%- JSON.stringify({ id: p.id, name: p.name, price: p.new_price, image: p.image, stock: p.stock }) %>)'
+                  data-product="<%= JSON.stringify({ id: p.id, name: p.name, price: p.new_price, image: p.image, stock: p.stock }) %>"
                 >
                   <img src="<%= p.image %>" alt="" class="w-100 rounded-2 mb-2" style="height: 105px; object-fit: cover;" />
                   <div class="fw-semibold text-truncate" style="font-size: 12.5px;"><%= p.name %></div>
@@ -178,6 +178,12 @@
     document.getElementById('posSubtotalTxt').textContent = '৳' + sub.toLocaleString('en-IN');
     document.getElementById('posGrandTxt').textContent = '৳' + grand.toLocaleString('en-IN');
   }
+
+  document.querySelectorAll('.pos-prod-card [data-product]').forEach(function(el) {
+    el.addEventListener('click', function() {
+      try { addToPosCart(JSON.parse(el.getAttribute('data-product'))); } catch (_) { /* Ignore malformed product data. */ }
+    });
+  });
 
   document.getElementById('posSearch').addEventListener('input', filterPosGrid);
   document.getElementById('posCategory').addEventListener('change', filterPosGrid);

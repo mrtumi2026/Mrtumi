@@ -42,6 +42,7 @@
     <p class="text-center text-muted small mb-4">অগ্রিম কোনো টাকা দিতে হবে না — ফল হাতে পেয়ে ডেলিভারি ম্যানকে মূল্য পরিশোধ করুন!</p>
 
     <form action="/campaign/<%= campaign.slug %>/order" method="POST">
+      <input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>">
       <div class="row g-3">
         <div class="col-md-6">
           <label class="form-label fw-semibold small">আপনার পূর্ণ নাম *</label>

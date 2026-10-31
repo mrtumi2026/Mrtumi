@@ -57,7 +57,11 @@ async function loginPartner(kind, identifier, password) {
   assert.ok(token, `${kind} login form renders its CSRF token`);
   const login = await formPost(`/${kind}/login`, cookie, token[1], { identifier, password });
   assert.equal(login.status, 302, `${kind} fixture login succeeds`);
-  return { cookie: responseCookie(login) || cookie, csrf: token[1] };
+  const authenticatedCookie = responseCookie(login) || cookie;
+  const portal = await fetch(`${baseUrl}/${kind}/dashboard`, { headers: { cookie: authenticatedCookie } });
+  const portalHtml = await portal.text();
+  const rotatedToken = portalHtml.match(/name="_csrf" value="([^"]+)"/);
+  return { cookie: authenticatedCookie, csrf: rotatedToken ? rotatedToken[1] : token[1] };
 }
 
 before(async () => {
