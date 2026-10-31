@@ -104,6 +104,7 @@ module.exports = {
     endsIn: 'শেষ হতে বাকি',
     hotDealTitle: 'হট ডিল ও জনপ্রিয় কম্বো',
     hotDealBadge: 'বিশেষ ছাড়',
+    browseCategories: 'ক্যাটাগরি দেখুন',
     categoriesTitle: 'ক্যাটাগরি অনুযায়ী কেনাকাটা',
     categoriesSub: 'আপনার প্রয়োজনীয় গ্রোসারি ও গিফট ক্যাটাগরি বেছে নিন',
     allProductsTitle: 'নিত্যপ্রয়োজনীয় গ্রোসারি ও গিফট সম্ভার',

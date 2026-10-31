@@ -1,17 +1,30 @@
 <%- include('partials/header') %>
 
 <main id="mainContent" class="container py-4">
-  <section class="store-hero-layout" aria-label="<%= locale === 'en' ? 'Shop highlights' : 'দোকানের বিশেষ আয়োজন' %>">
-    <aside class="store-hero-categories" aria-label="<%= locale === 'en' ? 'Shop by category' : 'ক্যাটাগরি অনুযায়ী কেনাকাটা' %>">
-      <h2><i class="fas fa-list" aria-hidden="true"></i> <%= locale === 'en' ? 'Shop by category' : 'ক্যাটাগরি দেখুন' %></h2>
-      <ul>
-        <% ((featuredCategories && featuredCategories.length) ? featuredCategories : (navCategories || [])).slice(0, 8).forEach(function(cat) { %>
-          <li><a href="/category/<%= cat.slug %>"><span aria-hidden="true"><%= cat.icon || '🛒' %></span><span><%= cat.name %></span><i class="fas fa-chevron-right" aria-hidden="true"></i></a></li>
-        <% }) %>
-      </ul>
-      <a href="/all-products" class="store-category-more"><%= t('common.allProducts') %> →</a>
-    </aside>
-    <div class="store-hero-main">
+  <section class="store-hero-layout my-3" aria-label="<%= locale === 'en' ? 'Shop highlights' : 'দোকানের বিশেষ আয়োজন' %>">
+    <div class="row g-3 align-items-stretch">
+      <div class="col-lg-3 d-none d-lg-block">
+        <nav class="card border-0 shadow-xs rounded-4 bg-white p-2 h-100 store-category-card" aria-label="<%= t('store.browseCategories') %>">
+          <div class="fw-bold px-3 py-2 text-dark border-bottom d-flex align-items-center gap-2 store-category-heading">
+            <i class="fas fa-list-ul text-success" aria-hidden="true"></i>
+            <span><%= t('store.browseCategories') %></span>
+          </div>
+          <ul class="list-unstyled mb-0 py-1" id="heroCategoryMenu">
+            <% ((featuredCategories && featuredCategories.length) ? featuredCategories : (navCategories || [])).slice(0, 8).forEach(function(cat) { %>
+              <li>
+                <a class="hero-category-link" href="/category/<%= cat.slug %>">
+                  <span class="hero-category-icon" aria-hidden="true"><%= cat.icon || '🛒' %></span>
+                  <span class="hero-category-name"><%= cat.name %></span>
+                  <i class="fas fa-chevron-right text-muted small hero-category-arrow" aria-hidden="true"></i>
+                </a>
+              </li>
+            <% }) %>
+          </ul>
+          <a href="/all-products" class="store-category-more"><%= t('common.allProducts') %> →</a>
+        </nav>
+      </div>
+      <div class="col-lg-9 store-hero-content">
+        <div class="store-hero-main">
   <!-- Hero Banner Slider -->
   <% if (heroBanners && heroBanners.length) { %>
     <div id="heroCarousel" class="carousel slide mb-5" data-bs-ride="carousel">
@@ -61,8 +74,8 @@
       </div>
     </section>
   <% } %>
-    </div>
-    <aside class="store-hero-promos" aria-label="<%= locale === 'en' ? 'Special offers' : 'বিশেষ অফার' %>">
+        </div>
+        <section class="store-hero-promos" aria-label="<%= locale === 'en' ? 'Special offers' : 'বিশেষ অফার' %>">
       <% if (promoBanners && promoBanners.length) { %>
         <% promoBanners.slice(0, 2).forEach(function(promo, index) { %>
           <a class="store-promo-card <%= index === 1 ? 'store-promo-card-warm' : '' %>" href="<%= promo.link || '/hot-deals' %>">
@@ -74,7 +87,9 @@
         <a class="store-promo-card" href="/hot-deals"><span class="store-promo-emoji" aria-hidden="true">🥬</span><span class="store-promo-copy"><small><%= locale === 'en' ? 'FRESH EVERY DAY' : 'প্রতিদিনের সতেজতা' %></small><strong><%= locale === 'en' ? 'Fresh picks for your table' : 'আপনার টেবিলে টাটকা পছন্দ' %></strong><span><%= t('store.shopNowBtn') %> →</span></span></a>
         <a class="store-promo-card store-promo-card-warm" href="/all-products?deal=gift"><span class="store-promo-emoji" aria-hidden="true">🎁</span><span class="store-promo-copy"><small><%= locale === 'en' ? 'MAKE IT A GIFT' : 'উপহার দিন ভালোবাসা' %></small><strong><%= t('common.giftCorner') %></strong><span><%= t('store.exploreGiftsBtn') %> →</span></span></a>
       <% } %>
-    </aside>
+        </section>
+      </div>
+    </div>
   </section>
 
   <section class="store-trust-row" aria-label="<%= locale === 'en' ? 'Shopping benefits' : 'কেন আমাদের থেকে কিনবেন' %>">

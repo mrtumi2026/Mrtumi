@@ -55,7 +55,9 @@ test('homepage and product card provide the accessible hero, trust, discount, st
   assert.match(storefrontRoutes, /router\.get\('\/api\/search-suggestions', publicFormLimiter/);
   assert.match(storefrontRepository, /async function getSearchSuggestions/);
   assert.match(home, /store-hero-layout/);
-  assert.match(home, /store-hero-categories/);
+  assert.match(home, /store-category-card/);
+  assert.match(home, /id="heroCategoryMenu"/);
+  assert.match(home, /hero-category-link/);
   assert.match(home, /store-hero-promos/);
   assert.match(home, /store-trust-row/);
   assert.match(home, /data-countdown=/);
