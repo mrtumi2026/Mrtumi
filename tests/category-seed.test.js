@@ -81,7 +81,7 @@ test('category seed script runs twice on disposable MySQL with exact bilingual c
   const subcategorySlugs = CATEGORY_SEEDS.flatMap((category) => category.subcategories.map(([nameEn]) => `${category.slug}-${slugifyEnglish(nameEn)}`));
   const placeholders = (values) => values.map(() => '?').join(',');
   try {
-    await migrateDown(pool, { steps: 12 });
+    await migrateDown(pool, { steps: 13 });
     await migrateUp(pool);
     const db = mysql.createQueryClient(pool);
     const before = await db.queryOne('SELECT (SELECT COUNT(*) FROM categories) AS categories,(SELECT COUNT(*) FROM subcategories) AS subcategories');

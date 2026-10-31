@@ -90,7 +90,7 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
     if (!MYSQL_HOST) return;
     pool = getPool();
     client = createQueryClient(pool);
-    await migrateDown(pool, { steps: 12 });
+    await migrateDown(pool, { steps: 13 });
     await migrateUp(pool);
 
     const catRes = await client.execute(
@@ -207,7 +207,7 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
       await new Promise((resolve) => server.close(resolve));
     }
     if (pool) {
-      await migrateDown(pool, { steps: 12 });
+      await migrateDown(pool, { steps: 13 });
       await closePool();
     }
   });

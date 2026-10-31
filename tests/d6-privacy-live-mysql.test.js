@@ -16,7 +16,7 @@ const privacy = require('../src/repositories/privacyRepository');
 
 describe('D6 privacy lifecycle MySQL/MariaDB integration', { skip: !host && !required ? skipReason : false }, () => {
   let db;
-  before(async () => { if (!host) return; const pool=getPool(); db=createQueryClient(pool); await migrateDown(pool,{steps:12}); await migrateUp(pool); });
+  before(async () => { if (!host) return; const pool=getPool(); db=createQueryClient(pool); await migrateDown(pool,{steps:13}); await migrateUp(pool); });
   after(async () => { if (host) await closePool(); });
   test('policy acceptance, consent history, owned requests, deletion review, anonymization, recovery single-use/expiry and rollback', async t => {
     if(!host)return t.skip(skipReason);
