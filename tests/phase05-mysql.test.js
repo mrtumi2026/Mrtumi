@@ -983,7 +983,75 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
     assert.equal(changed.statusCode,409,'request key cannot be reused with altered order data');
   });
 
-  test('11. Phase 07 failed persistent-cart replacement rolls back instead of deleting valid saved data', { skip: !MYSQL_HOST ? SKIP_REASON : false }, async () => {
+  test('11. Phase 07 customer profile, order history pagination and order details are MySQL-backed and owner-scoped', { skip: !MYSQL_HOST ? SKIP_REASON : false }, async () => {
+    const suffix = String(Date.now()).slice(-8);
+    const password = 'SecureHistoryPassword!2026';
+    const owner = await customerRepo.registerCustomer({ name: 'Order history owner', phone: `013${suffix}`, email: `history-owner-${suffix}@example.invalid`, password });
+    const other = await customerRepo.registerCustomer({ name: 'Different history owner', phone: `014${suffix}`, email: `history-other-${suffix}@example.invalid`, password });
+    const insertOrder = async (customer, invoiceNo, name) => {
+      const order = await client.execute(
+        `INSERT INTO orders(invoice_no,customer_id,customer_name,customer_phone,shipping_address,division,district,subtotal_paisa,discount_paisa,shipping_paisa,total_paisa,paid_paisa,cod_due_paisa,payment_method,payment_status,order_status,order_channel)
+         VALUES(?,?,?,?,?,'Dhaka','Dhaka',1250,50,600,1800,0,1800,'cod','unpaid','pending','storefront')`,
+        [invoiceNo, customer.id, customer.name, customer.phone, 'House 18, History Road']
+      );
+      await client.execute(
+        `INSERT INTO order_items(order_id,product_id,product_name,unit_price_paisa,qty,line_total_paisa,size_label,color_label)
+         VALUES(?,?,?,1250,1,1250,'1 pack','Gold')`,
+        [order.insertId, inhouseProdId, name]
+      );
+      return Number(order.insertId);
+    };
+    let oldestOrderId;
+    let newestInvoice;
+    for (let index = 0; index < 21; index += 1) {
+      const invoice = `P07-HIST-${suffix}-${String(index).padStart(2, '0')}`;
+      const id = await insertOrder(owner, invoice, `History item ${index}`);
+      if (index === 0) oldestOrderId = id;
+      if (index === 20) newestInvoice = invoice;
+    }
+    const foreignOrderId = await insertOrder(other, `P07-OTHER-${suffix}`, 'Private other customer item');
+
+    const initial = await httpRequest(baseUrl, '/api/v1/csrf-token');
+    let cookie = (Array.isArray(initial.headers['set-cookie']) ? initial.headers['set-cookie'] : [initial.headers['set-cookie']]).filter(Boolean).map((value) => value.split(';')[0]).join('; ');
+    const login = await httpRequest(baseUrl, '/customer/login', { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded', 'x-csrf-token': JSON.parse(initial.body).data.csrfToken }, body: new URLSearchParams({ phone: owner.phone, password }).toString() });
+    assert.equal(login.statusCode, 302, 'owner logs in through the existing CSRF-protected route');
+    cookie = (Array.isArray(login.headers['set-cookie']) ? login.headers['set-cookie'] : [login.headers['set-cookie']]).filter(Boolean).map((value) => value.split(';')[0]).join('; ');
+
+    const anonymous = await httpRequest(baseUrl, '/customer/account/orders');
+    assert.equal(anonymous.statusCode, 302, 'order history requires a customer session');
+    const account = await httpRequest(baseUrl, '/customer/account?lang=en', { headers: { Cookie: cookie } });
+    assert.equal(account.statusCode, 200, account.body.slice(0, 300));
+    assert.match(account.body, /Order history owner/);
+    assert.match(account.body, /013\d{8}/);
+    assert.match(account.body, new RegExp(`history-owner-${suffix}@example\\.invalid`));
+    assert.doesNotMatch(account.body, new RegExp(`history-other-${suffix}@example\\.invalid`), 'account profile does not leak another customer profile');
+
+    const firstPage = await httpRequest(baseUrl, '/customer/account/orders?lang=en', { headers: { Cookie: cookie } });
+    assert.equal(firstPage.statusCode, 200, firstPage.body.slice(0, 300));
+    assert.match(firstPage.body, new RegExp(newestInvoice));
+    assert.doesNotMatch(firstPage.body, new RegExp(`P07-HIST-${suffix}-00`), 'first page is bounded to the newest 20 orders');
+    assert.doesNotMatch(firstPage.body, new RegExp(`P07-OTHER-${suffix}`), 'history is isolated to the authenticated customer');
+    assert.match(firstPage.body, /1 \/ 2/);
+    const secondPage = await httpRequest(baseUrl, '/customer/account/orders?page=2&lang=en', { headers: { Cookie: cookie } });
+    assert.equal(secondPage.statusCode, 200);
+    assert.match(secondPage.body, new RegExp(`P07-HIST-${suffix}-00`));
+    assert.doesNotMatch(secondPage.body, new RegExp(`P07-OTHER-${suffix}`));
+    const invalidPage = await httpRequest(baseUrl, '/customer/account/orders?page=1.5', { headers: { Cookie: cookie } });
+    assert.equal(invalidPage.statusCode, 400, 'malformed page values fail as client errors');
+
+    const detail = await httpRequest(baseUrl, `/customer/account/orders/${oldestOrderId}?lang=en`, { headers: { Cookie: cookie } });
+    assert.equal(detail.statusCode, 200, detail.body.slice(0, 300));
+    assert.match(detail.body, new RegExp(`P07-HIST-${suffix}-00`));
+    assert.match(detail.body, /History item 0/);
+    assert.match(detail.body, /House 18, History Road/);
+    assert.match(detail.body, /৳12\.50/);
+    const foreignDetail = await httpRequest(baseUrl, `/customer/account/orders/${foreignOrderId}`, { headers: { Cookie: cookie } });
+    assert.equal(foreignDetail.statusCode, 404, 'a different customer cannot retrieve order details by guessing its numeric ID');
+    const invalidDetail = await httpRequest(baseUrl, '/customer/account/orders/not-an-id', { headers: { Cookie: cookie } });
+    assert.equal(invalidDetail.statusCode, 404);
+  });
+
+  test('12. Phase 07 failed persistent-cart replacement rolls back instead of deleting valid saved data', { skip: !MYSQL_HOST ? SKIP_REASON : false }, async () => {
     const phone = `015${String(Date.now()).slice(-8)}`;
     const customer = await customerRepo.registerCustomer({ name: 'Cart rollback owner', phone, password: 'SecureCartPassword!2026' });
     await client.execute('INSERT INTO customer_cart_items (customer_id,product_id,variant_id,quantity) VALUES (?,?,?,2)', [customer.id, inhouseProdId, variant5KgId]);

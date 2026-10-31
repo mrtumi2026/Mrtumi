@@ -59,6 +59,17 @@ test('Malformed JSON request bodies return a client error instead of HTTP 500', 
   assert.equal(res.body.error.code, 'INVALID_REQUEST_BODY');
 });
 
+test('Phase 07 customer order reads reject invalid or unsafe identifiers and page numbers before database access', async () => {
+  const customerRepository = require('../src/repositories/customerRepository');
+  for (const id of [0, -1, 'not-an-id', '9007199254740992']) {
+    await assert.rejects(() => customerRepository.getProfile(id), (err) => err.code === 'VALIDATION_ERROR');
+    await assert.rejects(() => customerRepository.getOrderDetails(1, id), (err) => err.code === 'VALIDATION_ERROR');
+  }
+  for (const page of [0, -1, 1.5, '2tail', [], {}]) {
+    await assert.rejects(() => customerRepository.listOrders(1, page), (err) => err.code === 'VALIDATION_ERROR');
+  }
+});
+
 test('Phase 07 enforces password bounds compatible with bcrypt', () => {
   assert.equal(validatePassword('correct horse battery'), 'correct horse battery');
   assert.throws(() => validatePassword('short'), { code: 'VALIDATION_ERROR' });

@@ -1,5 +1,46 @@
 <%- include('../store/partials/header', { title: isEn ? 'My account' : 'আমার অ্যাকাউন্ট' }) %>
-<main class="container py-5"><div class="d-flex justify-content-between"><h1 class="h3"><%= isEn ? 'My account' : 'আমার অ্যাকাউন্ট' %></h1><form method="post" action="/customer/logout"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button class="btn btn-outline-secondary"><%= isEn ? 'Log out' : 'লগআউট' %></button></form></div>
-<h2 class="h5 mt-4"><%= isEn ? 'Saved addresses' : 'সংরক্ষিত ঠিকানা' %></h2><div class="row g-3"><% addresses.forEach((a) => { %><div class="col-md-6"><article class="border rounded p-3"><strong><%= a.label %><%= a.is_default ? ` — ${isEn ? 'Default' : 'ডিফল্ট'}` : '' %></strong><p><%= a.recipient_name %> · <%= a.recipient_phone %><br><%= [a.street_address, a.upazila, a.district, a.division].filter(Boolean).join(', ') %></p><form method="post" action="/customer/account/addresses/<%= a.id %>/delete"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button class="btn btn-sm btn-outline-danger"><%= isEn ? 'Remove' : 'মুছুন' %></button></form></article></div><% }) %></div>
-<h2 class="h5 mt-5"><%= isEn ? 'Add address' : 'নতুন ঠিকানা' %></h2><form method="post" action="/customer/account/addresses" class="card card-body row g-3"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><div class="col-md-4"><input class="form-control" name="label" maxlength="64" placeholder="Home"></div><div class="col-md-8"><input class="form-control" name="recipient_name" required maxlength="191" placeholder="Recipient name"></div><div class="col-md-6"><input class="form-control" name="recipient_phone" required placeholder="01XXXXXXXXX"></div><div class="col-md-6"><input class="form-control" name="division" required maxlength="80" placeholder="Division"></div><div class="col-md-6"><input class="form-control" name="district" required maxlength="80" placeholder="District"></div><div class="col-md-6"><input class="form-control" name="upazila" maxlength="80" placeholder="Upazila"></div><div class="col-12"><textarea class="form-control" name="street_address" required maxlength="2000" placeholder="Street address"></textarea></div><div class="col-12 form-check ms-2"><input class="form-check-input" type="checkbox" name="is_default" value="1" id="default"><label class="form-check-label" for="default"><%= isEn ? 'Make default' : 'ডিফল্ট ঠিকানা করুন' %></label></div><button class="btn btn-success col-auto ms-2"><%= isEn ? 'Save address' : 'ঠিকানা সংরক্ষণ' %></button></form></main>
+<main id="mainContent" class="container py-5">
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+    <h1 class="h3 mb-0"><%= isEn ? 'My account' : 'আমার অ্যাকাউন্ট' %></h1>
+    <div class="d-flex gap-2 flex-wrap">
+      <a class="btn btn-outline-success" href="/customer/account/orders"><%= isEn ? 'Order history' : 'অর্ডারের ইতিহাস' %></a>
+      <form method="post" action="/customer/logout"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button class="btn btn-outline-secondary"><%= isEn ? 'Log out' : 'লগআউট' %></button></form>
+    </div>
+  </div>
+
+  <section class="card card-body mt-4" aria-labelledby="customer-profile-title">
+    <h2 id="customer-profile-title" class="h5"><%= isEn ? 'Profile' : 'প্রোফাইল' %></h2>
+    <dl class="row mb-0">
+      <dt class="col-sm-3"><%= isEn ? 'Name' : 'নাম' %></dt><dd class="col-sm-9"><%= profile.name %></dd>
+      <dt class="col-sm-3"><%= isEn ? 'Phone' : 'ফোন' %></dt><dd class="col-sm-9"><%= profile.phone %></dd>
+      <% if (profile.email) { %><dt class="col-sm-3"><%= isEn ? 'Email' : 'ইমেইল' %></dt><dd class="col-sm-9"><%= profile.email %></dd><% } %>
+    </dl>
+  </section>
+
+  <h2 class="h5 mt-5"><%= isEn ? 'Saved addresses' : 'সংরক্ষিত ঠিকানা' %></h2>
+  <div class="row g-3">
+    <% addresses.forEach((a) => { %>
+      <div class="col-md-6"><article class="border rounded p-3 h-100">
+        <strong><%= a.label %><%= a.is_default ? ` — ${isEn ? 'Default' : 'ডিফল্ট'}` : '' %></strong>
+        <p class="mt-2"><%= a.recipient_name %> · <%= a.recipient_phone %><br><%= [a.street_address, a.upazila, a.district, a.division].filter(Boolean).join(', ') %></p>
+        <form method="post" action="/customer/account/addresses/<%= a.id %>/delete"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button class="btn btn-sm btn-outline-danger"><%= isEn ? 'Remove' : 'মুছুন' %></button></form>
+      </article></div>
+    <% }) %>
+    <% if (!addresses.length) { %><p class="text-muted"><%= isEn ? 'No saved addresses yet.' : 'এখনও কোনো ঠিকানা সংরক্ষণ করা হয়নি।' %></p><% } %>
+  </div>
+
+  <h2 class="h5 mt-5"><%= isEn ? 'Add address' : 'নতুন ঠিকানা' %></h2>
+  <form method="post" action="/customer/account/addresses" class="card card-body row g-3">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <div class="col-md-4"><input class="form-control" name="label" maxlength="64" placeholder="Home"></div>
+    <div class="col-md-8"><input class="form-control" name="recipient_name" required maxlength="191" placeholder="Recipient name"></div>
+    <div class="col-md-6"><input class="form-control" name="recipient_phone" required placeholder="01XXXXXXXXX"></div>
+    <div class="col-md-6"><input class="form-control" name="division" required maxlength="80" placeholder="Division"></div>
+    <div class="col-md-6"><input class="form-control" name="district" required maxlength="80" placeholder="District"></div>
+    <div class="col-md-6"><input class="form-control" name="upazila" maxlength="80" placeholder="Upazila"></div>
+    <div class="col-12"><textarea class="form-control" name="street_address" required maxlength="2000" placeholder="Street address"></textarea></div>
+    <div class="col-12 form-check ms-2"><input class="form-check-input" type="checkbox" name="is_default" value="1" id="default"><label class="form-check-label" for="default"><%= isEn ? 'Make default' : 'ডিফল্ট ঠিকানা করুন' %></label></div>
+    <button class="btn btn-success col-auto ms-2"><%= isEn ? 'Save address' : 'ঠিকানা সংরক্ষণ' %></button>
+  </form>
+</main>
 <%- include('../store/partials/footer') %>

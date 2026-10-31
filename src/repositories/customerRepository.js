@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 const { env } = require('../config/env');
 const { getPool, createQueryClient, withTransaction } = require('../db/mysqlPool');
 const { ValidationError, ConflictError, NotFoundError } = require('../utils/errors');
+const { requirePositiveInt } = require('../utils/validator');
 
 function normalizeBdPhone(value) {
   let digits = String(value || '').trim().replace(/[\s()-]/g, '');
@@ -45,8 +46,53 @@ async function authenticateCustomer(phone, password) {
   if (!user || !await bcrypt.compare(String(password || ''), user.password_hash || '')) return null;
   return { id: user.id, name: user.name, phone: user.phone };
 }
+async function getProfile(customerId) {
+  const id = requirePositiveInt(customerId, 'customer ID');
+  const profile = await mysqlClient().queryOne('SELECT `id`, `name`, `phone`, `email`, `created_at` FROM `customers` WHERE `id` = ? AND `status` = 1 AND `is_blocked` = 0 LIMIT 1', [id]);
+  if (!profile) throw new NotFoundError('Customer account not found.');
+  return profile;
+}
 async function listAddresses(customerId) {
-  return mysqlClient().queryAll('SELECT `id`, `label`, `recipient_name`, `recipient_phone`, `division`, `district`, `upazila`, `street_address`, `is_default` FROM `customer_addresses` WHERE `customer_id` = ? ORDER BY `is_default` DESC, `id` DESC', [customerId]);
+  const id = requirePositiveInt(customerId, 'customer ID');
+  return mysqlClient().queryAll('SELECT `id`, `label`, `recipient_name`, `recipient_phone`, `division`, `district`, `upazila`, `street_address`, `is_default` FROM `customer_addresses` WHERE `customer_id` = ? ORDER BY `is_default` DESC, `id` DESC', [id]);
+}
+async function listOrders(customerId, requestedPage = 1) {
+  const id = requirePositiveInt(customerId, 'customer ID');
+  const pageNumber = Number(requestedPage);
+  if (!Number.isSafeInteger(pageNumber) || pageNumber < 1) throw new ValidationError('Order history page must be a positive whole number.');
+  const db = mysqlClient();
+  const count = await db.queryOne('SELECT COUNT(*) AS `total` FROM `orders` WHERE `customer_id` = ?', [id]);
+  const total = Number(count?.total || 0);
+  const perPage = 20;
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
+  const page = Math.min(pageNumber, totalPages);
+  const offset = (page - 1) * perPage;
+  const orders = await db.queryAll(
+    `SELECT o.id, o.invoice_no, o.order_status, o.payment_status, o.total_paisa, o.created_at,
+            (SELECT COALESCE(SUM(i.qty), 0) FROM order_items i WHERE i.order_id = o.id) AS item_quantity
+     FROM orders o WHERE o.customer_id = ? ORDER BY o.created_at DESC, o.id DESC LIMIT ? OFFSET ?`,
+    [id, perPage, offset]
+  );
+  return { orders, page, perPage, total, totalPages };
+}
+async function getOrderDetails(customerId, orderId) {
+  const ownerId = requirePositiveInt(customerId, 'customer ID');
+  const id = requirePositiveInt(orderId, 'order ID');
+  const db = mysqlClient();
+  const order = await db.queryOne(
+    `SELECT id, invoice_no, order_status, payment_status, payment_method, customer_name, customer_phone,
+            shipping_address, division, district, upazila, shipping_zone,
+            subtotal_paisa, discount_paisa, shipping_paisa, total_paisa, created_at
+     FROM orders WHERE id = ? AND customer_id = ? LIMIT 1`,
+    [id, ownerId]
+  );
+  if (!order) throw new NotFoundError('Order not found.');
+  const items = await db.queryAll(
+    `SELECT product_name, qty, unit_price_paisa, line_total_paisa, size_label, color_label
+     FROM order_items WHERE order_id = ? ORDER BY id`,
+    [id]
+  );
+  return { order, items };
 }
 async function saveAddress(customerId, input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new ValidationError('Enter a valid address.');
@@ -185,4 +231,4 @@ async function clearCart(customerId) {
     await tx.execute('DELETE FROM `customer_cart_items` WHERE `customer_id`=?', [customerId]);
   });
 }
-module.exports = { normalizeBdPhone, validatePassword, registerCustomer, authenticateCustomer, listAddresses, saveAddress, deleteAddress, mergeCart, listCart, addCartLine, setCartLine, removeCartLine, reconcileCart, replaceCart, clearCart };
+module.exports = { normalizeBdPhone, validatePassword, registerCustomer, authenticateCustomer, getProfile, listAddresses, listOrders, getOrderDetails, saveAddress, deleteAddress, mergeCart, listCart, addCartLine, setCartLine, removeCartLine, reconcileCart, replaceCart, clearCart };

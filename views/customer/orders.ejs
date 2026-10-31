@@ -1,0 +1,32 @@
+<%- include('../store/partials/header', { title: isEn ? 'Order history' : 'অর্ডারের ইতিহাস' }) %>
+<main id="mainContent" class="container py-5">
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-4">
+    <div><a href="/customer/account" class="text-decoration-none"><%= isEn ? 'My account' : 'আমার অ্যাকাউন্ট' %></a><h1 class="h3 mt-2"><%= isEn ? 'Order history' : 'অর্ডারের ইতিহাস' %></h1></div>
+  </div>
+  <% if (!orders.length) { %>
+    <div class="alert alert-light border"><%= isEn ? 'No orders are linked to this account yet.' : 'এই অ্যাকাউন্টের সঙ্গে যুক্ত কোনো অর্ডার নেই।' %></div>
+  <% } else { %>
+    <div class="table-responsive" tabindex="0" role="region" aria-label="<%= isEn ? 'Order history' : 'অর্ডারের ইতিহাস' %>">
+      <table class="table table-hover align-middle">
+        <thead><tr><th><%= isEn ? 'Invoice' : 'ইনভয়েস' %></th><th><%= isEn ? 'Date' : 'তারিখ' %></th><th><%= isEn ? 'Status' : 'অবস্থা' %></th><th><%= isEn ? 'Items' : 'পণ্য' %></th><th><%= isEn ? 'Total' : 'মোট' %></th><th><span class="visually-hidden"><%= isEn ? 'Details' : 'বিস্তারিত' %></span></th></tr></thead>
+        <tbody>
+          <% orders.forEach((order) => { %>
+            <tr>
+              <td><%= order.invoice_no %></td><td><%= order.dateLabel %></td><td><%= order.order_status %></td>
+              <td><%= Number(order.item_quantity || 0) %></td><td><%= order.totalLabel %></td>
+              <td><a class="btn btn-sm btn-outline-success" href="/customer/account/orders/<%= order.id %>"><%= isEn ? 'Details' : 'বিস্তারিত' %></a></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+    <% if (totalPages > 1) { %>
+      <nav aria-label="<%= isEn ? 'Order history pages' : 'অর্ডার ইতিহাসের পৃষ্ঠা' %>"><ul class="pagination">
+        <% if (page > 1) { %><li class="page-item"><a class="page-link" href="/customer/account/orders?page=<%= page - 1 %>"><%= isEn ? 'Previous' : 'আগের' %></a></li><% } %>
+        <li class="page-item disabled"><span class="page-link"><%= page %> / <%= totalPages %></span></li>
+        <% if (page < totalPages) { %><li class="page-item"><a class="page-link" href="/customer/account/orders?page=<%= page + 1 %>"><%= isEn ? 'Next' : 'পরের' %></a></li><% } %>
+      </ul></nav>
+    <% } %>
+  <% } %>
+</main>
+<%- include('../store/partials/footer') %>

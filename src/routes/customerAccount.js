@@ -6,6 +6,7 @@ const { createRateLimiter } = require('../middleware/rateLimit');
 const { requireCustomer } = require('../middleware/auth');
 const { requireCsrf } = require('../middleware/csrf');
 const customers = require('../repositories/customerRepository');
+const { formatBdt } = require('../utils/money');
 const router = express.Router();
 const loginLimiter = createRateLimiter({ keyPrefix: 'customer-login', windowMs: 15 * 60 * 1000, max: 10 });
 const registerLimiter = createRateLimiter({ keyPrefix: 'customer-register', windowMs: 60 * 60 * 1000, max: 5 });
@@ -34,7 +35,34 @@ router.post('/customer/login', loginLimiter, requireCsrf, asyncHandler(async (re
   return res.redirect('/customer/account');
 }));
 router.post('/customer/logout', requireCsrf, (req, res) => req.session.destroy(() => res.redirect('/customer/login')));
-router.get('/customer/account', requireCustomer, asyncHandler(async (req, res) => res.render('customer/account', { addresses: await customers.listAddresses(req.session.customerUser.id), isEn: isEn(req) })));
+function moneyLabel(paisa, locale) {
+  const value = Number(paisa);
+  if (!Number.isSafeInteger(value) || value < 0) return locale === 'en' ? 'Unavailable' : 'উপলভ্য নয়';
+  return formatBdt(value, { locale });
+}
+function dateLabel(value, locale) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (!Number.isFinite(date.getTime())) return String(value || '');
+  return new Intl.DateTimeFormat(locale === 'en' ? 'en-BD' : 'bn-BD', { timeZone: 'Asia/Dhaka', dateStyle: 'medium', timeStyle: 'short' }).format(date);
+}
+router.get('/customer/account', requireCustomer, asyncHandler(async (req, res) => {
+  const id = req.session.customerUser.id;
+  const [profile, addresses] = await Promise.all([customers.getProfile(id), customers.listAddresses(id)]);
+  return res.render('customer/account', { profile, addresses, isEn: isEn(req) });
+}));
+router.get('/customer/account/orders', requireCustomer, asyncHandler(async (req, res) => {
+  const history = await customers.listOrders(req.session.customerUser.id, req.query.page || 1);
+  const orders = history.orders.map((order) => ({ ...order, totalLabel: moneyLabel(order.total_paisa, req.locale), dateLabel: dateLabel(order.created_at, req.locale) }));
+  return res.render('customer/orders', { ...history, orders, isEn: isEn(req) });
+}));
+router.get('/customer/account/orders/:id', requireCustomer, asyncHandler(async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id < 1) return res.sendStatus(404);
+  const details = await customers.getOrderDetails(req.session.customerUser.id, id);
+  const order = { ...details.order, subtotalLabel: moneyLabel(details.order.subtotal_paisa, req.locale), discountLabel: moneyLabel(details.order.discount_paisa, req.locale), shippingLabel: moneyLabel(details.order.shipping_paisa, req.locale), totalLabel: moneyLabel(details.order.total_paisa, req.locale), dateLabel: dateLabel(details.order.created_at, req.locale) };
+  const items = details.items.map((item) => ({ ...item, unitPriceLabel: moneyLabel(item.unit_price_paisa, req.locale), lineTotalLabel: moneyLabel(item.line_total_paisa, req.locale) }));
+  return res.render('customer/order-detail', { order, items, isEn: isEn(req) });
+}));
 router.post('/customer/account/addresses', requireCustomer, requireCsrf, asyncHandler(async (req, res) => {
   await customers.saveAddress(req.session.customerUser.id, req.body);
   return res.redirect('/customer/account');

@@ -1,0 +1,28 @@
+<%- include('../store/partials/header', { title: (isEn ? 'Order ' : 'অর্ডার ') + order.invoice_no }) %>
+<main id="mainContent" class="container py-5">
+  <p><a href="/customer/account/orders" class="text-decoration-none">← <%= isEn ? 'Back to order history' : 'অর্ডারের ইতিহাসে ফিরুন' %></a></p>
+  <div class="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-4">
+    <div><h1 class="h3"><%= isEn ? 'Order details' : 'অর্ডারের বিবরণ' %></h1><p class="text-muted mb-0"><%= isEn ? 'Invoice' : 'ইনভয়েস' %>: <strong><%= order.invoice_no %></strong></p></div>
+    <span class="badge text-bg-light border"><%= order.order_status %></span>
+  </div>
+  <section class="card card-body mb-4">
+    <dl class="row mb-0">
+      <dt class="col-sm-3"><%= isEn ? 'Placed' : 'অর্ডারের সময়' %></dt><dd class="col-sm-9"><%= order.dateLabel %></dd>
+      <dt class="col-sm-3"><%= isEn ? 'Payment' : 'পেমেন্ট' %></dt><dd class="col-sm-9"><%= order.payment_method %> · <%= order.payment_status %></dd>
+      <dt class="col-sm-3"><%= isEn ? 'Delivery area' : 'ডেলিভারি এলাকা' %></dt><dd class="col-sm-9"><%= [order.shipping_address, order.upazila, order.district, order.division].filter(Boolean).join(', ') %></dd>
+    </dl>
+  </section>
+  <h2 class="h5"><%= isEn ? 'Items' : 'পণ্যসমূহ' %></h2>
+  <div class="table-responsive" tabindex="0" role="region" aria-label="<%= isEn ? 'Order items' : 'অর্ডারের পণ্যসমূহ' %>">
+    <table class="table align-middle"><thead><tr><th><%= isEn ? 'Product' : 'পণ্য' %></th><th><%= isEn ? 'Options' : 'বিকল্প' %></th><th><%= isEn ? 'Quantity' : 'পরিমাণ' %></th><th><%= isEn ? 'Unit price' : 'একক মূল্য' %></th><th><%= isEn ? 'Line total' : 'সর্বমোট' %></th></tr></thead>
+      <tbody><% items.forEach((item) => { %><tr><td><%= item.product_name %></td><td><%= [item.size_label, item.color_label].filter(Boolean).join(' / ') || '—' %></td><td><%= item.qty %></td><td><%= item.unitPriceLabel %></td><td><%= item.lineTotalLabel %></td></tr><% }) %></tbody>
+    </table>
+  </div>
+  <section class="ms-auto mt-4" style="max-width: 360px"><dl class="row">
+    <dt class="col-7"><%= isEn ? 'Subtotal' : 'সাবটোটাল' %></dt><dd class="col-5 text-end"><%= order.subtotalLabel %></dd>
+    <dt class="col-7"><%= isEn ? 'Discount' : 'ছাড়' %></dt><dd class="col-5 text-end"><%= order.discountLabel %></dd>
+    <dt class="col-7"><%= isEn ? 'Delivery' : 'ডেলিভারি' %></dt><dd class="col-5 text-end"><%= order.shippingLabel %></dd>
+    <dt class="col-7 border-top pt-2"><%= isEn ? 'Total' : 'সর্বমোট' %></dt><dd class="col-5 text-end border-top pt-2 fw-bold"><%= order.totalLabel %></dd>
+  </dl></section>
+</main>
+<%- include('../store/partials/footer') %>
