@@ -30,7 +30,7 @@ describe('Phase 08 — authenticated MySQL admin HTTP, RBAC, CSRF, replay and au
   };
   before(async()=>{
     if(!MYSQL_HOST)return;
-    pool=getPool();db=createQueryClient(pool);await migrateDown(pool,{steps:10});await migrateUp(pool);
+    pool=getPool();db=createQueryClient(pool);await migrateDown(pool,{steps:11});await migrateUp(pool);
     for(const [key,permissions] of Object.entries(grantMap)){
       const suffix=`${Date.now()}-${key}`;
       const role=(await db.execute('INSERT INTO roles (name,slug,status) VALUES (?,?,1)',[`P08 ${key}`,`p08_${suffix}`])).insertId;

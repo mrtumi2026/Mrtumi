@@ -13,7 +13,7 @@ const { migrateUp, migrateDown } = require('../src/db/migrator');
 const vendorPortalRepo = require('../src/repositories/vendorPortalRepository');
 describe('Vendor portal live MySQL/MariaDB repository integration', () => {
   let pool = null; let client = null;
-  before(async () => { if (!MYSQL_HOST) return; pool=getPool(); client=createQueryClient(pool); await migrateDown(pool,{steps:10}); await migrateUp(pool); });
+  before(async () => { if (!MYSQL_HOST) return; pool=getPool(); client=createQueryClient(pool); await migrateDown(pool,{steps:11}); await migrateUp(pool); });
   after(async () => { if (MYSQL_HOST) await closePool(); });
 
   test('vendor products, cross-vendor denial, inventory audit, rollback, and mixed-vendor fulfillment', { skip: !MYSQL_HOST ? SKIP_REASON : false }, async () => {
