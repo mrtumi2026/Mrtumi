@@ -47,6 +47,7 @@ app.disable('x-powered-by');
 app.set('trust proxy', env.trustProxy);
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
+app.locals.mysqlCheckoutEnabled = env.db.client === 'mysql';
 
 // Allow embedding in Arena live preview iframes in non-production environments
 if (!env.isProduction) {

@@ -93,8 +93,24 @@ async function validateCoupon(code,cart,{locale='bn'}={}){
     return{...couponAmount(row,subtotalPaisa),subtotalPaisa};
   },{isolationLevel:'REPEATABLE READ'});
 }
+async function resolveQuickOrderVariant(productId,size,color){
+  assertMysql();const id=requirePositiveInt(productId,'product ID');const selectedSize=String(size||'').trim().slice(0,191);const selectedColor=String(color||'').trim().slice(0,191);
+  const variants=await client().queryAll('SELECT id,size_label,color_label,status FROM product_variants WHERE product_id=? ORDER BY id',[id]);
+  if(!variants.length)return null;
+  const matches=variants.filter(v=>Number(v.status)===1).filter(v=>{const vSize=String(v.size_label||'').trim(),vColor=String(v.color_label||'').trim();return(!vSize||vSize===selectedSize)&&(!vColor||vColor===selectedColor);});
+  if(matches.length!==1)throw new ConflictError('The selected product size/color is no longer available. Refresh the product and choose a valid option.');
+  return Number(matches[0].id);
+}
+async function quoteQuickOrder({productId,qty,size,color,deliveryLocationId,locale='bn'}){
+  assertMysql();const variantId=await resolveQuickOrderVariant(productId,size,color);const cartQuote=await quoteCart([{product_id:productId,variant_id:variantId,qty}],{locale});
+  const location=await client().queryOne('SELECT id,delivery_charge_paisa FROM delivery_locations WHERE id=? AND status=1',[requirePositiveInt(deliveryLocationId,'delivery location')]);
+  if(!location)throw new ValidationError('Select an active, configured delivery location.');
+  const shippingPaisa=asSafeInteger(location.delivery_charge_paisa,'Delivery charge');const totalPaisa=cartQuote.subtotalPaisa+shippingPaisa;
+  if(!Number.isSafeInteger(totalPaisa))throw new ValidationError('Order total exceeds the supported calculation range.');
+  return{variantId,subtotalPaisa:cartQuote.subtotalPaisa,shippingPaisa,totalPaisa,unitPricePaisa:cartQuote.items[0].price_paisa};
+}
 async function createOrder(input,options={}){
-  const {locale='bn',sessionCustomer=null,ip='',requestKey,cart,incompleteOrderId=null,sessionSid='',analyticsConsent=false,attribution=null,deadlockRetry=0}=options;
+  const {locale='bn',sessionCustomer=null,ip='',requestKey,cart,incompleteOrderId=null,sessionSid='',analyticsConsent=false,attribution=null,clearSavedCart=true,deadlockRetry=0}=options;
   const attributionAllowed=env.analyticsAttributionEnabled&&analyticsConsent===true;
   const attributionData=attributionAllowed?normalizeAttribution(attribution||{}):EMPTY_ATTRIBUTION;
   assertMysql();const name=requireString(input.customer_name,'customer name',{min:2,max:191});const phone=normalizeBdPhone(input.phone);const address=requireString(input.address,'shipping address',{min:5,max:2000});const zoneId=requirePositiveInt(input.delivery_location_id,'delivery location');const note=String(input.note||'').trim().slice(0,1000);
@@ -142,9 +158,11 @@ async function createOrder(input,options={}){
     if(coupon.code)await tx.execute('UPDATE coupons SET used_count=used_count+1 WHERE code=?',[coupon.code]);
     if(customerId){
       await tx.execute('UPDATE customers SET total_orders=total_orders+1,address=? WHERE id=?',[address,customerId]);
-      // The order, inventory reservation, and saved-cart clear must commit or roll back together.
-      // Cart mutations acquire the same customer lock, so this clear cannot race a line-scoped write.
-      await tx.execute('DELETE FROM customer_cart_items WHERE customer_id=?',[customerId]);
+      if(clearSavedCart){
+        // The order, inventory reservation, and saved-cart clear must commit or roll back together.
+        // Cart mutations acquire the same customer lock, so this clear cannot race a line-scoped write.
+        await tx.execute('DELETE FROM customer_cart_items WHERE customer_id=?',[customerId]);
+      }
     }
     if(recovery){
       await tx.execute("UPDATE incomplete_orders SET status='recovered',recovered_order_id=? WHERE id=? AND consent_withdrawn_at IS NULL",[order.insertId,recoveryId]);
@@ -167,4 +185,4 @@ async function getOrderForSuccess(invoiceNo){
   assertMysql();const db=client();const order=await db.queryOne('SELECT id,invoice_no,customer_name,total_paisa,paid_paisa,cod_due_paisa,order_status,payment_status,created_at FROM orders WHERE invoice_no=?',[requireString(invoiceNo,'invoice number',{min:8,max:40})]);
   if(!order)return null;const items=await db.queryAll('SELECT product_name,qty,unit_price_paisa,line_total_paisa,size_label,color_label FROM order_items WHERE order_id=? ORDER BY id',[order.id]);return{order,items};
 }
-module.exports={normalizeLines,unitPrice,quoteCart,listDeliveryLocations,listCheckoutMethods,couponAmount,validateCoupon,createOrder,getOrderForSuccess};
+module.exports={normalizeLines,unitPrice,quoteCart,listDeliveryLocations,listCheckoutMethods,couponAmount,validateCoupon,resolveQuickOrderVariant,quoteQuickOrder,createOrder,getOrderForSuccess};

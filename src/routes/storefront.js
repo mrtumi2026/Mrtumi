@@ -11,6 +11,7 @@ const { createRateLimiter } = require('../middleware/rateLimit');
 const storefrontRepo = require('../repositories/storefrontRepository');
 const customerRepo = require('../repositories/customerRepository');
 const { env } = require('../config/env');
+const { ValidationError } = require('../utils/errors');
 const { captureAttribution, consentGranted } = require('../analytics/attribution');
 
 const router = express.Router();
@@ -19,6 +20,11 @@ const publicFormLimiter = createRateLimiter({
   keyPrefix: 'store_public_form',
   windowMs: 60_000,
   max: 20,
+});
+const quickQuoteLimiter = createRateLimiter({
+  keyPrefix: 'store_quick_quote',
+  windowMs: 60_000,
+  max: 90,
 });
 
 router.use((req, res, next) => {
@@ -779,8 +785,43 @@ router.get('/cart/json', asyncHandler(async (req, res) => {
 // ============================================================================
 
 // ─── Direct 1-Click Quick Order (from Quick Order Modal or Product Page) ───
-router.post('/order/quick-submit', (req, res) => {
-  if (storefrontRepo.isMysqlMode()) return res.status(409).json({ success:false, message:'Quick order is not enabled on the canonical MySQL path. Add the product to the cart and use checkout.' });
+router.get('/api/checkout/delivery-locations', asyncHandler(async (_req, res) => {
+  if (!storefrontRepo.isMysqlMode()) return res.status(404).json({ success:false, message:'Configured delivery locations are only exposed by canonical checkout.' });
+  const locations=await checkoutRepo.listDeliveryLocations();
+  return res.json({success:true,locations:locations.map(location=>({id:Number(location.id),division:String(location.division||''),district:String(location.district||''),upazila:String(location.upazila||''),delivery_charge_paisa:Number(location.delivery_charge_paisa)}))});
+}));
+
+router.get('/api/checkout/quick-quote', quickQuoteLimiter, asyncHandler(async (req,res)=>{
+  if(!storefrontRepo.isMysqlMode())return res.status(404).json({success:false,message:'Canonical quick-order quotes are only available in MySQL mode.'});
+  const quote=await checkoutRepo.quoteQuickOrder({productId:req.query.product_id,qty:req.query.qty,size:req.query.size,color:req.query.color,deliveryLocationId:req.query.delivery_location_id,locale:req.locale});
+  return res.json({success:true,...quote});
+}));
+
+router.post('/order/quick-submit', publicFormLimiter, requireCsrf, asyncHandler(async (req, res) => {
+  if (storefrontRepo.isMysqlMode()) {
+    const rawKey=String(req.body.quick_order_request_key||'').trim();
+    if(!/^[A-Za-z0-9_-]{20,80}$/.test(rawKey))throw new ValidationError('Quick order request key is missing or invalid. Refresh the page and try again.');
+    const productId=Number(req.body.product_id);
+    const variantId=await checkoutRepo.resolveQuickOrderVariant(productId,req.body.size,req.body.color);
+    const sessionHash=crypto.createHash('sha256').update(String(req.sessionID||'anon')).digest('hex').slice(0,16);
+    const result=await checkoutRepo.createOrder({
+      customer_name:req.body.customer_name,
+      phone:req.body.phone,
+      address:req.body.address,
+      delivery_location_id:req.body.delivery_location_id,
+      payment_method:'cod',
+      note:req.body.note,
+    },{
+      locale:req.locale,
+      sessionCustomer:req.customerUser||null,
+      ip:req.ip||'',
+      requestKey:`quick:${sessionHash}:${rawKey}`,
+      cart:[{product_id:productId,variant_id:variantId,qty:req.body.qty}],
+      clearSavedCart:false,
+    });
+    const redirect=`/order-success/${encodeURIComponent(result.invoiceNo)}`;
+    return res.json({success:true,invoice_id:result.invoiceNo,redirect,message:req.locale==='en'?`Order #${result.invoiceNo} was submitted successfully.`:`অর্ডার #${result.invoiceNo} সফলভাবে গ্রহণ করা হয়েছে!`,replayed:Boolean(result.replayed)});
+  }
   const {
     product_id,
     qty,
@@ -913,7 +954,7 @@ router.post('/order/quick-submit', (req, res) => {
     });
   }
   return res.redirect(successUrl);
-});
+}));
 
 // ─── Coupon Validation ───
 router.post('/checkout/apply-coupon', requireCsrf, asyncHandler(async (req, res) => {

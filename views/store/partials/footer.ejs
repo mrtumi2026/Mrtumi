@@ -248,6 +248,7 @@
             <div class="border rounded-3 p-3 bg-light">
               <div class="fw-bold small text-success mb-2">🚀 <%= t('store.confirmOrderNow') %> (COD):</div>
               <form id="qoDirectOrderForm">
+                <input type="hidden" name="quick_order_request_key" id="qoRequestKey" value="">
                 <div class="row g-2">
                   <div class="col-sm-6">
                     <label for="qoCustName" class="visually-hidden"><%= t('store.fullName') %></label>
@@ -263,9 +264,13 @@
                   </div>
                   <div class="col-sm-5">
                     <label for="qoShipArea" class="visually-hidden"><%= t('store.shippingArea') %></label>
-                    <select name="shipping_area" id="qoShipArea" class="form-select form-select-sm" onchange="recalcQoTotal()">
-                      <option value="ঢাকার ভিতরে" data-ship="<%= siteSettings.inside_dhaka_charge || 60 %>"><%= t('common.insideDhaka') %> (৳<%= siteSettings.inside_dhaka_charge || 60 %>)</option>
-                      <option value="ঢাকার বাইরে" data-ship="<%= siteSettings.outside_dhaka_charge || 120 %>"><%= t('common.outsideDhaka') %> (৳<%= siteSettings.outside_dhaka_charge || 120 %>)</option>
+                    <select name="<%= mysqlCheckoutEnabled ? 'delivery_location_id' : 'shipping_area' %>" id="qoShipArea" class="form-select form-select-sm" onchange="recalcQoTotal()" <%= mysqlCheckoutEnabled ? 'data-mysql-checkout="true" required' : '' %>>
+                      <% if (mysqlCheckoutEnabled) { %>
+                        <option value=""><%= locale === 'en' ? 'Loading configured delivery areas…' : 'কনফিগার করা ডেলিভারি এলাকা লোড হচ্ছে…' %></option>
+                      <% } else { %>
+                        <option value="ঢাকার ভিতরে" data-ship="<%= siteSettings.inside_dhaka_charge || 60 %>"><%= t('common.insideDhaka') %> (৳<%= siteSettings.inside_dhaka_charge || 60 %>)</option>
+                        <option value="ঢাকার বাইরে" data-ship="<%= siteSettings.outside_dhaka_charge || 120 %>"><%= t('common.outsideDhaka') %> (৳<%= siteSettings.outside_dhaka_charge || 120 %>)</option>
+                      <% } %>
                     </select>
                   </div>
                   <div class="col-12 mt-2">
@@ -292,6 +297,8 @@
         removedFromCartMsg: t('store.removedFromCartMsg'),
         networkErrorMsg: t('store.networkErrorMsg'),
         selectRequiredVariant: t('store.selectRequiredVariant'),
+        selectDeliveryLocation: locale === 'en' ? 'Select a delivery area' : 'ডেলিভারি এলাকা নির্বাচন করুন',
+        deliveryUnavailable: locale === 'en' ? 'Configured delivery areas are unavailable. Refresh and try again.' : 'কনফিগার করা ডেলিভারি এলাকা পাওয়া যাচ্ছে না। রিফ্রেশ করে আবার চেষ্টা করুন।',
         removeLabel: t('a11y.removeItem'),
         inStockLabel: t('common.inStock'),
         outOfStockLabel: t('common.outOfStock'),

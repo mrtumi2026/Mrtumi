@@ -921,7 +921,69 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
     assert.equal(Number(final.find((row) => Number(row.product_id) === Number(vendorProduct.id))?.quantity), 2, 'customer B line update persists');
   });
 
-  test('10. Phase 07 failed persistent-cart replacement rolls back instead of deleting valid saved data', { skip: !MYSQL_HOST ? SKIP_REASON : false }, async () => {
+  test('10. MySQL quick-order uses canonical checkout, CSRF, configured delivery, variant prices, inventory and idempotency', { skip: !MYSQL_HOST ? SKIP_REASON : false }, async () => {
+    const suffix=String(Date.now()).slice(-8);
+    const phone=`016${suffix}`;
+    const customer=await customerRepo.registerCustomer({name:'Quick Order Customer',phone,password:'SecureQuickOrderPassword!2026'});
+    const initial=await httpRequest(baseUrl,'/api/v1/csrf-token');
+    let cookie=(Array.isArray(initial.headers['set-cookie'])?initial.headers['set-cookie']:[initial.headers['set-cookie']]).filter(Boolean).map(value=>value.split(';')[0]).join('; ');
+    const login=await httpRequest(baseUrl,'/customer/login',{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/x-www-form-urlencoded','x-csrf-token':JSON.parse(initial.body).data.csrfToken},body:new URLSearchParams({phone,password:'SecureQuickOrderPassword!2026'}).toString()});
+    assert.equal(login.statusCode,302);
+    cookie=(Array.isArray(login.headers['set-cookie'])?login.headers['set-cookie']:[login.headers['set-cookie']]).filter(Boolean).map(value=>value.split(';')[0]).join('; ')||cookie;
+    const tokenResponse=await httpRequest(baseUrl,'/api/v1/csrf-token',{headers:{Cookie:cookie}});
+    const csrf=JSON.parse(tokenResponse.body).data.csrfToken;
+    await customerRepo.addCartLine(customer.id,{product_id:inhouseProdId,variant_id:variant5KgId,qty:2});
+
+    const locationResponse=await httpRequest(baseUrl,'/api/checkout/delivery-locations',{headers:{Cookie:cookie,Accept:'application/json'}});
+    assert.equal(locationResponse.statusCode,200);
+    const locations=JSON.parse(locationResponse.body).locations;
+    assert.ok(locations.some(location=>Number(location.id)===Number(deliveryLocationId)),'quick order receives active configured delivery locations');
+    const quoteParams=new URLSearchParams({product_id:String(inhouseProdId),qty:'1',size:'5 kg',color:'Family Pack',delivery_location_id:String(deliveryLocationId)});
+    const quoteResponse=await httpRequest(baseUrl,`/api/checkout/quick-quote?${quoteParams.toString()}`,{headers:{Cookie:cookie,Accept:'application/json'}});
+    assert.equal(quoteResponse.statusCode,200,quoteResponse.body.slice(0,300));
+    const quote=JSON.parse(quoteResponse.body);
+    assert.deepEqual([Number(quote.unitPricePaisa),Number(quote.subtotalPaisa),Number(quote.shippingPaisa),Number(quote.totalPaisa)],[88000,88000,5500,93500],'UI quote uses authoritative canonical integer-paisa price and active configured delivery');
+    await client.execute('UPDATE product_variants SET status=0 WHERE product_id=?',[inhouseProdId]);
+    let inactiveVariantQuote;
+    try { inactiveVariantQuote=await httpRequest(baseUrl,`/api/checkout/quick-quote?${quoteParams.toString()}`,{headers:{Cookie:cookie,Accept:'application/json'}}); }
+    finally { await client.execute('UPDATE product_variants SET status=1 WHERE product_id=?',[inhouseProdId]); }
+    assert.equal(inactiveVariantQuote.statusCode,409,'products whose variants are all inactive cannot fall back to unvarianted stock');
+    const quickOrderPath='/order/quick-submit';
+    const requestKey=`quick-order-${Date.now()}-${Math.random().toString(36).slice(2,12)}`;
+    const payload={product_id:inhouseProdId,qty:1,size:'5 kg',color:'Family Pack',customer_name:customer.name,phone,address:'House 12, Quick Order Road',delivery_location_id:String(deliveryLocationId),quick_order_request_key:requestKey,price:1,shipping_charge:0,amount:1};
+    const before=await client.queryOne('SELECT stock_reserved FROM product_variants WHERE id=?',[variant5KgId]);
+    const missingCsrf=await httpRequest(baseUrl,quickOrderPath,{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(payload)});
+    assert.equal(missingCsrf.statusCode,403,'quick order rejects a missing CSRF token before persistence');
+    assert.equal(Number((await client.queryOne('SELECT COUNT(*) AS n FROM orders WHERE idempotency_key LIKE ?',[`quick:%:${requestKey}`])).n),0);
+
+    const submitted=await httpRequest(baseUrl,quickOrderPath,{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json',Accept:'application/json','x-csrf-token':csrf},body:JSON.stringify(payload)});
+    assert.equal(submitted.statusCode,200,submitted.body.slice(0,400));
+    const submittedData=JSON.parse(submitted.body);
+    assert.equal(submittedData.success,true);
+    assert.match(submittedData.redirect,/^\/order-success\//);
+    const order=await client.queryOne('SELECT id,customer_id,subtotal_paisa,shipping_paisa,total_paisa,paid_paisa,cod_due_paisa,payment_status,payment_method,order_status,traffic_source,utm_source,utm_medium,utm_campaign,analytics_consent_at,analytics_consent_version FROM orders WHERE invoice_no=?',[submittedData.invoice_id]);
+    assert.ok(order);
+    assert.equal(Number(order.customer_id),Number(customer.id));
+    assert.deepEqual([Number(order.subtotal_paisa),Number(order.shipping_paisa),Number(order.total_paisa),Number(order.paid_paisa),Number(order.cod_due_paisa)],[88000,5500,93500,0,93500],'client-supplied price and shipping fields do not affect canonical paisa totals');
+    assert.deepEqual([order.payment_status,order.payment_method,order.order_status],['unpaid','cod','pending']);
+    assert.deepEqual([order.traffic_source,order.utm_source,order.utm_medium,order.utm_campaign,order.analytics_consent_at,order.analytics_consent_version],['Direct','','','',null,null],'quick order does not activate or persist attribution without explicit D6 consent');
+    const item=await client.queryOne('SELECT product_id,variant_id,unit_price_paisa,qty,line_total_paisa FROM order_items WHERE order_id=?',[order.id]);
+    assert.deepEqual([Number(item.product_id),Number(item.variant_id),Number(item.unit_price_paisa),Number(item.qty),Number(item.line_total_paisa)],[Number(inhouseProdId),Number(variant5KgId),88000,1,88000]);
+    assert.equal(Number((await client.queryOne('SELECT COUNT(*) AS n FROM order_status_history WHERE order_id=?',[order.id])).n),1,'canonical initial status history is written');
+    assert.equal(Number((await client.queryOne("SELECT COUNT(*) AS n FROM stock_reservations WHERE order_id=? AND status='active'",[order.id])).n),1,'canonical inventory reservation is created');
+    assert.equal(Number((await client.queryOne('SELECT stock_reserved FROM product_variants WHERE id=?',[variant5KgId])).stock_reserved),Number(before.stock_reserved)+1);
+    assert.equal(Number((await client.queryOne('SELECT quantity FROM customer_cart_items WHERE customer_id=? AND product_id=? AND variant_id=?',[customer.id,inhouseProdId,variant5KgId])).quantity),2,'quick order does not consume unrelated saved-cart contents');
+
+    const replay=await httpRequest(baseUrl,quickOrderPath,{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json',Accept:'application/json','x-csrf-token':csrf},body:JSON.stringify(payload)});
+    assert.equal(replay.statusCode,200);
+    assert.equal(JSON.parse(replay.body).invoice_id,submittedData.invoice_id,'same request key replays the original invoice');
+    assert.equal(Number((await client.queryOne('SELECT COUNT(*) AS n FROM orders WHERE idempotency_key LIKE ?',[`quick:%:${requestKey}`])).n),1);
+    assert.equal(Number((await client.queryOne('SELECT stock_reserved FROM product_variants WHERE id=?',[variant5KgId])).stock_reserved),Number(before.stock_reserved)+1,'idempotent retry does not reserve stock twice');
+    const changed=await httpRequest(baseUrl,quickOrderPath,{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json',Accept:'application/json','x-csrf-token':csrf},body:JSON.stringify({...payload,qty:2})});
+    assert.equal(changed.statusCode,409,'request key cannot be reused with altered order data');
+  });
+
+  test('11. Phase 07 failed persistent-cart replacement rolls back instead of deleting valid saved data', { skip: !MYSQL_HOST ? SKIP_REASON : false }, async () => {
     const phone = `015${String(Date.now()).slice(-8)}`;
     const customer = await customerRepo.registerCustomer({ name: 'Cart rollback owner', phone, password: 'SecureCartPassword!2026' });
     await client.execute('INSERT INTO customer_cart_items (customer_id,product_id,variant_id,quantity) VALUES (?,?,?,2)', [customer.id, inhouseProdId, variant5KgId]);

@@ -177,16 +177,83 @@
     window.recalcQoTotal();
   };
 
+  var quickQuoteVersion = 0;
+  var quickQuoteTimer = null;
   window.recalcQoTotal = function () {
     var unit = Number((document.getElementById('qoUnitPriceVal') || {}).value || 0);
     var qty = Math.max(1, parseInt((document.getElementById('qoQty') || {}).value || '1', 10));
     var sel = document.getElementById('qoShipArea');
-    var ship = sel ? Number(sel.options[sel.selectedIndex].getAttribute('data-ship') || 60) : 60;
+    var selected = sel && sel.options[sel.selectedIndex];
+    var mysqlMode = Boolean(sel && sel.dataset.mysqlCheckout === 'true');
+    var totEl = document.getElementById('qoTotalPayable');
+    if (mysqlMode) {
+      var quoteVersion = ++quickQuoteVersion;
+      if (quickQuoteTimer) window.clearTimeout(quickQuoteTimer);
+      if (!sel.value || sel.disabled) { if (totEl) totEl.textContent = '—'; return; }
+      if (totEl) totEl.textContent = '…';
+      quickQuoteTimer = window.setTimeout(function () {
+        var payload = getSelectedQoPayload();
+        var params = new URLSearchParams({ product_id: String(payload.product_id), qty: String(payload.qty), size: payload.size, color: payload.color, delivery_location_id: sel.value });
+        fetch('/api/checkout/quick-quote?' + params.toString(), { headers: { Accept: 'application/json' } })
+          .then(function (response) { return response.json().then(function (data) { if (!response.ok || !data.success) throw new Error(data.message || 'Quote unavailable.'); return data; }); })
+          .then(function (quote) {
+            if (quoteVersion !== quickQuoteVersion) return;
+            if (totEl) totEl.textContent = (Number(quote.totalPaisa) / 100).toLocaleString('en-IN');
+            var priceEl = document.getElementById('qoPrice');
+            if (priceEl) priceEl.textContent = '৳' + (Number(quote.unitPricePaisa) / 100).toLocaleString('en-IN');
+          })
+          .catch(function () { if (quoteVersion === quickQuoteVersion && totEl) totEl.textContent = '—'; });
+      }, 150);
+      return;
+    }
+    var ship = selected ? Number(selected.getAttribute('data-ship') || 60) : 60;
     var sub = unit * qty;
     if (window.__FREE_SHIP_MIN > 0 && sub >= window.__FREE_SHIP_MIN) ship = 0;
-    var totEl = document.getElementById('qoTotalPayable');
     if (totEl) totEl.textContent = (sub + ship).toLocaleString('en-IN');
   };
+
+  function loadQuickOrderDeliveryLocations() {
+    var select = document.getElementById('qoShipArea');
+    if (!select || select.dataset.mysqlCheckout !== 'true' || select.dataset.locationsLoaded === 'true') return Promise.resolve();
+    if (select.dataset.locationsLoading === 'true') return select._locationsPromise || Promise.resolve();
+    select.dataset.locationsLoading = 'true';
+    select._locationsPromise = fetch('/api/checkout/delivery-locations', { headers: { Accept: 'application/json' } })
+      .then(function (response) { return response.json().then(function (data) { if (!response.ok || !data.success) throw new Error(data.message || 'Delivery areas are unavailable.'); return data.locations || []; }); })
+      .then(function (locations) {
+        select.innerHTML = '';
+        var placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = locations.length ? i18nStr('selectDeliveryLocation', 'Select a delivery area') : i18nStr('deliveryUnavailable', 'No configured delivery areas are available');
+        select.appendChild(placeholder);
+        locations.forEach(function (location) {
+          var option = document.createElement('option');
+          option.value = String(location.id);
+          option.setAttribute('data-charge-paisa', String(location.delivery_charge_paisa));
+          option.textContent = [location.upazila, location.district, location.division].filter(Boolean).join(', ') + ' — ৳' + (Number(location.delivery_charge_paisa) / 100).toLocaleString('en-IN');
+          select.appendChild(option);
+        });
+        select.disabled = locations.length === 0;
+        select.dataset.locationsLoaded = 'true';
+        window.recalcQoTotal();
+      })
+      .catch(function () {
+        select.innerHTML = '';
+        var option = document.createElement('option'); option.value = ''; option.textContent = i18nStr('deliveryUnavailable', 'Delivery areas could not be loaded. Refresh and try again.');
+        select.appendChild(option); select.disabled = true;
+      })
+      .finally(function () { delete select.dataset.locationsLoading; });
+    return select._locationsPromise;
+  }
+
+  function newQuickOrderRequestKey() {
+    if (window.crypto && typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();
+    if (window.crypto && typeof window.crypto.getRandomValues === 'function') {
+      var bytes = new Uint8Array(16);
+      window.crypto.getRandomValues(bytes);
+      return Array.prototype.map.call(bytes, function (value) { return value.toString(16).padStart(2, '0'); }).join('');
+    }
+    return (Date.now().toString(36) + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)).padEnd(24, '0').slice(0, 32);
+  }
 
   window.openQuickOrder = function (prod) {
     var modalEl = document.getElementById('quickOptionModal');
@@ -203,6 +270,9 @@
     }
     document.getElementById('qoImg').src = prod.image;
     document.getElementById('qoQty').value = 1;
+    var requestKey = document.getElementById('qoRequestKey');
+    if (requestKey) requestKey.value = newQuickOrderRequestKey();
+    loadQuickOrderDeliveryLocations();
 
     var sizesWrap = document.getElementById('qoSizesWrap');
     var sizes = String(prod.sizes || 'Standard').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
@@ -232,6 +302,8 @@
       colorsGroup.style.display = 'none';
       if (colorsWrap) colorsWrap.innerHTML = '';
     }
+    sizesWrap.onchange = window.recalcQoTotal;
+    if (colorsWrap) colorsWrap.onchange = window.recalcQoTotal;
 
     window.recalcQoTotal();
     window.bootstrap.Modal.getOrCreateInstance(modalEl).show();
@@ -375,6 +447,11 @@
       qoDirectForm.addEventListener('submit', function (e) {
         e.preventDefault();
         var submitBtn = document.getElementById('qoDirectSubmitBtn');
+        var deliverySelect = document.getElementById('qoShipArea');
+        if (deliverySelect && deliverySelect.dataset.mysqlCheckout === 'true' && (!deliverySelect.value || deliverySelect.disabled)) {
+          notify('error', i18nStr('deliveryUnavailable', 'Select an available delivery area before ordering.'));
+          return;
+        }
         var fd = new FormData(qoDirectForm);
         var body = Object.assign(getSelectedQoPayload(), Object.fromEntries(fd.entries()));
         if (submitBtn) submitBtn.disabled = true;
