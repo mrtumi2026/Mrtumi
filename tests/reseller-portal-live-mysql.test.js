@@ -13,7 +13,7 @@ const {migrateUp,migrateDown}=require('../src/db/migrator');
 const repo=require('../src/repositories/resellerPortalRepository');
 describe('Reseller portal canonical MySQL/MariaDB integration',()=>{
  let pool,client;
- before(async()=>{if(!MYSQL_HOST)return;pool=getPool();client=createQueryClient(pool);await migrateDown(pool,{steps:11});await migrateUp(pool);});
+ before(async()=>{if(!MYSQL_HOST)return;pool=getPool();client=createQueryClient(pool);await migrateDown(pool,{steps:12});await migrateUp(pool);});
  after(async()=>{if(MYSQL_HOST)await closePool();});
  test('authentication, audited profile rollback, tenant-owned orders/details, and integer-paisa transactions',{skip:!MYSQL_HOST?SKIP_REASON:false},async()=>{
    const suffix=String(Date.now()).slice(-8),hash=await bcrypt.hash('ResellerIntegrationPassword!2026',10);

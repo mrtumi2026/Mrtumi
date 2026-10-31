@@ -39,7 +39,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
   before(async () => {
     if (!MYSQL_HOST) return;
     pool = getPool(); db = createQueryClient(pool);
-    await migrateDown(pool,{steps:11}); await migrateUp(pool);
+    await migrateDown(pool,{steps:12}); await migrateUp(pool);
     const permissions = await db.queryAll(`SELECT id,name FROM permissions WHERE name IN (${permissionNames.map(()=>'?').join(',')})`,permissionNames);
     assert.equal(permissions.length,permissionNames.length,'0008 permission catalog is applied');
     const preexistingGrants=await db.queryOne(`SELECT COUNT(*) AS n FROM role_permissions rp JOIN permissions p ON p.id=rp.permission_id WHERE p.name IN (${permissionNames.map(()=>'?').join(',')})`,permissionNames);

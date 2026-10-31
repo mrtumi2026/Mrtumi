@@ -35,7 +35,7 @@ describe('Phase 06 — Live MySQL 8.0 schema, product, stock ledger & purchase r
     if (!MYSQL_HOST) return;
     pool = getPool();
     db = createQueryClient(pool);
-    await migrateDown(pool, { steps: 11 });
+    await migrateDown(pool, { steps: 12 });
     await migrateUp(pool);
     const category = await db.execute("INSERT INTO categories (name_bn,name_en,slug,status) VALUES ('পরীক্ষা','Test','phase06-mysql-test',1)");
     const supplier = await repo.createSupplier({ name:'Phase 06 MySQL Supplier',supplier_code:'P06-MYSQL-SUP',phone:'+8801700000001' },{id:null});
