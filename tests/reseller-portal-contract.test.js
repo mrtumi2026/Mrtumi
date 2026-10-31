@@ -18,9 +18,10 @@ test('reseller order detail denies a foreign tenant and queries canonical order 
 test('reseller transaction reads use canonical tx_type and integer amount_paisa with a tenant predicate',async()=>{
  const pool=fakePool(sql=>sql.includes('COUNT(*)')?[{total:1}]:[{id:8,amount_paisa:'12345'}]);const result=await repo.listTransactions(11,'deposit',{page:1},pool);const data=pool.calls[1];assert.match(data.sql,/tx_type,amount_paisa/);assert.match(data.sql,/reseller_id=\? AND tx_type=\?/);assert.ok(!/amount_paisa\s*\//.test(data.sql));assert.deepEqual(data.params,[11,'deposit',20,0]);assert.equal(result.transactions[0].amount_paisa,'12345');
 });
-test('reseller order and wallet mutations stay CSRF protected and fail closed in MySQL mode',()=>{
+test('reseller mutations stay CSRF protected and MySQL withdrawals use the transactional wallet repository',()=>{
  const fs=require('node:fs');const source=fs.readFileSync(require.resolve('../src/routes/resellerPanel'),'utf8');
  for(const route of ['/reseller/orders/create','/reseller/deposits/create','/reseller/withdrawals/create','/reseller/profile','/reseller/logout']) assert.match(source,new RegExp(`router\\.post\\(['"]${route.replaceAll('/','\\/')}['"],\\s*requireCsrf`));
+ assert.match(source,/partnerWithdrawalRepository\.requestResellerWithdrawal/);
  assert.match(source,/if \(mysqlActive\(\)\) return res\.status\(409\)\.render\('reseller\/unsupported-operation'/);
  assert.match(source,/rotateResellerSession\(req, reseller/);assert.match(source,/rotateResellerSession\(req, null/);
 });

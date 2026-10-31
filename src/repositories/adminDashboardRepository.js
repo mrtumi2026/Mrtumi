@@ -37,12 +37,12 @@ async function getDashboardData({ pool = null, now = new Date() } = {}) {
   const [orderTotals, todayTotals, trendRows, trafficRows, statusRows, productTotals, lowStockTotals, products, categories, recentOrders, finance, expenses] = await Promise.all([
     client.queryOne(`SELECT COUNT(*) AS total_orders,
       SUM(order_status='pending') AS pending_orders,
-      SUM(order_status='completed') AS delivered_count,
-      COALESCE(SUM(CASE WHEN order_status='completed' THEN total_paisa ELSE 0 END),0) AS delivered_paisa
+      SUM(order_status IN ('delivered','completed')) AS delivered_count,
+      COALESCE(SUM(CASE WHEN order_status IN ('delivered','completed') THEN total_paisa ELSE 0 END),0) AS delivered_paisa
       FROM orders`),
     client.queryOne(`SELECT COUNT(*) AS order_count,
       COALESCE(SUM(total_paisa),0) AS revenue_paisa,
-      COALESCE(SUM(CASE WHEN order_status='completed' THEN total_paisa ELSE 0 END),0) AS delivered_paisa
+      COALESCE(SUM(CASE WHEN order_status IN ('delivered','completed') THEN total_paisa ELSE 0 END),0) AS delivered_paisa
       FROM orders WHERE created_at >= ? AND created_at < ? AND order_status <> 'cancelled'`, [dayStart, dayEnd]),
     client.queryAll(`SELECT DATE(DATE_ADD(created_at, INTERVAL 6 HOUR)) AS dhaka_day, COUNT(*) AS count
       FROM orders WHERE created_at >= ? AND created_at < ? GROUP BY dhaka_day`, [trendStart, dayEnd]),

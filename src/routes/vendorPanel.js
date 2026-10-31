@@ -7,6 +7,7 @@ const { createRateLimiter } = require('../middleware/rateLimit');
 const upload = require('../middleware/upload');
 const { env } = require('../config/env');
 const vendorPortal = require('../repositories/vendorPortalRepository');
+const partnerWithdrawalRepository = require('../repositories/partnerWithdrawalRepository');
 const mysqlActive = () => env.db.client === 'mysql';
 
 const router = express.Router();
@@ -398,8 +399,17 @@ router.get('/vendor/withdrawals', (req, res) => {
   res.render('vendor/withdrawals', { vendor, withdrawals });
 });
 
-router.post('/vendor/withdrawals/request', requireCsrf, (req, res) => {
-  if (mysqlActive()) return res.status(409).render('vendor/unsupported-operation', { message: 'Withdrawal requests are disabled until transactional, locked balance settlement and approval workflows are implemented. No balance was changed.' });
+router.post('/vendor/withdrawals/request', requireCsrf, async (req, res, next) => {
+  if (mysqlActive()) {
+    try {
+      await partnerWithdrawalRepository.requestVendorWithdrawal(req.session.vendorUser.id, { amount: req.body.amount, method: req.body.method, accountNumber: req.body.account_number }, { ip: req.ip, userAgent: req.get('user-agent') });
+      req.flash('success', 'উইথড্র রিকোয়েস্ট অ্যাডমিনের কাছে পাঠানো হয়েছে।');
+      return res.redirect('/vendor/withdrawals');
+    } catch (error) {
+      if (['CONFLICT', 'NOT_FOUND'].includes(error.code) || error instanceof TypeError || error instanceof RangeError) { req.flash('error', error.message); return res.redirect('/vendor/withdrawals'); }
+      return next(error);
+    }
+  }
   const vendor = db.get('SELECT * FROM vendors WHERE id = ?', req.session.vendorUser.id);
   const amount = Number(req.body.amount || 0);
   const method = String(req.body.method || 'bKash').trim();

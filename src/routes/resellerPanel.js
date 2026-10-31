@@ -6,6 +6,7 @@ const { requireCsrf } = require('../middleware/csrf');
 const { createRateLimiter } = require('../middleware/rateLimit');
 const { env } = require('../config/env');
 const resellerPortal = require('../repositories/resellerPortalRepository');
+const partnerWithdrawalRepository = require('../repositories/partnerWithdrawalRepository');
 const mysqlActive = () => env.db.client === 'mysql';
 
 function activeResellerSession(req) { return req.resellerUser !== undefined ? req.resellerUser : req.session && req.session.resellerUser; }
@@ -360,8 +361,17 @@ router.get('/reseller/withdrawals', async (req, res, next) => {
   res.render('reseller/wallet', { mode: 'withdrawal', reseller, transactions, canonicalWallet: false });
 });
 
-router.post('/reseller/withdrawals/create', requireCsrf, (req, res) => {
-  if (mysqlActive()) return res.status(409).render('reseller/unsupported-operation',{message:'উইথড্র আবেদন বন্ধ। অনুমোদিত settlement calculation, approval ও audit policy না থাকায় কোনো অর্থ-সম্পর্কিত পরিবর্তন করা হবে না।'});
+router.post('/reseller/withdrawals/create', requireCsrf, async (req, res, next) => {
+  if (mysqlActive()) {
+    try {
+      await partnerWithdrawalRepository.requestResellerWithdrawal(req.session.resellerUser.id, { amount: req.body.amount, method: req.body.method, accountNumber: req.body.trx_id }, { ip: req.ip, userAgent: req.get('user-agent') });
+      req.flash('success', 'উইথড্র রিকোয়েস্ট অ্যাডমিনের কাছে পাঠানো হয়েছে।');
+      return res.redirect('/reseller/withdrawals');
+    } catch (error) {
+      if (['CONFLICT', 'NOT_FOUND'].includes(error.code) || error instanceof TypeError || error instanceof RangeError) { req.flash('error', error.message); return res.redirect('/reseller/withdrawals'); }
+      return next(error);
+    }
+  }
   const reseller = db.get('SELECT * FROM resellers WHERE id = ?', req.session.resellerUser.id);
   const amount = Number(req.body.amount || 0);
   const method = String(req.body.method || 'bKash').trim();

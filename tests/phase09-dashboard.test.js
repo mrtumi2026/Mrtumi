@@ -289,6 +289,7 @@ describe('Phase 09 dashboard repository contract', () => {
     assert.deepEqual(data.trendData, Array(7).fill(0));
     assert.ok(calls.every((c) => Array.isArray(c.params)), 'repository parameterizes all DB calls');
     assert.ok(calls.some((c) => c.sql.includes('total_paisa')));
+    assert.ok(calls.some((c) => c.sql.includes("order_status IN ('delivered','completed')")), 'delivered metrics include the canonical delivered state and legacy completed state');
     assert.ok(calls.some((c) => c.sql.includes('amount_paisa')));
     const failingPool = { async query() { const err = new Error('private connection string'); err.code = 'ER_NO_SUCH_TABLE'; throw err; } };
     await assert.rejects(repo.getDashboardData({ pool: failingPool }), (err) => {
