@@ -89,10 +89,9 @@
             <ul id="side-menu">
               <li><a href="/reseller/dashboard"><i data-feather="airplay"></i><span><%= t('reseller.dashboard') %></span></a></li>
               <li><a href="/reseller/products"><i data-feather="grid"></i><span><%= t('reseller.catalog') %></span></a></li>
-              <li><a href="/reseller/orders/create"><i data-feather="plus-circle"></i><span><%= locale === 'bn' ? 'নতুন অর্ডার প্লেস' : 'Place Reseller Order' %></span></a></li>
+              <% if(typeof allowOrderCreation==='undefined' || allowOrderCreation){ %><li><a href="/reseller/orders/create"><i data-feather="plus-circle"></i><span><%= locale === 'bn' ? 'নতুন অর্ডার প্লেস' : 'Place Reseller Order' %></span></a></li><% } %>
               <li><a href="/reseller/orders"><i data-feather="shopping-cart"></i><span><%= t('reseller.myOrders') %></span></a></li>
-              <li><a href="/reseller/deposits"><i data-feather="credit-card"></i><span><%= locale === 'bn' ? 'ডিপোজিট যুক্ত করুন' : 'Add Deposit' %></span></a></li>
-              <li><a href="/reseller/withdrawals"><i data-feather="dollar-sign"></i><span><%= t('reseller.wallet') %></span></a></li>
+              <% if(typeof allowFinancialMutations!=='undefined' && !allowFinancialMutations){ %><li><a href="/reseller/transactions"><i data-feather="credit-card"></i><span><%= locale==='bn'?'লেনদেনের ইতিহাস':'Transaction history' %></span></a></li><% } else { %><li><a href="/reseller/deposits"><i data-feather="credit-card"></i><span><%= locale === 'bn' ? 'ডিপোজিট যুক্ত করুন' : 'Add Deposit' %></span></a></li><li><a href="/reseller/withdrawals"><i data-feather="dollar-sign"></i><span><%= t('reseller.wallet') %></span></a></li><% } %>
               <li><a href="/reseller/profile"><i data-feather="settings"></i><span><%= locale === 'bn' ? 'প্রোফাইল সেটিংস' : 'Shop Profile' %></span></a></li>
             </ul>
           </nav>

@@ -3,6 +3,21 @@ const bcrypt = require('bcryptjs');
 const db = require('../db/database');
 const { requireReseller } = require('../middleware/auth');
 const { requireCsrf } = require('../middleware/csrf');
+const { env } = require('../config/env');
+const resellerPortal = require('../repositories/resellerPortalRepository');
+const mysqlActive = () => env.db.client === 'mysql';
+
+function activeResellerSession(req) { return req.resellerUser !== undefined ? req.resellerUser : req.session && req.session.resellerUser; }
+
+function rotateResellerSession(req, reseller, callback) {
+  const preserved = { cart: Array.isArray(req.session.cart) ? req.session.cart : [], locale: req.session.locale };
+  req.session.regenerate((error) => {
+    if (error) return callback(error);
+    Object.assign(req.session, preserved);
+    if (reseller) req.session.resellerUser = reseller;
+    req.session.save(callback);
+  });
+}
 
 const router = express.Router();
 
@@ -17,18 +32,19 @@ function generateInvoiceId() {
 
 // ─── Public Reseller Auth Routes ───
 router.get('/reseller', (req, res) => {
-  return res.redirect(req.session && req.session.resellerUser ? '/reseller/dashboard' : '/reseller/login');
+  if (!activeResellerSession(req) && req.session) delete req.session.resellerUser;
+  return res.redirect(activeResellerSession(req) ? '/reseller/dashboard' : '/reseller/login');
 });
 
 router.get('/reseller/login', (req, res) => {
-  if (req.session && req.session.resellerUser) {
-    return res.redirect('/reseller/dashboard');
-  }
+  if (activeResellerSession(req)) return res.redirect('/reseller/dashboard');
+  if (req.session) delete req.session.resellerUser;
   res.render('reseller/auth', { mode: 'login', error: null });
 });
 
-router.post('/reseller/login', requireCsrf, (req, res) => {
+router.post('/reseller/login', requireCsrf, async (req, res, next) => {
   const identifier = String(req.body.identifier || '').trim();
+  if (mysqlActive()) { try { const reseller = await resellerPortal.authenticate(identifier, req.body.password); if (!reseller) return res.status(401).render('reseller/auth', { mode: 'login', error: 'রিসেলার লগইন তথ্য সঠিক নয় অথবা অ্যাকাউন্ট নিষ্ক্রিয়।' }); return rotateResellerSession(req, reseller, error => { if (error) return next(error); req.flash('success', `স্বাগতম রিসেলার প্যানেলে, ${reseller.name}!`); return res.redirect('/reseller/dashboard'); }); } catch (error) { return next(error); } }
   const password = String(req.body.password || '');
 
   const reseller = db.get(
@@ -64,14 +80,14 @@ router.post('/reseller/login', requireCsrf, (req, res) => {
 });
 
 router.get('/reseller/register', (req, res) => {
-  if (req.session && req.session.resellerUser) {
-    return res.redirect('/reseller/dashboard');
-  }
+  if (activeResellerSession(req)) return res.redirect('/reseller/dashboard');
+  if (req.session) delete req.session.resellerUser;
   res.render('reseller/auth', { mode: 'register', error: null });
 });
 
-router.post('/reseller/register', requireCsrf, (req, res) => {
+router.post('/reseller/register', requireCsrf, async (req, res, next) => {
   const { name, shop_name, phone, email, password } = req.body;
+  if (mysqlActive()) { try { const reseller = await resellerPortal.register({ name, shop_name, phone, email, password }); return rotateResellerSession(req, reseller, error => { if (error) return next(error); req.flash('success', 'রিসেলার অ্যাকাউন্ট তৈরি হয়েছে। যাচাইকরণের পর আর্থিক সুবিধা চালু হবে।'); return res.redirect('/reseller/dashboard'); }); } catch (error) { return next(error); } }
   if (!name || !phone || !password) {
     return res.render('reseller/auth', {
       mode: 'register',
@@ -110,15 +126,15 @@ router.post('/reseller/register', requireCsrf, (req, res) => {
   res.redirect('/reseller/dashboard');
 });
 
-router.post('/reseller/logout', requireCsrf, (req, res) => {
-  delete req.session.resellerUser;
-  res.redirect('/reseller/login');
+router.post('/reseller/logout', requireCsrf, (req, res, next) => {
+  return rotateResellerSession(req, null, error => { if (error) return next(error); return res.redirect('/reseller/login'); });
 });
 
 // ─── Protected Reseller Portal Routes ───
-router.use('/reseller', requireReseller);
+router.use('/reseller', (req,res,next)=>{if(mysqlActive()){res.locals.allowOrderCreation=false;res.locals.allowFinancialMutations=false;}next();}, requireReseller);
 
-router.get('/reseller/dashboard', (req, res) => {
+router.get('/reseller/dashboard', async (req, res, next) => {
+  if (mysqlActive()) { try { const id=req.session.resellerUser.id; const [reseller,summary,orders,hotProducts]=await Promise.all([resellerPortal.getProfile(id),resellerPortal.getDashboardSummary(id),resellerPortal.listOrders(id,{page:1,perPage:8}),resellerPortal.listPublicProducts()]); return res.render('reseller/dashboard',{reseller,totalOrders:Number(summary.total_orders||0),deliveredCount:Number(summary.delivered_orders||0),pendingCount:Number(summary.pending_orders||0),totalEstimatedProfit:0,recentOrders:orders.orders,hotProducts:hotProducts.slice(0,6),allowOrderCreation:false,recordedMargin:true,canonicalDashboard:true}); } catch(error) { return next(error); } }
   const reseller = db.get('SELECT * FROM resellers WHERE id = ?', req.session.resellerUser.id);
   const myOrders = db.all(
     `SELECT o.*, COALESCE(os.name, o.status) AS status_label, COALESCE(os.badge_class, 'sb-1') AS badge_class
@@ -145,6 +161,7 @@ router.get('/reseller/dashboard', (req, res) => {
   );
 
   res.render('reseller/dashboard', {
+    canonicalDashboard: false,
     reseller,
     totalOrders: myOrders.length,
     deliveredCount: deliveredOrders.length,
@@ -156,8 +173,9 @@ router.get('/reseller/dashboard', (req, res) => {
 });
 
 // ─── Reseller Wholesale Product Catalog ───
-router.get('/reseller/products', (req, res) => {
+router.get('/reseller/products', async (req, res, next) => {
   const q = String(req.query.q || '').trim();
+  if (mysqlActive()) { try { const products=await resellerPortal.listPublicProducts(q); return res.render('reseller/products',{products,searchQuery:q,allowOrderCreation:false,canonicalCatalog:true}); } catch(error) { return next(error); } }
   const products = db.all(
     `SELECT p.*, c.name AS category_name,
             CASE WHEN p.wholesale_price > 0 THEN p.wholesale_price ELSE ROUND(p.new_price * 0.85) END AS reseller_cost
@@ -169,11 +187,12 @@ router.get('/reseller/products', (req, res) => {
     `%${q}%`,
     `%${q}%`
   );
-  res.render('reseller/products', { products, searchQuery: q });
+  res.render('reseller/products', { products, searchQuery: q, canonicalCatalog: false });
 });
 
 // ─── Reseller Dropship Order Builder (Custom Selling Price + Live Profit) ───
-router.get('/reseller/orders/create', (req, res) => {
+router.get('/reseller/orders/create', (req, res, next) => {
+  if (mysqlActive()) return res.status(409).render('reseller/unsupported-operation',{message:'অর্ডার তৈরি আপাতত বন্ধ। অনুমোদিত reseller-order pricing, stock allocation ও audit rules সংজ্ঞায়িত না হওয়া পর্যন্ত কোনো financial/order mutation গ্রহণ করা হবে না।'});
   const products = db.all(
     `SELECT p.*,
             CASE WHEN p.wholesale_price > 0 THEN p.wholesale_price ELSE ROUND(p.new_price * 0.85) END AS reseller_cost
@@ -192,6 +211,7 @@ router.get('/reseller/orders/create', (req, res) => {
 });
 
 router.post('/reseller/orders/create', requireCsrf, (req, res) => {
+  if (mysqlActive()) return res.status(409).render('reseller/unsupported-operation',{message:'অর্ডার তৈরি আপাতত বন্ধ। অনুমোদিত reseller-order pricing, stock allocation ও audit rules সংজ্ঞায়িত না হওয়া পর্যন্ত কোনো financial/order mutation গ্রহণ করা হবে না।'});
   const reseller = db.get('SELECT * FROM resellers WHERE id = ?', req.session.resellerUser.id);
   const {
     product_id,
@@ -272,7 +292,13 @@ router.post('/reseller/orders/create', requireCsrf, (req, res) => {
   res.redirect('/reseller/orders');
 });
 
-router.get('/reseller/orders', (req, res) => {
+router.get('/reseller/orders/:id', async (req, res, next) => {
+  if (!mysqlActive()) return res.redirect('/reseller/orders');
+  try { const data=await resellerPortal.getOrderDetails(req.session.resellerUser.id,req.params.id); return res.render('reseller/order-detail',{...data,order:data.order,items:data.items}); } catch(error) { if(error.statusCode===404) return res.status(404).render('reseller/unsupported-operation',{message:'অর্ডার পাওয়া যায়নি।'}); return next(error); }
+});
+
+router.get('/reseller/orders', async (req, res, next) => {
+  if (mysqlActive()) { try { const result=await resellerPortal.listOrders(req.session.resellerUser.id,{page:req.query.page||1,perPage:20,status:req.query.status||'',search:req.query.q||''}); return res.render('reseller/orders',{...result,orders:result.orders,canonicalOrders:true}); } catch(error) { return next(error); } }
   const orders = db.all(
     `SELECT o.*, COALESCE(os.name, o.status) AS status_label, COALESCE(os.badge_class, 'sb-1') AS badge_class
      FROM orders o
@@ -281,20 +307,26 @@ router.get('/reseller/orders', (req, res) => {
      ORDER BY o.id DESC`,
     req.session.resellerUser.id
   );
-  res.render('reseller/orders', { orders });
+  res.render('reseller/orders', { orders, canonicalOrders: false });
 });
 
 // ─── Reseller Deposits & Withdrawals ───
-router.get('/reseller/deposits', (req, res) => {
+router.get('/reseller/transactions', async (req,res,next)=>{
+  if(!mysqlActive()) return res.redirect('/reseller/deposits');
+  try{const id=req.session.resellerUser.id;const [reseller,result]=await Promise.all([resellerPortal.getProfile(id),resellerPortal.listTransactions(id,req.query.type||'',{page:req.query.page||1})]);return res.render('reseller/wallet',{mode:'history',reseller,transactions:result.transactions,pagination:result,canonicalWallet:true,transactionType:result.type});}catch(error){return next(error);}
+});
+router.get('/reseller/deposits', async (req, res, next) => {
+  if (mysqlActive()) { try { const id=req.session.resellerUser.id; const [reseller,result]=await Promise.all([resellerPortal.getProfile(id),resellerPortal.listTransactions(id,'deposit',{page:req.query.page||1})]); return res.render('reseller/wallet',{mode:'deposit',reseller,transactions:result.transactions,pagination:result,canonicalWallet:true}); } catch(error) { return next(error); } }
   const reseller = db.get('SELECT * FROM resellers WHERE id = ?', req.session.resellerUser.id);
   const transactions = db.all(
     "SELECT * FROM reseller_transactions WHERE reseller_id = ? AND type = 'deposit' ORDER BY id DESC",
     reseller.id
   );
-  res.render('reseller/wallet', { mode: 'deposit', reseller, transactions });
+  res.render('reseller/wallet', { mode: 'deposit', reseller, transactions, canonicalWallet: false });
 });
 
 router.post('/reseller/deposits/create', requireCsrf, (req, res) => {
+  if (mysqlActive()) return res.status(409).render('reseller/unsupported-operation',{message:'ডিপোজিট আবেদন বন্ধ। অনুমোদিত wallet reconciliation, review ও audit policy না থাকায় কোনো অর্থ-সম্পর্কিত পরিবর্তন করা হবে না।'});
   const resellerId = req.session.resellerUser.id;
   const amount = Number(req.body.amount || 0);
   const method = String(req.body.method || 'bKash').trim();
@@ -316,16 +348,18 @@ router.post('/reseller/deposits/create', requireCsrf, (req, res) => {
   res.redirect('/reseller/deposits');
 });
 
-router.get('/reseller/withdrawals', (req, res) => {
+router.get('/reseller/withdrawals', async (req, res, next) => {
+  if (mysqlActive()) { try { const id=req.session.resellerUser.id; const [reseller,result]=await Promise.all([resellerPortal.getProfile(id),resellerPortal.listTransactions(id,'withdrawal',{page:req.query.page||1})]); return res.render('reseller/wallet',{mode:'withdrawal',reseller,transactions:result.transactions,pagination:result,canonicalWallet:true}); } catch(error) { return next(error); } }
   const reseller = db.get('SELECT * FROM resellers WHERE id = ?', req.session.resellerUser.id);
   const transactions = db.all(
     "SELECT * FROM reseller_transactions WHERE reseller_id = ? AND type = 'withdrawal' ORDER BY id DESC",
     reseller.id
   );
-  res.render('reseller/wallet', { mode: 'withdrawal', reseller, transactions });
+  res.render('reseller/wallet', { mode: 'withdrawal', reseller, transactions, canonicalWallet: false });
 });
 
 router.post('/reseller/withdrawals/create', requireCsrf, (req, res) => {
+  if (mysqlActive()) return res.status(409).render('reseller/unsupported-operation',{message:'উইথড্র আবেদন বন্ধ। অনুমোদিত settlement calculation, approval ও audit policy না থাকায় কোনো অর্থ-সম্পর্কিত পরিবর্তন করা হবে না।'});
   const reseller = db.get('SELECT * FROM resellers WHERE id = ?', req.session.resellerUser.id);
   const amount = Number(req.body.amount || 0);
   const method = String(req.body.method || 'bKash').trim();
@@ -353,13 +387,15 @@ router.post('/reseller/withdrawals/create', requireCsrf, (req, res) => {
 });
 
 // ─── Reseller Profile ───
-router.get('/reseller/profile', (req, res) => {
+router.get('/reseller/profile', async (req, res, next) => {
+  if (mysqlActive()) { try { return res.render('reseller/profile', { reseller: await resellerPortal.getProfile(req.session.resellerUser.id), canonicalProfile: true }); } catch (error) { return next(error); } }
   const reseller = db.get('SELECT * FROM resellers WHERE id = ?', req.session.resellerUser.id);
   res.render('reseller/profile', { reseller });
 });
 
-router.post('/reseller/profile', requireCsrf, (req, res) => {
+router.post('/reseller/profile', requireCsrf, async (req, res, next) => {
   const { name, shop_name, phone, email, new_password } = req.body;
+  if (mysqlActive()) { try { const updated = await resellerPortal.updateProfile(req.session.resellerUser.id, { name, shop_name, email, new_password }); const current = await resellerPortal.getProfile(updated.id); const sessionUser = { id: current.id, name: current.name, shop_name: current.shop_name, phone: current.phone, email: current.email }; return rotateResellerSession(req, sessionUser, error => { if (error) return next(error); req.flash('success', 'রিসেলার প্রোফাইল আপডেট হয়েছে।'); return res.redirect('/reseller/profile'); }); } catch (error) { return next(error); } }
   const rId = req.session.resellerUser.id;
   db.run(
     'UPDATE resellers SET name = ?, shop_name = ?, phone = ?, email = ? WHERE id = ?',

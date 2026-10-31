@@ -1,9 +1,10 @@
-<%- include('partials/layout-top', { title: mode === 'deposit' ? 'Reseller Deposits' : 'Withdraw Profit' }) %>
+<% const formatPaisa = value => { const n=BigInt(String(value||0)); const whole=n/100n; const cents=(n%100n).toString().padStart(2,'0'); return whole.toLocaleString('en-IN')+'.'+cents; }; %>
+<%- include('partials/layout-top', { title: mode === 'history' ? 'Reseller Transaction History' : mode === 'deposit' ? 'Reseller Deposits' : 'Withdraw Profit' }) %>
 
 <div class="row g-3">
   <div class="col-lg-5">
     <div class="tbl-card p-4">
-      <% if (mode === 'deposit') { %>
+      <% if (canonicalWallet) { %><div class="alert alert-info mb-0">এই পোর্টালে canonical tx_type এবং amount_paisa অনুযায়ী লেনদেনের ইতিহাস দেখানো হয়। অনুমোদিত balance/settlement নীতি না থাকায় বর্তমান উত্তোলনযোগ্য ব্যালেন্স দেখানো বা কোনো আর্থিক আবেদন গ্রহণ করা হচ্ছে না।</div><% } else if (mode === 'deposit') { %>
         <div class="p-3 rounded-3 bg-info bg-opacity-10 border border-info mb-3 text-center">
           <div class="small text-muted">বর্তমান সিকিউরিটি ডিপোজিট ব্যালেন্স</div>
           <div class="display-6 fw-bold text-primary">৳<%= Number(reseller.deposit_amount || 0).toLocaleString('en-IN') %></div>
@@ -63,14 +64,15 @@
   <div class="col-lg-7">
     <div class="tbl-card">
       <div class="tbl-card-head">
-        <h4><%= mode === 'deposit' ? 'ডিপোজিট লেনদেন সমূহ' : 'উইথড্রয়াল হিস্ট্রি' %> (<%= transactions.length %>)</h4>
+        <h4><%= mode === 'history' ? 'সকল ওয়ালেট লেনদেন' : mode === 'deposit' ? 'ডিপোজিট লেনদেন সমূহ' : 'উইথড্রয়াল হিস্ট্রি' %> (<%= canonicalWallet ? pagination.total : transactions.length %>)</h4>
       </div>
       <div class="tbl-card-body">
+        <% if(canonicalWallet && mode==='history'){ %><form method="get" action="/reseller/transactions" class="d-flex gap-2 mb-3"><input class="form-control" name="type" value="<%= transactionType||'' %>" placeholder="লেনদেনের ধরন (ঐচ্ছিক)"><button class="btn btn-outline-primary">ফিল্টার</button><a href="/reseller/transactions" class="btn btn-link">সব</a></form><% } %>
         <table class="table clean mb-0">
           <thead>
             <tr>
               <th>#</th>
-              <th>মাধ্যম</th>
+              <th><%= canonicalWallet ? (mode==='history'?'ধরন':'মাধ্যম') : 'মাধ্যম' %></th>
               <th>নম্বর / TrxID</th>
               <th>পরিমাণ</th>
               <th>স্ট্যাটাস</th>
@@ -84,9 +86,9 @@
             <% transactions.forEach(function(tx) { %>
               <tr>
                 <td>#<%= tx.id %></td>
-                <td><%= tx.method %></td>
+                <td><%= canonicalWallet && mode==='history' ? tx.tx_type : tx.method %></td>
                 <td><code><%= tx.trx_id %></code></td>
-                <td class="fw-bold">৳<%= Number(tx.amount).toLocaleString('en-IN') %></td>
+                <td class="fw-bold">৳<%= canonicalWallet ? formatPaisa(tx.amount_paisa) : Number(tx.amount).toLocaleString('en-IN') %></td>
                 <td><span class="sb <%= tx.status === 'approved' ? 'sb-6' : 'sb-1' %>"><%= tx.status %></span></td>
                 <td class="small text-muted"><%= String(tx.created_at).slice(0, 10) %></td>
               </tr>
@@ -95,6 +97,7 @@
         </table>
       </div>
     </div>
+    <% if(canonicalWallet && pagination.totalPages>1){ %><nav class="mt-3"><ul class="pagination"><% if(pagination.page>1){ %><li class="page-item"><a class="page-link" href="?page=<%= pagination.page-1 %>">আগের</a></li><% } %><li class="page-item disabled"><span class="page-link"><%= pagination.page %> / <%= pagination.totalPages %></span></li><% if(pagination.page<pagination.totalPages){ %><li class="page-item"><a class="page-link" href="?page=<%= pagination.page+1 %>">পরের</a></li><% } %></ul></nav><% } %>
   </div>
 </div>
 

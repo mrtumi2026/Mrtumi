@@ -167,7 +167,8 @@ function requireVendor(req, res, next) {
 }
 
 function requireReseller(req, res, next) {
-  if (!req.session || !req.session.resellerUser) {
+  if (!req.session || !req.session.resellerUser || (req.resellerUser !== undefined && !req.resellerUser)) {
+    if (req.session) delete req.session.resellerUser;
     return res.redirect('/reseller/login');
   }
   return next();

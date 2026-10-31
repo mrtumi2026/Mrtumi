@@ -131,10 +131,10 @@ async function findVendorById(id, poolOverride = null, config = env) {
 async function findResellerById(id, poolOverride = null, config = env) {
   if (!id) return null;
   if (!isMysqlMode(config) && !poolOverride) {
-    return sqliteDb.get('SELECT * FROM resellers WHERE id = ?', id) || null;
+    return sqliteDb.get('SELECT id,name,shop_name,phone,email,verified,status FROM resellers WHERE id = ? AND status = 1', id) || null;
   }
   const client = getClient(poolOverride);
-  return client.queryOne('SELECT * FROM `resellers` WHERE `id` = ? LIMIT 1', [id]);
+  return client.queryOne('SELECT `id`,`name`,`shop_name`,`phone`,`email`,`verified`,`status` FROM `resellers` WHERE `id` = ? AND `status` = 1 LIMIT 1', [id]);
 }
 
 async function findCustomerById(id, poolOverride = null, config = env) {

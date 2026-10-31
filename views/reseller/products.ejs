@@ -13,7 +13,7 @@
 
 <div class="row g-3">
   <% products.forEach(function(p) {
-       const margin = Math.max(0, Number(p.new_price) - Number(p.reseller_cost));
+       const margin = canonicalCatalog ? null : Math.max(0, Number(p.new_price) - Number(p.reseller_cost));
   %>
     <div class="col-md-6 col-xl-4">
       <div class="tbl-card h-100 p-3 d-flex flex-column">
@@ -22,36 +22,24 @@
           <div>
             <span class="badge bg-light text-secondary border mb-1"><%= p.category_name || brand.defaultProductBrand %></span>
             <h6 class="fw-bold mb-1"><%= p.name %></h6>
-            <div class="small text-muted">স্টক: <strong><%= p.stock %></strong> • কোড: <%= p.code %></div>
+            <div class="small text-muted">স্টক: <strong><%= canonicalCatalog ? Number(p.available_stock||0) : p.stock %></strong> • কোড: <%= canonicalCatalog ? p.sku : p.code %></div>
           </div>
         </div>
 
         <div class="bg-light rounded-3 p-2.5 border mb-3 small" style="padding:10px;">
-          <div class="d-flex justify-content-between mb-1">
-            <span>আপনার পাইকারি ক্রয়মূল্য:</span>
-            <strong class="text-primary fs-6">৳<%= Number(p.reseller_cost).toLocaleString('en-IN') %></strong>
-          </div>
-          <div class="d-flex justify-content-between mb-1">
-            <span>প্রস্তাবিত খুচরা বিক্রয়মূল্য:</span>
-            <strong>৳<%= Number(p.new_price).toLocaleString('en-IN') %>+</strong>
-          </div>
-          <div class="d-flex justify-content-between border-top pt-1 text-success fw-bold">
-            <span>প্রতি পিস সম্ভাব্য লাভ:</span>
-            <span>৳<%= margin %>+ (ইচ্ছেমতো দাম বাড়াতে পারবেন)</span>
-          </div>
+          <% if(canonicalCatalog){ %><div class="d-flex justify-content-between"><span>উপলভ্য স্টক</span><strong><%= Number(p.available_stock||0) %></strong></div><p class="text-muted mb-0 mt-2">রিসেলার মূল্য, লাভ বা অর্ডার ফি নির্ধারিত নয়। কোনো অর্ডার এখানে তৈরি করা যাবে না।</p><% } else { %>
+          <div class="d-flex justify-content-between mb-1"><span>আপনার পাইকারি ক্রয়মূল্য:</span><strong class="text-primary fs-6">৳<%= Number(p.reseller_cost).toLocaleString('en-IN') %></strong></div><div class="d-flex justify-content-between mb-1"><span>প্রস্তাবিত খুচরা বিক্রয়মূল্য:</span><strong>৳<%= Number(p.new_price).toLocaleString('en-IN') %>+</strong></div><div class="d-flex justify-content-between border-top pt-1 text-success fw-bold"><span>প্রতি পিস সম্ভাব্য লাভ:</span><span>৳<%= margin %>+</span></div><% } %>
         </div>
 
         <div class="mt-auto d-flex gap-2">
-          <button
+          <% if(!canonicalCatalog){ %><button
             type="button"
             class="btn btn-outline-secondary btn-sm flex-grow-1 js-copy-fb"
             data-copy="<%= p.name %> — শতভাগ ফরমালিনমুক্ত তাজা ফল! অর্ডার করতে ইনবক্স করুন।"
           >
             📋 কপি পোস্ট টেক্সট
           </button>
-          <a href="/reseller/orders/create?product_id=<%= p.id %>" class="btn btn-primary btn-sm flex-grow-1 fw-bold" style="background:#3730a3;border-color:#3730a3;">
-            ⚡ অর্ডার তৈরি করুন
-          </a>
+          <a href="/reseller/orders/create?product_id=<%= p.id %>" class="btn btn-primary btn-sm flex-grow-1 fw-bold">⚡ অর্ডার তৈরি করুন</a><% } else { %><span class="text-muted small">ক্যাটালগ তথ্য</span><% } %>
         </div>
       </div>
     </div>
