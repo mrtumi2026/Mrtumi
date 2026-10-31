@@ -787,9 +787,10 @@ async function createProduct(input, actor = {}) {
             VALUES (?,'warehouse','opening',?,?,?,'product',?,'Initial opening stock',?)`, [result.insertId, qty, qty, product.cost, result.insertId, actor.id || null]);
         }
       }
-      return { id: result.insertId, product };
+      const created={ id:result.insertId, product };
+      await recordAuditLog({ actorType:'admin',actorId:actor.id||null,action:'product.create',entityType:'product',entityId:created.id,afterState:product,ipAddress:actor.ip||'',userAgent:actor.userAgent||'' },tx);
+      return created;
     }, { pool });
-    await recordAuditLog({ actorType: 'admin', actorId: actor.id || null, action: 'product.create', entityType: 'product', entityId: out.id, afterState: product, ipAddress: actor.ip || '', userAgent: actor.userAgent || '' });
     return out;
   }
   if (sqlite.get('SELECT id FROM products WHERE code=?', product.sku)) throw new AppError('DUPLICATE_SKU', 'SKU already exists.', 409);

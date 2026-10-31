@@ -8,9 +8,10 @@ const hrmEmployeeRepository = require('../repositories/hrmEmployeeRepository');
 const adminComplaintRepository = require('../repositories/adminComplaintRepository');
 const adminFinanceReadRepository = require('../repositories/adminFinanceReadRepository');
 const adminCustomerRepository = require('../repositories/adminCustomerRepository');
+const phase06Repository = require('../repositories/phase06Repository');
 const { asyncHandler } = require('../utils/asyncHandler');
 const { requireAdmin } = require('../middleware/auth');
-const { ConflictError } = require('../utils/errors');
+const { ConflictError, ValidationError } = require('../utils/errors');
 
 const router = express.Router();
 router.use('/admin', requireAdmin);
@@ -96,6 +97,7 @@ router.post('/admin/blog/delete/:id', asyncHandler(async (req, res) => {
 
 // ─── Purchases & Suppliers ───
 router.get('/admin/suppliers/manage', (_req, res) => {
+  if(env.db.client==='mysql')return res.redirect('/admin/phase06#suppliers');
   const rows = db.all('SELECT * FROM suppliers ORDER BY id DESC');
   res.render('admin/crud-module', {
     pageTitle: 'Suppliers / Orchard Partners',
@@ -122,8 +124,14 @@ router.get('/admin/suppliers/manage', (_req, res) => {
   });
 });
 
-router.post('/admin/suppliers/create', (req, res) => {
+router.post('/admin/suppliers/create', asyncHandler(async (req, res) => {
   const { name, company, phone, address, balance_due } = req.body;
+  if(env.db.client==='mysql'){
+    const openingDue=String(balance_due??'0').trim();
+    if(!/^(?:0|0\.0{1,2})$/.test(openingDue))throw new ConflictError('Opening supplier balances are blocked pending an owner-approved accounting policy.');
+    await phase06Repository.createSupplier({name,company,phone,address},{id:req.adminUser?.id||null,ip:req.ip||'',userAgent:req.get('user-agent')||''});
+    req.adminDomainAudit=true;req.flash('success','সাপ্লায়ার যুক্ত হয়েছে!');return res.redirect('/admin/phase06#suppliers');
+  }
   db.run(
     'INSERT INTO suppliers (name, company, phone, address, balance_due) VALUES (?, ?, ?, ?, ?)',
     name,
@@ -134,15 +142,17 @@ router.post('/admin/suppliers/create', (req, res) => {
   );
   req.flash('success', 'সাপ্লায়ার যুক্ত হয়েছে!');
   res.redirect('/admin/suppliers/manage');
-});
+}));
 
-router.post('/admin/suppliers/delete/:id', (req, res) => {
+router.post('/admin/suppliers/delete/:id', (req, res, next) => {
+  if(env.db.client==='mysql')return next(new ConflictError('Supplier deletion is disabled because purchase history and balances must be retained.'));
   db.run('DELETE FROM suppliers WHERE id = ?', req.params.id);
   req.flash('success', 'সাপ্লায়ার ডিলিট হয়েছে।');
   res.redirect('/admin/suppliers/manage');
 });
 
 router.get('/admin/purchases/manage', (_req, res) => {
+  if(env.db.client==='mysql')return res.redirect('/admin/phase06#purchases');
   const rows = db.all(
     `SELECT pu.*, s.name AS supplier_name, p.name AS product_name
      FROM purchases pu
@@ -193,7 +203,8 @@ router.get('/admin/purchases/manage', (_req, res) => {
   });
 });
 
-router.post('/admin/purchases/create', (req, res) => {
+router.post('/admin/purchases/create', (req, res, next) => {
+  if(env.db.client==='mysql')return next(new ConflictError('Use Phase 06 draft purchase orders and the separate receipt workflow; legacy instant stock/payment entry is disabled.'));
   const { supplier_id, product_id, qty, unit_cost, paid_amount, purchase_date } = req.body;
   const q = Number(qty || 0);
   const uc = Number(unit_cost || 0);
@@ -221,7 +232,8 @@ router.post('/admin/purchases/create', (req, res) => {
   res.redirect('/admin/purchases/manage');
 });
 
-router.post('/admin/purchases/delete/:id', (req, res) => {
+router.post('/admin/purchases/delete/:id', (req, res, next) => {
+  if(env.db.client==='mysql')return next(new ConflictError('Purchase deletion is disabled to preserve receipt, stock-ledger, and supplier history.'));
   db.run('DELETE FROM purchases WHERE id = ?', req.params.id);
   req.flash('success', 'পারচেজ রেকর্ড ডিলিট হয়েছে।');
   res.redirect('/admin/purchases/manage');

@@ -119,6 +119,30 @@ describe('Phase 09 dashboard repository contract', () => {
     assert.doesNotMatch(operations,/router\.post\('\/admin\/payment-records/,'payment record page exposes no mutation endpoint');
   });
 
+  test('MySQL catalog routes delegate taxonomy, review and product operations and protect retained references',()=>{
+    const catalog=require('../src/repositories/adminCatalogRepository');
+    for(const method of ['listProducts','listTaxonomy','createTaxonomy','toggleProductStatus','approvePendingVendorProduct','listReviews','createReview','approveReview'])assert.equal(typeof catalog[method],'function');
+    for(const method of ['deleteProduct','deleteTaxonomy','deleteReview'])assert.equal(catalog[method],undefined);
+    const routes=fs.readFileSync(path.join(__dirname,'../src/routes/adminCatalog.js'),'utf8');
+    assert.match(routes,/catalogRepo\.listTaxonomy\('categories'\)/);assert.match(routes,/catalogRepo\.createTaxonomy\('childcategories'/);
+    assert.match(routes,/catalogRepo\.listReviews/);assert.match(routes,/catalogRepo\.approveReview/);
+    assert.match(routes,/catalogRepo\.toggleProductStatus/);assert.match(routes,/Hard deletion of catalog products is disabled/);
+    const view=fs.readFileSync(path.join(__dirname,'../views/admin/products.ejs'),'utf8');assert.match(view,/if \(!mysqlMode\)/,'MySQL product list offers no hard-delete control');
+    assert.equal(policyForAdminRoute('GET','/admin/categories/manage').key,'catalog.view');
+    assert.equal(policyForAdminRoute('POST','/admin/categories/create').key,'catalog.manage');
+    assert.equal(policyForAdminRoute('POST','/admin/reviews/approve/1').key,'catalog.manage');
+  });
+
+  test('Legacy supplier/purchase routes use Phase 06 repositories or remain safely blocked in MySQL mode',()=>{
+    const source=fs.readFileSync(path.join(__dirname,'../src/routes/adminOperations.js'),'utf8');
+    assert.match(source,/phase06Repository\.createSupplier/);
+    assert.match(source,/Opening supplier balances are blocked pending an owner-approved accounting policy/);
+    assert.match(source,/legacy instant stock\/payment entry is disabled/);
+    assert.match(source,/Purchase deletion is disabled to preserve receipt, stock-ledger, and supplier history/);
+    assert.equal(policyForAdminRoute('POST','/admin/suppliers/create').key,'inventory.manage');
+    assert.equal(policyForAdminRoute('POST','/admin/purchases/create').key,'inventory.manage');
+  });
+
   test('MySQL customer management delegates list/create to a transactional repository and blocks retention deletion',()=>{
     const customers=require('../src/repositories/adminCustomerRepository');
     assert.equal(typeof customers.listCustomers,'function');assert.equal(typeof customers.createCustomer,'function');

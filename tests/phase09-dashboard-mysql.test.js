@@ -248,6 +248,101 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     await db.execute('DELETE FROM subcategories WHERE id IN (?,?)',[sub.insertId,otherSub.insertId]);
   });
 
+  test('legacy catalog routes use MySQL taxonomy/product/review repositories with permission, CSRF, audit and retained-history checks',async(t)=>{
+    if(!MYSQL_HOST)return t.skip(SKIP);
+    dashboardCookie=await login(fullEmail);csrfToken=await fetchCsrf(dashboardCookie);
+    const {cookie:noGrantCookie,token:noGrantToken}=await noGrantSession();
+    assert.equal((await request('/admin/categories/manage',{cookie:'',token:'',accept:'text/html'})).status,302,'unauthenticated catalog requests follow the existing admin login flow');
+    assert.equal((await request('/admin/categories/manage',{cookie:noGrantCookie,token:noGrantToken,accept:'text/html'})).status,403,'catalog.view is required');
+    assert.equal((await request('/admin/categories/create',{method:'POST',cookie:noGrantCookie,token:noGrantToken,body:{name:'Denied'}})).status,403,'catalog.manage is required for taxonomy writes');
+    assert.equal((await request('/admin/categories/create',{method:'POST',token:'',body:{name:'No CSRF'}})).status,403,'taxonomy writes require CSRF');
+    const suffix=Date.now();const slug=`p09-catalog-${suffix}`;
+    const categoryCreate=await request('/admin/categories/create',{method:'POST',body:{name:'P09 Category',name_en:'P09 Category',slug,icon:'🍐',sort_order:'7'}});
+    assert.equal(categoryCreate.status,302,categoryCreate.text.slice(0,250));
+    const category=await db.queryOne('SELECT id,name_bn,name_en,slug,icon,sort_order FROM categories WHERE slug=?',[slug]);
+    assert.ok(category);assert.equal(category.name_en,'P09 Category');assert.equal(Number(category.sort_order),7);
+    assert.ok(await db.queryOne("SELECT id FROM audit_logs WHERE action='catalog.categories.create' AND entity_id=?",[String(category.id)]),'taxonomy creation has a domain audit event');
+    const failedSlug=`${slug}-audit-failure`;
+    await db.execute("CREATE TRIGGER p09_catalog_audit_fail BEFORE INSERT ON audit_logs FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture taxonomy audit failure'");
+    try{
+      const failed=await request('/admin/categories/create',{method:'POST',body:{name:'Rollback category',slug:failedSlug}});
+      assert.equal(failed.status,500,failed.text.slice(0,250));
+    }finally{await db.execute('DROP TRIGGER IF EXISTS p09_catalog_audit_fail');}
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM categories WHERE slug=?',[failedSlug])).n),0,'taxonomy insert rolls back when its audit event fails');
+    assert.equal((await request('/admin/subcategories/create',{method:'POST',body:{category_id:'999999999',name:'Invalid parent'}})).status,400,'invalid parent taxonomy is rejected');
+    const subCreate=await request('/admin/subcategories/create',{method:'POST',body:{category_id:String(category.id),name:'P09 Subcategory',name_en:'P09 Subcategory',slug:`${slug}-sub`}});
+    assert.equal(subCreate.status,302,subCreate.text.slice(0,250));
+    const sub=await db.queryOne('SELECT id FROM subcategories WHERE slug=?',[`${slug}-sub`]);assert.ok(sub);
+    const childCreate=await request('/admin/childcategories/create',{method:'POST',body:{subcategory_id:String(sub.id),name:'P09 Child',name_en:'P09 Child',slug:`${slug}-child`}});
+    assert.equal(childCreate.status,302,childCreate.text.slice(0,250));
+    for(const [path,body,table,column] of [
+      ['/admin/brands/create',{name:'P09 Brand',name_en:'P09 Brand',slug:`${slug}-brand`},'brands','slug'],
+      ['/admin/color/create',{name:'P09 Color',name_en:'P09 Color',hex_code:'#123abc'},'colors','hex_code'],
+      ['/admin/size/create',{name:'P09 Size',name_en:'P09 Size'},'sizes','name_en'],
+    ]){
+      const response=await request(path,{method:'POST',body});assert.equal(response.status,302,response.text.slice(0,250));
+      const row=await db.queryOne(`SELECT id,${column} FROM ${table} ORDER BY id DESC LIMIT 1`);assert.ok(row);
+    }
+    assert.equal((await request(`/admin/categories/delete/${category.id}`,{method:'POST'})).status,409,'category deletion is blocked to preserve references');
+    assert.ok(await db.queryOne('SELECT id FROM categories WHERE id=?',[category.id]),'blocked delete preserves category row');
+
+    const productList=await request('/admin/inhouse-products/manage',{accept:'text/html'});
+    assert.equal(productList.status,200,productList.text.slice(0,250));assert.match(productList.text,/P09-/,'legacy product list reads MySQL catalog data');
+    assert.equal((await request('/admin/products/create',{accept:'text/html'})).headers.get('location'),'/admin/phase06#products','legacy create entry routes to canonical Phase 06 form');
+    assert.equal((await request(`/admin/products/edit/${productId}`,{accept:'text/html'})).headers.get('location'),`/admin/phase06/products/${productId}/edit`,'legacy edit entry routes to canonical Phase 06 form');
+    const before=await db.queryOne('SELECT status,stock_on_hand,stock_reserved FROM products WHERE id=?',[productId]);
+    const ledgerBefore=Number((await db.queryOne('SELECT COUNT(*) AS n FROM stock_ledger WHERE product_id=?',[productId])).n);
+    assert.equal((await request(`/admin/products/toggle/${productId}`,{method:'POST',cookie:noGrantCookie,token:noGrantToken})).status,403,'product status requires catalog.manage');
+    assert.equal((await request(`/admin/products/toggle/${productId}`,{method:'POST',token:''})).status,403,'product status requires CSRF');
+    const toggled=await request(`/admin/products/toggle/${productId}`,{method:'POST'});assert.equal(toggled.status,302,toggled.text.slice(0,250));
+    assert.equal(Number((await db.queryOne('SELECT status FROM products WHERE id=?',[productId])).status),Number(before.status)?0:1);
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM stock_ledger WHERE product_id=?',[productId])).n),ledgerBefore,'status change does not mutate stock history');
+    assert.ok(await db.queryOne("SELECT id FROM audit_logs WHERE action='product.status.toggle' AND entity_id=?",[String(productId)]));
+    await request(`/admin/products/toggle/${productId}`,{method:'POST'});
+    assert.equal(Number((await db.queryOne('SELECT status FROM products WHERE id=?',[productId])).status),Number(before.status),'status toggle is reversible');
+    assert.equal((await request(`/admin/products/delete/${productId}`,{method:'POST'})).status,409,'legacy product hard deletion is blocked');
+    assert.ok(await db.queryOne('SELECT id FROM products WHERE id=?',[productId]),'blocked delete preserves product');
+    const vendor=await db.execute('INSERT INTO vendors(shop_name,owner_name,phone,password_hash,verified,status) VALUES(?,?,?,?,0,1)',[`P09 vendor ${suffix}`,'P09 Vendor',`016${String(suffix).slice(-8)}`,'fixture-hash']);
+    const pending=await db.execute("INSERT INTO products(sku,slug,name_bn,name_en,category_id,vendor_id,approval_status,status) VALUES(?,?,?,?,?,?,'pending',0)",[`P09-V-${suffix}`,`p09-pending-${suffix}`,'P09 Vendor Product','P09 Vendor Product',category.id,vendor.insertId]);
+    assert.equal((await request(`/admin/products/approve/${pending.insertId}`,{method:'POST',cookie:noGrantCookie,token:noGrantToken})).status,403,'vendor product approval requires catalog.manage');
+    assert.equal((await request(`/admin/products/approve/${pending.insertId}`,{method:'POST',token:''})).status,403,'vendor product approval requires CSRF');
+    const approval=await request(`/admin/products/approve/${pending.insertId}`,{method:'POST'});assert.equal(approval.status,302,approval.text.slice(0,250));
+    const approvedProduct=await db.queryOne('SELECT approval_status,status FROM products WHERE id=?',[pending.insertId]);assert.deepEqual([approvedProduct.approval_status,Number(approvedProduct.status)],['approved',1]);
+    assert.ok(await db.queryOne("SELECT id FROM audit_logs WHERE action='product.vendor.approve' AND entity_id=?",[String(pending.insertId)]));
+
+    const review=await db.execute("INSERT INTO reviews(product_id,customer_name,rating,comment,status) VALUES(?, 'P09 pending review',4,'Retained review fixture','pending')",[productId]);
+    assert.equal((await request('/admin/reviews',{cookie:noGrantCookie,accept:'text/html'})).status,403,'review moderation requires catalog.view');
+    assert.equal((await request(`/admin/reviews/approve/${review.insertId}`,{method:'POST',cookie:noGrantCookie,token:noGrantToken})).status,403,'review approval requires catalog.manage');
+    assert.equal((await request(`/admin/reviews/approve/${review.insertId}`,{method:'POST',token:''})).status,403,'review approval requires CSRF');
+    const approved=await request(`/admin/reviews/approve/${review.insertId}`,{method:'POST'});assert.equal(approved.status,302,approved.text.slice(0,250));
+    assert.equal((await db.queryOne('SELECT status FROM reviews WHERE id=?',[review.insertId])).status,'approved');
+    assert.ok(await db.queryOne("SELECT id FROM audit_logs WHERE action='catalog.review.approve' AND entity_id=?",[String(review.insertId)]));
+    assert.equal((await request(`/admin/reviews/delete/${review.insertId}`,{method:'POST'})).status,409,'review deletion is blocked to preserve customer feedback');
+    assert.ok(await db.queryOne('SELECT id FROM reviews WHERE id=?',[review.insertId]),'blocked review deletion preserves feedback');
+  });
+
+  test('legacy supplier and purchase entries route to Phase 06, preserve ledger history and block ambiguous accounting actions',async(t)=>{
+    if(!MYSQL_HOST)return t.skip(SKIP);
+    dashboardCookie=await login(fullEmail);csrfToken=await fetchCsrf(dashboardCookie);
+    const {cookie:noGrantCookie,token:noGrantToken}=await noGrantSession();
+    assert.equal((await request('/admin/suppliers/manage',{cookie:noGrantCookie,accept:'text/html'})).status,403,'supplier routes require inventory.manage');
+    assert.equal((await request('/admin/suppliers/manage',{accept:'text/html'})).headers.get('location'),'/admin/phase06#suppliers');
+    assert.equal((await request('/admin/purchases/manage',{accept:'text/html'})).headers.get('location'),'/admin/phase06#purchases');
+    const suffix=Date.now();const phone=`017${String(suffix).slice(-8)}`;
+    const created=await request('/admin/suppliers/create',{method:'POST',body:{name:'P09 Supplier',company:'P09 Orchard',phone,address:'P09 address',balance_due:'0'}});
+    assert.equal(created.status,302,created.text.slice(0,250));
+    const supplier=await db.queryOne('SELECT id,name,phone,balance_due_paisa FROM suppliers WHERE phone=?',[phone]);assert.ok(supplier);assert.equal(Number(supplier.balance_due_paisa),0);
+    assert.ok(await db.queryOne("SELECT id FROM audit_logs WHERE action='supplier.create' AND entity_id=?",[String(supplier.id)]));
+    assert.equal((await request('/admin/suppliers/create',{method:'POST',body:{name:'Policy Supplier',phone:`018${String(suffix).slice(-8)}`,balance_due:'100'}})).status,409,'opening balances remain blocked pending owner accounting policy');
+    assert.equal((await request(`/admin/suppliers/delete/${supplier.id}`,{method:'POST'})).status,409,'supplier delete is blocked while history exists');
+    assert.ok(await db.queryOne('SELECT id FROM suppliers WHERE id=?',[supplier.id]));
+    assert.equal((await request('/admin/purchases/create',{method:'POST',cookie:noGrantCookie,token:noGrantToken,body:{}})).status,403,'purchase writes require inventory.manage');
+    const productBefore=await db.queryOne('SELECT stock_on_hand FROM products WHERE id=?',[productId]);
+    assert.equal((await request('/admin/purchases/create',{method:'POST'})).status,409,'legacy instant purchase/payment entry is blocked');
+    assert.equal(Number((await db.queryOne('SELECT stock_on_hand FROM products WHERE id=?',[productId])).stock_on_hand),Number(productBefore.stock_on_hand),'blocked legacy purchase does not alter product stock');
+    assert.equal((await request('/admin/purchases/delete/999999',{method:'POST'})).status,409,'purchase deletion is blocked to preserve receipts and ledger history');
+  });
+
   test('Phase 06 gallery reorder enforces product-local complete lists, safe paths, auth/CSRF, persistence and audit rollback',async(t)=>{
     if(!MYSQL_HOST)return t.skip(SKIP);
     dashboardCookie=await login(fullEmail); csrfToken=await fetchCsrf(dashboardCookie);

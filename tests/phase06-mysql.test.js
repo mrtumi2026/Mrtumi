@@ -50,6 +50,20 @@ describe('Phase 06 — Live MySQL 8.0 schema, product, stock ledger & purchase r
 
   after(async () => { if (MYSQL_HOST) await closePool(); });
 
+  test('product creation and opening-stock ledger roll back together when the audit insert fails', async (t) => {
+    if (!MYSQL_HOST) return t.skip(reason);
+    const suffix=Date.now();const slug=`p06-product-audit-rollback-${suffix}`;const sku=`P06-AUDIT-${suffix}`;
+    const category=await db.queryOne("SELECT id FROM categories WHERE slug='phase06-mysql-test'");
+    const ledgerBefore=Number((await db.queryOne("SELECT COUNT(*) AS n FROM stock_ledger WHERE movement_type='opening'")).n);
+    const triggerName=`p06_fail_product_audit_${process.pid}`;
+    await db.execute(`CREATE TRIGGER ${triggerName} BEFORE INSERT ON audit_logs FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture product audit failure'`);
+    try {
+      await assert.rejects(()=>repo.createProduct({sku,name_bn:'Audit rollback',name_en:'Audit rollback',slug,category_id:Number(category.id),regular_price_bdt:'10.00',sale_price_bdt:'10.00',cost_price_bdt:'5.00',opening_stock:4}));
+    } finally { await db.execute(`DROP TRIGGER IF EXISTS ${triggerName}`); }
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM products WHERE sku=?',[sku])).n),0,'failed audit leaves no product row');
+    assert.equal(Number((await db.queryOne("SELECT COUNT(*) AS n FROM stock_ledger WHERE movement_type='opening'")).n),ledgerBefore,'failed audit leaves no opening stock ledger row');
+  });
+
   test('draft PO does not alter on-hand; unique receipt and partial receipt move stock in an InnoDB transaction', async () => {
     if (!MYSQL_HOST) return;
     assert.equal(Number((await db.queryOne('SELECT stock_on_hand FROM products WHERE id=?',[productId])).stock_on_hand),4);
