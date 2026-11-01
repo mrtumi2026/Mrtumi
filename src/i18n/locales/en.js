@@ -86,7 +86,7 @@ module.exports = {
   },
   store: {
     specialNotice: 'ANNOUNCEMENT',
-    searchPlaceholder: 'Search groceries, gift hampers, rice, oil, snacks...',
+    searchPlaceholder: 'Search products...',
     heroBadge: 'Grocery & Gift Delivery',
     heroTitle: 'Fresh Everyday Groceries & Thoughtful Gifts in One Trusted Store',
     heroSubtitle: 'Quality pantry staples, curated festive gift boxes, and value combo packs — delivered reliably across Bangladesh.',

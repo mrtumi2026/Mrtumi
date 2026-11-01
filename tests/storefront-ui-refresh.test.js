@@ -11,6 +11,17 @@ test('storefront refresh keeps localized customer navigation, category search an
   const header = read('views/store/partials/header.ejs');
   const footer = read('views/store/partials/footer.ejs');
   const js = read('public/frontEnd/js/storefront.js');
+  const bn = require('../src/i18n/locales/bn');
+  const en = require('../src/i18n/locales/en');
+  const desktopNav = header.split('<!-- Category & Storefront Navigation Strip -->')[1].split('</nav>')[0];
+  const mobileDrawer = header.split('id="mobileStoreNavDrawer"')[1];
+  assert.equal(bn.store.searchPlaceholder, 'পছন্দের পণ্য খুঁজুন...');
+  assert.equal(en.store.searchPlaceholder, 'Search products...');
+  assert.match(header, /action="\/all-products" method="GET"/);
+  assert.match(header, /name="q"/);
+  assert.match(header, /placeholder="<%= t\('store\.searchPlaceholder'\) %>"/);
+  assert.doesNotMatch(desktopNav, /Grocery|Gift Items|গ্রোসারি|গিফট আইটেম/);
+  assert.doesNotMatch(mobileDrawer, /href="\/all-products\?deal=gift"|Gift Items|গিফট আইটেম/);
   assert.match(header, /name="category"/);
   assert.match(header, /navCategories/);
   assert.match(header, /store-utility-bar/);
