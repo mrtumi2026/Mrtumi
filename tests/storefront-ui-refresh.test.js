@@ -46,6 +46,7 @@ test('search suggestions query only active products with bound terms and return 
 
 test('homepage and product card provide the accessible hero, trust, discount, stock and direct cart/order affordances', () => {
   const home = read('views/store/home.ejs');
+  const header = read('views/store/partials/header.ejs');
   const card = read('views/store/partials/product-card.ejs');
   const css = read('public/frontEnd/css/storefront.css');
   const authMiddleware = read('src/middleware/auth.js');
@@ -58,6 +59,10 @@ test('homepage and product card provide the accessible hero, trust, discount, st
   assert.match(home, /store-category-card/);
   assert.match(home, /id="heroCategoryMenu"/);
   assert.match(home, /hero-category-link/);
+  assert.doesNotMatch(home, /categoriesTitle|categoriesSub|Shop by Category Grid/);
+  assert.match(header, /id="mobileStoreNavDrawer"/);
+  assert.match(header, /store-all-categories-button/);
+  assert.match(storefrontRoutes, /res\.render\('store\/home',\s*\{\s*\.\.\.homeData/);
   assert.match(home, /store-hero-promos/);
   assert.match(home, /store-trust-row/);
   assert.match(home, /data-countdown=/);
