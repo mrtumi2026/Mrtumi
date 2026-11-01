@@ -218,7 +218,10 @@
   <!-- Featured / Latest Products -->
   <section class="mb-5" aria-label="<%= t('store.allProductsTitle') %>">
     <div class="sec-head">
-      <h2 class="fw-bold mb-0 fs-4">🛒 <%= t('store.allProductsTitle') %></h2>
+      <div>
+        <h2 class="fw-bold mb-0 fs-4">🛒 <%= t('store.allProductsTitle') %></h2>
+        <small class="text-muted"><%= t('store.allProductsSub') %></small>
+      </div>
       <a href="/all-products" class="btn btn-outline-success btn-sm rounded-pill px-3"><%= t('common.viewAll') %> →</a>
     </div>
     <% if (!allProducts || !allProducts.length) { %>

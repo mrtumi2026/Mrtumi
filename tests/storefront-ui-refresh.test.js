@@ -15,6 +15,14 @@ test('storefront refresh keeps localized customer navigation, category search an
   const en = require('../src/i18n/locales/en');
   const desktopNav = header.split('<!-- Category & Storefront Navigation Strip -->')[1].split('</nav>')[0];
   const mobileDrawer = header.split('id="mobileStoreNavDrawer"')[1];
+  const home = read('views/store/home.ejs');
+  assert.equal(bn.store.allProductsTitle, 'নতুন ও জনপ্রিয় পণ্য');
+  assert.equal(en.store.allProductsTitle, 'Featured Products');
+  assert.equal(bn.store.allProductsSub, 'আমাদের সেরা বাছাইকৃত কোয়ালিটি পণ্য সামগ্রী');
+  assert.equal(en.store.allProductsSub, 'Browse our handpicked quality collection');
+  assert.match(home, /t\('store\.allProductsTitle'\)/);
+  assert.match(home, /t\('store\.allProductsSub'\)/);
+  assert.match(home, /href="\/all-products" class="btn btn-outline-success btn-sm rounded-pill px-3"/);
   assert.equal(bn.store.searchPlaceholder, 'পছন্দের পণ্য খুঁজুন...');
   assert.equal(en.store.searchPlaceholder, 'Search products...');
   assert.match(header, /action="\/all-products" method="GET"/);
