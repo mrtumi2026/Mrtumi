@@ -155,6 +155,15 @@ const upload = multer({
   },
 });
 
+// Phase 06 primary product images have a fixed 5 MiB limit independent of any
+// larger multi-image/gallery upload setting.
+const phase06ProductImageUpload = multer({
+  storage,
+  fileFilter: imageFileFilter,
+  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+});
+
+upload.singlePhase06ProductImage = () => phase06ProductImageUpload.single('image_file');
 upload.validateUploadedImageFile = validateUploadedImageFile;
 upload.resolveUploadBase = resolveUploadBase;
 upload.hasValidRasterMagicBytes = hasValidRasterMagicBytes;
