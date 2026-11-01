@@ -34,7 +34,7 @@
             <div class="hero-slide">
               <img src="<%= b.image %>" alt="<%= b.title || siteSettings.site_name %>" />
               <div class="hero-caption">
-                <span class="mt-hero-badge align-self-start mb-2">🛒 <%= t('store.heroBadge') %></span>
+                <span class="mt-hero-badge align-self-start mb-2">🛒 <%= b.badge || t('store.heroBadge') %></span>
                 <h1 class="fw-bold display-6 mb-2 text-white" style="max-width: 620px;">
                   <%= locale === 'en' ? t('store.heroTitle') : (b.title || t('store.heroTitle')) %>
                 </h1>

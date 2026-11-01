@@ -70,7 +70,7 @@ async function listDeliveryLocations(){
   assertMysql();return client().queryAll('SELECT id,division,district,upazila,delivery_charge_paisa FROM delivery_locations WHERE status=1 ORDER BY division,district,upazila,id');
 }
 async function listCheckoutMethods(){
-  assertMysql();return client().queryAll("SELECT code,name,instructions FROM payment_gateways WHERE code='cod' AND status=1 ORDER BY id");
+  assertMysql();return client().queryAll("SELECT code,name,account_number,instructions,gateway_type FROM payment_gateways WHERE status=1 AND (code='cod' OR gateway_type='manual') ORDER BY CASE WHEN code='cod' THEN 0 ELSE 1 END,id");
 }
 function couponAmount(row,subtotal){
   if(!row)return{amount:0,code:''};
@@ -114,7 +114,7 @@ async function createOrder(input,options={}){
   const attributionAllowed=env.analyticsAttributionEnabled&&analyticsConsent===true;
   const attributionData=attributionAllowed?normalizeAttribution(attribution||{}):EMPTY_ATTRIBUTION;
   assertMysql();const name=requireString(input.customer_name,'customer name',{min:2,max:191});const phone=normalizeBdPhone(input.phone);const address=requireString(input.address,'shipping address',{min:5,max:2000});const zoneId=requirePositiveInt(input.delivery_location_id,'delivery location');const note=String(input.note||'').trim().slice(0,1000);
-  const paymentMethod=String(input.payment_method||'cod').trim().toLowerCase();if(paymentMethod!=='cod')throw new ConflictError('Only cash on delivery is currently available; online/manual payment is not configured for canonical checkout.');
+  const paymentMethod=String(input.payment_method||'cod').trim().toLowerCase();if(!/^[a-z0-9_-]{1,48}$/.test(paymentMethod))throw new ValidationError('Select a valid payment method.');
   const recoveryId=incompleteOrderId?requirePositiveInt(incompleteOrderId,'incomplete order ID'):null;
   const campaignKey=campaignSlug?requireString(campaignSlug,'campaign slug',{min:1,max:191}):'';const key=requireString(recoveryId?`incomplete:${recoveryId}`:requestKey,'checkout request key',{min:8,max:100});const lines=normalizeLines(cart);if(campaignKey&&lines.length!==1)throw new ValidationError('Campaign checkout accepts exactly one campaign product.');
   const payloadHash=crypto.createHash('sha256').update(JSON.stringify({name,phone,address,zoneId,note,paymentMethod,lines:lines.map(lineCanonical),coupon:String(input.coupon_code||'').trim().toUpperCase(),recoveryId,campaignSlug:campaignKey})).digest('hex');
@@ -124,8 +124,8 @@ async function createOrder(input,options={}){
     if(replay){if(replay.checkout_request_hash!==payloadHash)throw new ConflictError('This checkout request key was already used with different order details.');return{id:Number(replay.id),invoiceNo:replay.invoice_no,replayed:true};}
     const blocked=await tx.queryOne('SELECT id FROM ip_blocks WHERE status=1 AND ip_or_phone IN (?,?) LIMIT 1 FOR UPDATE',[phone,String(ip||'').slice(0,64)]);
     if(blocked)throw new ConflictError('This phone number or IP address is blocked from placing orders.');
-    const cod=await tx.queryOne("SELECT code FROM payment_gateways WHERE code='cod' AND status=1 FOR UPDATE");
-    if(!cod)throw new ConflictError('Cash-on-delivery is not enabled in the configured payment methods.');
+    const gateway=await tx.queryOne('SELECT code,gateway_type FROM payment_gateways WHERE code=? AND status=1 FOR UPDATE',[paymentMethod]);
+    if(!gateway || (paymentMethod!=='cod' && gateway.gateway_type!=='manual'))throw new ConflictError('This payment method is not active or is not supported at checkout.');
     const zone=await tx.queryOne('SELECT id,division,district,upazila,delivery_charge_paisa FROM delivery_locations WHERE id=? AND status=1 FOR UPDATE',[zoneId]);
     if(!zone)throw new ValidationError('Select an active, configured delivery location.');
     let recovery=null;
@@ -158,7 +158,8 @@ async function createOrder(input,options={}){
     const invoice=`MT-${crypto.randomBytes(12).toString('hex').toUpperCase()}`;
     const zoneLabel=[zone.division,zone.district,zone.upazila].filter(Boolean).join(' / ');
     const orderChannel=campaign?'campaign':'storefront';const trafficSource=campaign?`Campaign:${campaign.slug}`:attributionData.platformSource;const customerNote=note||(campaign?`Campaign: ${campaign.title}`:null);
-    const order=await tx.execute(`INSERT INTO orders (invoice_no,idempotency_key,checkout_request_hash,customer_id,customer_name,customer_phone,shipping_address,division,district,upazila,shipping_zone,subtotal_paisa,discount_paisa,shipping_paisa,total_paisa,advance_required_paisa,paid_paisa,cod_due_paisa,coupon_code,payment_method,payment_status,order_status,order_channel,traffic_source,utm_source,utm_medium,utm_campaign,analytics_consent_at,analytics_consent_version,client_ip,customer_note,consent_accepted_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP())`,[invoice,key,payloadHash,customerId,name,phone,address,zone.division,zone.district,zone.upazila,zoneLabel,subtotal,coupon.amount,shipping,total,0,0,total,coupon.code,'cod','unpaid','pending',orderChannel,trafficSource,attributionData.utmSource,attributionData.utmMedium,attributionData.utmCampaign,attributionAllowed?new Date():null,attributionAllowed?CONSENT_VERSION:null,String(ip||'').slice(0,64),customerNote]);
+    const codDue=paymentMethod==='cod'?total:0;
+    const order=await tx.execute(`INSERT INTO orders (invoice_no,idempotency_key,checkout_request_hash,customer_id,customer_name,customer_phone,shipping_address,division,district,upazila,shipping_zone,subtotal_paisa,discount_paisa,shipping_paisa,total_paisa,advance_required_paisa,paid_paisa,cod_due_paisa,coupon_code,payment_method,payment_status,order_status,order_channel,traffic_source,utm_source,utm_medium,utm_campaign,analytics_consent_at,analytics_consent_version,client_ip,customer_note,consent_accepted_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP())`,[invoice,key,payloadHash,customerId,name,phone,address,zone.division,zone.district,zone.upazila,zoneLabel,subtotal,coupon.amount,shipping,total,0,0,codDue,coupon.code,paymentMethod,'unpaid','pending',orderChannel,trafficSource,attributionData.utmSource,attributionData.utmMedium,attributionData.utmCampaign,attributionAllowed?new Date():null,attributionAllowed?CONSENT_VERSION:null,String(ip||'').slice(0,64),customerNote]);
     for(const item of items){await tx.execute('INSERT INTO order_items (order_id,product_id,variant_id,vendor_id,product_name,product_image,unit_price_paisa,qty,line_total_paisa,size_label,color_label) VALUES (?,?,?,?,?,?,?,?,?,?,?)',[order.insertId,item.productId,item.variantId,item.product.vendor_id||null,item.name,item.image,item.unitPricePaisa,item.qty,item.lineTotalPaisa,item.size,item.color]);}
     await tx.execute("INSERT INTO order_status_history (order_id,from_status,to_status,note,changed_by_user_id) VALUES (?,'','pending','Customer checkout submitted',NULL)",[order.insertId]);
     // Reserve only after the durable order and lines exist, in this same transaction.

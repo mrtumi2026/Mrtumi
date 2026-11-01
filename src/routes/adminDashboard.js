@@ -127,19 +127,17 @@ router.get('/admin/dashboard', requirePermission('dashboard.view'), asyncHandler
   });
 }));
 
-// External provider widgets stay unavailable until verified provider adapters exist.
-router.get('/admin/smsgeteway/balance', requirePermission('dashboard.view'), (_req, res) => res.status(503).json({
-  success: false, balance: null, gateway: 'BulkSMSBD', status: 'unavailable',
-  message: 'Provider balance is unavailable; no verified live provider integration is configured.',
-}));
-router.get('/admin/bdcourier/my-plan', requirePermission('dashboard.view'), (_req, res) => res.status(503).json({
-  success: false, data: null, status: 'unavailable',
-  message: 'Courier account data is unavailable; no verified live provider integration is configured.',
-}));
-router.get('/admin/steadfast/dashboard-widget', requirePermission('dashboard.view'), (_req, res) => res.status(503).json({
-  success: false, balance_display: null, in_review_count: null, status: 'unavailable',
-  message: 'Courier provider metrics are unavailable; no verified live provider integration is configured.',
-}));
+// Graceful async widgets: never contact external providers unless a verified adapter is configured.
+const unconfiguredProviderWidget = async (_req, res, kind) => {
+  const message = 'API credentials not yet configured';
+  const body = { success: true, configured: false, balance: 0, message };
+  if (kind === 'bdcourier') Object.assign(body, { data: null, status: 'unconfigured' });
+  if (kind === 'steadfast') Object.assign(body, { balance_display: '৳0', in_review_count: 0, courier_pending_orders: 0, status: 'unconfigured' });
+  return res.status(200).json(body);
+};
+router.get('/admin/smsgeteway/balance', requirePermission('dashboard.view'), asyncHandler(async (req, res) => unconfiguredProviderWidget(req, res, 'sms')));
+router.get('/admin/bdcourier/my-plan', requirePermission('dashboard.view'), asyncHandler(async (req, res) => unconfiguredProviderWidget(req, res, 'bdcourier')));
+router.get('/admin/steadfast/dashboard-widget', requirePermission('dashboard.view'), asyncHandler(async (req, res) => unconfiguredProviderWidget(req, res, 'steadfast')));
 
 // Real-time New Order Polling (Toast + Chime)
 router.get('/admin/orders/poll-new', requirePermission('orders.poll'), asyncHandler(async (req, res) => {

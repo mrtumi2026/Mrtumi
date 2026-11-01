@@ -796,6 +796,7 @@ async function getHomepageData(options = {}, poolOverride = null, config = env) 
         id: Number(b.id),
         title: replaceLegacyBrandTokens(b.title || '', locale),
         subtitle: replaceLegacyBrandTokens(b.subtitle || '', locale),
+        badge: replaceLegacyBrandTokens(b.badge || '', locale),
         image: sanitizeImagePath(b.image, '/uploads/banner/banner-1.jpg'),
         link: String(b.link || '/all-products'),
       }));
@@ -806,6 +807,7 @@ async function getHomepageData(options = {}, poolOverride = null, config = env) 
         id: Number(b.id),
         title: replaceLegacyBrandTokens(b.title || '', locale),
         subtitle: replaceLegacyBrandTokens(b.subtitle || '', locale),
+        badge: replaceLegacyBrandTokens(b.badge || '', locale),
         image: sanitizeImagePath(b.image, '/uploads/banner/banner-1.jpg'),
         link: String(b.link || '/all-products'),
       }));
@@ -928,6 +930,7 @@ async function getHomepageData(options = {}, poolOverride = null, config = env) 
       id: Number(b.id),
       title: replaceLegacyBrandTokens(b.title || '', locale),
       subtitle: replaceLegacyBrandTokens(b.subtitle || '', locale),
+      badge: replaceLegacyBrandTokens(b.badge || '', locale),
       image: sanitizeImagePath(b.image_url, '/uploads/banner/banner-1.jpg'),
       link: String(b.link_url || '/all-products'),
     })),
@@ -935,6 +938,7 @@ async function getHomepageData(options = {}, poolOverride = null, config = env) 
       id: Number(b.id),
       title: replaceLegacyBrandTokens(b.title || '', locale),
       subtitle: replaceLegacyBrandTokens(b.subtitle || '', locale),
+      badge: replaceLegacyBrandTokens(b.badge || '', locale),
       image: sanitizeImagePath(b.image_url, '/uploads/banner/banner-1.jpg'),
       link: String(b.link_url || '/all-products'),
     })),

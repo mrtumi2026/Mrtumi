@@ -100,7 +100,7 @@
 <% if (typeof createAction !== 'undefined' && createAction && fields && fields.length) { %>
 <div class="modal fade" id="crudAddModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
-    <form action="<%= createAction %>" method="POST" class="modal-content">
+    <form action="<%= createAction %>" method="POST" class="modal-content" <%= typeof multipartForm !== 'undefined' && multipartForm ? 'enctype="multipart/form-data"' : '' %>>
       <input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>" />
       <div class="modal-header">
         <h5 class="modal-title fw-bold">Add New — <%= pageTitle %></h5>
@@ -118,6 +118,8 @@
               </select>
             <% } else if (f.type === 'textarea') { %>
               <textarea name="<%= f.name %>" rows="3" class="form-control" <%= f.required ? 'required' : '' %>><%= f.value || '' %></textarea>
+            <% } else if (f.type === 'file') { %>
+              <input type="file" name="<%= f.name %>" class="form-control" accept="image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif" <%= f.required ? 'required' : '' %> />
             <% } else if (f.type === 'color') { %>
               <input type="color" name="<%= f.name %>" value="<%= f.value || '#243b22' %>" class="form-control form-control-color" />
             <% } else { %>
