@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../db/database');
 const { requireAdmin } = require('../middleware/auth');
+const { requireCsrf } = require('../middleware/csrf');
 const upload = require('../middleware/upload');
 const { env } = require('../config/env');
 const catalogRepo = require('../repositories/adminCatalogRepository');
@@ -21,6 +22,25 @@ function makeSlug(str) {
     .replace(/\s+/g, '-')
     .replace(/[^\p{L}\p{N}-]+/gu, '');
   return base || `item-${Date.now()}`;
+}
+
+function parseAndValidateProductImage(req,res,next) {
+  upload.single('image_file')(req,res,(uploadError)=>{
+    if(uploadError){
+      if(req.file)upload.safeUnlink(req.file.path);
+      return next(uploadError);
+    }
+    requireCsrf(req,res,(csrfError)=>{
+      if(csrfError){if(req.file)upload.safeUnlink(req.file.path);return next(csrfError);}
+      try {
+        req.validatedProductImagePath=req.file?upload.validateUploadedImageFile(req.file):null;
+        return next();
+      } catch(validationError) {
+        if(req.file)upload.safeUnlink(req.file.path);
+        return next(validationError);
+      }
+    });
+  });
 }
 
 // ─── Product Lists ───
@@ -85,15 +105,13 @@ router.get('/admin/products/create', (req, res) => {
   });
 });
 
-router.post('/admin/products/create', upload.single('image_file'), (req, res, next) => {
+router.post('/admin/products/create', parseAndValidateProductImage, (req, res, next) => {
   if(mysqlMode()){
     if(req.file)upload.safeUnlink(req.file.path);
     return next(new ConflictError('Use the canonical Phase 06 product form to create a MySQL catalog product.'));
   }
   const b = req.body;
-  const img = req.file
-    ? `/uploads/custom/${req.file.filename}`
-    : b.image_url || '/uploads/product/lychee-fresh.jpg';
+  const img = req.validatedProductImagePath || b.image_url || '/uploads/product/lychee-fresh.jpg';
   const code = b.code || `P0${Math.floor(250 + Math.random() * 700)}`;
   const slug = `${makeSlug(b.name)}-${Date.now().toString().slice(-4)}`;
 
@@ -148,7 +166,7 @@ router.get('/admin/products/edit/:id', asyncHandler(async (req, res) => {
   });
 }));
 
-router.post('/admin/products/edit/:id', upload.single('image_file'), (req, res, next) => {
+router.post('/admin/products/edit/:id', parseAndValidateProductImage, (req, res, next) => {
   if(mysqlMode()){
     if(req.file)upload.safeUnlink(req.file.path);
     return next(new ConflictError('Use the canonical Phase 06 product form to edit a MySQL catalog product.'));
@@ -157,9 +175,7 @@ router.post('/admin/products/edit/:id', upload.single('image_file'), (req, res, 
   if (!existing) return res.redirect('/admin/inhouse-products/manage');
 
   const b = req.body;
-  const img = req.file
-    ? `/uploads/custom/${req.file.filename}`
-    : b.image_url || existing.image;
+  const img = req.validatedProductImagePath || b.image_url || existing.image;
 
   db.run(
     `UPDATE products SET

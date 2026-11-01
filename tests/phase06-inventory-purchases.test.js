@@ -186,7 +186,7 @@ describe('Phase 06 — Product, Inventory Ledger, Supplier & Purchase Receiving'
     app.use((req,_res,next)=>{req.sessionID='phase06-primary-image-session';req.session={_csrfNonce:nonce,adminUser:{id:7}};req.adminUser={id:7,role_slug:'phase06_test',permissions:['inventory.manage']};req.locale='en';req.csrfToken=()=>token;req.flash=()=>{};next();});
     app.use(legacyAdminRbac);app.use(legacyAdminCsrf);app.use(phase06Routes);app.use(createErrorHandler());
     const server=await new Promise((resolve)=>{const instance=app.listen(0,'127.0.0.1',()=>resolve(instance));});
-    const png={name:'device-photo.png',type:'image/png',bytes:Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a,0x00])};
+    const png={name:'device-photo.PNG',type:'application/octet-stream',bytes:Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a,0x00])};
     const send=async({csrf=true,file=null,imageUrl,fields:extra={}}={})=>{
       const form=new FormData();if(csrf)form.append('_csrf',token);
       for(const [key,value] of Object.entries({...fields,...extra}))form.append(key,String(value));
@@ -217,6 +217,50 @@ describe('Phase 06 — Product, Inventory Ledger, Supplier & Purchase Receiving'
         const filePath=path.join(root,path.basename(uploadedPath));
         assert.equal(Number(db.get('SELECT COUNT(*) AS n FROM products WHERE image=?',uploadedPath).n),0,'test image is unreferenced before cleanup');
         if(fs.existsSync(filePath))fs.unlinkSync(filePath);
+      }
+    }
+  });
+
+  test('standard admin product image uploads accept vendor MIME hints and defer CSRF until parsing', async () => {
+    const express=require('express');
+    const {deriveCsrfToken}=require('../src/middleware/csrf');
+    const {legacyAdminRbac,legacyAdminCsrf}=require('../src/middleware/legacyAdminRbac');
+    const {createErrorHandler}=require('../src/middleware/errorHandler');
+    const adminCatalogRoutes=require('../src/routes/adminCatalog');
+    const upload=require('../src/middleware/upload');
+    const root=upload.resolveUploadBase();
+    const initialFiles=new Set(fs.readdirSync(root));
+    const nonce=`standard-product-${process.pid}-${Date.now()}`;
+    const sessionId=`standard-product-session-${process.pid}`;
+    const token=deriveCsrfToken(sessionId,nonce);
+    const app=express();app.use(express.urlencoded({extended:false}));app.use(express.json());
+    app.use((req,_res,next)=>{req.sessionID=sessionId;req.session={_csrfNonce:nonce,adminUser:{id:7}};req.adminUser={id:7,role_slug:'standard_product_test',permissions:['catalog.manage']};req.csrfToken=()=>token;req.flash=()=>{};next();});
+    app.use(legacyAdminRbac);app.use(legacyAdminCsrf);app.use(adminCatalogRoutes);app.use(createErrorHandler());
+    const server=await new Promise((resolve)=>{const instance=app.listen(0,'127.0.0.1',()=>resolve(instance));});
+    const name=`Upload validation ${process.pid} ${Date.now()}`;
+    const file={name:'phone-photo',type:'image/x-png',bytes:Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a,0x00])};
+    const send=async({csrf=true,uploadFile=file}={})=>{
+      const form=new FormData();if(csrf)form.append('_csrf',token);
+      form.append('name',name);form.append('category_id','1');form.append('brand_id','');form.append('image_url','');
+      if(uploadFile)form.append('image_file',new Blob([uploadFile.bytes],{type:uploadFile.type}),uploadFile.name);
+      const response=await fetch(`http://127.0.0.1:${server.address().port}/admin/products/create`,{method:'POST',headers:{accept:'text/html'},body:form,redirect:'manual'});
+      return {status:response.status,location:response.headers.get('location'),text:await response.text()};
+    };
+    let imagePath='';let productId=null;
+    try{
+      const noCsrf=await send({csrf:false});assert.equal(noCsrf.status,403,'legacy admin middleware defers multipart CSRF to the parsed product form');
+      assert.deepEqual(new Set(fs.readdirSync(root)),initialFiles,'CSRF rejection removes the uploaded file');
+      const success=await send();assert.equal(success.status,302,success.text.slice(0,250));
+      const product=db.get('SELECT id,image FROM products WHERE name=?',name);assert.ok(product);
+      productId=Number(product.id);imagePath=product.image;
+      assert.match(imagePath,/^\/uploads\/custom\/[A-Za-z0-9][A-Za-z0-9._-]*\.png$/,'vendor image MIME chooses the matching stored suffix');
+      assert.ok(fs.existsSync(path.join(root,path.basename(imagePath))));
+    }finally{
+      await new Promise((resolve)=>server.close(resolve));
+      if(productId)db.run('DELETE FROM products WHERE id=?',productId);
+      if(imagePath){
+        assert.equal(Number(db.get('SELECT COUNT(*) AS n FROM products WHERE image=?',imagePath).n),0,'uploaded image is unreferenced before cleanup');
+        const stored=path.join(root,path.basename(imagePath));if(fs.existsSync(stored))fs.unlinkSync(stored);
       }
     }
   });
@@ -359,7 +403,7 @@ describe('Phase 06 — Product, Inventory Ledger, Supplier & Purchase Receiving'
     });
     app.use(legacyAdminRbac);app.use(legacyAdminCsrf);app.use(phase06Routes);app.use(createErrorHandler());
     const server=await new Promise((resolve)=>{const instance=app.listen(0,'127.0.0.1',()=>resolve(instance));});
-    const send=async({auth='granted',csrf=true,file={name:'../unsafe.png',type:'image/png',bytes:Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a,0x00])}}={})=>{
+    const send=async({auth='granted',csrf=true,file={name:'../unsafe.PNG',type:'application/octet-stream',bytes:Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a,0x00])}}={})=>{
       const form=new FormData();if(csrf)form.append('_csrf',token);
       if(file)form.append('gallery_images',new Blob([file.bytes],{type:file.type}),file.name);
       const response=await fetch(`http://127.0.0.1:${server.address().port}/admin/phase06/products/${product.id}/gallery/upload`,{
@@ -622,5 +666,40 @@ describe('Phase 06 — Product, Inventory Ledger, Supplier & Purchase Receiving'
     const fake = path.join(os.tmpdir(), `mrtumi-svg-signature-${process.pid}.upload`);
     fs.writeFileSync(fake, '<svg xmlns="http://www.w3.org/2000/svg"></svg>');
     try { assert.equal(upload.hasValidRasterMagicBytes(fake), false); } finally { fs.unlinkSync(fake); }
+
+    const signatures=[
+      ['jpg',Buffer.from([0xff,0xd8,0xff,0xe1,0x00,0x10,0x45,0x78,0x69,0x66,0x00,0x00])],
+      ['png',Buffer.from([0x89,0x50,0x4e,0x47])],
+      ['gif',Buffer.from('GIF89a')],
+      ['webp',Buffer.from('RIFF0000WEBP')],
+    ];
+    for(const [extension,bytes] of signatures){
+      const image=path.join(os.tmpdir(),`mrtumi-signature-${process.pid}.${extension}`);
+      fs.writeFileSync(image,bytes);
+      try { assert.equal(upload.hasValidRasterMagicBytes(image),true,`${extension} signature is accepted`); }
+      finally { fs.unlinkSync(image); }
+    }
+
+    const permissionFile=path.join(os.tmpdir(),`mrtumi-permission-fallback-${process.pid}.jpg`);
+    fs.writeFileSync(permissionFile,'opaque but non-empty upload fixture');
+    const originalOpenSync=fs.openSync;
+    fs.openSync=function(){const error=new Error('permission denied fixture');error.code='EACCES';throw error;};
+    try {
+      assert.equal(upload.validateUploadedImageFile({path:permissionFile,originalname:'DEVICE.JPG',fieldname:'image_file'}),`/uploads/custom/${path.basename(permissionFile)}`,
+        'a permitted raster extension can be used only when OS permissions prevent signature inspection');
+    } finally {
+      fs.openSync=originalOpenSync;
+      fs.unlinkSync(permissionFile);
+    }
+
+    const disguised=path.join(os.tmpdir(),`mrtumi-disguised-${process.pid}.jpg`);
+    fs.writeFileSync(disguised,'not an image');
+    try {
+      assert.throws(()=>upload.validateUploadedImageFile({path:disguised,originalname:'disguised.jpg'}),ValidationError,
+        'a readable non-image cannot pass solely because it has an allowed extension');
+      assert.equal(fs.existsSync(disguised),false,'rejected disguised content is removed');
+    } finally {
+      if(fs.existsSync(disguised))fs.unlinkSync(disguised);
+    }
   });
 });

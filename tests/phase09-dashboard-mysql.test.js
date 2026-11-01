@@ -554,7 +554,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
       const text=await response.text();let json=null;try{json=JSON.parse(text);}catch{}
       return {status:response.status,text,json};
     };
-    const validPng={name:'../../gallery-owned.png',type:'image/png',bytes:Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a,0x00])};
+    const validPng={name:'../../gallery-owned',type:'image/x-png',bytes:Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a,0x00])};
     const formPage=await request(`${productPath}/edit`,{accept:'text/html'});
     assert.equal(formPage.status,200);assert.match(formPage.text,/enctype="multipart\/form-data"/);
     assert.equal((await uploadRequest({files:[validPng],cookie:''})).status,401,'unauthenticated multipart upload is denied before storage');

@@ -44,7 +44,7 @@ describe('Phase 09 dashboard repository contract', () => {
     let uploadParseError=null;
     legacyAdminCsrf({method:'POST',path:'/admin/phase06/products/12/gallery/upload',adminUser:{id:3},session:{},headers:{'content-type':'multipart/form-data; boundary=fixture'}},{},err=>{uploadParseError=err||null;});
     assert.equal(uploadParseError,null,'the exact multipart gallery endpoint defers CSRF validation until Multer parses its body');
-    for(const path of ['/admin/phase06/products','/admin/phase06/products/12']){
+    for(const path of ['/admin/phase06/products','/admin/phase06/products/12','/admin/products/create','/admin/products/edit/12']){
       let deferredError=null;
       legacyAdminCsrf({method:'POST',path,adminUser:{id:3},session:{},headers:{'content-type':'multipart/form-data; boundary=fixture'}},{},err=>{deferredError=err||null;});
       assert.equal(deferredError,null,`${path} defers multipart CSRF validation until its upload parser runs`);
