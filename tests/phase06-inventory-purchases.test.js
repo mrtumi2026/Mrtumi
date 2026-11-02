@@ -138,7 +138,8 @@ describe('Phase 06 — Product, Inventory Ledger, Supplier & Purchase Receiving'
     assert.equal(JSON.parse(audit.after_json).nameBn, 'সম্পাদিত পণ্য');
 
     await assert.rejects(() => repo.updateProduct(product.id, { ...input, slug:'phase06-test-product-edited', regular_price_bdt:'10', sale_price_bdt:'12' }), ValidationError);
-    await assert.rejects(() => repo.updateProduct(product.id, { ...input, slug:'!!!' }), ValidationError);
+    const unsafeSlugUpdate = await repo.updateProduct(product.id, { ...input, slug:'!!!' });
+    assert.match(unsafeSlugUpdate.product.slug, /^[a-z0-9-]+$/);
     await assert.rejects(() => repo.updateProduct(999999, input), (err) => err.code === 'NOT_FOUND');
     const second = await repo.createProduct({ sku:'P06-EDIT-OTHER', name_bn:'অন্য পণ্য', slug:'phase06-edit-other', category_id:1,
       regular_price_bdt:'20', sale_price_bdt:'20', cost_price_bdt:'10' });

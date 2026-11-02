@@ -7,6 +7,7 @@ const { createRateLimiter } = require('../middleware/rateLimit');
 const upload = require('../middleware/upload');
 const { env } = require('../config/env');
 const vendorPortal = require('../repositories/vendorPortalRepository');
+const { generateSafeProductSlug } = require('../utils/slug');
 const partnerWithdrawalRepository = require('../repositories/partnerWithdrawalRepository');
 const mysqlActive = () => env.db.client === 'mysql';
 
@@ -248,7 +249,7 @@ router.post('/vendor/products/create', upload.single('image'), requireCsrfAndCle
      stock, sizes, colors, image, short_desc, description, approval_status, status)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
     b.name.trim(),
-    makeSlug(b.name),
+    generateSafeProductSlug(b.slug || b.name, b.name_en, code),
     code,
     Number(b.category_id || 1),
     Number(b.brand_id || 1),

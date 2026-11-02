@@ -96,6 +96,16 @@ function buildBaseUrl(req) {
   return `${proto}://${host}`;
 }
 
+function safeProductPath(product) {
+  const slug = String(product?.slug || '');
+  const reference = slug && !slug.includes('?') && /^[a-zA-Z0-9_-]+$/.test(slug)
+    ? slug
+    : String(product?.id || product?.product_id || '');
+  return /^[1-9][0-9]*$/.test(reference) || /^[a-zA-Z0-9_-]+$/.test(reference)
+    ? `/product/${encodeURIComponent(reference)}`
+    : '/all-products';
+}
+
 function buildPaginationBaseUrl(pathname, queryObj = {}) {
   const params = new URLSearchParams();
   for (const [k, v] of Object.entries(queryObj)) {
@@ -513,7 +523,7 @@ router.get(
         availability: product.is_in_stock
           ? 'https://schema.org/InStock'
           : 'https://schema.org/OutOfStock',
-        url: `${baseUrl}/product/${encodeURIComponent(product.slug)}`,
+        url: `${baseUrl}${safeProductPath(product)}`,
       },
     };
     if (reviewStats.count > 0) {
@@ -532,7 +542,7 @@ router.get(
       pageMeta: {
         title: product.name,
         description: (product.short_desc || product.description || product.name).slice(0, 160),
-        canonicalUrl: `${baseUrl}/product/${encodeURIComponent(product.slug)}`,
+        canonicalUrl: `${baseUrl}${safeProductPath(product)}`,
         ogType: 'product',
         ogImage: product.image.startsWith('http') ? product.image : `${baseUrl}${product.image}`,
         jsonLd,
@@ -602,7 +612,7 @@ router.post(
         return res.status(400).json({ success: false, message: msg });
       }
       req.flash('error', msg);
-      return res.redirect(req.get('Referrer') || `/product/${prod.slug}`);
+      return res.redirect(req.get('Referrer') || safeProductPath(prod));
     }
 
     const chosenSize = String(
@@ -873,7 +883,7 @@ router.post('/order/quick-submit', publicFormLimiter, requireCsrf, asyncHandler(
       return res.status(400).json({ success: false, message: errMsg });
     }
     req.flash('error', errMsg);
-    return res.redirect(req.get('Referrer') || `/product/${prod.slug}`);
+    return res.redirect(req.get('Referrer') || safeProductPath(prod));
   }
 
   const clientIp = req.ip || '';
@@ -1692,7 +1702,7 @@ router.get('/api/recent-verified-order', (_req, res) => {
     return res.json({ enabled: false });
   }
   const ord = db.get(
-    `SELECT o.customer_name, o.address, oi.product_name, oi.product_image, p.slug
+    `SELECT o.customer_name, o.address, oi.product_name, oi.product_image, p.slug, p.id AS product_id
      FROM orders o
      JOIN order_items oi ON oi.order_id = o.id
      LEFT JOIN products p ON p.id = oi.product_id
@@ -1705,7 +1715,7 @@ router.get('/api/recent-verified-order', (_req, res) => {
     location: ord.address,
     product: ord.product_name,
     image: ord.product_image || '/uploads/product/lychee-fresh.jpg',
-    url: ord.slug ? `/product/${ord.slug}` : '/all-products',
+    url: safeProductPath(ord),
   });
 });
 
@@ -1744,7 +1754,7 @@ router.get(
       ...entries.subcategories.map((sc) => `${baseUrl}/subcategory/${encodeURIComponent(sc.slug)}`),
       ...entries.childcategories.map((cc) => `${baseUrl}/childcategory/${encodeURIComponent(cc.slug)}`),
       ...entries.brands.map((b) => `${baseUrl}/brand/${encodeURIComponent(b.slug)}`),
-      ...entries.products.map((p) => `${baseUrl}/product/${encodeURIComponent(p.slug)}`),
+      ...entries.products.map((p) => `${baseUrl}${safeProductPath(p)}`),
       ...entries.blogs.map((b) => `${baseUrl}/blog/${encodeURIComponent(b.slug)}`),
       ...entries.pages.map((pg) => `${baseUrl}/page/${encodeURIComponent(pg.slug)}`),
     ];

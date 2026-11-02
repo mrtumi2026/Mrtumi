@@ -52,7 +52,7 @@
                   <div class="d-flex align-items-center gap-2">
                     <img src="<%= p.image %>" class="p-thumb" alt="" />
                     <div>
-                      <a href="/product/<%= p.slug %>" target="_blank" class="fw-semibold text-dark text-decoration-none"><%= p.name %></a>
+                      <a href="/product/<%= (p.slug && !String(p.slug).includes('?') && /^[a-zA-Z0-9_-]+$/.test(String(p.slug))) ? p.slug : p.id %>" target="_blank" class="fw-semibold text-dark text-decoration-none"><%= p.name %></a>
                       <% if (p.vendor_name) { %><div class="text-muted" style="font-size:11px;">Vendor: <%= p.vendor_name %></div><% } %>
                     </div>
                   </div>

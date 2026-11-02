@@ -52,7 +52,7 @@
                       <div class="d-flex align-items-center gap-3">
                         <img src="<%= it.image %>" style="width:60px;height:60px;border-radius:10px;object-fit:cover;" alt="" />
                         <div>
-                          <a href="/product/<%= it.slug %>" class="fw-bold text-dark text-decoration-none"><%= it.name %></a>
+                          <a href="/product/<%= (it.slug && !String(it.slug).includes('?') && /^[a-zA-Z0-9_-]+$/.test(String(it.slug))) ? it.slug : it.product_id %>" class="fw-bold text-dark text-decoration-none"><%= it.name %></a>
                           <div class="small text-muted"><%= it.size %><%= it.color ? (' • ' + it.color) : '' %></div>
                         </div>
                       </div>

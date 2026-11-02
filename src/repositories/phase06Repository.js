@@ -8,6 +8,7 @@ const { withTransaction } = require('../db/mysqlPool');
 const { recordAuditLog } = require('./auditLogRepository');
 const { ValidationError, NotFoundError, AppError, ConflictError } = require('../utils/errors');
 const { bdtToPaisa } = require('../utils/money');
+const { generateSafeProductSlug } = require('../utils/slug');
 
 function isMysql() {
   return env.db.client === 'mysql';
@@ -357,11 +358,11 @@ async function validateTaxonomyRelations(ids, db = null) {
   }
 }
 
-function normalizeProductEditInput(input) {
+function normalizeProductEditInput(input, productId = null) {
   const product = {
     nameBn: cleanText(input.name_bn, 255, 'Bangla product name', true),
     nameEn: cleanText(input.name_en, 255, 'English product name'),
-    slug: slugify(input.slug),
+    slug: generateSafeProductSlug(input.slug || input.name_bn, input.name_en, input.sku, productId),
     type: cleanText(input.product_type || 'grocery', 32, 'Product type', true),
     categoryId: positiveId(input.category_id, 'Category'),
     subcategoryId: input.subcategory_id ? positiveId(input.subcategory_id, 'Subcategory') : null,
@@ -387,7 +388,7 @@ function normalizeProductEditInput(input) {
 
 async function updateProduct(idInput, input, actor = {}) {
   const id = positiveId(idInput, 'Product');
-  const product = normalizeProductEditInput(input);
+  const product = normalizeProductEditInput(input, id);
   const snapshot = { ...product };
   if (isMysql()) {
     const pool = require('../db/mysqlPool').getPool();
@@ -743,7 +744,7 @@ async function createProduct(input, actor = {}) {
     barcode: cleanText(input.barcode, 64, 'Barcode'),
     nameBn: cleanText(input.name_bn || input.name, 255, 'Bangla product name', true),
     nameEn: cleanText(input.name_en, 255, 'English product name'),
-    slug: slugify(input.slug || input.name_en || input.name_bn || input.name),
+    slug: generateSafeProductSlug(input.slug || input.name_bn || input.name, input.name_en, input.sku || input.code),
     type: cleanText(input.product_type || 'grocery', 32, 'Product type', true),
     categoryId: input.category_id ? positiveId(input.category_id, 'Category') : null,
     subcategoryId: input.subcategory_id ? positiveId(input.subcategory_id, 'Subcategory') : null,

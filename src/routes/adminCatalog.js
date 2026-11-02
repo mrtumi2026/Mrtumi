@@ -8,6 +8,7 @@ const phase06Repo = require('../repositories/phase06Repository');
 const couponRepo = require('../repositories/adminCouponRepository');
 const { asyncHandler } = require('../utils/asyncHandler');
 const { ConflictError } = require('../utils/errors');
+const { generateSafeProductSlug } = require('../utils/slug');
 
 const router = express.Router();
 const mysqlMode = () => env.db.client === 'mysql';
@@ -95,7 +96,7 @@ router.post('/admin/products/create', upload.single('image_file'), (req, res, ne
     ? `/uploads/custom/${req.file.filename}`
     : b.image_url || '/uploads/product/lychee-fresh.jpg';
   const code = b.code || `P0${Math.floor(250 + Math.random() * 700)}`;
-  const slug = `${makeSlug(b.name)}-${Date.now().toString().slice(-4)}`;
+  const slug = generateSafeProductSlug(b.slug || b.name, b.name_en, code);
 
   db.run(
     `INSERT INTO products

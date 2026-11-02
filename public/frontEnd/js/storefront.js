@@ -3,6 +3,15 @@
     return window.__withPbSid ? window.__withPbSid(url) : url;
   }
 
+  function productPath(product) {
+    var slug = product && product.slug;
+    if (typeof slug === 'string' && !slug.includes('?') && /^[a-zA-Z0-9_-]+$/.test(slug)) {
+      return '/product/' + encodeURIComponent(slug);
+    }
+    var productId = Number(product && (product.product_id || product.id));
+    return Number.isSafeInteger(productId) && productId > 0 ? '/product/' + productId : '/all-products';
+  }
+
   function i18nStr(key, fallback) {
     var dict = window.__MT_I18N || {};
     return dict[key] || fallback;
@@ -80,7 +89,7 @@
               '  <div class="d-flex align-items-center gap-2">' +
               '    <img src="' + escapeHtml(it.image) + '" style="width:50px;height:50px;border-radius:10px;object-fit:cover;" alt="" />' +
               '    <div>' +
-              '      <a href="' + escapeHtml(navUrl('/product/' + it.slug)) + '" class="fw-bold small text-dark text-decoration-none d-block" style="max-width:170px;">' + escapeHtml(it.name) + '</a>' +
+              '      <a href="' + escapeHtml(navUrl(productPath(it))) + '" class="fw-bold small text-dark text-decoration-none d-block" style="max-width:170px;">' + escapeHtml(it.name) + '</a>' +
               '      <div class="text-muted" style="font-size:11.5px;">' + escapeHtml(it.size) + (it.color ? ' • ' + escapeHtml(it.color) : '') + ' • ৳' + Number(it.price).toLocaleString('en-IN') + '</div>' +
               '      <div class="input-group input-group-sm mt-1" style="width:96px;">' +
               '        <button type="button" class="btn btn-outline-secondary py-0 px-2" onclick="window.updateCartItemQty(\'' + escapeHtml(it.key) + '\',' + (Number(it.qty) - 1) + ')">−</button>' +
@@ -377,7 +386,7 @@
         link.id = 'store-search-suggestion-' + index;
         link.setAttribute('role', 'option');
         link.setAttribute('aria-selected', 'false');
-        link.href = navUrl('/product/' + encodeURIComponent(item.slug));
+        link.href = navUrl(productPath(item));
         var image = document.createElement('img');
         image.src = item.image || '/uploads/product/lychee-fresh.jpg';
         image.alt = '';

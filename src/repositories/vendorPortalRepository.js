@@ -3,6 +3,7 @@ const crypto = require('node:crypto');
 const { env } = require('../config/env');
 const { getPool, createQueryClient, withTransaction } = require('../db/mysqlPool');
 const { requirePositiveInt } = require('../utils/validator');
+const { generateSafeProductSlug } = require('../utils/slug');
 const { ConflictError, NotFoundError, ValidationError } = require('../utils/errors');
 const NEXT = Object.freeze({ pending: 'processing', processing: 'ready', ready: 'dispatched' });
 function client(pool) { return createQueryClient(pool || getPool()); }
@@ -20,7 +21,7 @@ async function saveProduct(vendorId,input,{id,pool}={}) {
     if(category && !await tx.queryOne('SELECT id FROM categories WHERE id=? AND status=1',[category])) throw new ValidationError('Select an active category.');
     if(brand && !await tx.queryOne('SELECT id FROM brands WHERE id=? AND status=1',[brand])) throw new ValidationError('Select an active brand.');
     if(id){const existing=await tx.queryOne('SELECT id,approval_status FROM products WHERE id=? AND vendor_id=? FOR UPDATE',[requirePositiveInt(id,'product ID'),owner]); if(!existing) throw new NotFoundError('Product not found.'); const result=await tx.execute(`UPDATE products SET name_bn=?,name_en=?,category_id=?,brand_id=?,regular_price_paisa=?,sale_price_paisa=?,wholesale_price_paisa=?,image_url=?,short_desc_bn=?,description_bn=?,unit_label=?,status=? WHERE id=? AND vendor_id=?`,[...fields.slice(0,11),input.status==='0'?0:1,id,owner]); if(result.affectedRows!==1) throw new NotFoundError('Product not found.'); await tx.execute('INSERT INTO vendor_product_history(product_id,vendor_id,action,before_json,after_json) VALUES(?,?,?,?,?)',[id,owner,'updated',JSON.stringify(existing),JSON.stringify({name_bn:name,name_en:nameEn,status:input.status==='0'?0:1})]); return Number(id); }
-    const slug=slugify(name); const approval=(await tx.queryOne('SELECT verified FROM vendors WHERE id=? AND status=1 FOR UPDATE',[owner])); if(!approval) throw new NotFoundError('Vendor account not found.');
+    const slug=generateSafeProductSlug(input.slug || name,nameEn,sku); const approval=(await tx.queryOne('SELECT verified FROM vendors WHERE id=? AND status=1 FOR UPDATE',[owner])); if(!approval) throw new NotFoundError('Vendor account not found.');
     const result=await tx.execute(`INSERT INTO products(sku,slug,name_bn,name_en,category_id,brand_id,vendor_id,regular_price_paisa,sale_price_paisa,wholesale_price_paisa,vendor_stock_on_hand,image_url,short_desc_bn,description_bn,unit_label,approval_status,status) VALUES(?,?,?,?,?,?, ?,?,?,?,?,?,?,?,?,?,1)`,[sku,slug,name,nameEn,category,brand,owner,...fields.slice(4,7),fields[11],fields[7],fields[8],fields[9],fields[10],Number(approval.verified)?'approved':'pending']); await tx.execute('INSERT INTO vendor_product_history(product_id,vendor_id,action,after_json) VALUES(?,?,?,?)',[result.insertId,owner,'created',JSON.stringify({name_bn:name,name_en:nameEn,approval_status:Number(approval.verified)?'approved':'pending',vendor_stock_on_hand:fields[11]})]); return result.insertId;
   },{pool});
 }
