@@ -114,14 +114,17 @@ async function reserveOrderInventoryTx(tx, orderId, actor = {}) {
   }
   const products = await tx.lockRowsById('products', lines.map((l) => l.productId), ['id','vendor_id','stock_on_hand','stock_reserved','vendor_stock_on_hand','vendor_stock_reserved','status','is_archived']);
   const productsById = new Map(products.map((p) => [Number(p.id), p]));
+  const vendorIds=[...new Set(products.map(p=>Number(p.vendor_id)).filter(Boolean))];
+  const vendors=vendorIds.length?await tx.queryAll(`SELECT id,status,lifecycle_status FROM vendors WHERE id IN (${vendorIds.map(()=>'?').join(',')}) ORDER BY id FOR UPDATE`,vendorIds):[];
+  const vendorsById=new Map(vendors.map(v=>[Number(v.id),v]));
   const variantIds = lines.filter((l) => l.variantId).map((l) => l.variantId);
   const variants = variantIds.length ? await tx.queryAll(`SELECT id, product_id, stock_on_hand, stock_reserved, status FROM product_variants WHERE id IN (${variantIds.map(() => '?').join(',')}) ORDER BY id FOR UPDATE`, variantIds) : [];
   const variantsById = new Map(variants.map((v) => [Number(v.id), v]));
   for (const line of lines) {
     const p = productsById.get(line.productId);
     if (!p || Number(p.status) !== 1 || Number(p.is_archived)) throw new ConflictError(`Product ${line.productId} is unavailable.`);
+    if(p.vendor_id){const owner=vendorsById.get(Number(p.vendor_id));if(!owner||Number(owner.status)!==1||owner.lifecycle_status!=='active')throw new ConflictError(`Product ${line.productId} is unavailable.`);}
     if (line.variantId && (!variantsById.has(line.variantId) || Number(variantsById.get(line.variantId).product_id) !== line.productId || Number(variantsById.get(line.variantId).status) !== 1)) throw new ConflictError(`Variant ${line.variantId} is unavailable.`);
-    if (line.variantId && p.vendor_id) throw new ConflictError('Variant reservations for vendor-stock products are not supported by the current inventory model.');
     const pool = p.vendor_id ? 'vendor' : 'warehouse';
     const onHand = line.variantId ? Number(variantsById.get(line.variantId).stock_on_hand) : Number(p[pool === 'vendor' ? 'vendor_stock_on_hand' : 'stock_on_hand']);
     const reserved = line.variantId ? Number(variantsById.get(line.variantId).stock_reserved) : Number(p[pool === 'vendor' ? 'vendor_stock_reserved' : 'stock_reserved']);
@@ -132,8 +135,10 @@ async function reserveOrderInventoryTx(tx, orderId, actor = {}) {
     const p = productsById.get(line.productId);
     const pool = p.vendor_id ? 'vendor' : 'warehouse';
     if (line.variantId) await tx.execute('UPDATE product_variants SET stock_reserved=stock_reserved+? WHERE id=?', [line.qty,line.variantId]);
-    const reservationColumn = pool === 'vendor' ? 'vendor_stock_reserved' : 'stock_reserved';
-    await tx.execute(`UPDATE products SET ${reservationColumn}=${reservationColumn}+? WHERE id=?`, [line.qty,line.productId]);
+    if (!line.variantId) {
+      const reservationColumn = pool === 'vendor' ? 'vendor_stock_reserved' : 'stock_reserved';
+      await tx.execute(`UPDATE products SET ${reservationColumn}=${reservationColumn}+? WHERE id=?`, [line.qty,line.productId]);
+    }
     await tx.execute('INSERT INTO stock_reservations (product_id,variant_id,stock_pool,qty,reservation_key,request_hash,status,expires_at) VALUES (?,?,?,?,?,?,?,?)', [line.productId,line.variantId,pool,line.qty,key,hash,'active',expiresAt]);
   }
   return { replayed: false, rows: lines.length };
@@ -146,10 +151,9 @@ async function releaseOrderInventoryTx(tx, orderId, actor = {}, reason = 'Order 
   for (const r of reservations) {
     const col = r.stock_pool === 'vendor' ? 'vendor_stock_reserved' : 'stock_reserved';
     const product=productMap.get(Number(r.product_id));
-    if(!product || Number(product[col])<Number(r.qty)) throw new ConflictError('Cannot release an inventory reservation that is not held.');
-    if(r.variant_id){const variant=await tx.queryOne('SELECT stock_reserved FROM product_variants WHERE id=? FOR UPDATE',[r.variant_id]);if(!variant||Number(variant.stock_reserved)<Number(r.qty))throw new ConflictError('Cannot release variant inventory that is not reserved.');}
-    await tx.execute(`UPDATE products SET ${col}=${col}-? WHERE id=?`, [r.qty,r.product_id]);
-    if (r.variant_id) await tx.execute('UPDATE product_variants SET stock_reserved=stock_reserved-? WHERE id=?', [r.qty,r.variant_id]);
+    if (!product) throw new ConflictError('Cannot release an inventory reservation whose product no longer exists.');
+    if (r.variant_id) { const variant=await tx.queryOne('SELECT stock_reserved FROM product_variants WHERE id=? FOR UPDATE',[r.variant_id]); if(!variant||Number(variant.stock_reserved)<Number(r.qty))throw new ConflictError('Cannot release variant inventory that is not reserved.'); await tx.execute('UPDATE product_variants SET stock_reserved=stock_reserved-? WHERE id=?',[r.qty,r.variant_id]); }
+    else { if(Number(product[col])<Number(r.qty))throw new ConflictError('Cannot release an inventory reservation that is not held.'); await tx.execute(`UPDATE products SET ${col}=${col}-? WHERE id=?`,[r.qty,r.product_id]); }
     await tx.execute('UPDATE stock_reservations SET status="released" WHERE id=? AND status="active"', [r.id]);
     await tx.execute('INSERT INTO stock_ledger (product_id,variant_id,stock_pool,vendor_id,movement_type,qty_delta,balance_after,reference_type,reference_id,reason,actor_user_id) SELECT p.id,?,?,p.vendor_id,?,?,CASE WHEN ?="vendor" THEN p.vendor_stock_on_hand ELSE p.stock_on_hand END,"order",?,?,? FROM products p WHERE p.id=?', [r.variant_id,r.stock_pool,'release',0,r.stock_pool,orderId,reason,actor.id||null,r.product_id]);
   }
@@ -168,13 +172,9 @@ async function expireOrderInventoryTx(tx, orderId) {
   for (const r of reservations) {
     const col = r.stock_pool === 'vendor' ? 'vendor_stock_reserved' : 'stock_reserved';
     const product = productMap.get(Number(r.product_id));
-    if (!product || Number(product[col]) < Number(r.qty)) throw new ConflictError('Cannot expire an inventory reservation that is not held.');
-    if (r.variant_id) {
-      const variant = await tx.queryOne('SELECT stock_reserved FROM product_variants WHERE id=? FOR UPDATE', [r.variant_id]);
-      if (!variant || Number(variant.stock_reserved) < Number(r.qty)) throw new ConflictError('Cannot expire variant inventory that is not reserved.');
-    }
-    await tx.execute(`UPDATE products SET ${col}=${col}-? WHERE id=?`, [r.qty, r.product_id]);
-    if (r.variant_id) await tx.execute('UPDATE product_variants SET stock_reserved=stock_reserved-? WHERE id=?', [r.qty, r.variant_id]);
+    if (!product) throw new ConflictError('Cannot expire a reservation whose product no longer exists.');
+    if (r.variant_id) { const variant=await tx.queryOne('SELECT stock_reserved FROM product_variants WHERE id=? FOR UPDATE',[r.variant_id]); if(!variant||Number(variant.stock_reserved)<Number(r.qty))throw new ConflictError('Cannot expire variant inventory that is not reserved.'); await tx.execute('UPDATE product_variants SET stock_reserved=stock_reserved-? WHERE id=?',[r.qty,r.variant_id]); }
+    else { if(Number(product[col])<Number(r.qty))throw new ConflictError('Cannot expire an inventory reservation that is not held.'); await tx.execute(`UPDATE products SET ${col}=${col}-? WHERE id=?`,[r.qty,r.product_id]); }
     const changed = await tx.execute('UPDATE stock_reservations SET status="expired" WHERE id=? AND status="active" AND expires_at<=UTC_TIMESTAMP()', [r.id]);
     if (Number(changed.affectedRows) !== 1) throw new ConflictError('Reservation changed while it was being expired.');
     await tx.execute('INSERT INTO stock_ledger (product_id,variant_id,stock_pool,vendor_id,movement_type,qty_delta,balance_after,reference_type,reference_id,reason,actor_user_id) SELECT p.id,?,?,p.vendor_id,?,?,CASE WHEN ?="vendor" THEN p.vendor_stock_on_hand ELSE p.stock_on_hand END,"order",?,"Expired order reservation",NULL FROM products p WHERE p.id=?', [r.variant_id,r.stock_pool,'release',0,r.stock_pool,id,r.product_id]);
@@ -221,12 +221,17 @@ async function consumeOrderInventoryTx(tx, orderId, actor = {}) {
     const variant = r.variant_id ? await tx.queryOne('SELECT stock_on_hand,stock_reserved FROM product_variants WHERE id=? FOR UPDATE', [r.variant_id]) : null;
     if (r.variant_id && (!variant || Number(variant.stock_on_hand) < Number(r.qty) || Number(variant.stock_reserved) < Number(r.qty))) throw new ConflictError('Reserved variant stock is no longer consistent.');
     const product = await tx.queryOne(`SELECT ${onHandCol} AS hand,${reservedCol} AS reserved,vendor_id FROM products WHERE id=? FOR UPDATE`, [r.product_id]);
-    if (!product || Number(product.hand) < Number(r.qty) || Number(product.reserved) < Number(r.qty)) throw new ConflictError('Reserved product stock is no longer consistent.');
-    await tx.execute(`UPDATE products SET ${onHandCol}=${onHandCol}-?,${reservedCol}=${reservedCol}-?,sold_count=sold_count+? WHERE id=?`, [r.qty,r.qty,r.qty,r.product_id]);
-    let balance = Number(product.hand) - Number(r.qty);
+    if (!product) throw new ConflictError('Reserved product no longer exists.');
+    let balance;
     if (r.variant_id) {
+      if (!variant || Number(variant.stock_on_hand) < Number(r.qty) || Number(variant.stock_reserved) < Number(r.qty)) throw new ConflictError('Reserved variant stock is no longer consistent.');
       await tx.execute('UPDATE product_variants SET stock_on_hand=stock_on_hand-?,stock_reserved=stock_reserved-? WHERE id=?', [r.qty,r.qty,r.variant_id]);
+      await tx.execute('UPDATE products SET sold_count=sold_count+? WHERE id=?', [r.qty,r.product_id]);
       balance = Number(variant.stock_on_hand) - Number(r.qty);
+    } else {
+      if (Number(product.hand) < Number(r.qty) || Number(product.reserved) < Number(r.qty)) throw new ConflictError('Reserved product stock is no longer consistent.');
+      await tx.execute(`UPDATE products SET ${onHandCol}=${onHandCol}-?,${reservedCol}=${reservedCol}-?,sold_count=sold_count+? WHERE id=?`, [r.qty,r.qty,r.qty,r.product_id]);
+      balance = Number(product.hand) - Number(r.qty);
     }
     await tx.execute('UPDATE stock_reservations SET status="consumed" WHERE id=? AND status="active"', [r.id]);
     await tx.execute('INSERT INTO stock_ledger (product_id,variant_id,stock_pool,vendor_id,movement_type,qty_delta,balance_after,reference_type,reference_id,reason,actor_user_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)', [r.product_id,r.variant_id,pool,product.vendor_id,'sale',-Number(r.qty),balance,'order',orderId,'Order fulfilled',actor.id||null]);
@@ -249,8 +254,10 @@ async function restoreReturnedInventoryTx(tx, orderId, actor = {}, reason = 'Ret
       if(!variant)throw new ConflictError('Cannot restore returned inventory because its variant no longer exists.');
       await tx.execute('UPDATE product_variants SET stock_on_hand=stock_on_hand+? WHERE id=?',[r.qty,r.variant_id]);
     }
-    const balance=Number(product[onHandCol])+Number(r.qty);
-    await tx.execute(`UPDATE products SET ${onHandCol}=${onHandCol}+? WHERE id=?`,[r.qty,r.product_id]);
+    const balance=r.variant_id
+      ? Number((await tx.queryOne('SELECT stock_on_hand FROM product_variants WHERE id=?',[r.variant_id])).stock_on_hand)
+      : Number(product[onHandCol])+Number(r.qty);
+    if(!r.variant_id) await tx.execute(`UPDATE products SET ${onHandCol}=${onHandCol}+? WHERE id=?`,[r.qty,r.product_id]);
     await tx.execute('UPDATE stock_reservations SET status=\"returned\" WHERE id=? AND status=\"consumed\"',[r.id]);
     await tx.execute('INSERT INTO stock_ledger (product_id,variant_id,stock_pool,vendor_id,movement_type,qty_delta,balance_after,reference_type,reference_id,reason,actor_user_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)',[r.product_id,r.variant_id,pool,product.vendor_id,'return',Number(r.qty),balance,'order',orderId,reason,actor.id||null]);
   }
@@ -268,7 +275,7 @@ async function transitionOrderTx(tx, orderIdInput, toStatus, note, actor = {}, r
     if (Number(prior.order_id) !== id || prior.to_status !== target) throw new ConflictError('Status request key was already used for a different transition.');
     return { id, to: target, replayed: true };
   }
-  const order = await tx.queryOne('SELECT id,order_status FROM orders WHERE id=? FOR UPDATE', [id]);
+  const order = await tx.queryOne('SELECT id,order_status,reseller_id,reseller_margin_paisa,invoice_no FROM orders WHERE id=? FOR UPDATE', [id]);
   if (!order) throw new NotFoundError('Order not found.');
   // Recheck after locking the parent order so a concurrent retry observes the committed key.
   prior = await tx.queryOne('SELECT order_id,to_status FROM order_status_history WHERE request_key=? FOR UPDATE', [key]);
@@ -286,6 +293,19 @@ async function transitionOrderTx(tx, orderIdInput, toStatus, note, actor = {}, r
   if (target === 'cancelled' || target === 'failed') await releaseOrderInventoryTx(tx, id, actor, reason);
   if (target === 'shipped') await consumeOrderInventoryTx(tx, id, actor);
   await tx.execute('UPDATE orders SET order_status=?,is_seen=1 WHERE id=?', [target,id]);
+  if (target === 'delivered' && order.reseller_id && Number(order.reseller_margin_paisa || 0) > 0) {
+    const margin = Number(order.reseller_margin_paisa);
+    if (!Number.isSafeInteger(margin) || margin < 1) throw new ValidationError('Recorded reseller margin is invalid.');
+    const reseller = await tx.queryOne('SELECT id,status FROM resellers WHERE id=? FOR UPDATE', [order.reseller_id]);
+    if (!reseller || Number(reseller.status) !== 1) throw new ConflictError('The reseller account is unavailable; order delivery was not recorded.');
+    const idempotencyKey = `reseller-earning:order:${id}`;
+    const pending = await tx.queryOne('SELECT id,amount_paisa,status FROM reseller_financial_ledger WHERE idempotency_key=? FOR UPDATE', [idempotencyKey]);
+    if (pending && Number(pending.amount_paisa) !== margin) throw new ConflictError('Existing reseller earning snapshot does not match; delivery was not recorded.');
+    if (!pending) {
+      await tx.execute("INSERT INTO reseller_financial_ledger(reseller_id,order_id,idempotency_key,entry_type,amount_paisa,status) VALUES(?,?,?,'earning',?,'pending')", [reseller.id,id,idempotencyKey,margin]);
+      await insertAudit(tx, actor, 'reseller.order.earning.held', 'order', id, null, { resellerId:Number(reseller.id), amountPaisa:margin, reason:'Awaiting payment/COD reconciliation and return-window eligibility.' });
+    }
+  }
   await tx.execute('INSERT INTO order_status_history (order_id,from_status,to_status,note,request_key,changed_by_user_id) VALUES (?,?,?,?,?,?)', [id,from,target,reason,key,actor.id||null]);
   await insertAudit(tx, actor, `order.status.${target}`, 'order', id, { status:from }, { status:target, reason, requestKey:key });
   return { id, from, to:target, replayed:false };
