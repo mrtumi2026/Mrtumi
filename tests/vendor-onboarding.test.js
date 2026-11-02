@@ -64,6 +64,13 @@ test('OTP invalid-attempt update commits before the conflict is raised',()=>{
   assert.ok(fn.indexOf('return{error:')<fn.indexOf('if(outcome.error)throw new ConflictError'));
 });
 
+test('vendor document persistence accepts both Multer field arrays and pre-extracted file objects',()=>{
+  const source=fs.readFileSync(path.join(root,'src/routes/vendorOnboarding.js'),'utf8');
+  const fn=source.slice(source.indexOf('async function persistDocumentSet'),source.indexOf('function vendorSession'));
+  assert.match(fn,/const raw=files&&files\[name\];\s*const file=Array\.isArray\(raw\)\?raw\[0\]:raw;/);
+  assert.match(fn,/result\[name\]=await documents\.storeUploadedDocument\(file\)/);
+});
+
 test('vendor logo is optional, upload form is multipart, and document errors are safely handled',()=>{
   const repository=fs.readFileSync(path.join(root,'src/repositories/vendorOnboardingRepository.js'),'utf8');
   assert.match(repository,/if\(!documents\.nid_front\|\|!documents\.nid_back\)/);

@@ -23,7 +23,8 @@ async function persistDocumentSet(files,existing={}){
   const result={...existing},created=[];
   try{
     for(const name of ['nid_front','nid_back','trade_license','shop_logo']){
-      const file=files&&files[name]&&files[name][0];
+      const raw=files&&files[name];
+      const file=Array.isArray(raw)?raw[0]:raw;
       if(file){result[name]=await documents.storeUploadedDocument(file);created.push(result[name]);}
     }
     return{result,created};
