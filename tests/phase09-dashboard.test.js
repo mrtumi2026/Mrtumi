@@ -174,7 +174,7 @@ describe('Phase 09 dashboard repository contract', () => {
     const source=fs.readFileSync(path.join(__dirname,'../src/routes/adminOperations.js'),'utf8');
     assert.match(source,/adminPartnerDirectoryRepository\.listVendors\(\{ pendingOnly \}\)/);
     assert.match(source,/adminPartnerDirectoryRepository\.listResellers\(\{ pendingOnly: unverifiedOnly \}\)/);
-    assert.match(source,/createAction: mysqlMode \? null : '\/admin\/vendors\/create'/);
+    assert.match(source,/createAction: pendingOnly \? null : '\/admin\/vendors\/create'/);
     assert.match(source,/customActionPrefix: mysqlMode \? null : '\/admin\/vendors\/verify'/);
     assert.match(source,/createAction: mysqlMode \? null : '\/admin\/resellers\/create'/);
     assert.match(source,/customActionPrefix: mysqlMode \? null : '\/admin\/resellers\/verify'/);

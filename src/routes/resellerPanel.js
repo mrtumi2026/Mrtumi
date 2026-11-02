@@ -1,4 +1,7 @@
 const express = require('express');
+const crypto = require('node:crypto');
+const resellerOrderRepository = require('../repositories/resellerOrderRepository');
+const settingsRepository = require('../repositories/settingsRepository');
 const bcrypt = require('bcryptjs');
 const db = require('../db/database');
 const { requireReseller } = require('../middleware/auth');
@@ -178,7 +181,7 @@ router.get('/reseller/dashboard', async (req, res, next) => {
 // ─── Reseller Wholesale Product Catalog ───
 router.get('/reseller/products', async (req, res, next) => {
   const q = String(req.query.q || '').trim();
-  if (mysqlActive()) { try { const products=await resellerPortal.listPublicProducts(q); return res.render('reseller/products',{products,searchQuery:q,allowOrderCreation:false,canonicalCatalog:true}); } catch(error) { return next(error); } }
+  if (mysqlActive()) { try { const products=await resellerPortal.listPublicProducts(q); return res.render('reseller/products',{products,searchQuery:q,allowOrderCreation:true,canonicalCatalog:true}); } catch(error) { return next(error); } }
   const products = db.all(
     `SELECT p.*, c.name AS category_name,
             CASE WHEN p.wholesale_price > 0 THEN p.wholesale_price ELSE ROUND(p.new_price * 0.85) END AS reseller_cost
@@ -194,8 +197,8 @@ router.get('/reseller/products', async (req, res, next) => {
 });
 
 // ─── Reseller Dropship Order Builder (Custom Selling Price + Live Profit) ───
-router.get('/reseller/orders/create', (req, res, next) => {
-  if (mysqlActive()) return res.status(409).render('reseller/unsupported-operation',{message:'অর্ডার তৈরি আপাতত বন্ধ। অনুমোদিত reseller-order pricing, stock allocation ও audit rules সংজ্ঞায়িত না হওয়া পর্যন্ত কোনো financial/order mutation গ্রহণ করা হবে না।'});
+router.get('/reseller/orders/create', async (req, res, next) => {
+  if (mysqlActive()) { try { const products=await resellerPortal.listPublicProducts(''); const selectedId=Number(req.query.product_id||products[0]?.id||0); const settings=await settingsRepository.getAllSettings(); return res.render('reseller/order-create',{products,selectedId,insideCharge:Number(settings.inside_dhaka_charge||60),outsideCharge:Number(settings.outside_dhaka_charge||120),requestKey:crypto.randomBytes(24).toString('hex'),canonicalOrder:true}); } catch(error){return next(error);} }
   const products = db.all(
     `SELECT p.*,
             CASE WHEN p.wholesale_price > 0 THEN p.wholesale_price ELSE ROUND(p.new_price * 0.85) END AS reseller_cost
@@ -213,8 +216,8 @@ router.get('/reseller/orders/create', (req, res, next) => {
   });
 });
 
-router.post('/reseller/orders/create', requireCsrf, (req, res) => {
-  if (mysqlActive()) return res.status(409).render('reseller/unsupported-operation',{message:'অর্ডার তৈরি আপাতত বন্ধ। অনুমোদিত reseller-order pricing, stock allocation ও audit rules সংজ্ঞায়িত না হওয়া পর্যন্ত কোনো financial/order mutation গ্রহণ করা হবে না।'});
+router.post('/reseller/orders/create', requireCsrf, async (req, res, next) => {
+  if (mysqlActive()) { try { const settings=await settingsRepository.getAllSettings(); const area=String(req.body.shipping_area||''); const fee=area==='ঢাকার ভিতরে'?Number(settings.inside_dhaka_charge||60):area==='ঢাকার বাইরে'?Number(settings.outside_dhaka_charge||120):NaN; const result=await resellerOrderRepository.create(req.body,{resellerId:req.session.resellerUser.id,shippingPaisa:Math.round(fee*100),ip:req.ip}); req.flash('success',result.replayed?'এই অর্ডার আগেই জমা হয়েছে।':'রিসেলার অর্ডার তৈরি হয়েছে; লাভ ডেলিভারি সম্পন্ন হলে ওয়ালেটে যোগ হবে।'); return res.redirect('/reseller/orders'); } catch(error){ if(['CONFLICT','NOT_FOUND','VALIDATION_ERROR'].includes(error.code)||error instanceof TypeError||error instanceof RangeError){req.flash('error',error.message);return res.redirect('/reseller/orders/create');} return next(error);} }
   const reseller = db.get('SELECT * FROM resellers WHERE id = ?', req.session.resellerUser.id);
   const {
     product_id,

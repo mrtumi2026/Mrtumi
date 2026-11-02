@@ -48,4 +48,12 @@ async function requestResellerWithdrawal(resellerId, input, actor = {}, { pool =
   }, { pool: activePool });
 }
 
-module.exports = { requestVendorWithdrawal, requestResellerWithdrawal };
+
+async function listVendorWithdrawals(vendorId,{pool=null}={}) {
+  const { createQueryClient }=require('../db/mysqlPool');
+  const db=createQueryClient(pool||getPool());
+  const rows=await db.queryAll('SELECT id,amount_paisa/100 AS amount,method,account_number,note,status,created_at FROM vendor_withdrawals WHERE vendor_id=? ORDER BY id DESC',[vendorId]);
+  return rows;
+}
+
+module.exports = { requestVendorWithdrawal, requestResellerWithdrawal, listVendorWithdrawals };

@@ -237,7 +237,7 @@ async function listPublicProducts(search = '', pool) {
   assertMysql();
   const query = text(search || '', 'Search', 80);
   return client(pool).queryAll(
-    `SELECT p.id,p.sku,p.slug,p.name_bn AS name,p.name_bn,p.name_en,p.image_url AS image,p.unit_label AS sizes,(p.stock_on_hand-p.stock_reserved+p.vendor_stock_on_hand-p.vendor_stock_reserved) AS available_stock,p.sold_count,c.name_bn AS category_name FROM products p LEFT JOIN categories c ON c.id=p.category_id WHERE p.status=1 AND p.is_archived=0 AND p.approval_status='approved' AND (p.stock_on_hand-p.stock_reserved+p.vendor_stock_on_hand-p.vendor_stock_reserved)>0 AND (?='' OR p.name_bn LIKE ? OR p.name_en LIKE ?) ORDER BY p.sold_count DESC,p.id LIMIT 100`,
+    `SELECT p.id,p.sku,p.slug,p.name_bn AS name,p.name_bn,p.name_en,p.image_url AS image,p.unit_label AS sizes,p.regular_price_paisa/100 AS old_price,p.sale_price_paisa/100 AS new_price,p.wholesale_price_paisa/100 AS wholesale_price,CASE WHEN p.wholesale_price_paisa>0 THEN p.wholesale_price_paisa/100 ELSE FLOOR((CASE WHEN p.sale_price_paisa>0 THEN p.sale_price_paisa ELSE p.regular_price_paisa END)*0.85)/100 END AS reseller_cost,(p.stock_on_hand-p.stock_reserved+p.vendor_stock_on_hand-p.vendor_stock_reserved) AS available_stock,p.sold_count,c.name_bn AS category_name FROM products p LEFT JOIN categories c ON c.id=p.category_id WHERE p.status=1 AND p.is_archived=0 AND p.approval_status='approved' AND (p.stock_on_hand-p.stock_reserved+p.vendor_stock_on_hand-p.vendor_stock_reserved)>0 AND (?='' OR p.name_bn LIKE ? OR p.name_en LIKE ?) ORDER BY p.sold_count DESC,p.id LIMIT 100`,
     [query, `%${query}%`, `%${query}%`]
   );
 }

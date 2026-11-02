@@ -50,13 +50,11 @@ async function loadLines(tx,lines,locale='bn',lock=true){
     const p=productMap.get(line.productId);if(!p||Number(p.status)!==1||Number(p.is_archived)===1||p.approval_status!=='approved')throw new ConflictError(`Product ${line.productId} is unavailable.`);
     const v=line.variantId?variantMap.get(line.variantId):null;
     if(line.variantId&&(!v||Number(v.product_id)!==line.productId||Number(v.status)!==1))throw new ConflictError(`Variant ${line.variantId} is unavailable.`);
-    if(v&&p.vendor_id)throw new ConflictError('Vendor product variants are not supported by the current reservation model.');
     const price=asSafeInteger(unitPrice(p,v,line.qty),'Unit price');if(price<1)throw new ConflictError(`Product ${line.productId} has no valid sale price.`);
     const pool=p.vendor_id?'vendor':'warehouse';
     const hand=Number(v?v.stock_on_hand:p[pool==='vendor'?'vendor_stock_on_hand':'stock_on_hand']);
     const held=Number(v?v.stock_reserved:p[pool==='vendor'?'vendor_stock_reserved':'stock_reserved']);
     if(!Number.isSafeInteger(hand)||!Number.isSafeInteger(held)||hand-held<line.qty)throw new ConflictError(`Insufficient available stock for product ${line.productId}.`);
-    if(v && Number(p.stock_on_hand)-Number(p.stock_reserved)<line.qty)throw new ConflictError(`Aggregate stock is inconsistent for product ${line.productId}; checkout is blocked.`);
     const lineTotalPaisa=price*line.qty;if(!Number.isSafeInteger(lineTotalPaisa))throw new ValidationError('Order line total exceeds the safe calculation range.');
     result.push({...line,product:p,variant:v,unitPricePaisa:price,lineTotalPaisa,name:localizedText(locale,p.name_bn,p.name_en,p.sku),image:String(p.image_url||''),size:String(v?.size_label||''),color:String(v?.color_label||'')});
   }

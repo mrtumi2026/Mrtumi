@@ -108,8 +108,14 @@ router.get('/vendor/register', (req, res) => {
   res.render('vendor/auth', { mode: 'register', error: null });
 });
 
-router.post('/vendor/register', requireCsrf, (req, res) => {
+router.post('/vendor/register', requireCsrf, async (req, res, next) => {
   const { shop_name, owner_name, phone, email, address, password } = req.body;
+  if (mysqlActive()) {
+    try {
+      const vendor=await vendorPortal.register({shop_name,owner_name,phone,email,address,password});
+      return establishVendorSession(req,vendor,error=>{ if(error)return next(error); req.flash('success','ভেন্ডর অ্যাকাউন্ট তৈরি হয়েছে। পণ্য যোগ করা যাবে; অ্যাডমিন পর্যালোচনা শেষে পণ্য প্রকাশিত হবে।'); return res.redirect('/vendor/products'); });
+    } catch(error) { if(error.code==='DB_DUPLICATE_ENTRY'||error.code==='VALIDATION_ERROR') return res.status(400).render('vendor/auth',{mode:'register',error:error.message}); return next(error); }
+  }
   if (!shop_name || !owner_name || !phone || !password) {
     return res.render('vendor/auth', {
       mode: 'register',
@@ -390,7 +396,15 @@ router.post('/vendor/orders/mark-ready/:orderId', requireCsrf, (req, res) => {
 });
 
 // ─── Vendor Wallet & Withdrawals ───
-router.get('/vendor/withdrawals', (req, res) => {
+router.get('/vendor/withdrawals', async (req, res, next) => {
+  if (mysqlActive()) {
+    try {
+      const {queryOne}=require('../db/mysqlPool');
+      const [row,withdrawals]=await Promise.all([queryOne('SELECT id,shop_name,owner_name,phone,email,balance_paisa/100 AS balance FROM vendors WHERE id=? AND status=1',[req.session.vendorUser.id]),partnerWithdrawalRepository.listVendorWithdrawals(req.session.vendorUser.id)]);
+      if(!row){req.flash('error','ভেন্ডর অ্যাকাউন্ট পাওয়া যায়নি।');return res.redirect('/vendor/login');}
+      return res.render('vendor/withdrawals',{vendor:row,withdrawals});
+    } catch(error){return next(error);}
+  }
   const vendor = db.get('SELECT * FROM vendors WHERE id = ?', req.session.vendorUser.id);
   const withdrawals = db.all(
     'SELECT * FROM vendor_withdrawals WHERE vendor_id = ? ORDER BY id DESC',
