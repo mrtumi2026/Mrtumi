@@ -94,6 +94,18 @@ test('withdrawal approval atomically debits only available funds and rejects ove
   assert.equal(insufficient.calls.at(-1)[0], 'ROLLBACK');
 });
 
+test('withdrawal UNION ordering and masking use aliases defined by the first SELECT', () => {
+  const source = read('src/repositories/adminResellerCommerceRepository.js');
+  const start = source.indexOf('async function listWithdrawalRequests');
+  const end = source.indexOf('async function decideWithdrawal', start);
+  const implementation = source.slice(start, end);
+  assert.match(implementation, /vw\.id AS id/);
+  assert.match(implementation, /rt\.id AS id/);
+  assert.match(implementation, /AS destination/);
+  assert.match(implementation, /ORDER BY created_at ASC,id ASC LIMIT 300/);
+  assert.doesNotMatch(implementation, /request_id|masked_account/);
+});
+
 test('HTTP router gates every write with CSRF, admin permission, audits and is mounted with a sidebar entry', async () => {
   const route = read('src/routes/adminResellerCommerce.js');
   assert.match(route, /router\.use\('\/admin\/reseller-commerce', requireAdmin, requirePermission\('resellers\.manage'\)\)/);

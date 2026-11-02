@@ -276,10 +276,10 @@ async function listWithdrawalRequests({ pool = null } = {}) {
             vw.amount_paisa,vw.method,CONCAT('••••',RIGHT(vw.account_number,4)) AS destination,vw.status,vw.created_at
      FROM vendor_withdrawals vw JOIN vendors v ON v.id=vw.vendor_id WHERE vw.status='pending'
      UNION ALL
-     SELECT 'reseller' AS partner_type,rt.id AS request_id,rt.reseller_id AS partner_id,r.shop_name AS partner_name,
-            rt.amount_paisa,rt.method,CONCAT('••••',RIGHT(COALESCE(rt.trx_id,''),4)) AS masked_account,rt.status,rt.created_at
+     SELECT 'reseller' AS partner_type,rt.id AS id,rt.reseller_id AS partner_id,r.shop_name AS partner_name,
+            rt.amount_paisa,rt.method,CONCAT('••••',RIGHT(COALESCE(rt.trx_id,''),4)) AS destination,rt.status,rt.created_at
      FROM reseller_transactions rt JOIN resellers r ON r.id=rt.reseller_id WHERE rt.tx_type='withdrawal' AND rt.status='pending'
-     ORDER BY created_at ASC,request_id ASC LIMIT 300`
+     ORDER BY created_at ASC,id ASC LIMIT 300`
   );
 }
 
