@@ -233,6 +233,7 @@
           select.appendChild(option);
         });
         select.disabled = locations.length === 0;
+        if (locations.length) select.value = String(locations[0].id);
         select.dataset.locationsLoaded = 'true';
         window.recalcQoTotal();
       })

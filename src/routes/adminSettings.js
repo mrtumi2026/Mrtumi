@@ -132,6 +132,31 @@ router.post('/admin/sms/custom-send', (req, res) => {
   return res.redirect('/admin/sms/custom-send');
 });
 
+function getDeliveryLocationChargeUpdates(changes) {
+  const targets = [
+    ['inside_dhaka_charge', 'Dhaka', 'Dhaka', 'ঢাকার ভিতরে (Inside Dhaka)'],
+    ['outside_dhaka_charge', 'All', 'All', 'ঢাকার বাইরে (Outside Dhaka)'],
+  ].filter(([key]) => Object.prototype.hasOwnProperty.call(changes, key));
+  return targets.map(([key, division, district, upazila]) => {
+    const amount = Number(changes[key]);
+    if (!Number.isFinite(amount) || amount < 0 || !Number.isSafeInteger(Math.round(amount * 100))) {
+      throw new ValidationError('ডেলিভারি চার্জ সঠিকভাবে লিখুন।');
+    }
+    return { paisa: Math.round(amount * 100), division, district, upazila };
+  });
+}
+
+async function syncDeliveryLocationCharges(updates) {
+  if (!updates.length) return;
+  const client = createQueryClient(getPool());
+  for (const location of updates) {
+    await client.execute(
+      'UPDATE `delivery_locations` SET `delivery_charge_paisa` = ? WHERE `division` = ? AND `district` = ? AND `upazila` = ?',
+      [location.paisa, location.division, location.district, location.upazila]
+    );
+  }
+}
+
 // ─── Universal Key-Value Settings Save Endpoint ───
 router.post('/admin/settings/save', upload.single('logo_file'), asyncHandler(async (req, res) => {
   const redirectTo = req.body._redirect || req.get('Referrer') || '/admin/settings/manage';
@@ -141,12 +166,14 @@ router.post('/admin/settings/save', upload.single('logo_file'), asyncHandler(asy
     changes.logo_dark = uploadedPath;
     changes.logo_light = uploadedPath;
   }
+  const deliveryChargeUpdates = env.db.client === 'mysql' ? getDeliveryLocationChargeUpdates(changes) : [];
   if (Object.keys(changes).length && env.db.client === 'mysql') {
     await settingsRepository.saveSettings(changes, {
       id: req.adminUser?.id || req.session?.adminUser?.id || null,
       ip: req.ip || '',
       userAgent: req.get('user-agent') || '',
     });
+    await syncDeliveryLocationCharges(deliveryChargeUpdates);
   } else if (Object.keys(changes).length) {
     for (const [key, value] of Object.entries(changes)) db.setSetting(key, value);
   }

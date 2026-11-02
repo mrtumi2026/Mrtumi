@@ -6,6 +6,7 @@ const {env}=require('../config/env');
 const {normalizeBdPhone,requirePositiveInt,requireString}=require('../utils/validator');
 const {ValidationError,ConflictError,NotFoundError}=require('../utils/errors');
 const lifecycle=require('./phase08Repository');
+const settingsRepository=require('./settingsRepository');
 const {CONSENT_VERSION, EMPTY_ATTRIBUTION, normalizeAttribution}=require('../analytics/attribution');
 
 function localizedText(locale,bnValue,enValue,fallback=''){
@@ -68,8 +69,22 @@ async function quoteCart(cart,{locale='bn'}={}){
   assertMysql();const lines=normalizeLines(cart);const tx=client();const loaded=await loadLines(tx,lines,locale,false);
   return{items:loaded.map(x=>({product_id:x.productId,variant_id:x.variantId,qty:x.qty,name:x.name,image:x.image,price_paisa:x.unitPricePaisa,price:x.unitPricePaisa/100,size:x.size,color:x.color})),subtotalPaisa:loaded.reduce((s,x)=>s+x.lineTotalPaisa,0),count:loaded.reduce((s,x)=>s+x.qty,0)};
 }
+function fallbackDeliveryLocations(siteSettings={}){
+  const chargePaisa=(value,fallback)=>{
+    const amount=Number(value||fallback);
+    return Number.isFinite(amount)&&amount>=0?Math.round(amount*100):fallback*100;
+  };
+  return [
+    {id:1,division:'Dhaka',district:'Dhaka',upazila:'ঢাকার ভিতরে (Inside Dhaka)',delivery_charge_paisa:chargePaisa(siteSettings.inside_dhaka_charge,60)},
+    {id:2,division:'All',district:'All',upazila:'ঢাকার বাইরে (Outside Dhaka)',delivery_charge_paisa:chargePaisa(siteSettings.outside_dhaka_charge,120)},
+    {id:3,division:'Sub-Dhaka',district:'Gazipur/Savar/Narayanganj',upazila:'ঢাকা সাব-এরিয়া (Sub-Dhaka)',delivery_charge_paisa:8000},
+  ];
+}
 async function listDeliveryLocations(){
-  assertMysql();return client().queryAll('SELECT id,division,district,upazila,delivery_charge_paisa FROM delivery_locations WHERE status=1 ORDER BY division,district,upazila,id');
+  assertMysql();
+  const locations=await client().queryAll('SELECT id,division,district,upazila,delivery_charge_paisa FROM delivery_locations WHERE status=1 ORDER BY division,district,upazila,id');
+  if(locations.length)return locations;
+  return fallbackDeliveryLocations(await settingsRepository.getAllSettings());
 }
 async function listCheckoutMethods(){
   assertMysql();return client().queryAll("SELECT code,name,account_number,instructions,gateway_type FROM payment_gateways WHERE status=1 AND (code='cod' OR gateway_type='manual') ORDER BY CASE WHEN code='cod' THEN 0 ELSE 1 END,id");
@@ -211,4 +226,4 @@ async function getOrderForSuccess(invoiceNo){
   assertMysql();const db=client();const order=await db.queryOne('SELECT id,invoice_no,customer_name,total_paisa,paid_paisa,cod_due_paisa,order_status,payment_status,created_at FROM orders WHERE invoice_no=?',[requireString(invoiceNo,'invoice number',{min:8,max:40})]);
   if(!order)return null;const items=await db.queryAll('SELECT product_name,qty,unit_price_paisa,line_total_paisa,size_label,color_label FROM order_items WHERE order_id=? ORDER BY id',[order.id]);return{order,items};
 }
-module.exports={normalizeLines,unitPrice,quoteCart,listDeliveryLocations,listCheckoutMethods,couponAmount,validateCoupon,resolveQuickOrderVariant,quoteQuickOrder,createOrder,getOrderForSuccess,getOrderForCancellation,createCampaignOrder};
+module.exports={normalizeLines,unitPrice,quoteCart,fallbackDeliveryLocations,listDeliveryLocations,listCheckoutMethods,couponAmount,validateCoupon,resolveQuickOrderVariant,quoteQuickOrder,createOrder,getOrderForSuccess,getOrderForCancellation,createCampaignOrder};
