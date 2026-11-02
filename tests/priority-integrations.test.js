@@ -63,7 +63,7 @@ test('banner upload handlers validate compressed raster payloads, preserve edits
   assert.ok(admin.includes('generatedImage=newImage'));
   assert.ok(admin.includes("ORDER BY sort_order ASC,id DESC"));
   const repository = fs.readFileSync(path.join(root, 'src/repositories/storefrontRepository.js'), 'utf8');
-  assert.ok(repository.includes("ORDER BY `sort_order` ASC, `id` ASC"));
+  assert.ok(repository.includes("ORDER BY `sort_order` ASC, `id` DESC"));
   const home = fs.readFileSync(path.join(root, 'views/store/home.ejs'), 'utf8');
   assert.ok(home.includes('data-bs-interval="4500"'));
   assert.ok(home.includes('data-bs-pause="hover"'));
