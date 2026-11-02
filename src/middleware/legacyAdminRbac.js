@@ -46,7 +46,7 @@ function policyForAdminRoute(method, pathname) {
   if (has(path,'/admin/phase06')) return { key:write?'inventory.manage':'inventory.manage', audit:false };
 
   if (has(path,'/admin/refunds')) return { key:'refunds.review', audit:true };
-  if (has(path,'/admin/payment-records')) return { key:'finance.view', audit:false, auditRead:true };
+  if (has(path,'/admin/payment-records')) return { key:write?'finance.manage':'finance.view', audit:write, auditRead:!write };
   if (has(path,'/admin/incomplete-orders')) return { key:write?'checkout.recovery.manage':'checkout.recovery.view', audit:true };
   if (has(path,'/admin/customer/ip-block')) return { key:'security.manage', audit:true };
   if (has(path,'/admin/reseller-orders') || has(path,'/admin/reseller-deposits') || has(path,'/admin/reseller-withdrawals') || has(path,'/admin/reseller-tx'))
@@ -61,7 +61,8 @@ function policyForAdminRoute(method, pathname) {
   if (has(path,'/admin/employees') || has(path,'/admin/attendances') || has(path,'/admin/leaves')) return { key:'hr.manage', audit:write };
   if (has(path,'/admin/salaries') || has(path,'/admin/salary-payments') || has(path,'/admin/bonuses')) return { key:viewOrManage('finance.view','finance.manage'), audit:write };
   if (has(path,'/admin/fund') || has(path,'/admin/expenses') || has(path,'/admin/vendor-withdrawals') || has(path,'/admin/delivery-withdrawals')) return { key:viewOrManage('finance.view','finance.manage'), audit:write };
-  if (has(path,'/admin/vendors') || has(path,'/admin/vendor-verifications')) return { key:'vendors.manage', audit:write };
+  if (has(path,'/admin/vendors') || has(path,'/admin/vendor-verifications') || has(path,'/admin/vendor-applications') || has(path,'/admin/vendor-payout-accounts')) return { key:'vendors.manage', audit:write };
+  if (has(path,'/admin/reseller-commerce')) return { key:write ? 'resellers.manage' : 'resellers.manage', audit:write };
   if (has(path,'/admin/resellers') || has(path,'/admin/reseller-verifications')) return { key:'resellers.manage', audit:write };
   if (has(path,'/admin/delivery-boys') || has(path,'/admin/delivery/divisions')) return { key:'delivery.manage', audit:write };
   if (has(path,'/admin/complaints') || has(path,'/admin/contact-messages') || has(path,'/admin/newsletter-subscribers') || has(path,'/admin/customer')) return { key:'customers.manage', audit:write };
@@ -69,7 +70,7 @@ function policyForAdminRoute(method, pathname) {
   if (has(path,'/admin/blog') || has(path,'/admin/blogs') || has(path,'/admin/page') || has(path,'/admin/banner') || has(path,'/admin/features') || has(path,'/admin/social-media')) return { key:'content.manage', audit:write };
   if (has(path,'/admin/manual-fraud-check')) return { key:'security.manage', audit:false };
   if (has(path,'/admin/sms/custom-send')) return { key:'communications.send', audit:write };
-  if (has(path,'/admin/paymentgeteway') || has(path,'/admin/courierapi') || has(path,'/admin/smsgeteway') || has(path,'/admin/bdcourier') || has(path,'/admin/steadfast')) return { key:'integrations.manage', audit:write };
+  if (has(path,'/admin/payment-gateways') || has(path,'/admin/paymentgeteway') || has(path,'/admin/courierapi') || has(path,'/admin/smsgeteway') || has(path,'/admin/bdcourier') || has(path,'/admin/steadfast')) return { key:'integrations.manage', audit:write };
   if (has(path,'/admin/ads-analytics')) return { key:'analytics.view', audit:false };
   if (has(path,'/admin/reports')) return { key:'reports.view', audit:false, auditRead:true };
   if (has(path,'/admin/error-log')) return { key:write?'error_logs.manage':'error_logs.view', audit:write };
@@ -96,9 +97,13 @@ function legacyAdminRbac(req, _res, next) {
 
 function legacyAdminCsrf(req, res, next) {
   if (!req.path.startsWith('/admin') || !req.adminUser || SAFE_METHODS.has(req.method) || req.path === '/admin/login') return next();
-  // Multer must parse the multipart body before the CSRF field is readable. This exact upload path
-  // enforces requireCsrf immediately after upload parsing and removes any newly written files on denial.
-  const multipartUpload=req.method==='POST'&&/^\/admin\/phase06\/products\/\d+\/gallery\/upload$/.test(req.path)&&
+  // Multer must parse these exact admin product-image bodies before the CSRF field is readable.
+  // Their route handlers enforce requireCsrf immediately after parsing and remove staged files on denial.
+  const phase06ImageMultipartPath=/^\/admin\/phase06\/products(?:\/\d+)?$/.test(req.path)||
+    /^\/admin\/phase06\/products\/\d+\/gallery\/upload$/.test(req.path);
+  const standardProductImageMultipartPath=req.path==='/admin/products/create'||/^\/admin\/products\/edit\/\d+$/.test(req.path);
+  const priorityBannerMultipartPath=req.path==='/admin/banner/create'||/^\/admin\/banner\/update\/\d+$/.test(req.path);
+  const multipartUpload=req.method==='POST'&&(phase06ImageMultipartPath||standardProductImageMultipartPath||priorityBannerMultipartPath)&&
     String(req.headers?.['content-type']||'').toLowerCase().startsWith('multipart/form-data;');
   if(multipartUpload)return next();
   return requireCsrf(req,res,next);

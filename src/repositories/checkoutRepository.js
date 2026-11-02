@@ -6,6 +6,7 @@ const {env}=require('../config/env');
 const {normalizeBdPhone,requirePositiveInt,requireString}=require('../utils/validator');
 const {ValidationError,ConflictError,NotFoundError}=require('../utils/errors');
 const lifecycle=require('./phase08Repository');
+const settingsRepository=require('./settingsRepository');
 const {CONSENT_VERSION, EMPTY_ATTRIBUTION, normalizeAttribution}=require('../analytics/attribution');
 
 function localizedText(locale,bnValue,enValue,fallback=''){
@@ -42,23 +43,25 @@ function normalizeLines(cart){
 async function loadLines(tx,lines,locale='bn',lock=true){
   const products=await tx.queryAll(`SELECT id,sku,name_bn,name_en,image_url,regular_price_paisa,sale_price_paisa,wholesale_price_paisa,wholesale_min_qty,is_wholesale,approval_status,vendor_id,stock_on_hand,stock_reserved,vendor_stock_on_hand,vendor_stock_reserved,status,is_archived FROM products WHERE id IN (${lines.map(()=>'?').join(',')}) ORDER BY id ${lock?'FOR UPDATE':''}`,lines.map(x=>x.productId));
   const productMap=new Map(products.map(p=>[Number(p.id),p]));
+  const vendorIds=[...new Set(products.map(p=>Number(p.vendor_id)).filter(Boolean))];
+  const vendors=vendorIds.length?await tx.queryAll(`SELECT id,lifecycle_status,status,commission_rate_bps FROM vendors WHERE id IN (${vendorIds.map(()=>'?').join(',')}) ORDER BY id ${lock?'FOR UPDATE':''}`,vendorIds):[];
+  const vendorMap=new Map(vendors.map(v=>[Number(v.id),v]));
   const variantIds=lines.filter(x=>x.variantId).map(x=>x.variantId);
   const variants=variantIds.length?await tx.queryAll(`SELECT id,product_id,variant_sku,size_label,color_label,price_paisa,stock_on_hand,stock_reserved,status FROM product_variants WHERE id IN (${variantIds.map(()=>'?').join(',')}) ORDER BY id ${lock?'FOR UPDATE':''}`,variantIds):[];
   const variantMap=new Map(variants.map(v=>[Number(v.id),v]));
   const result=[];
   for(const line of lines){
     const p=productMap.get(line.productId);if(!p||Number(p.status)!==1||Number(p.is_archived)===1||p.approval_status!=='approved')throw new ConflictError(`Product ${line.productId} is unavailable.`);
+    if(p.vendor_id){const owner=vendorMap.get(Number(p.vendor_id));if(!owner||Number(owner.status)!==1||owner.lifecycle_status!=='active')throw new ConflictError(`Product ${line.productId} is unavailable.`);}
     const v=line.variantId?variantMap.get(line.variantId):null;
     if(line.variantId&&(!v||Number(v.product_id)!==line.productId||Number(v.status)!==1))throw new ConflictError(`Variant ${line.variantId} is unavailable.`);
-    if(v&&p.vendor_id)throw new ConflictError('Vendor product variants are not supported by the current reservation model.');
     const price=asSafeInteger(unitPrice(p,v,line.qty),'Unit price');if(price<1)throw new ConflictError(`Product ${line.productId} has no valid sale price.`);
     const pool=p.vendor_id?'vendor':'warehouse';
     const hand=Number(v?v.stock_on_hand:p[pool==='vendor'?'vendor_stock_on_hand':'stock_on_hand']);
     const held=Number(v?v.stock_reserved:p[pool==='vendor'?'vendor_stock_reserved':'stock_reserved']);
     if(!Number.isSafeInteger(hand)||!Number.isSafeInteger(held)||hand-held<line.qty)throw new ConflictError(`Insufficient available stock for product ${line.productId}.`);
-    if(v && Number(p.stock_on_hand)-Number(p.stock_reserved)<line.qty)throw new ConflictError(`Aggregate stock is inconsistent for product ${line.productId}; checkout is blocked.`);
     const lineTotalPaisa=price*line.qty;if(!Number.isSafeInteger(lineTotalPaisa))throw new ValidationError('Order line total exceeds the safe calculation range.');
-    result.push({...line,product:p,variant:v,unitPricePaisa:price,lineTotalPaisa,name:localizedText(locale,p.name_bn,p.name_en,p.sku),image:String(p.image_url||''),size:String(v?.size_label||''),color:String(v?.color_label||'')});
+    result.push({...line,product:p,variant:v,vendorCommissionRateBps:Number(vendorMap.get(Number(p.vendor_id))?.commission_rate_bps||0),unitPricePaisa:price,lineTotalPaisa,name:localizedText(locale,p.name_bn,p.name_en,p.sku),image:String(p.image_url||''),size:String(v?.size_label||''),color:String(v?.color_label||'')});
   }
   return result;
 }
@@ -66,11 +69,24 @@ async function quoteCart(cart,{locale='bn'}={}){
   assertMysql();const lines=normalizeLines(cart);const tx=client();const loaded=await loadLines(tx,lines,locale,false);
   return{items:loaded.map(x=>({product_id:x.productId,variant_id:x.variantId,qty:x.qty,name:x.name,image:x.image,price_paisa:x.unitPricePaisa,price:x.unitPricePaisa/100,size:x.size,color:x.color})),subtotalPaisa:loaded.reduce((s,x)=>s+x.lineTotalPaisa,0),count:loaded.reduce((s,x)=>s+x.qty,0)};
 }
+function fallbackDeliveryLocations(siteSettings={}){
+  const chargePaisa=(value,fallback)=>{
+    const amount=Number(value||fallback);
+    return Number.isFinite(amount)&&amount>=0?Math.round(amount*100):fallback*100;
+  };
+  return [
+    {id:1,division:'Dhaka',district:'Dhaka',upazila:'ঢাকার ভিতরে',delivery_charge_paisa:chargePaisa(siteSettings.inside_dhaka_charge,60)},
+    {id:2,division:'All',district:'All',upazila:'ঢাকার বাইরে',delivery_charge_paisa:chargePaisa(siteSettings.outside_dhaka_charge,120)},
+  ];
+}
 async function listDeliveryLocations(){
-  assertMysql();return client().queryAll('SELECT id,division,district,upazila,delivery_charge_paisa FROM delivery_locations WHERE status=1 ORDER BY division,district,upazila,id');
+  assertMysql();
+  const locations=await client().queryAll('SELECT id,division,district,upazila,delivery_charge_paisa FROM delivery_locations WHERE status=1 ORDER BY division,district,upazila,id');
+  if(locations.length)return locations;
+  return fallbackDeliveryLocations(await settingsRepository.getAllSettings());
 }
 async function listCheckoutMethods(){
-  assertMysql();return client().queryAll("SELECT code,name,instructions FROM payment_gateways WHERE code='cod' AND status=1 ORDER BY id");
+  assertMysql();return client().queryAll("SELECT code,name,account_number,instructions,gateway_type FROM payment_gateways WHERE status=1 AND (code='cod' OR (gateway_type='manual' AND code IN ('bkash','nagad','rocket','manual_bkash','manual_nagad','manual_rocket'))) ORDER BY CASE WHEN code='cod' THEN 0 ELSE 1 END,id");
 }
 function couponAmount(row,subtotal){
   if(!row)return{amount:0,code:''};
@@ -114,18 +130,25 @@ async function createOrder(input,options={}){
   const attributionAllowed=env.analyticsAttributionEnabled&&analyticsConsent===true;
   const attributionData=attributionAllowed?normalizeAttribution(attribution||{}):EMPTY_ATTRIBUTION;
   assertMysql();const name=requireString(input.customer_name,'customer name',{min:2,max:191});const phone=normalizeBdPhone(input.phone);const address=requireString(input.address,'shipping address',{min:5,max:2000});const zoneId=requirePositiveInt(input.delivery_location_id,'delivery location');const note=String(input.note||'').trim().slice(0,1000);
-  const paymentMethod=String(input.payment_method||'cod').trim().toLowerCase();if(paymentMethod!=='cod')throw new ConflictError('Only cash on delivery is currently available; online/manual payment is not configured for canonical checkout.');
+  const paymentMethod=String(input.payment_method||'cod').trim().toLowerCase();if(!/^[a-z0-9_-]{1,48}$/.test(paymentMethod))throw new ValidationError('Select a valid payment method.');
+  const manualBrand=paymentMethod.replace(/^manual_/,'');
+  const isManualPayment=paymentMethod!=='cod';
+  if(isManualPayment&&!['bkash','nagad','rocket'].includes(manualBrand))throw new ValidationError('Choose Cash on Delivery, bKash, Nagad, or Rocket.');
+  const trxId=isManualPayment?requireString(input.trx_id,'Transaction ID',{min:4,max:128}).trim():'';
+  const senderNumber=isManualPayment?normalizeBdPhone(input.sender_number,'sender mobile number'):'';
   const recoveryId=incompleteOrderId?requirePositiveInt(incompleteOrderId,'incomplete order ID'):null;
   const campaignKey=campaignSlug?requireString(campaignSlug,'campaign slug',{min:1,max:191}):'';const key=requireString(recoveryId?`incomplete:${recoveryId}`:requestKey,'checkout request key',{min:8,max:100});const lines=normalizeLines(cart);if(campaignKey&&lines.length!==1)throw new ValidationError('Campaign checkout accepts exactly one campaign product.');
-  const payloadHash=crypto.createHash('sha256').update(JSON.stringify({name,phone,address,zoneId,note,paymentMethod,lines:lines.map(lineCanonical),coupon:String(input.coupon_code||'').trim().toUpperCase(),recoveryId,campaignSlug:campaignKey})).digest('hex');
+  const payload={name,phone,address,zoneId,note,paymentMethod,lines:lines.map(lineCanonical),coupon:String(input.coupon_code||'').trim().toUpperCase(),recoveryId,campaignSlug:campaignKey};
+  if(isManualPayment){payload.trxId=trxId;payload.senderNumber=senderNumber;}
+  const payloadHash=crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex');
   try {
   return await mysql.withTransaction(async tx=>{
     const replay=await tx.queryOne('SELECT id,invoice_no,checkout_request_hash FROM orders WHERE idempotency_key=?',[key]);
     if(replay){if(replay.checkout_request_hash!==payloadHash)throw new ConflictError('This checkout request key was already used with different order details.');return{id:Number(replay.id),invoiceNo:replay.invoice_no,replayed:true};}
     const blocked=await tx.queryOne('SELECT id FROM ip_blocks WHERE status=1 AND ip_or_phone IN (?,?) LIMIT 1 FOR UPDATE',[phone,String(ip||'').slice(0,64)]);
     if(blocked)throw new ConflictError('This phone number or IP address is blocked from placing orders.');
-    const cod=await tx.queryOne("SELECT code FROM payment_gateways WHERE code='cod' AND status=1 FOR UPDATE");
-    if(!cod)throw new ConflictError('Cash-on-delivery is not enabled in the configured payment methods.');
+    const gateway=await tx.queryOne('SELECT code,gateway_type FROM payment_gateways WHERE code=? AND status=1 FOR UPDATE',[paymentMethod]);
+    if(!gateway || (isManualPayment && (gateway.gateway_type!=='manual'||!['bkash','nagad','rocket'].includes(paymentMethod.replace(/^manual_/,'')))))throw new ConflictError('This payment method is not active or is not supported at checkout.');
     const zone=await tx.queryOne('SELECT id,division,district,upazila,delivery_charge_paisa FROM delivery_locations WHERE id=? AND status=1 FOR UPDATE',[zoneId]);
     if(!zone)throw new ValidationError('Select an active, configured delivery location.');
     let recovery=null;
@@ -158,8 +181,40 @@ async function createOrder(input,options={}){
     const invoice=`MT-${crypto.randomBytes(12).toString('hex').toUpperCase()}`;
     const zoneLabel=[zone.division,zone.district,zone.upazila].filter(Boolean).join(' / ');
     const orderChannel=campaign?'campaign':'storefront';const trafficSource=campaign?`Campaign:${campaign.slug}`:attributionData.platformSource;const customerNote=note||(campaign?`Campaign: ${campaign.title}`:null);
-    const order=await tx.execute(`INSERT INTO orders (invoice_no,idempotency_key,checkout_request_hash,customer_id,customer_name,customer_phone,shipping_address,division,district,upazila,shipping_zone,subtotal_paisa,discount_paisa,shipping_paisa,total_paisa,advance_required_paisa,paid_paisa,cod_due_paisa,coupon_code,payment_method,payment_status,order_status,order_channel,traffic_source,utm_source,utm_medium,utm_campaign,analytics_consent_at,analytics_consent_version,client_ip,customer_note,consent_accepted_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP())`,[invoice,key,payloadHash,customerId,name,phone,address,zone.division,zone.district,zone.upazila,zoneLabel,subtotal,coupon.amount,shipping,total,0,0,total,coupon.code,'cod','unpaid','pending',orderChannel,trafficSource,attributionData.utmSource,attributionData.utmMedium,attributionData.utmCampaign,attributionAllowed?new Date():null,attributionAllowed?CONSENT_VERSION:null,String(ip||'').slice(0,64),customerNote]);
-    for(const item of items){await tx.execute('INSERT INTO order_items (order_id,product_id,variant_id,vendor_id,product_name,product_image,unit_price_paisa,qty,line_total_paisa,size_label,color_label) VALUES (?,?,?,?,?,?,?,?,?,?,?)',[order.insertId,item.productId,item.variantId,item.product.vendor_id||null,item.name,item.image,item.unitPricePaisa,item.qty,item.lineTotalPaisa,item.size,item.color]);}
+    const codDue=isManualPayment?0:total;
+    const paymentStatus=isManualPayment?'pending_verification':'unpaid';
+    const order=await tx.execute(`INSERT INTO orders (invoice_no,idempotency_key,checkout_request_hash,customer_id,customer_name,customer_phone,shipping_address,division,district,upazila,shipping_zone,subtotal_paisa,discount_paisa,shipping_paisa,total_paisa,advance_required_paisa,paid_paisa,cod_due_paisa,coupon_code,payment_method,payment_status,order_status,order_channel,traffic_source,utm_source,utm_medium,utm_campaign,analytics_consent_at,analytics_consent_version,client_ip,customer_note,consent_accepted_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP())`,[invoice,key,payloadHash,customerId,name,phone,address,zone.division,zone.district,zone.upazila,zoneLabel,subtotal,coupon.amount,shipping,total,0,0,codDue,coupon.code,paymentMethod,paymentStatus,'pending',orderChannel,trafficSource,attributionData.utmSource,attributionData.utmMedium,attributionData.utmCampaign,attributionAllowed?new Date():null,attributionAllowed?CONSENT_VERSION:null,String(ip||'').slice(0,64),customerNote]);
+    if(isManualPayment)await tx.execute("INSERT INTO order_payments (order_id,gateway_code,provider_trx_id,sender_number,amount_paisa,payment_purpose,status) VALUES (?,?,?,?,?,'full','pending_verification')",[order.insertId,gateway.code,trxId,senderNumber,total]);
+    const vendorSubOrders=new Map();
+    for(const item of items){
+      const insertedItem=await tx.execute('INSERT INTO order_items (order_id,product_id,variant_id,vendor_id,product_name,product_image,unit_price_paisa,qty,line_total_paisa,size_label,color_label) VALUES (?,?,?,?,?,?,?,?,?,?,?)',[order.insertId,item.productId,item.variantId,item.product.vendor_id||null,item.name,item.image,item.unitPricePaisa,item.qty,item.lineTotalPaisa,item.size,item.color]);
+      const vendorId=item.product.vendor_id?Number(item.product.vendor_id):null;
+      const bps=vendorId?Number(item.vendorCommissionRateBps):0;
+      if(!Number.isSafeInteger(bps)||bps<0||bps>10000)throw new ConflictError('Vendor commission configuration is invalid.');
+      const feeUnit=Number((BigInt(item.unitPricePaisa)*BigInt(bps))/10000n);
+      const entitlementUnit=item.unitPricePaisa-feeUnit;
+      await tx.execute('INSERT INTO order_price_snapshots(order_item_id,vendor_id,reseller_id,quantity,customer_unit_price_paisa,vendor_entitlement_unit_paisa,reseller_margin_unit_paisa,marketplace_revenue_unit_paisa) VALUES(?,?,NULL,?,?,?,0,?)',[insertedItem.insertId,vendorId,item.qty,item.unitPricePaisa,entitlementUnit,feeUnit]);
+      if(vendorId){
+        const current=vendorSubOrders.get(vendorId)||{vendorId,items:[],entitlementPaisa:0,feePaisa:0,customerSubtotalPaisa:0};
+        current.items.push({orderItemId:Number(insertedItem.insertId),quantity:item.qty});
+        current.entitlementPaisa+=entitlementUnit*item.qty;
+        current.feePaisa+=feeUnit*item.qty;
+        current.customerSubtotalPaisa+=item.lineTotalPaisa;
+        vendorSubOrders.set(vendorId,current);
+      }
+    }
+    const subOrders=[...vendorSubOrders.values()].sort((a,b)=>a.vendorId-b.vendorId);
+    const vendorSubtotal=subOrders.reduce((sum,subOrder)=>sum+subOrder.customerSubtotalPaisa,0);
+    let allocatedCod=0;
+    for(let index=0;index<subOrders.length;index++){
+      const subOrder=subOrders[index];
+      let subOrderCodDue=subtotal>0?Number((BigInt(subOrder.customerSubtotalPaisa)*BigInt(total))/BigInt(subtotal)):0;
+      if(index===subOrders.length-1&&vendorSubtotal===subtotal)subOrderCodDue=total-allocatedCod;
+      allocatedCod+=subOrderCodDue;
+      const vendorOrderNo=`${invoice}-${subOrder.vendorId}`;
+      const insertedSubOrder=await tx.execute('INSERT INTO vendor_sub_orders(order_id,vendor_id,vendor_order_no,status,cod_due_paisa,vendor_entitlement_paisa,marketplace_fee_paisa,net_payable_paisa) VALUES(?,?,?,\'order_placed\',?,?,?,?)',[order.insertId,subOrder.vendorId,vendorOrderNo,subOrderCodDue,subOrder.entitlementPaisa,subOrder.feePaisa,subOrder.entitlementPaisa]);
+      for(const item of subOrder.items)await tx.execute('INSERT INTO vendor_sub_order_items(vendor_sub_order_id,order_item_id,quantity) VALUES(?,?,?)',[insertedSubOrder.insertId,item.orderItemId,item.quantity]);
+    }
     await tx.execute("INSERT INTO order_status_history (order_id,from_status,to_status,note,changed_by_user_id) VALUES (?,'','pending','Customer checkout submitted',NULL)",[order.insertId]);
     // Reserve only after the durable order and lines exist, in this same transaction.
     await lifecycle.reserveOrderInventoryTx(tx,Number(order.insertId),{type:'system'});
@@ -178,7 +233,7 @@ async function createOrder(input,options={}){
       await tx.execute("INSERT INTO audit_logs (actor_type,actor_id,action,entity_type,entity_id,before_json,after_json,ip_address,user_agent) VALUES ('customer',NULL,'checkout.recovery.recovered','incomplete_order',?,?,?,?,'')",[String(recoveryId),JSON.stringify({status:recovery.status}),JSON.stringify({status:'recovered',orderId:Number(order.insertId)}),String(ip||'').slice(0,64)]);
     }
     await tx.execute(`INSERT INTO audit_logs (actor_type,actor_id,action,entity_type,entity_id,before_json,after_json,ip_address,user_agent) VALUES ('system',NULL,'checkout.order.created','order',?,NULL,?,?, '')`,[String(order.insertId),JSON.stringify({invoiceNo:invoice,totalPaisa:total,status:'pending',paymentStatus:'unpaid',reservation:'active'}),String(ip||'').slice(0,64)]);
-    return{id:Number(order.insertId),invoiceNo:invoice,replayed:false,totalPaisa:total,paidPaisa:0,codDuePaisa:total};
+    return{id:Number(order.insertId),invoiceNo:invoice,replayed:false,totalPaisa:total,paidPaisa:0,codDuePaisa:codDue,paymentStatus};
   });
   } catch(err) {
     if(err.code==='DB_DUPLICATE_ENTRY'||err.mysqlCode==='ER_LOCK_DEADLOCK'){
@@ -208,4 +263,4 @@ async function getOrderForSuccess(invoiceNo){
   assertMysql();const db=client();const order=await db.queryOne('SELECT id,invoice_no,customer_name,total_paisa,paid_paisa,cod_due_paisa,order_status,payment_status,created_at FROM orders WHERE invoice_no=?',[requireString(invoiceNo,'invoice number',{min:8,max:40})]);
   if(!order)return null;const items=await db.queryAll('SELECT product_name,qty,unit_price_paisa,line_total_paisa,size_label,color_label FROM order_items WHERE order_id=? ORDER BY id',[order.id]);return{order,items};
 }
-module.exports={normalizeLines,unitPrice,quoteCart,listDeliveryLocations,listCheckoutMethods,couponAmount,validateCoupon,resolveQuickOrderVariant,quoteQuickOrder,createOrder,getOrderForSuccess,getOrderForCancellation,createCampaignOrder};
+module.exports={normalizeLines,unitPrice,quoteCart,fallbackDeliveryLocations,listDeliveryLocations,listCheckoutMethods,couponAmount,validateCoupon,resolveQuickOrderVariant,quoteQuickOrder,createOrder,getOrderForSuccess,getOrderForCancellation,createCampaignOrder};

@@ -243,9 +243,9 @@
               </button>
             </div>
 
-            <!-- Embedded Direct Cash On Delivery Box -->
+            <!-- Embedded Direct Quick Order -->
             <div class="border rounded-3 p-3 bg-light">
-              <div class="fw-bold small text-success mb-2">🚀 <%= t('store.confirmOrderNow') %> (COD):</div>
+              <div class="fw-bold small text-success mb-2">🚀 <%= t('store.confirmOrderNow') %>:</div>
               <form id="qoDirectOrderForm">
                 <input type="hidden" name="quick_order_request_key" id="qoRequestKey" value="">
                 <div class="row g-2">
@@ -265,12 +265,32 @@
                     <label for="qoShipArea" class="visually-hidden"><%= t('store.shippingArea') %></label>
                     <select name="<%= mysqlCheckoutEnabled ? 'delivery_location_id' : 'shipping_area' %>" id="qoShipArea" class="form-select form-select-sm" onchange="recalcQoTotal()" <%= mysqlCheckoutEnabled ? 'data-mysql-checkout="true" required' : '' %>>
                       <% if (mysqlCheckoutEnabled) { %>
-                        <option value=""><%= locale === 'en' ? 'Loading configured delivery areas…' : 'কনফিগার করা ডেলিভারি এলাকা লোড হচ্ছে…' %></option>
+                        <option value=""><%= locale === 'en' ? 'Choose delivery area' : 'ডেলিভারি এলাকা নির্বাচন করুন' %></option>
                       <% } else { %>
                         <option value="ঢাকার ভিতরে" data-ship="<%= siteSettings.inside_dhaka_charge || 60 %>"><%= t('common.insideDhaka') %> (৳<%= siteSettings.inside_dhaka_charge || 60 %>)</option>
                         <option value="ঢাকার বাইরে" data-ship="<%= siteSettings.outside_dhaka_charge || 120 %>"><%= t('common.outsideDhaka') %> (৳<%= siteSettings.outside_dhaka_charge || 120 %>)</option>
                       <% } %>
                     </select>
+                  </div>
+                  <div class="col-12 mt-2">
+                    <label for="qoPaymentMethod" class="visually-hidden"><%= locale === 'en' ? 'Payment method' : 'পেমেন্ট মাধ্যম' %></label>
+                    <select name="payment_method" id="qoPaymentMethod" class="form-select form-select-sm" required>
+                      <option value="cod"><%= locale === 'en' ? 'Cash on Delivery' : 'ক্যাশ অন ডেলিভারি' %></option>
+                    </select>
+                  </div>
+                  <div id="qoManualPaymentFields" class="col-12 mt-2 p-2 rounded-2 bg-warning-subtle border border-warning" style="display:none;">
+                    <div id="qoManualPaymentAccount" class="small fw-semibold"></div>
+                    <div id="qoManualPaymentInstructions" class="small text-muted mb-2"></div>
+                    <div class="row g-2">
+                      <div class="col-sm-6">
+                        <label for="qoSenderNumber" class="form-label small mb-1"><%= locale === 'en' ? 'Sender mobile number *' : 'প্রেরকের মোবাইল নম্বর *' %></label>
+                        <input type="tel" name="sender_number" id="qoSenderNumber" class="form-control form-control-sm" placeholder="01XXXXXXXXX" maxlength="20" autocomplete="tel" />
+                      </div>
+                      <div class="col-sm-6">
+                        <label for="qoTrxId" class="form-label small mb-1"><%= locale === 'en' ? 'Transaction ID (TrxID) *' : 'ট্রানজেকশন আইডি (TrxID) *' %></label>
+                        <input type="text" name="trx_id" id="qoTrxId" class="form-control form-control-sm" maxlength="128" autocomplete="off" />
+                      </div>
+                    </div>
                   </div>
                   <div class="col-12 mt-2">
                     <button type="submit" id="qoDirectSubmitBtn" class="btn btn-warning w-100 fw-bold py-2">

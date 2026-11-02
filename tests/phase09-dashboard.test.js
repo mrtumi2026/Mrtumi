@@ -44,6 +44,11 @@ describe('Phase 09 dashboard repository contract', () => {
     let uploadParseError=null;
     legacyAdminCsrf({method:'POST',path:'/admin/phase06/products/12/gallery/upload',adminUser:{id:3},session:{},headers:{'content-type':'multipart/form-data; boundary=fixture'}},{},err=>{uploadParseError=err||null;});
     assert.equal(uploadParseError,null,'the exact multipart gallery endpoint defers CSRF validation until Multer parses its body');
+    for(const path of ['/admin/phase06/products','/admin/phase06/products/12','/admin/products/create','/admin/products/edit/12','/admin/banner/create','/admin/banner/update/12']){
+      let deferredError=null;
+      legacyAdminCsrf({method:'POST',path,adminUser:{id:3},session:{},headers:{'content-type':'multipart/form-data; boundary=fixture'}},{},err=>{deferredError=err||null;});
+      assert.equal(deferredError,null,`${path} defers multipart CSRF validation until its upload parser runs`);
+    }
     let unrelatedMultipartError=null;
     legacyAdminCsrf({method:'POST',path:'/admin/phase06/products/12/gallery',adminUser:{id:3},session:{},headers:{'content-type':'multipart/form-data; boundary=fixture'}},{},err=>{unrelatedMultipartError=err||null;});
     assert.equal(unrelatedMultipartError.statusCode,403,'the multipart CSRF exception does not extend to other admin routes');
@@ -102,7 +107,7 @@ describe('Phase 09 dashboard repository contract', () => {
     assert.match(list,/name="request_key"/,'quick and bulk status writes carry retry-stable request keys');
   });
 
-  test('MySQL finance and payment read routes delegate to canonical integer-paisa queries and remain read-only', () => {
+  test('MySQL finance reads and audited manual-payment review use canonical repositories', () => {
     const finance=require('../src/repositories/adminFinanceReadRepository');
     for(const method of ['listPaymentRecords','listFundTransactions','getFundSummary','listExpenses','getReport'])assert.equal(typeof finance[method],'function');
     const operations=fs.readFileSync(path.join(__dirname,'../src/routes/adminOperations.js'),'utf8');
@@ -116,7 +121,10 @@ describe('Phase 09 dashboard repository contract', () => {
     assert.equal(policy.key,'finance.view');assert.equal(policy.auditRead,true);
     const routeInventory=collectAdminRoutes();
     assert.ok(routeInventory.some((route)=>route.method==='GET'&&route.path==='/admin/payment-records'));
-    assert.doesNotMatch(operations,/router\.post\('\/admin\/payment-records/,'payment record page exposes no mutation endpoint');
+    assert.equal(policyForAdminRoute('POST','/admin/payment-records/7/approve').key,'finance.manage');
+    assert.equal(policyForAdminRoute('POST','/admin/payment-records/7/reject').key,'finance.manage');
+    assert.match(operations,/decideManualPayment\(req\.params\.id,'approve'/);
+    assert.match(operations,/decideManualPayment\(req\.params\.id,'reject'/);
   });
 
   test('MySQL coupon administration delegates to a transactional repository and blocks destructive deletion',()=>{
@@ -169,7 +177,7 @@ describe('Phase 09 dashboard repository contract', () => {
     const source=fs.readFileSync(path.join(__dirname,'../src/routes/adminOperations.js'),'utf8');
     assert.match(source,/adminPartnerDirectoryRepository\.listVendors\(\{ pendingOnly \}\)/);
     assert.match(source,/adminPartnerDirectoryRepository\.listResellers\(\{ pendingOnly: unverifiedOnly \}\)/);
-    assert.match(source,/createAction: mysqlMode \? null : '\/admin\/vendors\/create'/);
+    assert.match(source,/createAction: pendingOnly \? null : '\/admin\/vendors\/create'/);
     assert.match(source,/customActionPrefix: mysqlMode \? null : '\/admin\/vendors\/verify'/);
     assert.match(source,/createAction: mysqlMode \? null : '\/admin\/resellers\/create'/);
     assert.match(source,/customActionPrefix: mysqlMode \? null : '\/admin\/resellers\/verify'/);
@@ -278,6 +286,9 @@ describe('Phase 09 dashboard repository contract', () => {
       if (sql.includes('FROM orders o')) return [[]];
       if (sql.includes('FROM fund_transactions')) return [[{ credits: 0, debits: 0 }]];
       if (sql.includes('FROM expenses')) return [[{ total: 0, today: 0, monthly: 0 }]];
+      if (sql.includes('FROM order_payments op')) return [[]];
+      if (sql.includes('FROM order_payments WHERE')) return [[{ count: 0 }]];
+      if (sql.includes('FROM vendors v JOIN vendor_applications')) return [[{ count: 0 }]];
       throw new Error(`Unexpected SQL in test: ${sql}`);
     } };
     const data = await repo.getDashboardData({ pool, now: new Date('2026-10-26T06:00:00Z') });

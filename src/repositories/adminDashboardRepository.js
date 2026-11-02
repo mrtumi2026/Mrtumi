@@ -34,7 +34,7 @@ async function getDashboardData({ pool = null, now = new Date() } = {}) {
   const { start: trendStart } = dhakaDayUtcBounds(trendDate);
   const monthStart = `${today.slice(0, 7)}-01`;
 
-  const [orderTotals, todayTotals, trendRows, trafficRows, statusRows, productTotals, lowStockTotals, products, categories, recentOrders, finance, expenses] = await Promise.all([
+  const [orderTotals, todayTotals, trendRows, trafficRows, statusRows, productTotals, lowStockTotals, products, categories, recentOrders, finance, expenses, pendingManualPayments, pendingManualPaymentCount, pendingVendorApplications, pendingProducts] = await Promise.all([
     client.queryOne(`SELECT COUNT(*) AS total_orders,
       SUM(order_status='pending') AS pending_orders,
       SUM(order_status IN ('delivered','completed')) AS delivered_count,
@@ -68,7 +68,14 @@ async function getDashboardData({ pool = null, now = new Date() } = {}) {
     client.queryOne(`SELECT COALESCE(SUM(amount_paisa),0) AS total,
       COALESCE(SUM(CASE WHEN expense_date=? THEN amount_paisa ELSE 0 END),0) AS today,
       COALESCE(SUM(CASE WHEN expense_date>=? AND expense_date<? THEN amount_paisa ELSE 0 END),0) AS monthly
-      FROM expenses`, [today, monthStart, new Date(Date.UTC(Number(today.slice(0,4)), Number(today.slice(5,7)), 1)).toISOString().slice(0,10)])
+      FROM expenses`, [today, monthStart, new Date(Date.UTC(Number(today.slice(0,4)), Number(today.slice(5,7)), 1)).toISOString().slice(0,10)]),
+    client.queryAll(`SELECT op.id,op.order_id,o.invoice_no,o.customer_phone,op.gateway_code,g.name AS gateway_name,op.sender_number,op.provider_trx_id,op.amount_paisa
+      FROM order_payments op JOIN orders o ON o.id=op.order_id LEFT JOIN payment_gateways g ON g.code=op.gateway_code WHERE op.status='pending_verification'
+      AND op.gateway_code IN ('bkash','nagad','rocket','manual_bkash','manual_nagad','manual_rocket')
+      ORDER BY op.created_at,op.id LIMIT 8`),
+    client.queryOne("SELECT COUNT(*) AS count FROM order_payments WHERE status='pending_verification' AND gateway_code IN ('bkash','nagad','rocket','manual_bkash','manual_nagad','manual_rocket')"),
+    client.queryOne("SELECT COUNT(*) AS count FROM vendors v JOIN vendor_applications a ON a.vendor_id=v.id WHERE v.lifecycle_status='pending'"),
+    client.queryOne("SELECT COUNT(*) AS count FROM products WHERE vendor_id IS NOT NULL AND is_archived=0 AND approval_status='pending'")
   ]);
 
   const totalOrders = asNum(orderTotals.total_orders);
@@ -100,6 +107,9 @@ async function getDashboardData({ pool = null, now = new Date() } = {}) {
     dashboardCategories: categories.map((c) => ({ id: Number(c.id), name: c.name, product_count: asNum(c.product_count) })),
     recentOrders, fundBalance: paisaToBdt(asNum(finance.credits) - asNum(finance.debits) + asNum(orderTotals.delivered_paisa)),
     totalExpenses: paisaToBdt(expenses.total), todayExpenses: paisaToBdt(expenses.today), monthlyExpenses: paisaToBdt(expenses.monthly),
+    pendingManualPayments: pendingManualPayments.map((payment)=>({...payment,id:Number(payment.id),order_id:Number(payment.order_id),amount:paisaToBdt(payment.amount_paisa)})),
+    pendingManualPaymentCount: asNum(pendingManualPaymentCount?.count),
+    pendingVendorApplications: asNum(pendingVendorApplications.count), pendingProducts: asNum(pendingProducts.count),
   };
 }
 

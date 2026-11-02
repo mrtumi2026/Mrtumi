@@ -1,0 +1,7 @@
+<%- include('partials/layout-top', { title: 'Verify mobile | Mrtumi' }) %>
+<main class="container py-5" style="max-width:620px"><h1 class="h3">Verify your mobile number</h1><p class="text-muted">Application phone: <strong><%= application.phone %></strong></p>
+  <div class="alert alert-info">Phone verification is required. SMS delivery uses the configured BulkSMSBD gateway. If delivery fails or the gateway is out of balance, contact support for a manual phone-call verification; your application will remain pending until an authorized admin confirms the call.</div>
+  <% if(siteSettings?.email){ %><p>Support: <a href="mailto:<%= siteSettings.email %>"><%= siteSettings.email %></a></p><% } %>
+  <form method="post" action="/vendor/verify-phone/request" class="mb-4"><input type="hidden" name="_csrf" value="<%= csrfToken || '' %>"><button class="btn btn-outline-primary" type="submit">Request verification code</button></form>
+  <form method="post" action="/vendor/verify-phone"><input type="hidden" name="_csrf" value="<%= csrfToken || '' %>"><div class="mb-3"><label class="form-label" for="code">Six-digit code</label><input id="code" name="code" class="form-control" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" minlength="6" maxlength="6" required></div><button class="btn btn-primary" type="submit">Verify</button></form>
+</main><%- include('partials/layout-bottom') %>

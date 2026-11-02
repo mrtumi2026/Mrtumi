@@ -11,19 +11,14 @@
       <h6 class="fw-bold mb-3">💸 নতুন উইথড্র রিকোয়েস্ট পাঠান</h6>
       <form action="/vendor/withdrawals/request" method="POST">
         <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
-        <div class="mb-2">
-          <label class="form-label small fw-semibold">উত্তোলন মাধ্যম *</label>
-          <select name="method" class="form-select">
-            <option value="bKash Personal">bKash Personal</option>
-            <option value="Nagad Personal">Nagad Personal</option>
-            <option value="Rocket">Rocket</option>
-            <option value="Bank Transfer">Bank Transfer</option>
-          </select>
-        </div>
-        <div class="mb-2">
-          <label class="form-label small fw-semibold">অ্যাকাউন্ট / মোবাইল নম্বর *</label>
-          <input type="text" name="account_number" value="<%= vendor.phone %>" class="form-control" required />
-        </div>
+        <% if (typeof payoutAccounts !== 'undefined') { %>
+          <% const verifiedPayouts = payoutAccounts.filter(function(p) { return p.verification_status === 'verified'; }); %>
+          <% if (vendor.lifecycle_status !== 'active' || !vendor.payout_verified_at) { %><div class="alert alert-warning">উত্তোলনের আগে সক্রিয় ভেন্ডর স্ট্যাটাস ও যাচাইকৃত পেআউট অ্যাকাউন্ট প্রয়োজন। <a href="/vendor/onboarding">Onboarding দেখুন</a></div><% } %>
+          <div class="mb-2"><label class="form-label small fw-semibold" for="payout-account">যাচাইকৃত পেআউট অ্যাকাউন্ট *</label><select id="payout-account" name="payout_account_id" class="form-select" required <%= !verifiedPayouts.length || vendor.lifecycle_status !== 'active' ? 'disabled' : '' %>><option value="">অ্যাকাউন্ট নির্বাচন করুন</option><% verifiedPayouts.forEach(function(p) { %><option value="<%= p.id %>"><%= p.method %> · <%= p.masked_account %></option><% }) %></select></div>
+        <% } else { %>
+          <div class="mb-2"><label class="form-label small fw-semibold">উত্তোলন মাধ্যম *</label><select name="method" class="form-select"><option value="bKash Personal">bKash Personal</option><option value="Nagad Personal">Nagad Personal</option><option value="Bank Transfer">Bank Transfer</option></select></div>
+          <div class="mb-2"><label class="form-label small fw-semibold">অ্যাকাউন্ট / মোবাইল নম্বর *</label><input type="text" name="account_number" value="<%= vendor.phone %>" class="form-control" required /></div>
+        <% } %>
         <div class="mb-2">
           <label class="form-label small fw-semibold">টাকার পরিমাণ (৳) *</label>
           <input type="number" name="amount" min="100" max="<%= vendor.balance %>" placeholder="ন্যূনতম ৳১০০" class="form-control" required />
@@ -60,7 +55,7 @@
             <% withdrawals.forEach(function(w) { %>
               <tr>
                 <td>#<%= w.id %></td>
-                <td><strong><%= w.method %></strong> — <%= w.account_number %></td>
+                <td><strong><%= w.method %></strong> — <%= w.masked_account || w.account_number %></td>
                 <td class="fw-bold">৳<%= Number(w.amount).toLocaleString('en-IN') %></td>
                 <td><span class="sb <%= w.status === 'paid' ? 'sb-6' : 'sb-1' %>"><%= w.status %></span></td>
                 <td class="small text-muted"><%= String(w.created_at).slice(0, 10) %></td>

@@ -7,6 +7,7 @@ const { createRateLimiter } = require('../middleware/rateLimit');
 const upload = require('../middleware/upload');
 const { env } = require('../config/env');
 const vendorPortal = require('../repositories/vendorPortalRepository');
+const { generateSafeProductSlug } = require('../utils/slug');
 const partnerWithdrawalRepository = require('../repositories/partnerWithdrawalRepository');
 const mysqlActive = () => env.db.client === 'mysql';
 
@@ -108,8 +109,14 @@ router.get('/vendor/register', (req, res) => {
   res.render('vendor/auth', { mode: 'register', error: null });
 });
 
-router.post('/vendor/register', requireCsrf, (req, res) => {
+router.post('/vendor/register', requireCsrf, async (req, res, next) => {
   const { shop_name, owner_name, phone, email, address, password } = req.body;
+  if (mysqlActive()) {
+    try {
+      const vendor=await vendorPortal.register({shop_name,owner_name,phone,email,address,password});
+      return establishVendorSession(req,vendor,error=>{ if(error)return next(error); req.flash('success','ভেন্ডর অ্যাকাউন্ট তৈরি হয়েছে। পণ্য যোগ করা যাবে; অ্যাডমিন পর্যালোচনা শেষে পণ্য প্রকাশিত হবে।'); return res.redirect('/vendor/products'); });
+    } catch(error) { if(error.code==='DB_DUPLICATE_ENTRY'||error.code==='VALIDATION_ERROR') return res.status(400).render('vendor/auth',{mode:'register',error:error.message}); return next(error); }
+  }
   if (!shop_name || !owner_name || !phone || !password) {
     return res.render('vendor/auth', {
       mode: 'register',
@@ -155,9 +162,20 @@ router.post('/vendor/logout', requireCsrf, (req, res) => {
 });
 
 // ─── Protected Vendor Portal Routes ───
-router.use('/vendor', requireVendor);
+router.use('/vendor', requireVendor, async (req,res,next)=>{
+  if(!mysqlActive())return next();
+  try{
+    const vendor=await require('../db/mysqlPool').queryOne('SELECT status,lifecycle_status FROM vendors WHERE id=?',[req.session.vendorUser.id]);
+    if(!vendor||Number(vendor.status)!==1){req.flash('error','Vendor account is unavailable.');return res.redirect('/vendor/login');}
+    if(vendor.lifecycle_status==='active')return next();
+    const viewOnlySuspended=['suspended','deactivated'].includes(vendor.lifecycle_status)&&req.method==='GET'&&(req.path.startsWith('/vendor/orders')||req.path.startsWith('/vendor/withdrawals')||/^\/vendor\/order-items\/\d+$/.test(req.path));
+    if(viewOnlySuspended)return next();
+    req.flash('error','This capability is locked until vendor onboarding and verification requirements are complete.');return res.redirect('/vendor/onboarding');
+  }catch(error){return next(error);}
+});
 
 router.get('/vendor/dashboard', (req, res) => {
+  if(mysqlActive())return res.redirect('/vendor/onboarding');
   const vendor = db.get('SELECT * FROM vendors WHERE id = ?', req.session.vendorUser.id);
   const totalProducts = db.get('SELECT COUNT(*) AS c FROM products WHERE vendor_id = ?', vendor.id).c;
   const approvedProducts = db.get(
@@ -248,7 +266,7 @@ router.post('/vendor/products/create', upload.single('image'), requireCsrfAndCle
      stock, sizes, colors, image, short_desc, description, approval_status, status)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
     b.name.trim(),
-    makeSlug(b.name),
+    generateSafeProductSlug(b.slug || b.name, b.name_en, code),
     code,
     Number(b.category_id || 1),
     Number(b.brand_id || 1),
@@ -377,6 +395,23 @@ router.get('/vendor/order-items/:itemId', async (req, res, next) => {
   try { return res.json({ item: await vendorPortal.getOrderItem(req.session.vendorUser.id, req.params.itemId) }); } catch (error) { return next(error); }
 });
 
+// Independent vendor sub-order fulfillment; a vendor can only mutate its own sub-orders.
+router.post('/vendor/sub-orders/:subOrderId/status', requireCsrf, async (req, res, next) => {
+  if (!mysqlActive()) { req.flash('error', 'Sub-order fulfillment is only available through the MySQL workflow.'); return res.redirect('/vendor/orders'); }
+  try {
+    await require('../repositories/vendorOrderRepository').transitionSubOrder({
+      subOrderId: req.params.subOrderId,
+      toStatus: req.body.to_status,
+      carrier: req.body.carrier,
+      trackingCode: req.body.tracking_code,
+      note: req.body.note,
+      actor: { vendorId: req.session.vendorUser.id },
+    });
+    req.flash('success', 'Vendor sub-order status updated.');
+    return res.redirect('/vendor/orders');
+  } catch (error) { return next(error); }
+});
+
 // Explicitly scoped item fulfillment; parent-order status is derived in the repository from all lines.
 router.post('/vendor/order-items/:itemId/fulfillment', requireCsrf, async (req, res, next) => {
   if (!mysqlActive()) { req.flash('error', 'Item fulfillment is only available through the MySQL workflow.'); return res.redirect('/vendor/orders'); }
@@ -390,7 +425,15 @@ router.post('/vendor/orders/mark-ready/:orderId', requireCsrf, (req, res) => {
 });
 
 // ─── Vendor Wallet & Withdrawals ───
-router.get('/vendor/withdrawals', (req, res) => {
+router.get('/vendor/withdrawals', async (req, res, next) => {
+  if (mysqlActive()) {
+    try {
+      const {queryOne}=require('../db/mysqlPool');
+      const [row,withdrawals,payoutAccounts]=await Promise.all([queryOne('SELECT id,shop_name,owner_name,phone,email,balance_paisa/100 AS balance,lifecycle_status,payout_verified_at FROM vendors WHERE id=? AND status=1',[req.session.vendorUser.id]),partnerWithdrawalRepository.listVendorWithdrawals(req.session.vendorUser.id),require('../repositories/vendorOnboardingRepository').listPayoutAccounts(req.session.vendorUser.id)]);
+      if(!row){req.flash('error','ভেন্ডর অ্যাকাউন্ট পাওয়া যায়নি।');return res.redirect('/vendor/login');}
+      return res.render('vendor/withdrawals',{vendor:row,withdrawals,payoutAccounts});
+    } catch(error){return next(error);}
+  }
   const vendor = db.get('SELECT * FROM vendors WHERE id = ?', req.session.vendorUser.id);
   const withdrawals = db.all(
     'SELECT * FROM vendor_withdrawals WHERE vendor_id = ? ORDER BY id DESC',
@@ -402,7 +445,7 @@ router.get('/vendor/withdrawals', (req, res) => {
 router.post('/vendor/withdrawals/request', requireCsrf, async (req, res, next) => {
   if (mysqlActive()) {
     try {
-      await partnerWithdrawalRepository.requestVendorWithdrawal(req.session.vendorUser.id, { amount: req.body.amount, method: req.body.method, accountNumber: req.body.account_number }, { ip: req.ip, userAgent: req.get('user-agent') });
+      await partnerWithdrawalRepository.requestVendorWithdrawal(req.session.vendorUser.id, { amount: req.body.amount, payoutAccountId: req.body.payout_account_id }, { ip: req.ip, userAgent: req.get('user-agent') });
       req.flash('success', 'উইথড্র রিকোয়েস্ট অ্যাডমিনের কাছে পাঠানো হয়েছে।');
       return res.redirect('/vendor/withdrawals');
     } catch (error) {
@@ -439,12 +482,14 @@ router.post('/vendor/withdrawals/request', requireCsrf, async (req, res, next) =
 });
 
 // ─── Vendor Shop Profile ───
-router.get('/vendor/profile', (req, res) => {
+router.get('/vendor/profile', async (req, res, next) => {
+  if(mysqlActive()){try{return res.render('vendor/profile',{vendor:await require('../repositories/vendorOnboardingRepository').getVendorProfile(req.session.vendorUser.id),mysqlMode:true,geoData:require('../utils/bangladeshGeo').getGeoData()});}catch(error){return next(error);}}
   const vendor = db.get('SELECT * FROM vendors WHERE id = ?', req.session.vendorUser.id);
-  res.render('vendor/profile', { vendor });
+  res.render('vendor/profile', { vendor,mysqlMode:false });
 });
 
-router.post('/vendor/profile', requireCsrf, (req, res) => {
+router.post('/vendor/profile', requireCsrf, async (req, res,next) => {
+  if(mysqlActive()){try{await require('../repositories/vendorOnboardingRepository').updateVendorProfile(req.session.vendorUser.id,req.body,{type:'vendor',id:req.session.vendorUser.id,ip:req.ip,userAgent:req.get('user-agent')});req.flash('success','Vendor profile updated. Your verified mobile number was not changed.');return res.redirect('/vendor/profile');}catch(error){if(error.code==='VALIDATION_ERROR'||error.code==='CONFLICT'){req.flash('error',error.message);return res.redirect('/vendor/profile');}return next(error);}}
   const { shop_name, owner_name, phone, email, address, new_password } = req.body;
   const vendorId = req.session.vendorUser.id;
   db.run(

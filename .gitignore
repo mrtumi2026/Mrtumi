@@ -10,6 +10,8 @@ node_modules/
 data/*.db
 data/*.db-shm
 data/*.db-wal
+data/vendor-private-documents/
+storage/vendor_docs/
 *.sqlite
 *.sqlite3
 *.db

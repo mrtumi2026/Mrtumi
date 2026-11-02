@@ -10,22 +10,31 @@
 
 <form action="/reseller/orders/create" method="POST" class="row g-4">
   <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
+  <% if (typeof canonicalOrder !== 'undefined' && canonicalOrder) { %><input type="hidden" name="request_key" value="<%= requestKey %>"><% } %>
   <div class="col-lg-7">
     <div class="tbl-card p-4">
       <h6 class="fw-bold border-bottom pb-2 mb-3">১. পণ্য ও আপনার বিক্রয়মূল্য নির্ধারণ</h6>
       <div class="row g-3 mb-4">
+        <div class="col-12">
+          <label class="form-label small fw-semibold">Pricing mode *</label>
+          <select name="pricing_mode" id="rsPricingMode" class="form-select" required onchange="recalcResellerProfit()">
+            <option value="reseller_price">Reseller selling price (if enabled)</option>
+            <option value="marketplace_official">Marketplace official price (if enabled)</option>
+          </select>
+        </div>
         <div class="col-12">
           <label class="form-label small fw-semibold">পণ্য নির্বাচন করুন *</label>
           <select name="product_id" id="rsProdSelect" class="form-select" onchange="onResellerProdChange()">
             <% products.forEach(function(p) { %>
               <option
                 value="<%= p.id %>"
-                data-cost="<%= p.reseller_cost %>"
                 data-retail="<%= p.new_price %>"
+                data-reseller-mode="<%= Number(p.reseller_price_mode_enabled) === 1 ? '1' : '0' %>"
+                data-official-mode="<%= Number(p.official_price_mode_enabled) === 1 ? '1' : '0' %>"
                 data-sizes="<%= p.sizes || '১ কেজি' %>"
                 <%= p.id === selectedId ? 'selected' : '' %>
               >
-                <%= p.name %> — রিসেলার পাইকারি মূল্য: ৳<%= p.reseller_cost %> (খুচরা: ৳<%= p.new_price %>)
+                <%= p.name %> — Marketplace price: ৳<%= p.new_price %>
               </option>
             <% }) %>
           </select>
@@ -80,7 +89,7 @@
       <h6 class="fw-bold border-bottom pb-2 mb-3">💰 লাইভ প্রফিট ও কাস্টমার বিল ক্যালকুলেটর</h6>
 
       <div class="d-flex justify-content-between py-2 border-bottom small">
-        <span>পাইকারি ক্রয়মূল্য (অ্যাডমিন মূল্য):</span>
+        <span>Vendor settlement (confidential):</span>
         <strong>৳<span id="lblWholesaleTotal">0</span></strong>
       </div>
       <div class="d-flex justify-content-between py-2 border-bottom small">
@@ -97,9 +106,9 @@
       </div>
 
       <div class="p-3 rounded-3 bg-success bg-opacity-10 border border-success my-3 text-center">
-        <div class="small fw-semibold text-success">🎉 এই অর্ডারে আপনার নিট লাভ (Reseller Profit)</div>
-        <div class="display-6 fw-bold text-success">৳<span id="lblNetProfit">0</span></div>
-        <div class="small text-muted mt-1">ডেলিভারি সম্পন্ন হলেই স্বয়ংক্রিয়ভাবে আপনার ওয়ালেটে যোগ হবে</div>
+        <div class="small fw-semibold text-success">Expected reseller earnings</div>
+        <div class="display-6 fw-bold text-success"><span id="lblNetProfit">—</span></div>
+        <div class="small text-muted mt-1">The server validates configured entitlement, fees and adjustments before accepting an order. Earnings are not payable until delivery and settlement eligibility.</div>
       </div>
 
       <button type="submit" class="btn btn-primary w-100 py-3 fw-bold rounded-3" style="background:#3730a3;border-color:#3730a3;">
@@ -114,6 +123,10 @@
     var sel = document.getElementById('rsProdSelect');
     var opt = sel.options[sel.selectedIndex];
     var retail = Number(opt.getAttribute('data-retail') || 0);
+    var mode = document.getElementById('rsPricingMode');
+    mode.querySelector('[value="reseller_price"]').disabled = opt.getAttribute('data-reseller-mode') !== '1';
+    mode.querySelector('[value="marketplace_official"]').disabled = opt.getAttribute('data-official-mode') !== '1';
+    if (mode.options[mode.selectedIndex].disabled) mode.selectedIndex = Array.from(mode.options).findIndex(function(o) { return !o.disabled; });
     var sizes = (opt.getAttribute('data-sizes') || '১ কেজি').split(',').map(function(s) { return s.trim(); }).filter(Boolean);
     document.getElementById('rsSellPrice').value = retail;
     var szSel = document.getElementById('rsSizeSelect');
@@ -121,24 +134,48 @@
     recalcResellerProfit();
   }
 
+  var resellerQuoteTimer = null;
+  var resellerQuoteRevision = 0;
+  function requestResellerQuote() {
+    clearTimeout(resellerQuoteTimer);
+    var revision = ++resellerQuoteRevision;
+    document.getElementById('lblNetProfit').textContent = '…';
+    resellerQuoteTimer = setTimeout(function() {
+      var product = document.getElementById('rsProdSelect').value;
+      var mode = document.getElementById('rsPricingMode').value;
+      var params = new URLSearchParams({ product_id: product, pricing_mode: mode, qty: document.getElementById('rsQty').value || '1' });
+      if (mode === 'reseller_price') params.set('selling_unit_price', document.getElementById('rsSellPrice').value || '');
+      fetch('/reseller/orders/quote?' + params.toString(), { headers: { Accept: 'application/json' }, credentials: 'same-origin' })
+        .then(function(response) { if (!response.ok) throw new Error('quote unavailable'); return response.json(); })
+        .then(function(result) {
+          if (revision !== resellerQuoteRevision) return;
+          document.getElementById('lblCustomerSub').textContent = (Number(result.productAmountPaisa) / 100).toLocaleString('en-IN');
+          document.getElementById('lblNetProfit').textContent = '৳' + (Number(result.resellerEarningPaisa) / 100).toLocaleString('en-IN');
+        })
+        .catch(function() { if (revision === resellerQuoteRevision) document.getElementById('lblNetProfit').textContent = 'Unavailable'; });
+    }, 180);
+  }
+
   function recalcResellerProfit() {
     var sel = document.getElementById('rsProdSelect');
     var opt = sel.options[sel.selectedIndex];
-    var unitCost = Number(opt.getAttribute('data-cost') || 0);
     var qty = Math.max(1, parseInt(document.getElementById('rsQty').value || '1', 10));
-    var sellUnit = Number(document.getElementById('rsSellPrice').value || 0);
+    var mode = document.getElementById('rsPricingMode').value;
+    var priceInput = document.getElementById('rsSellPrice');
+    var officialPrice = Number(opt.getAttribute('data-retail') || 0);
+    priceInput.disabled = mode === 'marketplace_official';
+    if (priceInput.disabled) priceInput.value = officialPrice;
+    var sellUnit = Number(priceInput.value || 0);
     var shipSel = document.getElementById('rsShipArea');
     var ship = Number(shipSel.options[shipSel.selectedIndex].getAttribute('data-ship') || 60);
 
-    var wholesaleTotal = unitCost * qty;
     var custSub = sellUnit * qty;
-    var profit = Math.max(0, custSub - wholesaleTotal);
 
-    document.getElementById('lblWholesaleTotal').textContent = wholesaleTotal.toLocaleString('en-IN');
+    document.getElementById('lblWholesaleTotal').textContent = '—';
     document.getElementById('lblCustomerSub').textContent = custSub.toLocaleString('en-IN');
     document.getElementById('lblShipCharge').textContent = ship;
     document.getElementById('lblCodTotal').textContent = (custSub + ship).toLocaleString('en-IN');
-    document.getElementById('lblNetProfit').textContent = profit.toLocaleString('en-IN');
+    requestResellerQuote();
   }
 
   document.addEventListener('DOMContentLoaded', onResellerProdChange);

@@ -255,6 +255,7 @@
                   <ul class="nav-second-level">
                     <li><a href="/admin/vendors"><i data-feather="list"></i> <%= t('admin.menu.allVendors') %></a></li>
                     <li><a href="/admin/vendor-verifications"><i data-feather="shield"></i> <%= t('admin.menu.pendingVendors') %></a></li>
+                    <li><a href="/admin/vendor-applications?status=pending"><i data-feather="file-text"></i> <%= locale === 'bn' ? 'ভেন্ডর আবেদন পর্যালোচনা' : 'Vendor applications' %></a></li>
                     <li><a href="/admin/vendor-withdrawals"><i data-feather="dollar-sign"></i> <%= t('admin.menu.vendorWithdrawals') %></a></li>
                   </ul>
                 </div>
@@ -272,6 +273,7 @@
                     <li><a href="/admin/reseller-deposits"><i data-feather="credit-card"></i> <%= locale === 'bn' ? 'রিসেলার ডিপোজিট' : 'Reseller Deposits' %></a></li>
                     <li><a href="/admin/reseller-verifications"><i data-feather="shield"></i> <%= t('admin.menu.pendingResellers') %></a></li>
                     <li><a href="/admin/reseller-withdrawals"><i data-feather="dollar-sign"></i> <%= t('admin.menu.resellerWithdrawals') %></a></li>
+                    <li><a href="/admin/reseller-commerce"><i data-feather="shopping-bag"></i> <%= locale === 'bn' ? 'রিসেলার কমার্স অপারেশনস' : 'Reseller Commerce' %></a></li>
                   </ul>
                 </div>
               </li>
@@ -363,7 +365,7 @@
                 </a>
                 <div class="collapse" id="sidebar-api-integration">
                   <ul class="nav-second-level">
-                    <li><a href="/admin/paymentgeteway/manage"><i data-feather="credit-card"></i> <%= t('admin.menu.paymentGateways') %></a></li>
+                    <li><a href="/admin/payment-gateways"><i data-feather="credit-card"></i> <%= locale === 'bn' ? 'পেমেন্ট গেটওয়ে' : 'Payment Gateways' %></a></li>
                     <li><a href="/admin/paymentgeteway/manual-manage"><i data-feather="smartphone"></i> <%= locale === 'bn' ? 'ম্যানুয়াল পেমেন্ট' : 'Manual Payment' %></a></li>
                     <li><a href="/admin/smsgeteway/manage"><i data-feather="message-square"></i> <%= t('admin.menu.smsGateways') %></a></li>
                     <li><a href="/admin/courierapi/manage"><i data-feather="truck"></i> <%= t('admin.menu.courierConfig') %></a></li>

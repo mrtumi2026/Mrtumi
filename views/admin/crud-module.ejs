@@ -79,6 +79,11 @@
                       </button>
                     </form>
                   <% } %>
+                  <% if (typeof updatePrefix !== 'undefined' && updatePrefix && fields && fields.length) { %>
+                    <button type="button" class="btn btn-sm btn-outline-warning py-1 px-2 me-1 edit-crud-btn" title="Edit" data-record='<%- JSON.stringify(r).replace(/&/g, '&amp;').replace(/'/g, '&#39;').replace(/</g, '&lt;') %>'>
+                      <i class="fas fa-edit"></i> Edit
+                    </button>
+                  <% } %>
                   <% if (typeof deletePrefix !== 'undefined' && deletePrefix) { %>
                     <form action="<%= deletePrefix %>/<%= r.id %>" method="POST" class="d-inline">
                       <input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>" />
@@ -100,13 +105,15 @@
 <% if (typeof createAction !== 'undefined' && createAction && fields && fields.length) { %>
 <div class="modal fade" id="crudAddModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
-    <form action="<%= createAction %>" method="POST" class="modal-content">
+    <form action="<%= createAction %>" method="POST" id="crudAddForm" class="modal-content" <%= typeof multipartForm !== 'undefined' && multipartForm ? 'enctype="multipart/form-data"' : '' %>>
       <input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>" />
+      <% if (typeof multipartForm !== 'undefined' && multipartForm) { %><input type="hidden" name="image_base64" id="crudAddImageBase64" value=""><% } %>
       <div class="modal-header">
         <h5 class="modal-title fw-bold">Add New — <%= pageTitle %></h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
+        <% if (typeof multipartForm !== 'undefined' && multipartForm) { %><img id="crudAddImagePreview" src="" alt="New banner image preview" class="img-thumbnail mb-3 d-none" style="max-height:180px;max-width:100%;object-fit:contain;"><% } %>
         <% fields.forEach(function(f) { %>
           <div class="mb-3">
             <label class="form-label small fw-semibold mb-1"><%= f.label %> <%= f.required ? '*' : '' %></label>
@@ -118,6 +125,8 @@
               </select>
             <% } else if (f.type === 'textarea') { %>
               <textarea name="<%= f.name %>" rows="3" class="form-control" <%= f.required ? 'required' : '' %>><%= f.value || '' %></textarea>
+            <% } else if (f.type === 'file') { %>
+              <input type="file" name="<%= f.name %>" class="form-control" accept="image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif" <%= f.required ? 'required' : '' %> />
             <% } else if (f.type === 'color') { %>
               <input type="color" name="<%= f.name %>" value="<%= f.value || '#243b22' %>" class="form-control form-control-color" />
             <% } else { %>
@@ -135,6 +144,46 @@
 </div>
 <% } %>
 
+<% if (typeof updatePrefix !== 'undefined' && updatePrefix && fields && fields.length) { %>
+<div class="modal fade" id="crudEditModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <form action="" method="POST" class="modal-content" id="crudEditForm" <%= typeof multipartForm !== 'undefined' && multipartForm ? 'enctype="multipart/form-data"' : '' %>>
+      <input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>" />
+      <% if (typeof multipartForm !== 'undefined' && multipartForm) { %><input type="hidden" name="image_base64" id="crudEditImageBase64" value=""><% } %>
+      <div class="modal-header">
+        <h5 class="modal-title fw-bold">Edit — <%= pageTitle %></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <img id="crudEditImagePreview" src="" alt="Current image preview" class="img-thumbnail mb-3 d-none" style="max-height:140px;max-width:220px;object-fit:contain;" />
+        <% fields.forEach(function(f) { %>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold mb-1" for="crud-edit-<%= f.name %>"><%= f.label %><%= f.type === 'file' ? ' (Leave blank to keep existing image)' : '' %> <%= f.required ? '*' : '' %></label>
+            <% if (f.type === 'select') { %>
+              <select id="crud-edit-<%= f.name %>" name="<%= f.name %>" class="form-select crud-edit-field" data-field="<%= f.name %>" <%= (f.required && f.type !== 'password' && f.type !== 'file') ? 'required' : '' %>>
+                <% (f.options || []).forEach(function(opt) { %><option value="<%= opt.value %>"><%= opt.label %></option><% }) %>
+              </select>
+            <% } else if (f.type === 'textarea') { %>
+              <textarea id="crud-edit-<%= f.name %>" name="<%= f.name %>" rows="3" class="form-control crud-edit-field" data-field="<%= f.name %>" <%= (f.required && f.type !== 'password' && f.type !== 'file') ? 'required' : '' %>></textarea>
+            <% } else if (f.type === 'file') { %>
+              <input id="crud-edit-<%= f.name %>" type="file" name="<%= f.name %>" class="form-control crud-edit-field" data-field="<%= f.name %>" accept="image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif" />
+            <% } else if (f.type === 'color') { %>
+              <input id="crud-edit-<%= f.name %>" type="color" name="<%= f.name %>" class="form-control form-control-color crud-edit-field" data-field="<%= f.name %>" />
+            <% } else { %>
+              <input id="crud-edit-<%= f.name %>" type="<%= f.type || 'text' %>" name="<%= f.name %>" class="form-control crud-edit-field" data-field="<%= f.name %>" <%= (f.required && f.type !== 'password' && f.type !== 'file') ? 'required' : '' %> />
+            <% } %>
+          </div>
+        <% }) %>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button type="submit" class="btn btn-warning btn-sm">Save Changes</button>
+      </div>
+    </form>
+  </div>
+</div>
+<% } %>
+
 <script>
   document.getElementById('crudQuickFilter').addEventListener('input', function() {
     var q = this.value.toLowerCase();
@@ -142,6 +191,108 @@
       tr.style.display = tr.textContent.toLowerCase().includes(q) ? '' : 'none';
     });
   });
+
+  <% if (typeof multipartForm !== 'undefined' && multipartForm) { %>
+  (function setupBannerImageCompression() {
+    var MAX_BYTES = 180 * 1024;
+    function previewFor(form) { return form.id === 'crudEditForm' ? document.getElementById('crudEditImagePreview') : document.getElementById('crudAddImagePreview'); }
+    function setNotice(form, text) {
+      var notice = form.querySelector('.banner-compression-notice');
+      if (!notice) { notice = document.createElement('div'); notice.className = 'banner-compression-notice small text-muted mb-2'; var body = form.querySelector('.modal-body'); if (body) body.prepend(notice); }
+      notice.textContent = text;
+    }
+    function imageFromFile(file) {
+      return new Promise(function(resolve, reject) {
+        var url = URL.createObjectURL(file), image = new Image();
+        image.onload = function() { URL.revokeObjectURL(url); resolve(image); };
+        image.onerror = function() { URL.revokeObjectURL(url); reject(new Error('ছবিটি পড়া যায়নি। JPG/PNG/WebP ফাইল দিয়ে আবার চেষ্টা করুন।')); };
+        image.src = url;
+      });
+    }
+    function canvasBlob(canvas, quality) {
+      return new Promise(function(resolve) { canvas.toBlob(resolve, 'image/jpeg', quality); });
+    }
+    async function compress(file) {
+      var image = await imageFromFile(file), scale = Math.min(1, 1920 / image.naturalWidth);
+      for (var pass = 0; pass < 7; pass++) {
+        var canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+        canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+        var ctx = canvas.getContext('2d', { alpha: false });
+        if (!ctx) throw new Error('এই ব্রাউজারে image compression চালু করা যায়নি।');
+        ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+        for (var quality = 0.82; quality >= 0.42; quality -= 0.1) {
+          var blob = await canvasBlob(canvas, quality);
+          if (blob && blob.size <= MAX_BYTES) return blob;
+        }
+        scale *= 0.82;
+      }
+      throw new Error('Compress করার পরও ছবিটি 180 KB-এর নিচে আনা যায়নি। ছোট ছবি ব্যবহার করুন।');
+    }
+    document.querySelectorAll('form#crudAddForm, form#crudEditForm').forEach(function(form) {
+      form.addEventListener('submit', function(event) {
+        if (form.dataset.bannerCompressing === '1') { event.preventDefault(); setNotice(form, 'Compressing is still running—please wait a moment before saving.'); }
+      });
+    });
+    document.querySelectorAll('input[type="file"][name="image_file"]').forEach(function(input) {
+      input.addEventListener('change', async function() {
+        var file = input.files && input.files[0]; if (!file) return;
+        var form = input.closest('form'); if (!form) return;
+        var hidden = form.querySelector('input[name="image_base64"]');
+        var urlField = form.querySelector('input[name="image_url"]');
+        if (hidden) hidden.value = '';
+        if (urlField) urlField.value = '';
+        input.disabled = true; form.dataset.bannerCompressing = '1'; setNotice(form, 'ছবি compress হচ্ছে…');
+        try {
+          var blob = await compress(file);
+          var dataUrl = await new Promise(function(resolve, reject) {
+            var reader = new FileReader(); reader.onload = function() { resolve(String(reader.result || '')); }; reader.onerror = reject; reader.readAsDataURL(blob);
+          });
+          if (!hidden) throw new Error('Image fallback field is missing.');
+          hidden.value = dataUrl;
+          var preview = previewFor(form); if (preview) { preview.src = dataUrl; preview.classList.remove('d-none'); }
+          input.value = ''; // Submit the compressed payload, never the multi-megabyte original.
+          setNotice(form, 'ছবি প্রস্তুত: ' + Math.ceil(blob.size / 1024) + ' KB, সর্বোচ্চ প্রস্থ 1920 px.');
+        } catch (error) {
+          setNotice(form, error && error.message ? error.message : 'ছবি compress করা যায়নি।');
+          if (hidden) hidden.value = '';
+          input.value = '';
+        } finally { input.disabled = false; delete form.dataset.bannerCompressing; }
+      });
+    });
+  })();
+  <% } %>
+
+  <% if (typeof updatePrefix !== 'undefined' && updatePrefix && fields && fields.length) { %>
+  document.querySelectorAll('.edit-crud-btn').forEach(function(button) {
+    button.addEventListener('click', function() {
+      var editModal = document.getElementById('crudEditModal');
+      var editForm = document.getElementById('crudEditForm');
+      if (!editModal || !editForm || typeof bootstrap === 'undefined') return;
+      var record;
+      try { record = JSON.parse(button.dataset.record || '{}'); } catch (_err) { return; }
+      editForm.action = <%- JSON.stringify(updatePrefix) %> + '/' + encodeURIComponent(record.id);
+      <% if (typeof multipartForm !== 'undefined' && multipartForm) { %>editForm.enctype = 'multipart/form-data'; var base64Field = editForm.querySelector('input[name="image_base64"]'); if (base64Field) base64Field.value = ''; <% } %>
+      editForm.querySelectorAll('.crud-edit-field').forEach(function(input) {
+        var key = input.dataset.field;
+        var value = record[key];
+        if (key === 'image_url' && (value === undefined || value === null || value === '')) value = record.image;
+        if (key === 'link_url' && (value === undefined || value === null || value === '')) value = record.link;
+        if (input.type === 'file') input.value = '';
+        else if (input.type === 'password') input.value = '';
+        else if (input.type === 'checkbox') input.checked = Boolean(Number(value));
+        else input.value = value === undefined || value === null ? '' : String(value);
+      });
+      var preview = document.getElementById('crudEditImagePreview');
+      if (preview) {
+        var image = record.image_url || record.image || '';
+        preview.src = image;
+        preview.classList.toggle('d-none', !image);
+      }
+      bootstrap.Modal.getOrCreateInstance(editModal).show();
+    });
+  });
+  <% } %>
 
   <% if (typeof autoOpenModal !== 'undefined' && autoOpenModal) { %>
   document.addEventListener('DOMContentLoaded', function() {

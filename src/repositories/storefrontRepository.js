@@ -1316,7 +1316,7 @@ async function getSitemapEntries(poolOverride = null, config = env) {
     const categories = sqliteDb.all('SELECT slug FROM categories WHERE status = 1 ORDER BY id ASC');
     const subcategories = sqliteDb.all('SELECT slug FROM subcategories WHERE status = 1 ORDER BY id ASC');
     const products = sqliteDb.all(
-      "SELECT slug FROM products WHERE status = 1 AND COALESCE(approval_status, 'approved') = 'approved' ORDER BY id DESC"
+      "SELECT id,slug FROM products WHERE status = 1 AND COALESCE(approval_status, 'approved') = 'approved' ORDER BY id DESC"
     );
     const blogs = sqliteDb.all('SELECT slug FROM blogs WHERE status = 1 ORDER BY id DESC');
     const pages = sqliteDb.all('SELECT slug FROM cms_pages WHERE status = 1 ORDER BY id ASC');
@@ -1331,7 +1331,7 @@ async function getSitemapEntries(poolOverride = null, config = env) {
       client.queryAll('SELECT `slug` FROM `childcategories` WHERE `status` = 1 ORDER BY `id` ASC'),
       client.queryAll('SELECT `slug` FROM `brands` WHERE `status` = 1 ORDER BY `id` ASC'),
       client.queryAll(
-        "SELECT `slug` FROM `products` WHERE `status` = 1 AND `is_archived` = 0 AND `approval_status` = 'approved' ORDER BY `id` DESC"
+        "SELECT p.`id`,p.`slug` FROM `products` p LEFT JOIN `vendors` v ON v.`id`=p.`vendor_id` WHERE p.`status` = 1 AND p.`is_archived` = 0 AND p.`approval_status` = 'approved' AND (p.`vendor_id` IS NULL OR (v.`status`=1 AND v.`lifecycle_status`='active')) ORDER BY p.`id` DESC"
       ),
       client.queryAll('SELECT `slug` FROM `blogs` WHERE `status` = 1 ORDER BY `id` DESC'),
       client.queryAll('SELECT `slug` FROM `cms_pages` WHERE `status` = 1 ORDER BY `id` ASC'),

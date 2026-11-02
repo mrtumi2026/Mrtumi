@@ -121,6 +121,9 @@ function buildConfig(overrides = {}) {
   const uploadDir = raw.UPLOAD_DIR
     ? path.resolve(ROOT_DIR, String(raw.UPLOAD_DIR))
     : path.join(ROOT_DIR, 'public', 'uploads');
+  const vendorDocumentDir = raw.VENDOR_DOCUMENT_DIR
+    ? path.resolve(ROOT_DIR, String(raw.VENDOR_DOCUMENT_DIR))
+    : path.join(ROOT_DIR, 'storage', 'vendor_docs');
 
   if (nodeEnv === 'production') {
     const missing = [];
@@ -194,6 +197,7 @@ function buildConfig(overrides = {}) {
     sessionSecret,
     csrfSecret,
     uploadDir,
+    vendorDocumentDir,
     db: Object.freeze({
       client: dbClient,
       sqlitePath,
@@ -210,10 +214,13 @@ function buildConfig(overrides = {}) {
     bootstrapAdminEmail: String(raw.BOOTSTRAP_ADMIN_EMAIL || 'admin@mrtumi.local').trim(),
     bootstrapAdminPassword: String(raw.BOOTSTRAP_ADMIN_PASSWORD || '').trim(),
     analyticsAttributionEnabled: String(raw.ANALYTICS_ATTRIBUTION_ENABLED || '').trim().toLowerCase() === 'true',
+    vendorOtpSmsEnabled: String(raw.VENDOR_OTP_SMS_ENABLED || '').trim().toLowerCase() === 'true',
   });
 }
 
 const env = buildConfig();
+if(env.isProduction&&!String(process.env.VENDOR_PII_KEY||'').trim())console.warn('SECURITY NOTICE: VENDOR_PII_KEY is unset. Vendor PII encryption will derive a stable key from SESSION_SECRET; configure a dedicated random key to support independent key rotation.');
+if(env.isProduction&&!String(process.env.VENDOR_DOCUMENT_DIR||'').trim())console.warn(`SECURITY NOTICE: VENDOR_DOCUMENT_DIR is unset. Private vendor documents will use ${env.vendorDocumentDir}; confirm this path is writable and persistent across releases.`);
 
 module.exports = {
   env,

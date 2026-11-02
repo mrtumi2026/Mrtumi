@@ -96,6 +96,16 @@ function buildBaseUrl(req) {
   return `${proto}://${host}`;
 }
 
+function safeProductPath(product) {
+  const slug = String(product?.slug || '');
+  const reference = slug && !slug.includes('?') && /^[a-zA-Z0-9_-]+$/.test(slug)
+    ? slug
+    : String(product?.id || product?.product_id || '');
+  return /^[1-9][0-9]*$/.test(reference) || /^[a-zA-Z0-9_-]+$/.test(reference)
+    ? `/product/${encodeURIComponent(reference)}`
+    : '/all-products';
+}
+
 function buildPaginationBaseUrl(pathname, queryObj = {}) {
   const params = new URLSearchParams();
   for (const [k, v] of Object.entries(queryObj)) {
@@ -513,7 +523,7 @@ router.get(
         availability: product.is_in_stock
           ? 'https://schema.org/InStock'
           : 'https://schema.org/OutOfStock',
-        url: `${baseUrl}/product/${encodeURIComponent(product.slug)}`,
+        url: `${baseUrl}${safeProductPath(product)}`,
       },
     };
     if (reviewStats.count > 0) {
@@ -532,7 +542,7 @@ router.get(
       pageMeta: {
         title: product.name,
         description: (product.short_desc || product.description || product.name).slice(0, 160),
-        canonicalUrl: `${baseUrl}/product/${encodeURIComponent(product.slug)}`,
+        canonicalUrl: `${baseUrl}${safeProductPath(product)}`,
         ogType: 'product',
         ogImage: product.image.startsWith('http') ? product.image : `${baseUrl}${product.image}`,
         jsonLd,
@@ -602,7 +612,7 @@ router.post(
         return res.status(400).json({ success: false, message: msg });
       }
       req.flash('error', msg);
-      return res.redirect(req.get('Referrer') || `/product/${prod.slug}`);
+      return res.redirect(req.get('Referrer') || safeProductPath(prod));
     }
 
     const chosenSize = String(
@@ -811,6 +821,12 @@ router.get('/api/checkout/delivery-locations', asyncHandler(async (_req, res) =>
   return res.json({success:true,locations:locations.map(location=>({id:Number(location.id),division:String(location.division||''),district:String(location.district||''),upazila:String(location.upazila||''),delivery_charge_paisa:Number(location.delivery_charge_paisa)}))});
 }));
 
+router.get('/api/checkout/payment-methods', quickQuoteLimiter, asyncHandler(async (_req,res)=>{
+  if(!storefrontRepo.isMysqlMode())return res.json({success:true,methods:[{code:'cod',name:'Cash on Delivery',gateway_type:'auto',account_number:'',instructions:''}]});
+  const methods=await checkoutRepo.listCheckoutMethods();
+  return res.json({success:true,methods:methods.map(method=>({code:String(method.code),name:String(method.name),gateway_type:String(method.gateway_type),account_number:String(method.account_number||''),instructions:String(method.instructions||'')}))});
+}));
+
 router.get('/api/checkout/quick-quote', quickQuoteLimiter, asyncHandler(async (req,res)=>{
   if(!storefrontRepo.isMysqlMode())return res.status(404).json({success:false,message:'Canonical quick-order quotes are only available in MySQL mode.'});
   const quote=await checkoutRepo.quoteQuickOrder({productId:req.query.product_id,qty:req.query.qty,size:req.query.size,color:req.query.color,deliveryLocationId:req.query.delivery_location_id,locale:req.locale});
@@ -829,7 +845,9 @@ router.post('/order/quick-submit', publicFormLimiter, requireCsrf, asyncHandler(
       phone:req.body.phone,
       address:req.body.address,
       delivery_location_id:req.body.delivery_location_id,
-      payment_method:'cod',
+      payment_method:req.body.payment_method||'cod',
+      trx_id:req.body.trx_id,
+      sender_number:req.body.sender_number,
       note:req.body.note,
     },{
       locale:req.locale,
@@ -873,7 +891,7 @@ router.post('/order/quick-submit', publicFormLimiter, requireCsrf, asyncHandler(
       return res.status(400).json({ success: false, message: errMsg });
     }
     req.flash('error', errMsg);
-    return res.redirect(req.get('Referrer') || `/product/${prod.slug}`);
+    return res.redirect(req.get('Referrer') || safeProductPath(prod));
   }
 
   const clientIp = req.ip || '';
@@ -1106,6 +1124,7 @@ router.post('/customer/checkout', requireCsrf, asyncHandler(async (req, res) => 
     const result = await checkoutRepo.createOrder({
       customer_name: req.body.customer_name, phone: req.body.phone, address: req.body.address,
       delivery_location_id: req.body.delivery_location_id, payment_method: req.body.payment_method,
+      trx_id: req.body.trx_id, sender_number: req.body.sender_number,
       note: req.body.note, coupon_code: matches(replayKey) ? String(req.body.coupon_code || '') : (req.session.appliedCoupon?.code || ''),
     }, { locale: req.locale, sessionCustomer: req.customerUser || null, ip: req.ip, requestKey: expected, cart: sourceCart, incompleteOrderId, sessionSid: req.sessionID, analyticsConsent: consentGranted(req.session, env.analyticsAttributionEnabled), attribution: req.session.analyticsAttribution || null });
     if (!isReplay) { req.session.checkoutLastCart = JSON.parse(JSON.stringify(sourceCart)); req.session.checkoutLastRequestKey = expected; req.session.checkoutLastRecoveryId = incompleteOrderId; delete req.session.incompleteCheckoutId; req.session.cart = []; delete req.session.appliedCoupon; if (!(storefrontRepo.isMysqlMode() && req.customerUser?.id)) await persistCustomerCart(req); }
@@ -1692,7 +1711,7 @@ router.get('/api/recent-verified-order', (_req, res) => {
     return res.json({ enabled: false });
   }
   const ord = db.get(
-    `SELECT o.customer_name, o.address, oi.product_name, oi.product_image, p.slug
+    `SELECT o.customer_name, o.address, oi.product_name, oi.product_image, p.slug, p.id AS product_id
      FROM orders o
      JOIN order_items oi ON oi.order_id = o.id
      LEFT JOIN products p ON p.id = oi.product_id
@@ -1705,7 +1724,7 @@ router.get('/api/recent-verified-order', (_req, res) => {
     location: ord.address,
     product: ord.product_name,
     image: ord.product_image || '/uploads/product/lychee-fresh.jpg',
-    url: ord.slug ? `/product/${ord.slug}` : '/all-products',
+    url: safeProductPath(ord),
   });
 });
 
@@ -1744,7 +1763,7 @@ router.get(
       ...entries.subcategories.map((sc) => `${baseUrl}/subcategory/${encodeURIComponent(sc.slug)}`),
       ...entries.childcategories.map((cc) => `${baseUrl}/childcategory/${encodeURIComponent(cc.slug)}`),
       ...entries.brands.map((b) => `${baseUrl}/brand/${encodeURIComponent(b.slug)}`),
-      ...entries.products.map((p) => `${baseUrl}/product/${encodeURIComponent(p.slug)}`),
+      ...entries.products.map((p) => `${baseUrl}${safeProductPath(p)}`),
       ...entries.blogs.map((b) => `${baseUrl}/blog/${encodeURIComponent(b.slug)}`),
       ...entries.pages.map((pg) => `${baseUrl}/page/${encodeURIComponent(pg.slug)}`),
     ];

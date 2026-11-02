@@ -48,11 +48,12 @@
             <td><%= p.sold_count || 0 %></td>
             <td>
               <span class="sb <%= p.approval_status === 'approved' ? 'sb-6' : 'sb-1' %>">
-                <%= p.approval_status === 'approved' ? 'Approved (Live)' : 'Pending Approval' %>
+                <%= p.approval_status === 'approved' ? 'Approved (Live)' : (p.approval_status === 'rejected' ? 'Rejected' : 'Pending Approval') %>
               </span>
+              <% if (p.approval_status === 'rejected' && p.approval_rejection_reason) { %><div class="small text-danger mt-1" role="note">Reason: <%= p.approval_rejection_reason %></div><% } %>
             </td>
             <td class="text-end">
-              <a href="/product/<%= p.slug %>" target="_blank" class="btn btn-sm btn-outline-secondary py-1 px-2" title="View on Storefront"><i class="fas fa-external-link-alt"></i></a>
+              <a href="/product/<%= (p.slug && !String(p.slug).includes('?') && /^[a-zA-Z0-9_-]+$/.test(String(p.slug))) ? p.slug : p.id %>" target="_blank" class="btn btn-sm btn-outline-secondary py-1 px-2" title="View on Storefront"><i class="fas fa-external-link-alt"></i></a>
               <a href="/vendor/products/edit/<%= p.id %>" class="btn btn-sm btn-outline-primary py-1 px-2"><i class="fas fa-edit"></i></a>
               <form action="/vendor/products/<%= p.id %>/status" method="POST" class="d-inline">
                 <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>"><input type="hidden" name="status" value="<%= Number(p.status) ? 0 : 1 %>">

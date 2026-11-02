@@ -40,7 +40,21 @@
             <td class="fw-bold text-success">৳<%= net.toLocaleString('en-IN') %></td>
             <td><span class="sb <%= ol.order_status === 'completed' ? 'sb-6' : 'sb-1' %>"><%= ol.order_status %></span></td>
             <td class="text-end">
-              <% if (typeof ol.fulfillment_status === 'undefined') { %>
+              <% if (ol.vendor_sub_order_id) { const availableSubOrderStatuses = ({order_placed:['vendor_accepted','cancelled'],vendor_accepted:['processing','cancelled'],processing:['packed','cancelled'],packed:['ready_for_pickup','cancelled'],ready_for_pickup:['in_transit','failed_delivery','cancelled'],in_transit:['delivered','failed_delivery','return_requested'],failed_delivery:['ready_for_pickup','cancelled'],delivered:['return_requested'],return_requested:['returned']})[ol.vendor_sub_order_status] || []; %>
+                <span class="small me-2"><%= ol.vendor_sub_order_status %></span>
+                <% if (availableSubOrderStatuses.length) { %>
+                  <form action="/vendor/sub-orders/<%= ol.vendor_sub_order_id %>/status" method="POST" class="d-inline-flex flex-wrap gap-1 align-items-center">
+                    <input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>" />
+                    <label class="visually-hidden" for="sub-order-status-<%= ol.order_item_id %>">Next sub-order status</label>
+                    <select id="sub-order-status-<%= ol.order_item_id %>" name="to_status" class="form-select form-select-sm" required>
+                      <% availableSubOrderStatuses.forEach(function(status) { %><option value="<%= status %>"><%= status %></option><% }); %>
+                    </select>
+                    <input class="form-control form-control-sm" name="carrier" maxlength="48" value="<%= ol.shipment_carrier || '' %>" placeholder="Courier (for dispatch)" aria-label="Courier carrier" />
+                    <input class="form-control form-control-sm" name="tracking_code" maxlength="120" value="<%= ol.tracking_code || '' %>" placeholder="Tracking code (for dispatch)" aria-label="Tracking code" />
+                    <button type="submit" class="btn btn-sm btn-success py-1 px-2">Update status</button>
+                  </form>
+                <% } %>
+              <% } else if (typeof ol.fulfillment_status === 'undefined') { %>
                 <% if (ol.order_status === 'pending') { %><form action="/vendor/orders/mark-ready/<%= ol.order_id %>" method="POST" class="d-inline"><input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>" /><button type="submit" class="btn btn-sm btn-success py-1 px-2">Mark Ready (disabled)</button></form><% } %>
               <% } else { const nextFulfillment = ({pending:'processing', processing:'ready', ready:'dispatched'})[ol.fulfillment_status]; %>
                 <span class="small me-2"><%= ol.fulfillment_status %></span>

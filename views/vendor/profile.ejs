@@ -14,24 +14,31 @@
     </div>
     <div class="col-md-6">
       <label class="form-label small fw-semibold">মোবাইল নম্বর *</label>
-      <input type="text" name="phone" value="<%= vendor.phone %>" class="form-control" required />
+      <input type="text" name="phone" value="<%= vendor.phone %>" class="form-control" required <%= mysqlMode ? 'readonly aria-describedby="phone-help"' : '' %> />
+      <% if(mysqlMode){ %><div class="form-text" id="phone-help">Verified phone number cannot be changed from profile settings.</div><% } %>
     </div>
     <div class="col-md-6">
       <label class="form-label small fw-semibold">ইমেইল</label>
       <input type="email" name="email" value="<%= vendor.email %>" class="form-control" />
     </div>
     <div class="col-12">
-      <label class="form-label small fw-semibold">শপ / বাগানের ঠিকানা</label>
-      <input type="text" name="address" value="<%= vendor.address %>" class="form-control" />
+      <label class="form-label small fw-semibold" for="address">শপ / বাগানের ঠিকানা</label>
+      <input id="address" type="text" name="address" value="<%= vendor.address || '' %>" class="form-control" required />
     </div>
+    <% if(mysqlMode){ %>
+    <div class="col-md-6"><label class="form-label small fw-semibold" for="district">District *</label><select id="district" name="district" class="form-select" required data-current="<%= vendor.district || '' %>"><option value="">Select district</option></select></div>
+    <div class="col-md-6"><label class="form-label small fw-semibold" for="upazila">Upazila / Thana *</label><select id="upazila" name="upazila" class="form-select" required data-current="<%= vendor.upazila || '' %>" disabled><option value="">Select district first</option></select></div>
+    <% } %>
     <div class="col-12">
       <label class="form-label small fw-semibold">নতুন পাসওয়ার্ড (পরিবর্তন করতে চাইলে লিখুন, নতুবা খালি রাখুন)</label>
-      <input type="password" name="new_password" class="form-control" placeholder="কমপক্ষে ৬ অক্ষর" />
+      <input type="password" name="new_password" class="form-control" minlength="<%= mysqlMode ? 10 : 6 %>" maxlength="72" autocomplete="new-password" placeholder="<%= mysqlMode ? 'At least 10 characters' : 'কমপক্ষে ৬ অক্ষর' %>" />
     </div>
     <div class="col-12">
       <button type="submit" class="btn btn-forest px-4 py-2 fw-bold">প্রোফাইল আপডেট করুন</button>
     </div>
   </form>
 </div>
-
+<% if(mysqlMode){ %><script type="application/json" id="bd-geo-data"><%- JSON.stringify(geoData) %></script><script>
+(()=>{const rows=JSON.parse(document.getElementById('bd-geo-data').textContent),isBn=String(<%- JSON.stringify(locale||'bn') %>).startsWith('bn'),district=document.getElementById('district'),upazila=document.getElementById('upazila');const label=x=>isBn?x.nameBn:x.label;rows.forEach(x=>{const o=document.createElement('option');o.value=x.value;o.textContent=label(x);district.appendChild(o);});function render(selected=''){const row=rows.find(x=>x.value===district.value);upazila.replaceChildren();const first=document.createElement('option');first.value='';first.textContent=row?(isBn?'উপজেলা নির্বাচন করুন':'Select upazila'):(isBn?'আগে জেলা নির্বাচন করুন':'Select district first');upazila.appendChild(first);upazila.disabled=!row;if(row)row.upazilas.forEach(x=>{const o=document.createElement('option');o.value=x.value;o.textContent=label(x);upazila.appendChild(o);});upazila.value=row&&row.upazilas.some(x=>x.value===selected)?selected:'';}district.value=district.dataset.current||'';district.addEventListener('change',()=>render());render(upazila.dataset.current||'');})();
+</script><% } %>
 <%- include('partials/layout-bottom') %>

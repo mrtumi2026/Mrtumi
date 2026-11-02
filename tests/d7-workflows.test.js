@@ -45,6 +45,6 @@ test('refund and settlement surfaces keep execution and unsupported reseller ent
  assert.match(phase08Source,/refunds\.approve_high/);
  assert.match(phase08Source,/provider processing is not available here/);
  const reseller=fs.readFileSync(require.resolve('../src/routes/resellerPanel'),'utf8');
- assert.match(reseller,/reseller-order pricing, stock allocation/);
+ assert.match(reseller,/resellerOrderRepository\.create/);
  assert.match(reseller,/wallet reconciliation, review/);
 });

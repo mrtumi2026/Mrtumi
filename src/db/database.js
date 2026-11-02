@@ -642,6 +642,8 @@ function initializeDatabase() {
 
   // Safe additive non-production SQLite parity columns & tables for Phases 06–18
   const additiveAlterStatements = [
+    "ALTER TABLE banners ADD COLUMN badge TEXT DEFAULT '';",
+    "ALTER TABLE courier_apis ADD COLUMN client_id TEXT DEFAULT '';",
     "ALTER TABLE products ADD COLUMN barcode TEXT DEFAULT NULL;",
     "ALTER TABLE products ADD COLUMN childcategory_id INTEGER DEFAULT NULL;",
     "ALTER TABLE products ADD COLUMN product_type TEXT DEFAULT 'grocery';",
