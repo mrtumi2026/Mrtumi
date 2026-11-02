@@ -4,7 +4,7 @@
   <h1 class="h3 mb-2"><%= isResubmission ? 'Update vendor application · আবেদন সংশোধন' : 'ভেন্ডর আবেদন · Vendor application' %></h1>
   <p class="text-muted">Submit your shop, identity and payout details for secure review. Registration alone does not activate selling.</p>
   <% if (error) { %><div class="alert alert-danger" role="alert"><%= error %></div><% } %>
-  <form action="<%= isResubmission ? '/vendor/onboarding/resubmit' : '/vendor/register' %>" method="post" enctype="multipart/form-data" class="card p-3 p-md-4 shadow-sm">
+  <form action="<%= isResubmission ? '/vendor/onboarding/resubmit' : '/vendor/register' %>" method="POST" enctype="multipart/form-data" class="card p-3 p-md-4 shadow-sm">
     <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
     <h2 class="h5">Shop and owner</h2>
     <div class="row g-3">
@@ -21,10 +21,11 @@
     <hr><h2 class="h5">Identity and documents</h2>
     <div class="row g-3">
       <div class="col-md-6"><label class="form-label" for="nid_number">NID number *</label><input class="form-control" id="nid_number" name="nid_number" required inputmode="numeric" autocomplete="off" maxlength="25" aria-describedby="nid-help"><div class="form-text" id="nid-help">Encrypted at rest; used privately for duplicate checks.</div></div>
-      <div class="col-md-6"><label class="form-label" for="nid_front">NID front image *</label><input class="form-control" id="nid_front" name="nid_front" type="file" accept="image/jpeg,image/png,image/webp,image/gif" <%= isResubmission ? "" : "required" %>></div>
-      <div class="col-md-6"><label class="form-label" for="nid_back">NID back image *</label><input class="form-control" id="nid_back" name="nid_back" type="file" accept="image/jpeg,image/png,image/webp,image/gif" <%= isResubmission ? "" : "required" %>></div>
-      <div class="col-md-6"><label class="form-label" for="shop_logo">Shop logo image *</label><input class="form-control" id="shop_logo" name="shop_logo" type="file" accept="image/jpeg,image/png,image/webp,image/gif" <%= isResubmission ? "" : "required" %>></div>
-      <div class="col-md-6" id="trade-license-field"><label class="form-label" for="trade_license">Trade license image (required for non-individual business)</label><input class="form-control" id="trade_license" name="trade_license" type="file" accept="image/jpeg,image/png,image/webp,image/gif"></div>
+      <div class="col-md-6"><label class="form-label" for="nid_front">NID front image or PDF *</label><input class="form-control" id="nid_front" name="nid_front" type="file" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf" <%= isResubmission ? "" : "required" %>></div>
+      <div class="col-md-6"><label class="form-label" for="nid_back">NID back image or PDF *</label><input class="form-control" id="nid_back" name="nid_back" type="file" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf" <%= isResubmission ? "" : "required" %>></div>
+      <div class="col-md-6"><label class="form-label" for="shop_logo">Shop logo image (optional)</label><input class="form-control" id="shop_logo" name="shop_logo" type="file" accept="image/jpeg,image/png,image/webp,image/gif"><div class="form-text">Optional — you can submit without a logo.</div></div>
+      <div class="col-md-6" id="trade-license-field"><label class="form-label" for="trade_license">Trade license image or PDF (required for non-individual business)</label><input class="form-control" id="trade_license" name="trade_license" type="file" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf"></div>
+      <div class="col-12"><div class="form-text">প্রতি ডকুমেন্ট সর্বোচ্চ ৫ এমবি। JPG, PNG, WebP, GIF অথবা PDF ফাইল দিন।</div></div>
     </div>
     <% if (!isResubmission) { %><hr><div class="mb-3"><label class="form-label" for="password">Password *</label><input class="form-control" id="password" name="password" type="password" minlength="10" maxlength="72" autocomplete="new-password" required><div class="form-text">At least 10 characters. Stored as a password hash.</div></div><% } %>
     <div class="form-check mb-3"><input class="form-check-input" id="terms_accepted" name="terms_accepted" type="checkbox" value="1" required><label class="form-check-label" for="terms_accepted">I confirm these details are accurate and agree to the vendor onboarding and review process.</label></div>

@@ -45,7 +45,7 @@
           <div class="carousel-item <%= idx === 0 ? 'active' : '' %>">
             <div class="hero-slide <%= graphicBanner ? 'hero-slide-graphic' : '' %>">
               <a class="hero-image-link" href="<%= b.link || '/all-products' %>" aria-label="<%= slideTitle || siteName %>">
-                <img src="<%= b.image %>" alt="<%= slideTitle || siteName %>" <%= idx === 0 ? 'fetchpriority="high"' : 'loading="lazy"' %> />
+                <img class="<%= graphicBanner ? 'hero-slide-graphic-image' : '' %>" src="<%= b.image %>" alt="<%= slideTitle || siteName %>" <%= idx === 0 ? 'fetchpriority="high"' : 'loading="lazy"' %> />
               </a>
               <% if (!graphicBanner) { %>
                 <div class="hero-caption">

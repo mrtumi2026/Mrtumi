@@ -25,6 +25,13 @@ test('Bangladesh geo data includes all 64 districts and dependent upazila valida
   const geo=require('../src/utils/bangladeshGeo');assert.deepEqual(geo.counts,{districts:64,upazilas:494});
   const dhaka=geo.getDistricts('bn').find(row=>row.value==='Dhaka');assert.ok(dhaka?.label);const upazila=geo.getUpazilas('Dhaka')[0];assert.ok(upazila);
   assert.deepEqual(geo.normalizeLocation('Dhaka',upazila.value),{district:'Dhaka',upazila:upazila.value});
+  const dhakaThanas=geo.getUpazilas('Dhaka').map(row=>row.value);
+  for(const name of ['Dhanmondi','Mirpur','Uttara','Gulshan','Banani','Mohammadpur','Badda','Tejgaon','Motijheel','Khilgaon','Jatrabari','Rampura','Malibagh','Mogbazar','New Market','Lalbagh','Shahbagh','Paltan','Bashundhara','Khilkhet','Cantonment','Hazaribagh','Kamrangirchar','Demra','Sutrapur','Wari','Kafrul','Pallabi','Adabor','Sher-e-Bangla Nagar','Bhatara','Turag','Dakshinkhan','Uttarkhan'])assert.ok(dhakaThanas.includes(name),`Dhaka selector includes ${name}`);
+  assert.equal(geo.normalizeLocation('Dhaka','Dhanmondi').upazila,'Dhanmondi');
+  assert.ok(geo.getUpazilas('Chattogram').some(row=>row.value==='Panchlaish'));
+  assert.ok(geo.getUpazilas('Chittagong').some(row=>row.value==='Kotwali'));
+  assert.ok(geo.getUpazilas('Sylhet').some(row=>row.value==='Kotwali'));
+  assert.ok(geo.getUpazilas('Rajshahi').some(row=>row.value==='Boalia'));
   assert.throws(()=>geo.normalizeLocation('Dhaka','wrong upazila'),{code:'VALIDATION_ERROR'});
 });
 
@@ -55,6 +62,19 @@ test('OTP invalid-attempt update commits before the conflict is raised',()=>{
   assert.match(fn,/return\{error:'The verification code is incorrect\.'\}/);
   assert.match(fn,/if\(outcome\.error\)throw new ConflictError/);
   assert.ok(fn.indexOf('return{error:')<fn.indexOf('if(outcome.error)throw new ConflictError'));
+});
+
+test('vendor logo is optional, upload form is multipart, and document errors are safely handled',()=>{
+  const repository=fs.readFileSync(path.join(root,'src/repositories/vendorOnboardingRepository.js'),'utf8');
+  assert.match(repository,/if\(!documents\.nid_front\|\|!documents\.nid_back\)/);
+  assert.doesNotMatch(repository,/NID front, NID back, and shop logo images are required/);
+  assert.match(repository,/documents\.shop_logo\|\|''/);
+  const form=fs.readFileSync(path.join(root,'views/vendor/onboarding-register.ejs'),'utf8');
+  assert.match(form,/method="POST" enctype="multipart\/form-data"/);
+  assert.match(form,/shop_logo\" name="shop_logo" type="file"[^>]*><div class="form-text">Optional/);
+  const routes=fs.readFileSync(path.join(root,'src/routes/vendorOnboarding.js'),'utf8');
+  assert.match(routes,/vendorDocumentUpload\.createApplicationUpload\(\)/);
+  assert.match(routes,/OVERSIZE_DOCUMENT_MESSAGE/);
 });
 
 test('onboarding routes and product/order entry points enforce private review and active-vendor gates',()=>{

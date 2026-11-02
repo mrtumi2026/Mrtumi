@@ -127,18 +127,18 @@ body {
   color: #fff;
 }
 .hero-slide .hero-image-link { position:absolute; inset:0; display:block; }
-.hero-slide-graphic { min-height:360px; max-height:480px; height:clamp(360px,38vw,480px); background:transparent; }
+.hero-slide-graphic { min-height:0; max-height:none; height:auto; aspect-ratio:16 / 7; background:#0d3b26; }
 .hero-slide-graphic .hero-image-link { position:absolute; inset:0; }
-.hero-slide-graphic img { position:absolute; inset:0; display:block; width:100%; height:100%; min-height:360px; max-height:480px; object-fit:cover; filter:none!important; border-radius:18px; }
+.hero-slide-graphic .hero-slide-graphic-image { position:absolute; inset:0; display:block; width:100%; height:100%; min-height:0; max-height:none; object-fit:contain; background:#0d3b26; filter:none!important; border-radius:18px; }
 .hero-carousel-indicators { gap:7px; align-items:center; margin-bottom:12px; }
 .hero-carousel-indicators [data-bs-target] { box-sizing:border-box; width:34px; height:28px; margin:0; border:1px solid rgba(255,255,255,.9); border-radius:999px; text-indent:0; opacity:.8; background:rgba(13,59,38,.72); color:#fff; display:grid; place-items:center; }
 .hero-carousel-indicators [data-bs-target] span { font-size:12px; font-weight:700; line-height:1; }
 .hero-carousel-indicators [data-bs-target].active { width:42px; opacity:1; background:#198754; border-color:#fff; }
-#heroCarousel .carousel-item .hero-slide { min-height:360px; }
+#heroCarousel .carousel-item .hero-slide:not(.hero-slide-graphic) { min-height:360px; }
 .store-hero-promos { grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); align-items:stretch; }
 @media (max-width:767px) {
-  .hero-slide-graphic { min-height:360px; height:360px; }
-  .hero-slide-graphic img { min-height:360px; height:360px; }
+  .hero-slide-graphic { min-height:0; height:auto; aspect-ratio:16 / 9; }
+  .hero-slide-graphic .hero-slide-graphic-image { min-height:0; height:100%; }
   .hero-carousel-indicators [data-bs-target] { width:30px; height:25px; }
 }
 @media (max-width: 767px) {
@@ -537,9 +537,10 @@ body {
 .store-search-suggestion strong { color:#15803d; font-size:12px; white-space:nowrap; }
 @media (max-width:767px) { .store-search-suggestions { top:calc(100% + 4px); max-height:55vh; } }
 
-/* Preserve graphic banners as clean full-bleed artwork at every breakpoint. */
-@media (max-width:767px) { .store-hero-main .hero-slide-graphic,.store-hero-main .hero-slide-graphic img { min-height:360px!important; height:360px!important; max-height:480px; } }
-
-/* Graphic hero banners remain full-bleed and text-free at all viewport sizes. */
-.store-hero-main .hero-slide-graphic { min-height:360px; max-height:480px; height:clamp(360px,38vw,480px); background:transparent; }
-.store-hero-main .hero-slide-graphic img { width:100%; height:100%; min-height:360px; max-height:480px; object-fit:cover; filter:none!important; border-radius:18px; }
+/* Keep every pixel of graphic hero artwork visible instead of cropping it. */
+.store-hero-main .hero-slide-graphic { min-height:0; max-height:none; height:auto; aspect-ratio:16 / 7; background:#0d3b26; }
+.store-hero-main .hero-slide-graphic .hero-slide-graphic-image { position:absolute; inset:0; width:100%; height:100%; min-height:0; max-height:none; object-fit:contain; background:#0d3b26; filter:none!important; border-radius:18px; }
+@media (max-width:767px) {
+  .store-hero-main .hero-slide-graphic { min-height:0; height:auto; aspect-ratio:16 / 9; }
+  .store-hero-main .hero-slide-graphic .hero-slide-graphic-image { min-height:0; height:100%; max-height:none; }
+}

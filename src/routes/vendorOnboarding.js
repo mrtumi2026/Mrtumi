@@ -1,7 +1,6 @@
 'use strict';
 
 const express=require('express');
-const upload=require('../middleware/upload');
 const {requireCsrf}=require('../middleware/csrf');
 const {requireVendor,requireAdmin}=require('../middleware/auth');
 const {createRateLimiter}=require('../middleware/rateLimit');
@@ -12,12 +11,13 @@ const onboarding=require('../repositories/vendorOnboardingRepository');
 const documents=require('../utils/vendorDocuments');
 const geo=require('../utils/bangladeshGeo');
 const {deliverVendorOtp}=require('../services/vendorOtpDelivery');
+const vendorDocumentUpload=require('../middleware/vendorDocumentUpload');
 
 const router=express.Router();
 const mysqlActive=()=>env.db.client==='mysql';
 const vendorOtpLimiter=createRateLimiter({keyPrefix:'vendor_otp',windowMs:60_000,max:4});
 const vendorRegistrationLimiter=createRateLimiter({keyPrefix:'vendor_register',windowMs:15*60_000,max:8});
-const applicationUpload=upload.fields([{name:'nid_front',maxCount:1},{name:'nid_back',maxCount:1},{name:'trade_license',maxCount:1},{name:'shop_logo',maxCount:1}]);
+const applicationUpload=vendorDocumentUpload.createApplicationUpload();
 function allStaged(files){return documents.stagedUploads(files);}
 async function persistDocumentSet(files,existing={}){
   const result={...existing},created=[];
@@ -33,7 +33,7 @@ function vendorSession(req,vendor,callback){
   const keep={cart:Array.isArray(req.session.cart)?req.session.cart:[],locale:req.session.locale};
   req.session.regenerate(error=>{if(error)return callback(error);Object.assign(req.session,keep);req.session.vendorUser={id:Number(vendor.id),shop_name:vendor.shop_name,owner_name:vendor.owner_name,phone:vendor.phone,email:vendor.email};req.session.save(callback);});
 }
-function parseApplicationUpload(req,res,next){return applicationUpload(req,res,error=>{if(error){documents.removeStaged(req.files);return next(error);}return requireCsrf(req,res,csrfError=>{if(csrfError)documents.removeStaged(req.files);return next(csrfError);});});}
+function parseApplicationUpload(req,res,next){return applicationUpload(req,res,error=>{if(error){documents.removeStaged(req.files);let message=error instanceof ValidationError?error.message:'';if(error.code==='LIMIT_FILE_SIZE')message=documents.OVERSIZE_DOCUMENT_MESSAGE;else if(['LIMIT_FILE_COUNT','LIMIT_UNEXPECTED_FILE','LIMIT_FIELD_COUNT'].includes(error.code))message='অনুগ্রহ করে প্রতিটি ডকুমেন্টের জন্য একটি করে অনুমোদিত ফাইল দিন।';if(!message)return next(error);const resubmission=req.path==='/vendor/onboarding/resubmit';const renderError=async()=>{let application=null;if(resubmission)application=await onboarding.getVendorApplication(req.session.vendorUser.id);return res.status(400).render('vendor/onboarding-register',{application,error:message,resubmission,geoData:geo.getGeoData()});};return renderError().catch(next);}return requireCsrf(req,res,csrfError=>{if(csrfError)documents.removeStaged(req.files);return next(csrfError);});});}
 function flashAndRedirect(req,res,error,path='/vendor/onboarding'){
   if(error instanceof ConflictError||error instanceof ValidationError||error instanceof NotFoundError){req.flash('error',error.message);return res.redirect(path);}
   throw error;
@@ -119,7 +119,7 @@ router.get('/admin/vendor-applications/:id',requireAdmin,asyncHandler(async(req,
   try{await onboarding.auditSensitiveAccess(req.params.id,'application and NID',{type:'admin',id:req.adminUser?.id||null,ip:req.ip,userAgent:req.get('user-agent')});const vendor=await onboarding.getVendorApplication(req.params.id,{admin:true});const [history,payouts]=await Promise.all([onboarding.getStatusHistory(vendor.id),onboarding.listPayoutDetailsForAdmin(vendor.id)]);return res.render('admin/vendor-application-detail',{vendor,history,payouts});}catch(error){return next(error);}
 }));
 router.get('/admin/vendor-applications/:id/documents/:kind',requireAdmin,asyncHandler(async(req,res,next)=>{
-  try{const key=String(req.params.kind);if(!['nid_front','nid_back','trade_license','shop_logo'].includes(key))throw new NotFoundError('Document not found.');await onboarding.auditSensitiveAccess(req.params.id,`document:${key}`,{type:'admin',id:req.adminUser?.id||null,ip:req.ip,userAgent:req.get('user-agent')});const vendor=await onboarding.getVendorApplication(req.params.id);const stored=vendor.documents[key];if(!stored)throw new NotFoundError('Document not found.');const file=await documents.resolvePrivateDocument(stored);res.set({'Cache-Control':'private, no-store, max-age=0','Pragma':'no-cache','X-Content-Type-Options':'nosniff','Content-Disposition':'inline'});const ext=stored.split('.').pop().toLowerCase();res.type(({jpg:'jpeg',jpeg:'jpeg',png:'png',webp:'webp',gif:'gif'})[ext]||'application/octet-stream');return res.sendFile(file.path,{headers:{'Cache-Control':'private, no-store, max-age=0','Pragma':'no-cache','X-Content-Type-Options':'nosniff','Content-Disposition':'inline'}});}catch(error){return next(error);}
+  try{const key=String(req.params.kind);if(!['nid_front','nid_back','trade_license','shop_logo'].includes(key))throw new NotFoundError('Document not found.');await onboarding.auditSensitiveAccess(req.params.id,`document:${key}`,{type:'admin',id:req.adminUser?.id||null,ip:req.ip,userAgent:req.get('user-agent')});const vendor=await onboarding.getVendorApplication(req.params.id);const stored=vendor.documents[key];if(!stored)throw new NotFoundError('Document not found.');const file=await documents.resolvePrivateDocument(stored);res.set({'Cache-Control':'private, no-store, max-age=0','Pragma':'no-cache','X-Content-Type-Options':'nosniff','Content-Disposition':'inline'});const ext=stored.split('.').pop().toLowerCase();res.type(({jpg:'jpeg',jpeg:'jpeg',png:'png',webp:'webp',gif:'gif',pdf:'application/pdf'})[ext]||'application/octet-stream');return res.sendFile(file.path,{headers:{'Cache-Control':'private, no-store, max-age=0','Pragma':'no-cache','X-Content-Type-Options':'nosniff','Content-Disposition':'inline'}});}catch(error){return next(error);}
 }));
 router.post('/admin/vendor-applications/:id/status',requireAdmin,requireCsrf,asyncHandler(async(req,res)=>{
   const action=String(req.body.action||''),map={start_review:'under_review',request_info:'action_required',approve:'approved',reject:'rejected',suspend:'suspended',reactivate:'active',deactivate:'deactivated'};

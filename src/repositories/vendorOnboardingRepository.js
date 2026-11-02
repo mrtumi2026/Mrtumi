@@ -36,7 +36,7 @@ async function register(input,documents,{pool}={}){
   assertMysql();
   const shop=text(input.shop_name,'Shop name',191),owner=text(input.owner_name,'Owner name',191),phone=normalizeBdPhone(input.phone),mail=email(input.email),address=text(input.address,'Shop address',1000),location=geo.normalizeLocation(input.district,input.upazila),district=location.district,upazila=location.upazila,category=text(input.business_category,'Business category',100),nid=normalizeNid(input.nid_number),kind=business({business_type:input.business_type,trade_license_document:documents.trade_license||''});
   if(!input.terms_accepted)throw new ValidationError('Accept the vendor onboarding terms to continue.');
-  if(!documents.nid_front||!documents.nid_back||!documents.shop_logo)throw new ValidationError('NID front, NID back, and shop logo images are required.');
+  if(!documents.nid_front||!documents.nid_back)throw new ValidationError('জাতীয় পরিচয়পত্রের সামনে ও পেছনের কপি আপলোড করুন।');
   const password=String(input.password||'');if(password.length<10||Buffer.byteLength(password,'utf8')>72)throw new ValidationError('Password must contain at least 10 characters and no more than 72 UTF-8 bytes.');
   const passwordHash=await bcrypt.hash(password,12),nidCipher=pii.encryptVendorPii(nid),nidHash=pii.hashVendorPii(nid);
   try{return await mysql.withTransaction(async tx=>{
@@ -46,7 +46,7 @@ async function register(input,documents,{pool}={}){
     if(duplicateNid)throw new ConflictError('This NID is already associated with a vendor application.');
     const result=await tx.execute("INSERT INTO vendors(shop_name,owner_name,phone,email,address,district,upazila,password_hash,commission_rate_bps,balance_paisa,verified,status,lifecycle_status,trust_level) VALUES(?,?,?,?,?,?,?,?,0,0,0,1,'pending','new')",[shop,owner,phone,mail,address,district,upazila,passwordHash]);
     const id=Number(result.insertId);
-    await tx.execute('INSERT INTO vendor_applications(vendor_id,business_type,business_category,district,upazila,nid_ciphertext,nid_hash,nid_front_document,nid_back_document,trade_license_document,shop_logo_document) VALUES(?,?,?,?,?,?,?,?,?,?,?)',[id,kind.type,category,district,upazila,nidCipher,nidHash,documents.nid_front,documents.nid_back,kind.trade,documents.shop_logo]);
+    await tx.execute('INSERT INTO vendor_applications(vendor_id,business_type,business_category,district,upazila,nid_ciphertext,nid_hash,nid_front_document,nid_back_document,trade_license_document,shop_logo_document) VALUES(?,?,?,?,?,?,?,?,?,?,?)',[id,kind.type,category,district,upazila,nidCipher,nidHash,documents.nid_front,documents.nid_back,kind.trade,documents.shop_logo||'']);
     await history(tx,id,'','pending','Vendor application submitted',{type:'vendor',id});
     await audit(tx,{type:'vendor',id},'vendor.application.submitted',id,null,{lifecycle_status:'pending',business_type:kind.type,district,upazila,nid_last4:nid.slice(-4)});
     return{id,shop_name:shop,owner_name:owner,phone,email:mail,lifecycle_status:'pending'};
@@ -55,7 +55,7 @@ async function register(input,documents,{pool}={}){
 async function resubmitApplication(vendorId,input,documents,actor={type:'vendor'}, {pool}={}){
   assertMysql();const id=requirePositiveInt(vendorId,'Vendor ID'),shop=text(input.shop_name,'Shop name',191),owner=text(input.owner_name,'Owner name',191),mail=email(input.email),address=text(input.address,'Shop address',1000),location=geo.normalizeLocation(input.district,input.upazila),district=location.district,upazila=location.upazila,category=text(input.business_category,'Business category',100),nid=normalizeNid(input.nid_number),kind=business({business_type:input.business_type,trade_license_document:documents.trade_license||''});
   if(!input.terms_accepted)throw new ValidationError('Accept the vendor onboarding terms to continue.');
-  if(!documents.nid_front||!documents.nid_back||!documents.shop_logo)throw new ValidationError('NID front, NID back, and shop logo images are required.');
+  if(!documents.nid_front||!documents.nid_back)throw new ValidationError('জাতীয় পরিচয়পত্রের সামনে ও পেছনের কপি আপলোড করুন।');
   const nidCipher=pii.encryptVendorPii(nid),nidHash=pii.hashVendorPii(nid);
   return mysql.withTransaction(async tx=>{
     const vendor=await tx.queryOne('SELECT id,phone,email,lifecycle_status,trust_level FROM vendors WHERE id=? FOR UPDATE',[id]);if(!vendor)throw new NotFoundError('Vendor not found.');
@@ -65,7 +65,7 @@ async function resubmitApplication(vendorId,input,documents,actor={type:'vendor'
     const duplicateNid=await tx.queryOne('SELECT vendor_id FROM vendor_applications WHERE nid_hash=? AND vendor_id<>? LIMIT 1 FOR UPDATE',[nidHash,id]);if(duplicateNid)throw new ConflictError('This NID is already associated with another vendor application.');
     const next=vendor.lifecycle_status==='rejected'?'pending':'under_review';policy.nextStatus(vendor.lifecycle_status,next);
     await tx.execute("UPDATE vendors SET shop_name=?,owner_name=?,email=?,address=?,district=?,upazila=?,lifecycle_status=?,identity_verified_at=NULL,verified=0,status=1,trust_level='new',trusted_auto_publish=0 WHERE id=?",[shop,owner,mail,address,district,upazila,next,id]);
-    await tx.execute('UPDATE vendor_applications SET business_type=?,business_category=?,district=?,upazila=?,nid_ciphertext=?,nid_hash=?,nid_front_document=?,nid_back_document=?,trade_license_document=?,shop_logo_document=?,resubmission_count=resubmission_count+1 WHERE vendor_id=?',[kind.type,category,district,upazila,nidCipher,nidHash,documents.nid_front,documents.nid_back,kind.trade,documents.shop_logo,id]);
+    await tx.execute('UPDATE vendor_applications SET business_type=?,business_category=?,district=?,upazila=?,nid_ciphertext=?,nid_hash=?,nid_front_document=?,nid_back_document=?,trade_license_document=?,shop_logo_document=?,resubmission_count=resubmission_count+1 WHERE vendor_id=?',[kind.type,category,district,upazila,nidCipher,nidHash,documents.nid_front,documents.nid_back,kind.trade,documents.shop_logo||'',id]);
     await history(tx,id,vendor.lifecycle_status,next,'Vendor resubmitted requested application information',{type:'vendor',id});
     await audit(tx,{type:'vendor',id},'vendor.application.resubmitted',id,{lifecycle_status:vendor.lifecycle_status,trust_level:vendor.trust_level,resubmission_count:Number(application.resubmission_count)},{lifecycle_status:next,trust_level:'new',resubmission_count:Number(application.resubmission_count)+1,nid_last4:nid.slice(-4)});
     return{vendorId:id,lifecycle_status:next};
