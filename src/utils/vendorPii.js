@@ -2,10 +2,15 @@
 
 const crypto=require('node:crypto');
 const {ValidationError}=require('./errors');
+const {env}=require('../config/env');
 
 function encryptionKey(){
   const raw=String(process.env.VENDOR_PII_KEY||'').trim();
-  if(!raw)throw new ValidationError('Vendor identity/payout encryption is not configured. Contact the marketplace administrator.');
+  if(!raw){
+    const secret=String(env.sessionSecret||process.env.SESSION_SECRET||'');
+    if(Buffer.byteLength(secret,'utf8')<32)throw new ValidationError('Vendor PII encryption key is unavailable. Set VENDOR_PII_KEY or a stable SESSION_SECRET before vendor onboarding.');
+    return Buffer.from(crypto.hkdfSync('sha256',Buffer.from(secret,'utf8'),Buffer.from('mrtumi-vendor-pii-v1'),Buffer.from('vendor-private-data'),32));
+  }
   let key;
   if(/^[a-f0-9]{64}$/i.test(raw))key=Buffer.from(raw,'hex');
   else {try{key=Buffer.from(raw,'base64');}catch(_){key=Buffer.alloc(0);}}

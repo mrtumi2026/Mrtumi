@@ -10,6 +10,8 @@ const {asyncHandler}=require('../utils/asyncHandler');
 const {ConflictError,NotFoundError,ValidationError}=require('../utils/errors');
 const onboarding=require('../repositories/vendorOnboardingRepository');
 const documents=require('../utils/vendorDocuments');
+const geo=require('../utils/bangladeshGeo');
+const {deliverVendorOtp}=require('../services/vendorOtpDelivery');
 
 const router=express.Router();
 const mysqlActive=()=>env.db.client==='mysql';
@@ -42,7 +44,7 @@ function actor(req,type='admin'){return{type,id:req.adminUser?.id||req.session?.
 router.get('/vendor/register',asyncHandler(async(req,res,next)=>{
   if(!mysqlActive())return next();
   if(req.session?.vendorUser)return res.redirect('/vendor/onboarding');
-  return res.render('vendor/onboarding-register',{application:null,error:null});
+  return res.render('vendor/onboarding-register',{application:null,error:null,geoData:geo.getGeoData()});
 }));
 router.post('/vendor/register',vendorRegistrationLimiter,parseApplicationUpload,asyncHandler(async(req,res,next)=>{
   if(!mysqlActive())return next();
@@ -52,12 +54,12 @@ router.post('/vendor/register',vendorRegistrationLimiter,parseApplicationUpload,
     saved=await persistDocumentSet(staged);
     const vendor=await onboarding.register(req.body,saved.result);
     return vendorSession(req,vendor,error=>{if(error)return next(error);req.flash('success','আবেদন জমা হয়েছে। OTP যাচাই সম্পন্ন না হওয়া পর্যন্ত অ্যাকাউন্ট সীমিত থাকবে।');return res.redirect('/vendor/verify-phone');});
-  }catch(error){documents.removeStaged(req.files);await documents.removePrivateDocuments(saved.created);if(error instanceof ConflictError||error instanceof ValidationError)return res.status(400).render('vendor/onboarding-register',{application:null,error:error.message});return next(error);}
+  }catch(error){documents.removeStaged(req.files);await documents.removePrivateDocuments(saved.created);if(error instanceof ConflictError||error instanceof ValidationError)return res.status(400).render('vendor/onboarding-register',{application:null,error:error.message,geoData:geo.getGeoData()});return next(error);}
 }));
 
 router.get('/vendor/onboarding/resubmit',requireVendor,asyncHandler(async(req,res,next)=>{
   if(!mysqlActive())return res.redirect('/vendor/onboarding');
-  try{const application=await onboarding.getVendorApplication(req.session.vendorUser.id);if(!['action_required','rejected'].includes(application.lifecycle_status)){req.flash('error','Resubmission is available only after requested changes or rejection.');return res.redirect('/vendor/onboarding');}return res.render('vendor/onboarding-register',{application,error:null,resubmission:true});}catch(error){return next(error);}
+  try{const application=await onboarding.getVendorApplication(req.session.vendorUser.id);if(!['action_required','rejected'].includes(application.lifecycle_status)){req.flash('error','Resubmission is available only after requested changes or rejection.');return res.redirect('/vendor/onboarding');}return res.render('vendor/onboarding-register',{application,error:null,resubmission:true,geoData:geo.getGeoData()});}catch(error){return next(error);}
 }));
 router.post('/vendor/onboarding/resubmit',requireVendor,vendorRegistrationLimiter,parseApplicationUpload,asyncHandler(async(req,res,next)=>{
   if(!mysqlActive()){documents.removeStaged(req.files);return res.redirect('/vendor/onboarding');}
@@ -69,7 +71,7 @@ router.post('/vendor/onboarding/resubmit',requireVendor,vendorRegistrationLimite
     await onboarding.resubmitApplication(req.session.vendorUser.id,req.body,saved.result,{type:'vendor',id:req.session.vendorUser.id,ip:req.ip,userAgent:req.get('user-agent')});
     const replaced=Object.keys(previous.documents).filter(key=>saved.result[key]!==previous.documents[key]).map(key=>previous.documents[key]);await documents.removePrivateDocuments(replaced);
     req.flash('success','Updated application sent for review.');return res.redirect('/vendor/onboarding');
-  }catch(error){documents.removeStaged(req.files);await documents.removePrivateDocuments(saved.created);if(error instanceof ConflictError||error instanceof ValidationError)return res.status(400).render('vendor/onboarding-register',{application:previous,error:error.message,resubmission:true});return next(error);}
+  }catch(error){documents.removeStaged(req.files);await documents.removePrivateDocuments(saved.created);if(error instanceof ConflictError||error instanceof ValidationError)return res.status(400).render('vendor/onboarding-register',{application:previous,error:error.message,resubmission:true,geoData:geo.getGeoData()});return next(error);}
 }));
 
 router.get('/vendor/verify-phone',requireVendor,asyncHandler(async(req,res,next)=>{
@@ -78,7 +80,7 @@ router.get('/vendor/verify-phone',requireVendor,asyncHandler(async(req,res,next)
 }));
 router.post('/vendor/verify-phone/request',requireVendor,vendorOtpLimiter,requireCsrf,asyncHandler(async(req,res)=>{
   if(!mysqlActive())return res.redirect('/vendor/dashboard');
-  try{const issued=await onboarding.issuePhoneOtp(req.session.vendorUser.id,{deliver:req.app.locals.vendorOtpDelivery});req.flash('success',issued.verified?'মোবাইল নম্বর আগে থেকেই যাচাই করা হয়েছে।':'যাচাই কোড পাঠানো হয়েছে।');}catch(error){req.flash('error',error.message);}return res.redirect('/vendor/verify-phone');
+  try{const issued=await onboarding.issuePhoneOtp(req.session.vendorUser.id,{deliver:req.app.locals.vendorOtpDelivery||deliverVendorOtp});req.flash('success',issued.verified?'মোবাইল নম্বর আগে থেকেই যাচাই করা হয়েছে।':'যাচাই কোড পাঠানো হয়েছে।');}catch(error){req.flash('error',error.message);}return res.redirect('/vendor/verify-phone');
 }));
 router.post('/vendor/verify-phone',requireVendor,vendorOtpLimiter,requireCsrf,asyncHandler(async(req,res)=>{
   if(!mysqlActive())return res.redirect('/vendor/dashboard');
@@ -98,7 +100,16 @@ router.post('/vendor/onboarding/payout',requireVendor,requireCsrf,asyncHandler(a
   return res.redirect('/vendor/onboarding');
 }));
 
-// Admin application workbench. RBAC and global admin CSRF middleware cover all these routes.
+// Admin trust-tier control and application workbench.
+router.post('/admin/vendor-applications/:id/phone-override',requireAdmin,requireCsrf,asyncHandler(async(req,res)=>{
+  try{await onboarding.adminVerifyPhone(req.params.id,req.body.reason,actor(req));req.flash('success','Phone verification recorded by manual call. No OTP was generated or sent.');}catch(error){return flashAndRedirect(req,res,error,`/admin/vendor-applications/${encodeURIComponent(req.params.id)}`);}
+  return res.redirect(`/admin/vendor-applications/${encodeURIComponent(req.params.id)}`);
+}));
+router.post('/admin/vendors/:id/trust-level',requireAdmin,requireCsrf,asyncHandler(async(req,res)=>{
+  try{const result=await onboarding.setTrustLevel(req.params.id,req.body.trust_level,actor(req));req.flash('success',`Vendor trust level ${result.replayed?'unchanged':'updated'}: ${result.trust_level}.`);}catch(error){return flashAndRedirect(req,res,error,'/admin/vendors');}
+  return res.redirect('/admin/vendors');
+}));
+
 router.get('/admin/vendor-applications',requireAdmin,asyncHandler(async(req,res,next)=>{
   if(!mysqlActive())return res.redirect('/admin/vendor-verifications');
   try{const result=await onboarding.listApplications(req.query.status||'pending',{page:req.query.page||1});return res.render('admin/vendor-applications',{...result,statuses:require('../repositories/vendorOnboardingPolicy').VENDOR_STATUSES});}catch(error){return next(error);}
@@ -116,7 +127,7 @@ router.post('/admin/vendor-applications/:id/status',requireAdmin,requireCsrf,asy
   return res.redirect(`/admin/vendor-applications/${encodeURIComponent(req.params.id)}`);
 }));
 router.post('/admin/vendor-applications/:id/commission',requireAdmin,requireCsrf,asyncHandler(async(req,res)=>{
-  try{const bps=Math.round(Number(req.body.commission_percent)*100);await onboarding.assignCommission(req.params.id,bps,req.body.trusted_auto_publish==='1',actor(req));req.flash('success','Vendor commission saved. Auto-publish setting updated.');}catch(error){return flashAndRedirect(req,res,error,`/admin/vendor-applications/${encodeURIComponent(req.params.id)}`);}
+  try{const bps=Math.round(Number(req.body.commission_percent)*100);await onboarding.assignCommission(req.params.id,bps,null,actor(req));req.flash('success','Vendor commission saved.');}catch(error){return flashAndRedirect(req,res,error,`/admin/vendor-applications/${encodeURIComponent(req.params.id)}`);}
   return res.redirect(`/admin/vendor-applications/${encodeURIComponent(req.params.id)}`);
 }));
 router.post('/admin/vendor-payout-accounts/:id/decision',requireAdmin,requireCsrf,asyncHandler(async(req,res)=>{

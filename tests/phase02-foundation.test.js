@@ -101,6 +101,8 @@ test('env.js enforces Bangladesh defaults (Asia/Dhaka, BDT, bn/en) and rejects w
   assert.equal(devCfg.currencySymbol, '৳');
   assert.ok(devCfg.sessionSecret.length >= 32);
   assert.equal(devCfg.analyticsAttributionEnabled, false, 'optional attribution is disabled by default');
+  assert.equal(devCfg.vendorOtpSmsEnabled,false,'unverified OTP SMS is disabled by default');
+  assert.equal(buildConfig({NODE_ENV:'test',VENDOR_OTP_SMS_ENABLED:'true'}).vendorOtpSmsEnabled,true);
   assert.equal(buildConfig({ NODE_ENV: 'test', ANALYTICS_ATTRIBUTION_ENABLED: 'true' }).analyticsAttributionEnabled, true);
   assert.equal(buildConfig({ NODE_ENV: 'test', ANALYTICS_ATTRIBUTION_ENABLED: '1' }).analyticsAttributionEnabled, false, 'unknown values fail closed');
 
@@ -120,8 +122,9 @@ test('env.js enforces Bangladesh defaults (Asia/Dhaka, BDT, bn/en) and rejects w
   assert.equal(prodCfg.trustProxy, 1);
   assert.equal(prodCfg.uploadDir, validProductionEnv().UPLOAD_DIR);
   assert.equal(prodCfg.vendorDocumentDir, validProductionEnv().VENDOR_DOCUMENT_DIR);
-  assert.throws(() => buildConfig(validProductionEnv({VENDOR_DOCUMENT_DIR:path.join(__dirname,'..','public','private')})),/VENDOR_DOCUMENT_DIR/);
-  assert.throws(() => buildConfig(validProductionEnv({VENDOR_PII_KEY:'bad'})),/VENDOR_PII_KEY/);
+  assert.equal(buildConfig(validProductionEnv({VENDOR_DOCUMENT_DIR:undefined})).vendorDocumentDir,path.join(__dirname,'..','storage','vendor_docs'));
+  assert.doesNotThrow(()=>buildConfig(validProductionEnv({VENDOR_PII_KEY:undefined})),'missing vendor key must not prevent Passenger startup');
+  assert.doesNotThrow(()=>buildConfig(validProductionEnv({VENDOR_PII_KEY:'bad'})),'invalid dedicated key must be handled at use, not crash Passenger startup');
 
   assert.throws(
     () => buildConfig(validProductionEnv({ DB_HOST: undefined, APP_URL: 'http://localhost' })),

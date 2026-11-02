@@ -464,12 +464,14 @@ router.post('/vendor/withdrawals/request', requireCsrf, async (req, res, next) =
 });
 
 // ─── Vendor Shop Profile ───
-router.get('/vendor/profile', (req, res) => {
+router.get('/vendor/profile', async (req, res, next) => {
+  if(mysqlActive()){try{return res.render('vendor/profile',{vendor:await require('../repositories/vendorOnboardingRepository').getVendorProfile(req.session.vendorUser.id),mysqlMode:true,geoData:require('../utils/bangladeshGeo').getGeoData()});}catch(error){return next(error);}}
   const vendor = db.get('SELECT * FROM vendors WHERE id = ?', req.session.vendorUser.id);
-  res.render('vendor/profile', { vendor });
+  res.render('vendor/profile', { vendor,mysqlMode:false });
 });
 
-router.post('/vendor/profile', requireCsrf, (req, res) => {
+router.post('/vendor/profile', requireCsrf, async (req, res,next) => {
+  if(mysqlActive()){try{await require('../repositories/vendorOnboardingRepository').updateVendorProfile(req.session.vendorUser.id,req.body,{type:'vendor',id:req.session.vendorUser.id,ip:req.ip,userAgent:req.get('user-agent')});req.flash('success','Vendor profile updated. Your verified mobile number was not changed.');return res.redirect('/vendor/profile');}catch(error){if(error.code==='VALIDATION_ERROR'||error.code==='CONFLICT'){req.flash('error',error.message);return res.redirect('/vendor/profile');}return next(error);}}
   const { shop_name, owner_name, phone, email, address, new_password } = req.body;
   const vendorId = req.session.vendorUser.id;
   db.run(

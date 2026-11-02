@@ -32,7 +32,7 @@ async function storeUploadedDocument(file){
   upload.validateUploadedImageFile(file);
   const ext=await detectedRasterExtension(file.path);
   if(!ext)throw new ValidationError('Only valid JPEG, PNG, WebP, or GIF document scans are accepted.');
-  const root=path.resolve(privateRoot());await fsp.mkdir(root,{recursive:true,mode:0o700});await fsp.chmod(root,0o700);await assertOutsidePublic(root);
+  const root=path.resolve(privateRoot());await fsp.mkdir(root,{recursive:true,mode:0o700});await assertOutsidePublic(root);await fsp.chmod(root,0o700);
   const name=`vendor-doc-${Date.now()}-${crypto.randomBytes(12).toString('hex')}${ext}`;
   const target=path.resolve(root,name);
   if(path.dirname(target)!==root)throw new ValidationError('Invalid private document path.');

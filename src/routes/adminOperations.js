@@ -802,6 +802,7 @@ async function renderVendors(res, pendingOnly) {
     : pendingOnly
       ? db.all('SELECT * FROM vendors WHERE verified = 0 ORDER BY id DESC')
       : db.all('SELECT * FROM vendors ORDER BY id DESC');
+  if(mysqlMode&&!pendingOnly)return res.render('admin/vendors-mysql',{rows});
   res.render('admin/crud-module', {
     pageTitle: pendingOnly ? 'Vendor Verifications' : 'All Vendors',
     subtitle: 'মাল্টি-ভেন্ডর সেলার অ্যাকাউন্ট, কমিশন রেট এবং ভেরিফিকেশন',

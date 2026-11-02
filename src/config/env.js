@@ -123,7 +123,7 @@ function buildConfig(overrides = {}) {
     : path.join(ROOT_DIR, 'public', 'uploads');
   const vendorDocumentDir = raw.VENDOR_DOCUMENT_DIR
     ? path.resolve(ROOT_DIR, String(raw.VENDOR_DOCUMENT_DIR))
-    : '';
+    : path.join(ROOT_DIR, 'storage', 'vendor_docs');
 
   if (nodeEnv === 'production') {
     const missing = [];
@@ -155,17 +155,6 @@ function buildConfig(overrides = {}) {
       if (relativeUploadPath === '' || (!relativeUploadPath.startsWith('..') && !path.isAbsolute(relativeUploadPath))) {
         missing.push('UPLOAD_DIR (must be outside the application root)');
       }
-    }
-    const piiKey=String(raw.VENDOR_PII_KEY||'').trim();
-    const piiKeyBytes=/^[a-f0-9]{64}$/i.test(piiKey)?Buffer.from(piiKey,'hex'):Buffer.from(piiKey,'base64');
-    if(piiKeyBytes.length!==32)missing.push('VENDOR_PII_KEY (must decode to 32 bytes)');
-    if(!raw.VENDOR_DOCUMENT_DIR||!path.isAbsolute(String(raw.VENDOR_DOCUMENT_DIR)))missing.push('VENDOR_DOCUMENT_DIR (absolute private path required)');
-    else {
-      const privatePath=path.resolve(String(raw.VENDOR_DOCUMENT_DIR));
-      const relativePrivatePath=path.relative(ROOT_DIR,privatePath);
-      const publicRoot=path.resolve(ROOT_DIR,'public');
-      if(relativePrivatePath===''||(!relativePrivatePath.startsWith('..')&&!path.isAbsolute(relativePrivatePath)))missing.push('VENDOR_DOCUMENT_DIR (must be outside the application root)');
-      if(privatePath===publicRoot||privatePath.startsWith(publicRoot+path.sep))missing.push('VENDOR_DOCUMENT_DIR (must be outside the web root)');
     }
     if (missing.length > 0) {
       throw new Error(`PRODUCTION CONFIGURATION ERROR: configure valid values for ${missing.join(', ')}. Values are intentionally not shown.`);
@@ -225,10 +214,13 @@ function buildConfig(overrides = {}) {
     bootstrapAdminEmail: String(raw.BOOTSTRAP_ADMIN_EMAIL || 'admin@mrtumi.local').trim(),
     bootstrapAdminPassword: String(raw.BOOTSTRAP_ADMIN_PASSWORD || '').trim(),
     analyticsAttributionEnabled: String(raw.ANALYTICS_ATTRIBUTION_ENABLED || '').trim().toLowerCase() === 'true',
+    vendorOtpSmsEnabled: String(raw.VENDOR_OTP_SMS_ENABLED || '').trim().toLowerCase() === 'true',
   });
 }
 
 const env = buildConfig();
+if(env.isProduction&&!String(process.env.VENDOR_PII_KEY||'').trim())console.warn('SECURITY NOTICE: VENDOR_PII_KEY is unset. Vendor PII encryption will derive a stable key from SESSION_SECRET; configure a dedicated random key to support independent key rotation.');
+if(env.isProduction&&!String(process.env.VENDOR_DOCUMENT_DIR||'').trim())console.warn(`SECURITY NOTICE: VENDOR_DOCUMENT_DIR is unset. Private vendor documents will use ${env.vendorDocumentDir}; confirm this path is writable and persistent across releases.`);
 
 module.exports = {
   env,

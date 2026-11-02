@@ -17,7 +17,7 @@ test('vendor directory reads are platform-wide, ordered, minimized and optionall
   assert.match(pool.calls[0].sql,/FROM vendors\s+ORDER BY id DESC/);
   assert.match(pool.calls[0].sql,/commission_rate_bps\/100 AS commission_rate/);
   assert.match(pool.calls[0].sql,/balance_paisa\/100 AS balance/);
-  assert.doesNotMatch(pool.calls[0].sql,/password_hash|email|address|status/);
+  assert.doesNotMatch(pool.calls[0].sql,/password_hash|email|address|,\s*status(?:,|\s)/);
   assert.match(pool.calls[1].sql,/FROM vendors WHERE verified=\? ORDER BY id DESC/);
   assert.deepEqual(pool.calls.map(call=>call.params),[[],[0]]);
 });

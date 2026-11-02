@@ -21,6 +21,13 @@ test('vendor lifecycle requires all activation gates and only authorized transit
   assert.equal(policy.mayWithdraw({lifecycle_status:'active',status:1,payout_verified_at:null}),false);
 });
 
+test('Bangladesh geo data includes all 64 districts and dependent upazila validation',()=>{
+  const geo=require('../src/utils/bangladeshGeo');assert.deepEqual(geo.counts,{districts:64,upazilas:494});
+  const dhaka=geo.getDistricts('bn').find(row=>row.value==='Dhaka');assert.ok(dhaka?.label);const upazila=geo.getUpazilas('Dhaka')[0];assert.ok(upazila);
+  assert.deepEqual(geo.normalizeLocation('Dhaka',upazila.value),{district:'Dhaka',upazila:upazila.value});
+  assert.throws(()=>geo.normalizeLocation('Dhaka','wrong upazila'),{code:'VALIDATION_ERROR'});
+});
+
 test('vendor onboarding migration adds private PII, payout, OTP, lifecycle history and rollback dependencies',()=>{
   const migration=loadMigrationPairs().find(x=>x.version==='0017');assert.ok(migration);
   for(const pattern of [/CREATE TABLE IF NOT EXISTS `vendor_applications`/,/UNIQUE KEY `uq_vendor_application_nid_hash`/,/CREATE TABLE IF NOT EXISTS `vendor_status_history`/,/CREATE TABLE IF NOT EXISTS `vendor_phone_otps`/,/CREATE TABLE IF NOT EXISTS `vendor_payout_accounts`/,/payout_account_id/])assert.match(migration.upSql,pattern);
@@ -29,7 +36,7 @@ test('vendor onboarding migration adds private PII, payout, OTP, lifecycle histo
   assert.match(migration.downSql,/DROP TABLE IF EXISTS `vendor_payout_accounts`/);
 });
 
-test('vendor PII encryption is authenticated, deterministic duplicate hashes are private, and no key fails closed',()=>{
+test('vendor PII encryption is authenticated, deterministic duplicate hashes are private, and stable session-secret fallback works',()=>{
   const old=process.env.VENDOR_PII_KEY;process.env.VENDOR_PII_KEY=Buffer.alloc(32,7).toString('base64');
   const pii=require('../src/utils/vendorPii');const cipher=pii.encryptVendorPii('1987654321');
   assert.notEqual(cipher,'1987654321');assert.equal(pii.decryptVendorPii(cipher),'1987654321');
@@ -37,7 +44,7 @@ test('vendor PII encryption is authenticated, deterministic duplicate hashes are
   assert.equal(pii.maskAccount('01712345678').endsWith('5678'),true);
   const corrupted=cipher.slice(0,-2)+'AA';assert.throws(()=>pii.decryptVendorPii(corrupted));
   delete require.cache[require.resolve('../src/utils/vendorPii')];delete process.env.VENDOR_PII_KEY;
-  const noKey=require('../src/utils/vendorPii');assert.throws(()=>noKey.encryptVendorPii('1234567890'),{code:'VALIDATION_ERROR'});
+  const noKey=require('../src/utils/vendorPii');const fallbackCipher=noKey.encryptVendorPii('1234567890');assert.equal(noKey.decryptVendorPii(fallbackCipher),'1234567890');delete require.cache[require.resolve('../src/utils/vendorPii')];assert.equal(require('../src/utils/vendorPii').decryptVendorPii(fallbackCipher),'1234567890');
   if(old===undefined)delete process.env.VENDOR_PII_KEY;else process.env.VENDOR_PII_KEY=old;
 });
 

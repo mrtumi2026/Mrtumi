@@ -1,36 +1,47 @@
 <%- include('partials/layout-top', { title: 'Vendor application | Mrtumi' }) %>
+<% const isResubmission = typeof resubmission !== 'undefined' && resubmission; %>
 <main class="container py-4" style="max-width:900px">
-  <h1 class="h3 mb-2"><%= resubmission ? 'Update vendor application · আবেদন সংশোধন' : 'ভেন্ডর আবেদন · Vendor application' %></h1>
+  <h1 class="h3 mb-2"><%= isResubmission ? 'Update vendor application · আবেদন সংশোধন' : 'ভেন্ডর আবেদন · Vendor application' %></h1>
   <p class="text-muted">Submit your shop, identity and payout details for secure review. Registration alone does not activate selling.</p>
   <% if (error) { %><div class="alert alert-danger" role="alert"><%= error %></div><% } %>
-  <form action="<%= resubmission ? '/vendor/onboarding/resubmit' : '/vendor/register' %>" method="post" enctype="multipart/form-data" class="card p-3 p-md-4 shadow-sm">
+  <form action="<%= isResubmission ? '/vendor/onboarding/resubmit' : '/vendor/register' %>" method="post" enctype="multipart/form-data" class="card p-3 p-md-4 shadow-sm">
     <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
     <h2 class="h5">Shop and owner</h2>
     <div class="row g-3">
       <div class="col-md-6"><label class="form-label" for="shop_name">Shop name *</label><input class="form-control" id="shop_name" name="shop_name" value="<%= application?.shop_name || '' %>" required maxlength="191" autocomplete="organization"></div>
       <div class="col-md-6"><label class="form-label" for="owner_name">Owner's full name *</label><input class="form-control" id="owner_name" name="owner_name" value="<%= application?.owner_name || '' %>" required maxlength="191" autocomplete="name"></div>
-      <div class="col-md-6"><label class="form-label" for="phone">Bangladesh mobile number *</label><input class="form-control" id="phone" name="phone" value="<%= application?.phone || '' %>" required autocomplete="tel" inputmode="tel" placeholder="01XXXXXXXXX" <%= resubmission ? 'readonly' : '' %>></div>
+      <div class="col-md-6"><label class="form-label" for="phone">Bangladesh mobile number *</label><input class="form-control" id="phone" name="phone" value="<%= application?.phone || '' %>" required autocomplete="tel" inputmode="tel" placeholder="01XXXXXXXXX" <%= isResubmission ? 'readonly' : '' %>></div>
       <div class="col-md-6"><label class="form-label" for="email">Email *</label><input class="form-control" id="email" name="email" type="email" value="<%= application?.email || '' %>" required maxlength="191" autocomplete="email"></div>
       <div class="col-12"><label class="form-label" for="address">Shop address *</label><textarea class="form-control" id="address" name="address" required maxlength="1000" autocomplete="street-address"><%= application?.address || '' %></textarea></div>
-      <div class="col-md-6"><label class="form-label" for="district">District *</label><input class="form-control" id="district" name="district" value="<%= application?.district || '' %>" required maxlength="100" autocomplete="address-level1"></div>
-      <div class="col-md-6"><label class="form-label" for="upazila">Upazila / Thana *</label><input class="form-control" id="upazila" name="upazila" value="<%= application?.upazila || '' %>" required maxlength="100" autocomplete="address-level2"></div>
+      <div class="col-md-6"><label class="form-label" for="district">District *</label><select class="form-select" id="district" name="district" required autocomplete="address-level1" data-current="<%= application?.district || '' %>"><option value="">Select district</option></select></div>
+      <div class="col-md-6"><label class="form-label" for="upazila">Upazila / Thana *</label><select class="form-select" id="upazila" name="upazila" required autocomplete="address-level2" data-current="<%= application?.upazila || '' %>" disabled><option value="">Select district first</option></select></div>
       <div class="col-md-6"><label class="form-label" for="business_category">Business category *</label><input class="form-control" id="business_category" name="business_category" value="<%= application?.business_category || '' %>" required maxlength="100"></div>
       <div class="col-md-6"><label class="form-label" for="business_type">Business type *</label><select class="form-select" id="business_type" name="business_type" required><option value="">Select</option><option value="individual" <%= application?.business_type==='individual'?'selected':'' %>>Individual</option><option value="sole_proprietor" <%= application?.business_type==='sole_proprietor'?'selected':'' %>>Sole proprietor</option><option value="registered_company" <%= application?.business_type==='registered_company'?'selected':'' %>>Registered company</option></select></div>
     </div>
     <hr><h2 class="h5">Identity and documents</h2>
     <div class="row g-3">
       <div class="col-md-6"><label class="form-label" for="nid_number">NID number *</label><input class="form-control" id="nid_number" name="nid_number" required inputmode="numeric" autocomplete="off" maxlength="25" aria-describedby="nid-help"><div class="form-text" id="nid-help">Encrypted at rest; used privately for duplicate checks.</div></div>
-      <div class="col-md-6"><label class="form-label" for="nid_front">NID front image *</label><input class="form-control" id="nid_front" name="nid_front" type="file" accept="image/jpeg,image/png,image/webp,image/gif" <%= resubmission ? "" : "required" %>></div>
-      <div class="col-md-6"><label class="form-label" for="nid_back">NID back image *</label><input class="form-control" id="nid_back" name="nid_back" type="file" accept="image/jpeg,image/png,image/webp,image/gif" <%= resubmission ? "" : "required" %>></div>
-      <div class="col-md-6"><label class="form-label" for="shop_logo">Shop logo image *</label><input class="form-control" id="shop_logo" name="shop_logo" type="file" accept="image/jpeg,image/png,image/webp,image/gif" <%= resubmission ? "" : "required" %>></div>
+      <div class="col-md-6"><label class="form-label" for="nid_front">NID front image *</label><input class="form-control" id="nid_front" name="nid_front" type="file" accept="image/jpeg,image/png,image/webp,image/gif" <%= isResubmission ? "" : "required" %>></div>
+      <div class="col-md-6"><label class="form-label" for="nid_back">NID back image *</label><input class="form-control" id="nid_back" name="nid_back" type="file" accept="image/jpeg,image/png,image/webp,image/gif" <%= isResubmission ? "" : "required" %>></div>
+      <div class="col-md-6"><label class="form-label" for="shop_logo">Shop logo image *</label><input class="form-control" id="shop_logo" name="shop_logo" type="file" accept="image/jpeg,image/png,image/webp,image/gif" <%= isResubmission ? "" : "required" %>></div>
       <div class="col-md-6" id="trade-license-field"><label class="form-label" for="trade_license">Trade license image (required for non-individual business)</label><input class="form-control" id="trade_license" name="trade_license" type="file" accept="image/jpeg,image/png,image/webp,image/gif"></div>
     </div>
-    <% if (!resubmission) { %><hr><div class="mb-3"><label class="form-label" for="password">Password *</label><input class="form-control" id="password" name="password" type="password" minlength="10" maxlength="72" autocomplete="new-password" required><div class="form-text">At least 10 characters. Stored as a password hash.</div></div><% } %>
+    <% if (!isResubmission) { %><hr><div class="mb-3"><label class="form-label" for="password">Password *</label><input class="form-control" id="password" name="password" type="password" minlength="10" maxlength="72" autocomplete="new-password" required><div class="form-text">At least 10 characters. Stored as a password hash.</div></div><% } %>
     <div class="form-check mb-3"><input class="form-check-input" id="terms_accepted" name="terms_accepted" type="checkbox" value="1" required><label class="form-check-label" for="terms_accepted">I confirm these details are accurate and agree to the vendor onboarding and review process.</label></div>
-    <button class="btn btn-primary" type="submit"><%= resubmission ? "Resubmit application" : "Submit application and continue to phone verification" %></button>
+    <button class="btn btn-primary" type="submit"><%= isResubmission ? "Resubmit application" : "Submit application and continue to phone verification" %></button>
   </form>
 </main>
+<script type="application/json" id="bd-geo-data"><%- JSON.stringify(geoData) %></script>
 <script>
-(()=>{const type=document.getElementById('business_type'),license=document.getElementById('trade_license');function update(){const required=type.value!==''&&type.value!=='individual'&&<%= resubmission ? 'false' : 'true' %>;license.required=required;license.setAttribute('aria-required',String(required));}type.addEventListener('change',update);update();})();
+(()=>{
+  const locale=<%- JSON.stringify(locale||'bn') %>,isBn=String(locale).startsWith('bn'),geo=JSON.parse(document.getElementById('bd-geo-data').textContent);
+  const district=document.getElementById('district'),upazila=document.getElementById('upazila'),type=document.getElementById('business_type'),license=document.getElementById('trade_license');
+  const text=(row)=>isBn?row.nameBn:row.label;
+  geo.forEach(row=>{const option=document.createElement('option');option.value=row.value;option.textContent=text(row);district.appendChild(option);});
+  function renderUpazilas(selected=''){const current=geo.find(row=>row.value===district.value);upazila.replaceChildren();const first=document.createElement('option');first.value='';first.textContent=current?(isBn?'উপজেলা নির্বাচন করুন':'Select upazila'):(isBn?'আগে জেলা নির্বাচন করুন':'Select district first');upazila.appendChild(first);upazila.disabled=!current;if(current)current.upazilas.forEach(row=>{const option=document.createElement('option');option.value=row.value;option.textContent=text(row);upazila.appendChild(option);});upazila.value=current&&current.upazilas.some(row=>row.value===selected)?selected:'';}
+  district.value=district.dataset.current||'';district.addEventListener('change',()=>renderUpazilas());renderUpazilas(upazila.dataset.current||'');
+  function updateTradeLicense(){const required=type.value!==''&&type.value!=='individual'&&<%= isResubmission ? 'false' : 'true' %>;license.required=required;license.setAttribute('aria-required',String(required));}
+  type.addEventListener('change',updateTradeLicense);updateTradeLicense();
+})();
 </script>
 <%- include('partials/layout-bottom') %>
