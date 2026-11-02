@@ -9,6 +9,7 @@ const upload = require('../middleware/upload');
 const { env } = require('../config/env');
 const settingsRepository = require('../repositories/settingsRepository');
 const adminFinanceReadRepository = require('../repositories/adminFinanceReadRepository');
+const adminPaymentGatewayRepository = require('../repositories/adminPaymentGatewayRepository');
 const { asyncHandler } = require('../utils/asyncHandler');
 const { ValidationError } = require('../utils/errors');
 const { getPool, createQueryClient } = require('../db/mysqlPool');
@@ -438,6 +439,18 @@ router.post('/admin/banner/delete/:id', asyncHandler(async (req,res)=>{
   if(integrationsMysql()) await integrationsClient().execute('DELETE FROM banners WHERE id=?',[req.params.id]);
   else db.run('DELETE FROM banners WHERE id = ?',req.params.id);
   res.redirect('/admin/banner/manage');
+}));
+
+// Canonical payment gateway management for COD and configured manual MFS methods.
+router.get('/admin/payment-gateways',asyncHandler(async(_req,res)=>{
+  const rows=await adminPaymentGatewayRepository.listPaymentGateways();
+  return res.render('admin/payment-gateways',{rows});
+}));
+router.post('/admin/payment-gateways/:id/update',requireCsrf,asyncHandler(async(req,res)=>{
+  await adminPaymentGatewayRepository.updatePaymentGateway(req.params.id,req.body,{id:req.adminUser?.id||null,ip:req.ip||'',userAgent:req.get('user-agent')||''});
+  req.adminDomainAudit=true;
+  req.flash('success','Payment gateway settings saved.');
+  return res.redirect('/admin/payment-gateways');
 }));
 
 // Payment Gateways (Auto & Manual)
