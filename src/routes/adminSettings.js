@@ -313,13 +313,13 @@ const removeManagedBannerImage = (image) => {
 };
 
 // Banner & Sliders
-router.get('/admin/banner/manage', asyncHandler(async (_req, res) => {
+router.get('/admin/banner/manage', asyncHandler(async (req, res) => {
   const rows = integrationsMysql()
     ? await integrationsClient().queryAll('SELECT id,title,subtitle,badge,position,image_url AS image,link_url AS link,sort_order,status,created_at FROM banners ORDER BY sort_order ASC,id DESC')
     : db.all('SELECT * FROM banners ORDER BY sort_order ASC, id DESC');
   res.render('admin/crud-module', {
     pageTitle: 'Banner & Sliders', subtitle: 'হোমপেজের মেইন স্লাইডার ও প্রোমো ব্যানার পরিচালনা করুন',
-    createAction: '/admin/banner/create', updatePrefix: '/admin/banner/update', multipartForm: true, deletePrefix: '/admin/banner/delete',
+    createAction: '/admin/banner/create', updatePrefix: '/admin/banner/update', multipartForm: true, deletePrefix: '/admin/banner/delete', autoOpenModal: req.query.create === '1',
     columns: [{key:'id',label:'#'},{key:'image',label:'Preview',type:'image'},{key:'title',label:'Banner Title'},{key:'position',label:'Position',type:'badge'},{key:'link',label:'Target Link'},{key:'status',label:'Active',type:'status'}],
     fields: [{name:'title',label:'Banner Headline',type:'text',required:true},{name:'subtitle',label:'Subtitle',type:'text'},{name:'badge',label:'Badge',type:'text'},
       {name:'position',label:'Placement',type:'select',options:[{value:'hero',label:'Hero Slider (Top)'},{value:'promo_mid',label:'Middle Promo Banner'}]},
@@ -327,6 +327,7 @@ router.get('/admin/banner/manage', asyncHandler(async (_req, res) => {
       {name:'link_url',label:'Target URL',type:'text',value:'/all-products'},{name:'sort_order',label:'Display order',type:'number',value:'0'}], rows,
   });
 }));
+router.get('/admin/banner/create', (_req, res) => res.redirect('/admin/banner/manage?create=1'));
 router.post('/admin/banner/create', upload.single('image_file'), requireCsrfAndCleanupBannerFile, asyncHandler(async (req, res) => {
   let image;
   try {
@@ -335,7 +336,14 @@ router.post('/admin/banner/create', upload.single('image_file'), requireCsrfAndC
     const b=req.body, position=['hero','promo_mid'].includes(b.position)?b.position:'hero';
     if (integrationsMysql()) await integrationsClient().execute('INSERT INTO banners (title,subtitle,badge,position,image_url,link_url,sort_order,status) VALUES (?,?,?,?,?,?,?,1)', [cleanBannerText(b.title,191),cleanBannerText(b.subtitle,255),cleanBannerText(b.badge,100),position,image,safeBannerLink(b.link_url||b.link),safeSortOrder(b.sort_order)]);
     else db.run('INSERT INTO banners (title,subtitle,badge,position,image,link,sort_order) VALUES (?,?,?,?,?,?,?)',cleanBannerText(b.title,191),cleanBannerText(b.subtitle,255),cleanBannerText(b.badge,100),position,image,safeBannerLink(b.link_url||b.link),safeSortOrder(b.sort_order));
-  } catch (err) { if (req.file) upload.safeUnlink(req.file.path); throw err; }
+  } catch (err) {
+    if (req.file) upload.safeUnlink(req.file.path);
+    if (err instanceof ValidationError) {
+      req.flash('error', err.message);
+      return res.redirect('/admin/banner/manage?create=1');
+    }
+    throw err;
+  }
   req.flash('success','ব্যানার যুক্ত হয়েছে!'); res.redirect('/admin/banner/manage');
 }));
 router.post('/admin/banner/update/:id', upload.single('image_file'), requireCsrfAndCleanupBannerFile, asyncHandler(async (req,res)=>{

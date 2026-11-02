@@ -28,6 +28,9 @@ test('priority settings routes use asynchronous MySQL operations and retain SQLi
   assert.match(source, /integrationsClient\(\)\.execute\('INSERT INTO banners/);
   assert.match(source, /upload\.single\('image_file'\)/);
   assert.match(source, /upload\.validateUploadedImageFile/);
+  assert.match(source, /router\.get\('\/admin\/banner\/create', \(_req, res\) => res\.redirect\('\/admin\/banner\/manage\?create=1'\)\)/);
+  assert.match(source, /autoOpenModal: req\.query\.create === '1'/);
+  assert.match(source, /req\.flash\('error', err\.message\)[\s\S]*?return res\.redirect\('\/admin\/banner\/manage\?create=1'\)/);
   assert.match(source, /router\.post\('\/admin\/banner\/update\/:id'/);
   assert.match(source, /router\.post\('\/admin\/paymentgeteway\/update\/:id'/);
   assert.match(source, /router\.post\('\/admin\/courierapi\/update\/:id'/);
