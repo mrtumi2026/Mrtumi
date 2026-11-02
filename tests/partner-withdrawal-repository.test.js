@@ -17,6 +17,8 @@ function fakePool(balancePaisa) {
       calls.push([sql, params]);
       if (sql.includes('FROM vendors')) return [[{ id: 11, balance_paisa: String(balancePaisa), status:1, lifecycle_status:'active', payout_verified_at:'2026-01-01' }], []];
       if (sql.includes('FROM vendor_payout_accounts')) return [[{id:3,vendor_id:11,method:'bkash',details_ciphertext:pii.encryptVendorPii(JSON.stringify({account_number:'01712345678'})),masked_account:'••••5678'}], []];
+      if (sql.includes('FROM vendor_wallets')) return [[{available_balance:String(balancePaisa)}], []];
+      if (sql.includes('FROM partner_wallets')) return [[{available_balance:String(balancePaisa)}], []];
       if (sql.startsWith('SELECT')) return [[{ id: 11, balance_paisa: String(balancePaisa) }], []];
       if (sql.startsWith('INSERT INTO vendor_withdrawals') || sql.startsWith('INSERT INTO reseller_transactions')) return [{ insertId: 42, affectedRows: 1 }, []];
       return [{ affectedRows: 1 }, []];

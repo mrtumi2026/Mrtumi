@@ -136,9 +136,10 @@ for (const upPath of upMigrations) {
   const downSql = fs.existsSync(downPath) ? fs.readFileSync(downPath, 'utf8') : '';
   const createNames = [...upSql.matchAll(/CREATE TABLE IF NOT EXISTS `([^`]+)`/g)].map((m) => m[1]);
   const dropNames = [...downSql.matchAll(/DROP TABLE IF EXISTS `([^`]+)`/g)].map((m) => m[1]);
+  const irreversibleGuard = /SIGNAL SQLSTATE '45000'.*intentionally irreversible/is.test(downSql);
   check(
-    JSON.stringify(dropNames) === JSON.stringify([...createNames].reverse()),
-    `Reverse FK drop order matches in ${path.basename(downPath)}`
+    irreversibleGuard ? dropNames.length === 0 : JSON.stringify(dropNames) === JSON.stringify([...createNames].reverse()),
+    `Reverse FK drop order or explicit irreversible guard matches in ${path.basename(downPath)}`
   );
   check(!/\b(FLOAT|DOUBLE)\b/i.test(upSql), `No floating-point column types in ${relUp}`);
   const engineCount = (upSql.match(/ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci/g) || []).length;

@@ -44,7 +44,7 @@ async function loadLines(tx,lines,locale='bn',lock=true){
   const products=await tx.queryAll(`SELECT id,sku,name_bn,name_en,image_url,regular_price_paisa,sale_price_paisa,wholesale_price_paisa,wholesale_min_qty,is_wholesale,approval_status,vendor_id,stock_on_hand,stock_reserved,vendor_stock_on_hand,vendor_stock_reserved,status,is_archived FROM products WHERE id IN (${lines.map(()=>'?').join(',')}) ORDER BY id ${lock?'FOR UPDATE':''}`,lines.map(x=>x.productId));
   const productMap=new Map(products.map(p=>[Number(p.id),p]));
   const vendorIds=[...new Set(products.map(p=>Number(p.vendor_id)).filter(Boolean))];
-  const vendors=vendorIds.length?await tx.queryAll(`SELECT id,lifecycle_status,status FROM vendors WHERE id IN (${vendorIds.map(()=>'?').join(',')}) ORDER BY id ${lock?'FOR UPDATE':''}`,vendorIds):[];
+  const vendors=vendorIds.length?await tx.queryAll(`SELECT id,lifecycle_status,status,commission_rate_bps FROM vendors WHERE id IN (${vendorIds.map(()=>'?').join(',')}) ORDER BY id ${lock?'FOR UPDATE':''}`,vendorIds):[];
   const vendorMap=new Map(vendors.map(v=>[Number(v.id),v]));
   const variantIds=lines.filter(x=>x.variantId).map(x=>x.variantId);
   const variants=variantIds.length?await tx.queryAll(`SELECT id,product_id,variant_sku,size_label,color_label,price_paisa,stock_on_hand,stock_reserved,status FROM product_variants WHERE id IN (${variantIds.map(()=>'?').join(',')}) ORDER BY id ${lock?'FOR UPDATE':''}`,variantIds):[];
@@ -61,7 +61,7 @@ async function loadLines(tx,lines,locale='bn',lock=true){
     const held=Number(v?v.stock_reserved:p[pool==='vendor'?'vendor_stock_reserved':'stock_reserved']);
     if(!Number.isSafeInteger(hand)||!Number.isSafeInteger(held)||hand-held<line.qty)throw new ConflictError(`Insufficient available stock for product ${line.productId}.`);
     const lineTotalPaisa=price*line.qty;if(!Number.isSafeInteger(lineTotalPaisa))throw new ValidationError('Order line total exceeds the safe calculation range.');
-    result.push({...line,product:p,variant:v,unitPricePaisa:price,lineTotalPaisa,name:localizedText(locale,p.name_bn,p.name_en,p.sku),image:String(p.image_url||''),size:String(v?.size_label||''),color:String(v?.color_label||'')});
+    result.push({...line,product:p,variant:v,vendorCommissionRateBps:Number(vendorMap.get(Number(p.vendor_id))?.commission_rate_bps||0),unitPricePaisa:price,lineTotalPaisa,name:localizedText(locale,p.name_bn,p.name_en,p.sku),image:String(p.image_url||''),size:String(v?.size_label||''),color:String(v?.color_label||'')});
   }
   return result;
 }
@@ -185,7 +185,36 @@ async function createOrder(input,options={}){
     const paymentStatus=isManualPayment?'pending_verification':'unpaid';
     const order=await tx.execute(`INSERT INTO orders (invoice_no,idempotency_key,checkout_request_hash,customer_id,customer_name,customer_phone,shipping_address,division,district,upazila,shipping_zone,subtotal_paisa,discount_paisa,shipping_paisa,total_paisa,advance_required_paisa,paid_paisa,cod_due_paisa,coupon_code,payment_method,payment_status,order_status,order_channel,traffic_source,utm_source,utm_medium,utm_campaign,analytics_consent_at,analytics_consent_version,client_ip,customer_note,consent_accepted_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP())`,[invoice,key,payloadHash,customerId,name,phone,address,zone.division,zone.district,zone.upazila,zoneLabel,subtotal,coupon.amount,shipping,total,0,0,codDue,coupon.code,paymentMethod,paymentStatus,'pending',orderChannel,trafficSource,attributionData.utmSource,attributionData.utmMedium,attributionData.utmCampaign,attributionAllowed?new Date():null,attributionAllowed?CONSENT_VERSION:null,String(ip||'').slice(0,64),customerNote]);
     if(isManualPayment)await tx.execute("INSERT INTO order_payments (order_id,gateway_code,provider_trx_id,sender_number,amount_paisa,payment_purpose,status) VALUES (?,?,?,?,?,'full','pending_verification')",[order.insertId,gateway.code,trxId,senderNumber,total]);
-    for(const item of items){await tx.execute('INSERT INTO order_items (order_id,product_id,variant_id,vendor_id,product_name,product_image,unit_price_paisa,qty,line_total_paisa,size_label,color_label) VALUES (?,?,?,?,?,?,?,?,?,?,?)',[order.insertId,item.productId,item.variantId,item.product.vendor_id||null,item.name,item.image,item.unitPricePaisa,item.qty,item.lineTotalPaisa,item.size,item.color]);}
+    const vendorSubOrders=new Map();
+    for(const item of items){
+      const insertedItem=await tx.execute('INSERT INTO order_items (order_id,product_id,variant_id,vendor_id,product_name,product_image,unit_price_paisa,qty,line_total_paisa,size_label,color_label) VALUES (?,?,?,?,?,?,?,?,?,?,?)',[order.insertId,item.productId,item.variantId,item.product.vendor_id||null,item.name,item.image,item.unitPricePaisa,item.qty,item.lineTotalPaisa,item.size,item.color]);
+      const vendorId=item.product.vendor_id?Number(item.product.vendor_id):null;
+      const bps=vendorId?Number(item.vendorCommissionRateBps):0;
+      if(!Number.isSafeInteger(bps)||bps<0||bps>10000)throw new ConflictError('Vendor commission configuration is invalid.');
+      const feeUnit=Number((BigInt(item.unitPricePaisa)*BigInt(bps))/10000n);
+      const entitlementUnit=item.unitPricePaisa-feeUnit;
+      await tx.execute('INSERT INTO order_price_snapshots(order_item_id,vendor_id,reseller_id,quantity,customer_unit_price_paisa,vendor_entitlement_unit_paisa,reseller_margin_unit_paisa,marketplace_revenue_unit_paisa) VALUES(?,?,NULL,?,?,?,0,?)',[insertedItem.insertId,vendorId,item.qty,item.unitPricePaisa,entitlementUnit,feeUnit]);
+      if(vendorId){
+        const current=vendorSubOrders.get(vendorId)||{vendorId,items:[],entitlementPaisa:0,feePaisa:0,customerSubtotalPaisa:0};
+        current.items.push({orderItemId:Number(insertedItem.insertId),quantity:item.qty});
+        current.entitlementPaisa+=entitlementUnit*item.qty;
+        current.feePaisa+=feeUnit*item.qty;
+        current.customerSubtotalPaisa+=item.lineTotalPaisa;
+        vendorSubOrders.set(vendorId,current);
+      }
+    }
+    const subOrders=[...vendorSubOrders.values()].sort((a,b)=>a.vendorId-b.vendorId);
+    const vendorSubtotal=subOrders.reduce((sum,subOrder)=>sum+subOrder.customerSubtotalPaisa,0);
+    let allocatedCod=0;
+    for(let index=0;index<subOrders.length;index++){
+      const subOrder=subOrders[index];
+      let subOrderCodDue=subtotal>0?Number((BigInt(subOrder.customerSubtotalPaisa)*BigInt(total))/BigInt(subtotal)):0;
+      if(index===subOrders.length-1&&vendorSubtotal===subtotal)subOrderCodDue=total-allocatedCod;
+      allocatedCod+=subOrderCodDue;
+      const vendorOrderNo=`${invoice}-${subOrder.vendorId}`;
+      const insertedSubOrder=await tx.execute('INSERT INTO vendor_sub_orders(order_id,vendor_id,vendor_order_no,status,cod_due_paisa,vendor_entitlement_paisa,marketplace_fee_paisa,net_payable_paisa) VALUES(?,?,?,\'order_placed\',?,?,?,?)',[order.insertId,subOrder.vendorId,vendorOrderNo,subOrderCodDue,subOrder.entitlementPaisa,subOrder.feePaisa,subOrder.entitlementPaisa]);
+      for(const item of subOrder.items)await tx.execute('INSERT INTO vendor_sub_order_items(vendor_sub_order_id,order_item_id,quantity) VALUES(?,?,?)',[insertedSubOrder.insertId,item.orderItemId,item.quantity]);
+    }
     await tx.execute("INSERT INTO order_status_history (order_id,from_status,to_status,note,changed_by_user_id) VALUES (?,'','pending','Customer checkout submitted',NULL)",[order.insertId]);
     // Reserve only after the durable order and lines exist, in this same transaction.
     await lifecycle.reserveOrderInventoryTx(tx,Number(order.insertId),{type:'system'});

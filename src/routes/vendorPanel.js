@@ -395,6 +395,23 @@ router.get('/vendor/order-items/:itemId', async (req, res, next) => {
   try { return res.json({ item: await vendorPortal.getOrderItem(req.session.vendorUser.id, req.params.itemId) }); } catch (error) { return next(error); }
 });
 
+// Independent vendor sub-order fulfillment; a vendor can only mutate its own sub-orders.
+router.post('/vendor/sub-orders/:subOrderId/status', requireCsrf, async (req, res, next) => {
+  if (!mysqlActive()) { req.flash('error', 'Sub-order fulfillment is only available through the MySQL workflow.'); return res.redirect('/vendor/orders'); }
+  try {
+    await require('../repositories/vendorOrderRepository').transitionSubOrder({
+      subOrderId: req.params.subOrderId,
+      toStatus: req.body.to_status,
+      carrier: req.body.carrier,
+      trackingCode: req.body.tracking_code,
+      note: req.body.note,
+      actor: { vendorId: req.session.vendorUser.id },
+    });
+    req.flash('success', 'Vendor sub-order status updated.');
+    return res.redirect('/vendor/orders');
+  } catch (error) { return next(error); }
+});
+
 // Explicitly scoped item fulfillment; parent-order status is derived in the repository from all lines.
 router.post('/vendor/order-items/:itemId/fulfillment', requireCsrf, async (req, res, next) => {
   if (!mysqlActive()) { req.flash('error', 'Item fulfillment is only available through the MySQL workflow.'); return res.redirect('/vendor/orders'); }

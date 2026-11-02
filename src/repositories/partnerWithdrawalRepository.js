@@ -30,10 +30,15 @@ async function requestVendorWithdrawal(vendorId, input, actor = {}, { pool = nul
     if(!payout)throw new ConflictError('Choose a payout account verified by the marketplace administrator.');
     const details=JSON.parse(vendorPii.decryptVendorPii(payout.details_ciphertext));
     if(!details.account_number)throw new ConflictError('Verified payout account details are unavailable.');
-    if (Number(vendor.balance_paisa) < amountOnly) throw new ConflictError('Insufficient wallet balance.');
-    const before = Number(vendor.balance_paisa);
+    await tx.execute('INSERT IGNORE INTO vendor_wallets(vendor_id) VALUES(?)', [id]);
+    const wallet=await tx.queryOne('SELECT available_balance FROM vendor_wallets WHERE vendor_id=? FOR UPDATE',[id]);
+    if (!wallet || Number(wallet.available_balance) < amountOnly) throw new ConflictError('Insufficient available wallet balance.');
+    const before = Number(wallet.available_balance);
+    await tx.execute('UPDATE vendor_wallets SET available_balance=available_balance-? WHERE vendor_id=?', [amountOnly, id]);
     await tx.execute('UPDATE vendors SET balance_paisa=balance_paisa-? WHERE id=?', [amountOnly, id]);
     const result = await tx.execute("INSERT INTO vendor_withdrawals(vendor_id,payout_account_id,amount_paisa,method,account_number,note,status) VALUES(?,?,?,?,?,'','pending')", [id,payout.id,amountOnly,payout.method,payout.masked_account]);
+    await tx.execute(`INSERT INTO vendor_transactions(vendor_id,sub_order_id,idempotency_key,transaction_type,amount_paisa,balance_bucket,metadata_json)
+      VALUES(?,NULL,?,'withdrawal',?,'available',?)`,[id,`withdrawal:vendor:${result.insertId}`,-amountOnly,JSON.stringify({payoutAccountId:payout.id})]);
     await tx.execute(`INSERT INTO audit_logs(actor_type,actor_id,action,entity_type,entity_id,before_json,after_json,ip_address,user_agent)
       VALUES('vendor',?,'vendor.withdrawal.requested','vendor_withdrawal',?,?,?, ?,?)`,
       [id, String(result.insertId), JSON.stringify({ balance_paisa: before }), JSON.stringify({ balance_paisa: before - amountOnly, amount_paisa: amountOnly, payout_account_id:payout.id, masked_account:payout.masked_account, status: 'pending' }), String(actor.ip || '').slice(0,64), String(actor.userAgent || '').slice(0,255)]);
@@ -47,10 +52,15 @@ async function requestResellerWithdrawal(resellerId, input, actor = {}, { pool =
   return withTransaction(async (tx) => {
     const reseller = await tx.queryOne('SELECT id,balance_paisa FROM resellers WHERE id=? FOR UPDATE', [resellerId]);
     if (!reseller) throw new NotFoundError('Reseller account was not found.');
-    if (Number(reseller.balance_paisa) < amountPaisa) throw new ConflictError('Insufficient commission balance.');
-    const before = Number(reseller.balance_paisa);
+    await tx.execute('INSERT IGNORE INTO partner_wallets(reseller_id) VALUES(?)', [resellerId]);
+    const wallet=await tx.queryOne('SELECT available_balance FROM partner_wallets WHERE reseller_id=? FOR UPDATE',[resellerId]);
+    if (!wallet || Number(wallet.available_balance) < amountPaisa) throw new ConflictError('Insufficient available commission balance.');
+    const before = Number(wallet.available_balance);
+    await tx.execute('UPDATE partner_wallets SET available_balance=available_balance-? WHERE reseller_id=?', [amountPaisa, resellerId]);
     await tx.execute('UPDATE resellers SET balance_paisa=balance_paisa-? WHERE id=?', [amountPaisa, resellerId]);
     const result = await tx.execute("INSERT INTO reseller_transactions(reseller_id,tx_type,amount_paisa,method,trx_id,status) VALUES(?,'withdrawal',?,?,?,'pending')", [resellerId, amountPaisa, method, accountNumber]);
+    await tx.execute(`INSERT INTO partner_transactions(reseller_id,sub_order_id,idempotency_key,transaction_type,amount_paisa,balance_bucket,metadata_json)
+      VALUES(?,NULL,?,'withdrawal',?,'available',?)`,[resellerId,`withdrawal:reseller:${result.insertId}`,-amountPaisa,JSON.stringify({method})]);
     await tx.execute(`INSERT INTO audit_logs(actor_type,actor_id,action,entity_type,entity_id,before_json,after_json,ip_address,user_agent)
       VALUES('reseller',?,'reseller.withdrawal.requested','reseller_transaction',?,?,?, ?,?)`,
       [resellerId, String(result.insertId), JSON.stringify({ balance_paisa: before }), JSON.stringify({ balance_paisa: before - amountPaisa, amount_paisa: amountPaisa, status: 'pending' }), String(actor.ip || '').slice(0,64), String(actor.userAgent || '').slice(0,255)]);
