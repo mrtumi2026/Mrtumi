@@ -20,7 +20,7 @@ function poolFixture({failAudit=false,duplicate=false,missingParent=false}={}){
       if(sql.includes('SELECT id,status FROM reviews'))return [[{id:7,status:'pending'}],[]];
       if(sql.includes('FROM categories')||sql.includes('FROM subcategories')||sql.includes('FROM products')){
         if(missingParent)return [[],[]];
-        return [[{id:7,category_id:3,subcategory_id:5,status:1,is_archived:0,approval_status:'pending',vendor_id:9}],[]];
+        return [[{id:7,category_id:3,subcategory_id:5,status:1,is_archived:0,approval_status:'pending',vendor_id:9,vendor_status:1,lifecycle_status:'active'}],[]];
       }
       throw new Error(`Unexpected SQL: ${sql}`);
     },
@@ -85,6 +85,10 @@ test('product status and vendor approval are audited in transactions and reject 
   assert.deepEqual(changed,{id:12,status:0});assert.equal(pool.state.committed,true);
   const approvalPool=poolFixture();
   assert.deepEqual(await repo.approvePendingVendorProduct(12,{id:5},{pool:approvalPool}),{id:12,status:1,approval_status:'approved'});
+  const rejectionPool=poolFixture();
+  assert.deepEqual(await repo.rejectPendingVendorProduct(12,'Missing required safety details',{id:5},{pool:rejectionPool}),{id:12,status:0,approval_status:'rejected',reason:'Missing required safety details'});
+  assert.equal(rejectionPool.state.committed,true);
+  await assert.rejects(repo.rejectPendingVendorProduct(12,'no',{id:5},{pool:poolFixture()}),{code:'VALIDATION_ERROR'});
   const missing=poolFixture({missingParent:true});
   await assert.rejects(repo.toggleProductStatus(999,{id:5},{pool:missing}),{code:'NOT_FOUND'});
   assert.equal(repo.deleteProduct,undefined,'catalog repository deliberately exposes no destructive delete API');

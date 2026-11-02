@@ -3,6 +3,8 @@
 const { getPool, withTransaction } = require('../db/mysqlPool');
 const { bdtToPaisa } = require('../utils/money');
 const { ConflictError, NotFoundError } = require('../utils/errors');
+const { requirePositiveInt } = require('../utils/validator');
+const vendorPii = require('../utils/vendorPii');
 
 function normalizeRequest({ amount, method, accountNumber }) {
   let amountPaisa;
@@ -15,19 +17,27 @@ function normalizeRequest({ amount, method, accountNumber }) {
 }
 
 async function requestVendorWithdrawal(vendorId, input, actor = {}, { pool = null } = {}) {
-  const { amountPaisa, method, accountNumber } = normalizeRequest(input);
+  const id=requirePositiveInt(vendorId,'Vendor ID');
+  const amountOnly=normalizeRequest({amount:input.amount,method:'verified account',accountNumber:'verified'}).amountPaisa;
+  if(!input.payoutAccountId)throw new TypeError('A verified payout account is required.');
+  const payoutAccountId=requirePositiveInt(input.payoutAccountId,'Verified payout account');
   const activePool = pool || getPool();
   return withTransaction(async (tx) => {
-    const vendor = await tx.queryOne('SELECT id,balance_paisa FROM vendors WHERE id=? FOR UPDATE', [vendorId]);
+    const vendor = await tx.queryOne('SELECT id,balance_paisa,status,lifecycle_status,payout_verified_at FROM vendors WHERE id=? FOR UPDATE', [id]);
     if (!vendor) throw new NotFoundError('Vendor account was not found.');
-    if (Number(vendor.balance_paisa) < amountPaisa) throw new ConflictError('Insufficient wallet balance.');
+    if(Number(vendor.status)!==1||vendor.lifecycle_status!=='active'||!vendor.payout_verified_at)throw new ConflictError('Withdrawals require an active vendor and a verified payout account.');
+    const payout=await tx.queryOne("SELECT id,method,details_ciphertext,masked_account FROM vendor_payout_accounts WHERE id=? AND vendor_id=? AND verification_status='verified' FOR UPDATE",[payoutAccountId,id]);
+    if(!payout)throw new ConflictError('Choose a payout account verified by the marketplace administrator.');
+    const details=JSON.parse(vendorPii.decryptVendorPii(payout.details_ciphertext));
+    if(!details.account_number)throw new ConflictError('Verified payout account details are unavailable.');
+    if (Number(vendor.balance_paisa) < amountOnly) throw new ConflictError('Insufficient wallet balance.');
     const before = Number(vendor.balance_paisa);
-    await tx.execute('UPDATE vendors SET balance_paisa=balance_paisa-? WHERE id=?', [amountPaisa, vendorId]);
-    const result = await tx.execute("INSERT INTO vendor_withdrawals(vendor_id,amount_paisa,method,account_number,note,status) VALUES(?,?,?,?,'','pending')", [vendorId, amountPaisa, method, accountNumber]);
+    await tx.execute('UPDATE vendors SET balance_paisa=balance_paisa-? WHERE id=?', [amountOnly, id]);
+    const result = await tx.execute("INSERT INTO vendor_withdrawals(vendor_id,payout_account_id,amount_paisa,method,account_number,note,status) VALUES(?,?,?,?,?,'','pending')", [id,payout.id,amountOnly,payout.method,payout.masked_account]);
     await tx.execute(`INSERT INTO audit_logs(actor_type,actor_id,action,entity_type,entity_id,before_json,after_json,ip_address,user_agent)
       VALUES('vendor',?,'vendor.withdrawal.requested','vendor_withdrawal',?,?,?, ?,?)`,
-      [vendorId, String(result.insertId), JSON.stringify({ balance_paisa: before }), JSON.stringify({ balance_paisa: before - amountPaisa, amount_paisa: amountPaisa, status: 'pending' }), String(actor.ip || '').slice(0,64), String(actor.userAgent || '').slice(0,255)]);
-    return { id: Number(result.insertId), amount: (amountPaisa / 100), balancePaisa: before - amountPaisa };
+      [id, String(result.insertId), JSON.stringify({ balance_paisa: before }), JSON.stringify({ balance_paisa: before - amountOnly, amount_paisa: amountOnly, payout_account_id:payout.id, masked_account:payout.masked_account, status: 'pending' }), String(actor.ip || '').slice(0,64), String(actor.userAgent || '').slice(0,255)]);
+    return { id: Number(result.insertId), amount: (amountOnly / 100), balancePaisa: before - amountOnly };
   }, { pool: activePool });
 }
 
@@ -52,7 +62,7 @@ async function requestResellerWithdrawal(resellerId, input, actor = {}, { pool =
 async function listVendorWithdrawals(vendorId,{pool=null}={}) {
   const { createQueryClient }=require('../db/mysqlPool');
   const db=createQueryClient(pool||getPool());
-  const rows=await db.queryAll('SELECT id,amount_paisa/100 AS amount,method,account_number,note,status,created_at FROM vendor_withdrawals WHERE vendor_id=? ORDER BY id DESC',[vendorId]);
+  const rows=await db.queryAll('SELECT id,amount_paisa/100 AS amount,method,account_number AS masked_account,note,status,created_at FROM vendor_withdrawals WHERE vendor_id=? ORDER BY id DESC',[vendorId]);
   return rows;
 }
 

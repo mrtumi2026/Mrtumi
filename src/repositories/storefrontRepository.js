@@ -36,8 +36,9 @@ async function getSearchSuggestions(query, locale = 'bn', poolOverride = null, c
     : await getClient(poolOverride).queryAll(`SELECT p.id,
         CASE WHEN ?='en' THEN COALESCE(NULLIF(p.name_en,''),p.name_bn) ELSE COALESCE(NULLIF(p.name_bn,''),p.name_en) END AS name,
         p.slug,p.image_url AS image,p.sale_price_paisa/100 AS price
-        FROM products p
+        FROM products p LEFT JOIN vendors v ON v.id=p.vendor_id
         WHERE p.status=1 AND p.is_archived=0 AND p.approval_status='approved'
+          AND (p.vendor_id IS NULL OR (v.status=1 AND v.lifecycle_status='active'))
           AND (p.name_bn LIKE ? OR p.name_en LIKE ? OR p.sku LIKE ?)
         ORDER BY p.sold_count DESC,p.id DESC LIMIT 5`, [locale, pattern, pattern, pattern]);
   return rows.slice(0, 5).map((row) => {
@@ -357,7 +358,7 @@ const MYSQL_ACTIVE_PRODUCT_WHERE = `
   p.\`status\` = 1
   AND p.\`is_archived\` = 0
   AND p.\`approval_status\` = 'approved'
-  AND (p.\`vendor_id\` IS NULL OR (v.\`status\` = 1 AND v.\`verified\` = 1))
+  AND (p.\`vendor_id\` IS NULL OR (v.\`status\` = 1 AND v.\`lifecycle_status\` = 'active'))
 `;
 
 const SQLITE_PRODUCT_SELECT = `
@@ -1335,7 +1336,7 @@ async function getSitemapEntries(poolOverride = null, config = env) {
       client.queryAll('SELECT `slug` FROM `childcategories` WHERE `status` = 1 ORDER BY `id` ASC'),
       client.queryAll('SELECT `slug` FROM `brands` WHERE `status` = 1 ORDER BY `id` ASC'),
       client.queryAll(
-        "SELECT `slug` FROM `products` WHERE `status` = 1 AND `is_archived` = 0 AND `approval_status` = 'approved' ORDER BY `id` DESC"
+        "SELECT p.`slug` FROM `products` p LEFT JOIN `vendors` v ON v.`id`=p.`vendor_id` WHERE p.`status` = 1 AND p.`is_archived` = 0 AND p.`approval_status` = 'approved' AND (p.`vendor_id` IS NULL OR (v.`status`=1 AND v.`lifecycle_status`='active')) ORDER BY p.`id` DESC"
       ),
       client.queryAll('SELECT `slug` FROM `blogs` WHERE `status` = 1 ORDER BY `id` DESC'),
       client.queryAll('SELECT `slug` FROM `cms_pages` WHERE `status` = 1 ORDER BY `id` ASC'),

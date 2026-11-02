@@ -231,6 +231,12 @@ router.post('/admin/products/approve/:id', asyncHandler(async (req, res) => {
   res.redirect(req.get('Referrer')||'/admin/products/pending');
 }));
 
+router.post('/admin/products/reject/:id', asyncHandler(async (req,res) => {
+  if(!mysqlMode())return res.status(409).send('Vendor product rejection workflow requires MySQL.');
+  await catalogRepo.rejectPendingVendorProduct(req.params.id,req.body.reason,actor(req));req.adminDomainAudit=true;
+  req.flash('success','Vendor product rejected with a reason.');return res.redirect(req.get('Referrer')||'/admin/products/pending');
+}));
+
 router.post('/admin/products/delete/:id', (req, res, next) => {
   if(mysqlMode())return next(new ConflictError('Hard deletion of catalog products is disabled; archive products from Phase 06 to preserve stock and order history.'));
   db.run('DELETE FROM products WHERE id=?',req.params.id);

@@ -161,9 +161,20 @@ router.post('/vendor/logout', requireCsrf, (req, res) => {
 });
 
 // ─── Protected Vendor Portal Routes ───
-router.use('/vendor', requireVendor);
+router.use('/vendor', requireVendor, async (req,res,next)=>{
+  if(!mysqlActive())return next();
+  try{
+    const vendor=await require('../db/mysqlPool').queryOne('SELECT status,lifecycle_status FROM vendors WHERE id=?',[req.session.vendorUser.id]);
+    if(!vendor||Number(vendor.status)!==1){req.flash('error','Vendor account is unavailable.');return res.redirect('/vendor/login');}
+    if(vendor.lifecycle_status==='active')return next();
+    const viewOnlySuspended=['suspended','deactivated'].includes(vendor.lifecycle_status)&&req.method==='GET'&&(req.path.startsWith('/vendor/orders')||req.path.startsWith('/vendor/withdrawals')||/^\/vendor\/order-items\/\d+$/.test(req.path));
+    if(viewOnlySuspended)return next();
+    req.flash('error','This capability is locked until vendor onboarding and verification requirements are complete.');return res.redirect('/vendor/onboarding');
+  }catch(error){return next(error);}
+});
 
 router.get('/vendor/dashboard', (req, res) => {
+  if(mysqlActive())return res.redirect('/vendor/onboarding');
   const vendor = db.get('SELECT * FROM vendors WHERE id = ?', req.session.vendorUser.id);
   const totalProducts = db.get('SELECT COUNT(*) AS c FROM products WHERE vendor_id = ?', vendor.id).c;
   const approvedProducts = db.get(
@@ -400,9 +411,9 @@ router.get('/vendor/withdrawals', async (req, res, next) => {
   if (mysqlActive()) {
     try {
       const {queryOne}=require('../db/mysqlPool');
-      const [row,withdrawals]=await Promise.all([queryOne('SELECT id,shop_name,owner_name,phone,email,balance_paisa/100 AS balance FROM vendors WHERE id=? AND status=1',[req.session.vendorUser.id]),partnerWithdrawalRepository.listVendorWithdrawals(req.session.vendorUser.id)]);
+      const [row,withdrawals,payoutAccounts]=await Promise.all([queryOne('SELECT id,shop_name,owner_name,phone,email,balance_paisa/100 AS balance,lifecycle_status,payout_verified_at FROM vendors WHERE id=? AND status=1',[req.session.vendorUser.id]),partnerWithdrawalRepository.listVendorWithdrawals(req.session.vendorUser.id),require('../repositories/vendorOnboardingRepository').listPayoutAccounts(req.session.vendorUser.id)]);
       if(!row){req.flash('error','ভেন্ডর অ্যাকাউন্ট পাওয়া যায়নি।');return res.redirect('/vendor/login');}
-      return res.render('vendor/withdrawals',{vendor:row,withdrawals});
+      return res.render('vendor/withdrawals',{vendor:row,withdrawals,payoutAccounts});
     } catch(error){return next(error);}
   }
   const vendor = db.get('SELECT * FROM vendors WHERE id = ?', req.session.vendorUser.id);
@@ -416,7 +427,7 @@ router.get('/vendor/withdrawals', async (req, res, next) => {
 router.post('/vendor/withdrawals/request', requireCsrf, async (req, res, next) => {
   if (mysqlActive()) {
     try {
-      await partnerWithdrawalRepository.requestVendorWithdrawal(req.session.vendorUser.id, { amount: req.body.amount, method: req.body.method, accountNumber: req.body.account_number }, { ip: req.ip, userAgent: req.get('user-agent') });
+      await partnerWithdrawalRepository.requestVendorWithdrawal(req.session.vendorUser.id, { amount: req.body.amount, payoutAccountId: req.body.payout_account_id }, { ip: req.ip, userAgent: req.get('user-agent') });
       req.flash('success', 'উইথড্র রিকোয়েস্ট অ্যাডমিনের কাছে পাঠানো হয়েছে।');
       return res.redirect('/vendor/withdrawals');
     } catch (error) {

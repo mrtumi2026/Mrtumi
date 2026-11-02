@@ -114,12 +114,16 @@ async function reserveOrderInventoryTx(tx, orderId, actor = {}) {
   }
   const products = await tx.lockRowsById('products', lines.map((l) => l.productId), ['id','vendor_id','stock_on_hand','stock_reserved','vendor_stock_on_hand','vendor_stock_reserved','status','is_archived']);
   const productsById = new Map(products.map((p) => [Number(p.id), p]));
+  const vendorIds=[...new Set(products.map(p=>Number(p.vendor_id)).filter(Boolean))];
+  const vendors=vendorIds.length?await tx.queryAll(`SELECT id,status,lifecycle_status FROM vendors WHERE id IN (${vendorIds.map(()=>'?').join(',')}) ORDER BY id FOR UPDATE`,vendorIds):[];
+  const vendorsById=new Map(vendors.map(v=>[Number(v.id),v]));
   const variantIds = lines.filter((l) => l.variantId).map((l) => l.variantId);
   const variants = variantIds.length ? await tx.queryAll(`SELECT id, product_id, stock_on_hand, stock_reserved, status FROM product_variants WHERE id IN (${variantIds.map(() => '?').join(',')}) ORDER BY id FOR UPDATE`, variantIds) : [];
   const variantsById = new Map(variants.map((v) => [Number(v.id), v]));
   for (const line of lines) {
     const p = productsById.get(line.productId);
     if (!p || Number(p.status) !== 1 || Number(p.is_archived)) throw new ConflictError(`Product ${line.productId} is unavailable.`);
+    if(p.vendor_id){const owner=vendorsById.get(Number(p.vendor_id));if(!owner||Number(owner.status)!==1||owner.lifecycle_status!=='active')throw new ConflictError(`Product ${line.productId} is unavailable.`);}
     if (line.variantId && (!variantsById.has(line.variantId) || Number(variantsById.get(line.variantId).product_id) !== line.productId || Number(variantsById.get(line.variantId).status) !== 1)) throw new ConflictError(`Variant ${line.variantId} is unavailable.`);
     const pool = p.vendor_id ? 'vendor' : 'warehouse';
     const onHand = line.variantId ? Number(variantsById.get(line.variantId).stock_on_hand) : Number(p[pool === 'vendor' ? 'vendor_stock_on_hand' : 'stock_on_hand']);

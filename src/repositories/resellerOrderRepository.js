@@ -27,6 +27,7 @@ async function create(input,{resellerId,shippingPaisa,ip='',pool}={}){
     if(Number(reseller.verified)!==1)throw new ConflictError('Reseller verification is required before creating orders.');
     const product=await tx.queryOne("SELECT id,sku,name_bn,name_en,image_url,vendor_id,regular_price_paisa,sale_price_paisa,wholesale_price_paisa,wholesale_min_qty,is_wholesale,vendor_stock_on_hand,vendor_stock_reserved,stock_on_hand,stock_reserved,status,is_archived,approval_status FROM products WHERE id=? FOR UPDATE",[productId]);
     if(!product||Number(product.status)!==1||Number(product.is_archived)||product.approval_status!=='approved')throw new ConflictError('Selected product is unavailable.');
+    if(product.vendor_id){const owner=await tx.queryOne('SELECT id,status,lifecycle_status FROM vendors WHERE id=? FOR UPDATE',[product.vendor_id]);if(!owner||Number(owner.status)!==1||owner.lifecycle_status!=='active')throw new ConflictError('Selected product is unavailable.');}
     const variants=await tx.queryOne('SELECT id FROM product_variants WHERE product_id=? AND status=1 LIMIT 1',[productId]);
     if(variants)throw new ConflictError('Please select an explicit product variant before placing this reseller order.');
     const poolName=product.vendor_id?'vendor':'warehouse',hand=Number(product[product.vendor_id?'vendor_stock_on_hand':'stock_on_hand']),held=Number(product[product.vendor_id?'vendor_stock_reserved':'stock_reserved']);

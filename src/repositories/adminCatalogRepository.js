@@ -174,14 +174,28 @@ async function approveReview(idInput,actor={}, {pool=null}={}){
 async function approvePendingVendorProduct(idInput,actor={}, {pool=null}={}){
   const productId=id(idInput,'Product');
   return withTransaction(async tx=>{
-    const before=await tx.queryOne('SELECT id,vendor_id,approval_status,status,is_archived FROM products WHERE id=? FOR UPDATE',[productId]);
+    const before=await tx.queryOne('SELECT p.id,p.vendor_id,p.approval_status,p.status,p.is_archived,v.status AS vendor_status,v.lifecycle_status FROM products p JOIN vendors v ON v.id=p.vendor_id WHERE p.id=? FOR UPDATE',[productId]);
     if(!before)throw new NotFoundError('Product not found.');
     if(!before.vendor_id||before.approval_status!=='pending')throw new ConflictError('Only pending vendor products can be approved.');
+    if(Number(before.vendor_status)!==1||before.lifecycle_status!=='active')throw new ConflictError('Products cannot be approved for inactive vendors.');
     if(Number(before.is_archived))throw new ValidationError('Archived products cannot be approved.');
-    await tx.execute("UPDATE products SET approval_status='approved',status=1 WHERE id=?",[productId]);
+    await tx.execute("UPDATE products SET approval_status='approved',approval_rejection_reason='',status=1 WHERE id=?",[productId]);
     await recordAuditLog({actorType:'admin',actorId:actor.id||null,action:'product.vendor.approve',entityType:'product',entityId:productId,beforeState:{approval_status:before.approval_status,status:Number(before.status)},afterState:{approval_status:'approved',status:1},ipAddress:actor.ip||'',userAgent:actor.userAgent||''},tx);
     return {id:productId,status:1,approval_status:'approved'};
   },{pool:pool||getPool()});
 }
 
-module.exports={listProducts,listTaxonomy,createTaxonomy,toggleProductStatus,approvePendingVendorProduct,listReviews,listReviewProductOptions,createReview,approveReview};
+async function rejectPendingVendorProduct(idInput,reasonInput,actor={}, {pool=null}={}){
+  const productId=id(idInput,'Product'),reason=String(reasonInput||'').trim();
+  if(reason.length<5||reason.length>1000)throw new ValidationError('A rejection reason of 5–1000 characters is required.');
+  return withTransaction(async tx=>{
+    const before=await tx.queryOne('SELECT id,vendor_id,approval_status,status FROM products WHERE id=? FOR UPDATE',[productId]);
+    if(!before)throw new NotFoundError('Product not found.');
+    if(!before.vendor_id||before.approval_status!=='pending')throw new ConflictError('Only pending vendor products can be rejected.');
+    await tx.execute("UPDATE products SET approval_status='rejected',approval_rejection_reason=?,status=0 WHERE id=?",[reason,productId]);
+    await recordAuditLog({actorType:'admin',actorId:actor.id||null,action:'product.vendor.reject',entityType:'product',entityId:productId,beforeState:{approval_status:before.approval_status,status:Number(before.status)},afterState:{approval_status:'rejected',status:0,reason},ipAddress:actor.ip||'',userAgent:actor.userAgent||''},tx);
+    return{id:productId,status:0,approval_status:'rejected',reason};
+  },{pool:pool||getPool()});
+}
+
+module.exports={listProducts,listTaxonomy,createTaxonomy,toggleProductStatus,approvePendingVendorProduct,rejectPendingVendorProduct,listReviews,listReviewProductOptions,createReview,approveReview};

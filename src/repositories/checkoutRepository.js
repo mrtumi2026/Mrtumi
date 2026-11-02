@@ -42,12 +42,16 @@ function normalizeLines(cart){
 async function loadLines(tx,lines,locale='bn',lock=true){
   const products=await tx.queryAll(`SELECT id,sku,name_bn,name_en,image_url,regular_price_paisa,sale_price_paisa,wholesale_price_paisa,wholesale_min_qty,is_wholesale,approval_status,vendor_id,stock_on_hand,stock_reserved,vendor_stock_on_hand,vendor_stock_reserved,status,is_archived FROM products WHERE id IN (${lines.map(()=>'?').join(',')}) ORDER BY id ${lock?'FOR UPDATE':''}`,lines.map(x=>x.productId));
   const productMap=new Map(products.map(p=>[Number(p.id),p]));
+  const vendorIds=[...new Set(products.map(p=>Number(p.vendor_id)).filter(Boolean))];
+  const vendors=vendorIds.length?await tx.queryAll(`SELECT id,lifecycle_status,status FROM vendors WHERE id IN (${vendorIds.map(()=>'?').join(',')}) ORDER BY id ${lock?'FOR UPDATE':''}`,vendorIds):[];
+  const vendorMap=new Map(vendors.map(v=>[Number(v.id),v]));
   const variantIds=lines.filter(x=>x.variantId).map(x=>x.variantId);
   const variants=variantIds.length?await tx.queryAll(`SELECT id,product_id,variant_sku,size_label,color_label,price_paisa,stock_on_hand,stock_reserved,status FROM product_variants WHERE id IN (${variantIds.map(()=>'?').join(',')}) ORDER BY id ${lock?'FOR UPDATE':''}`,variantIds):[];
   const variantMap=new Map(variants.map(v=>[Number(v.id),v]));
   const result=[];
   for(const line of lines){
     const p=productMap.get(line.productId);if(!p||Number(p.status)!==1||Number(p.is_archived)===1||p.approval_status!=='approved')throw new ConflictError(`Product ${line.productId} is unavailable.`);
+    if(p.vendor_id){const owner=vendorMap.get(Number(p.vendor_id));if(!owner||Number(owner.status)!==1||owner.lifecycle_status!=='active')throw new ConflictError(`Product ${line.productId} is unavailable.`);}
     const v=line.variantId?variantMap.get(line.variantId):null;
     if(line.variantId&&(!v||Number(v.product_id)!==line.productId||Number(v.status)!==1))throw new ConflictError(`Variant ${line.variantId} is unavailable.`);
     const price=asSafeInteger(unitPrice(p,v,line.qty),'Unit price');if(price<1)throw new ConflictError(`Product ${line.productId} has no valid sale price.`);

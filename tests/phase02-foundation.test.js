@@ -31,6 +31,8 @@ function validProductionEnv(overrides = {}) {
     CSRF_SECRET: 'c'.repeat(48),
     TRUST_PROXY: '1',
     UPLOAD_DIR: path.join(os.tmpdir(), `mrtumi-uploads-${process.pid}`),
+    VENDOR_PII_KEY: Buffer.alloc(32, 9).toString('base64'),
+    VENDOR_DOCUMENT_DIR: path.join(os.tmpdir(), `mrtumi-vendor-private-${process.pid}`),
     ...overrides,
   };
 }
@@ -117,6 +119,9 @@ test('env.js enforces Bangladesh defaults (Asia/Dhaka, BDT, bn/en) and rejects w
   assert.equal(prodCfg.seedDemoData, false);
   assert.equal(prodCfg.trustProxy, 1);
   assert.equal(prodCfg.uploadDir, validProductionEnv().UPLOAD_DIR);
+  assert.equal(prodCfg.vendorDocumentDir, validProductionEnv().VENDOR_DOCUMENT_DIR);
+  assert.throws(() => buildConfig(validProductionEnv({VENDOR_DOCUMENT_DIR:path.join(__dirname,'..','public','private')})),/VENDOR_DOCUMENT_DIR/);
+  assert.throws(() => buildConfig(validProductionEnv({VENDOR_PII_KEY:'bad'})),/VENDOR_PII_KEY/);
 
   assert.throws(
     () => buildConfig(validProductionEnv({ DB_HOST: undefined, APP_URL: 'http://localhost' })),

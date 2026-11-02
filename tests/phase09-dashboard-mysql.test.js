@@ -257,7 +257,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     const suffix=Date.now();
     const passwordSentinel=`P09-DO-NOT-RENDER-${suffix}`;
     const vendorPending=await db.execute('INSERT INTO vendors(shop_name,owner_name,phone,password_hash,commission_rate_bps,balance_paisa,verified,status) VALUES(?,?,?,?,?,?,0,1)',[`P09 Pending Vendor ${suffix}`,'P09 Vendor Owner',`014${String(suffix).slice(-8)}`,passwordSentinel,1250,123450]);
-    const vendorVerified=await db.execute('INSERT INTO vendors(shop_name,owner_name,phone,password_hash,commission_rate_bps,balance_paisa,verified,status) VALUES(?,?,?,?,?,?,1,1)',[`P09 Verified Vendor ${suffix}`,'P09 Vendor Owner',`015${String(suffix).slice(-8)}`,passwordSentinel,1000,10000]);
+    const vendorVerified=await db.execute('INSERT INTO vendors(shop_name,owner_name,phone,password_hash,commission_rate_bps,balance_paisa,verified,status,lifecycle_status) VALUES(?,?,?,?,?,?,1,1,\'active\')',[`P09 Verified Vendor ${suffix}`,'P09 Vendor Owner',`015${String(suffix).slice(-8)}`,passwordSentinel,1000,10000]);
     const resellerPending=await db.execute('INSERT INTO resellers(name,shop_name,phone,password_hash,balance_paisa,deposit_paisa,verified,status) VALUES(?,?,?,?,?,?,0,1)',[`P09 Pending Reseller ${suffix}`,'P09 Reseller Shop',`012${String(suffix).slice(-8)}`,passwordSentinel,65432,0]);
     const resellerVerified=await db.execute('INSERT INTO resellers(name,shop_name,phone,password_hash,balance_paisa,deposit_paisa,verified,status) VALUES(?,?,?,?,?,?,1,1)',[`P09 Verified Reseller ${suffix}`,'P09 Reseller Shop',`013${String(suffix).slice(-8)}`,passwordSentinel,10000,0]);
     const {cookie:noGrantCookie,token:noGrantToken}=await noGrantSession();
@@ -292,8 +292,8 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     if(!MYSQL_HOST)return t.skip(SKIP);
     const suffix=Date.now();
     const hash=bcrypt.hashSync('P09 Vendor Fixture Password!2026',8);
-    const owner=Number((await db.execute('INSERT INTO vendors(shop_name,owner_name,phone,password_hash,verified,status) VALUES(?,?,?,?,1,1)',[`P09 Vendor Owner ${suffix}`,'P09 Owner',`016${String(suffix).slice(-8)}`,hash])).insertId);
-    const other=Number((await db.execute('INSERT INTO vendors(shop_name,owner_name,phone,password_hash,verified,status) VALUES(?,?,?,?,1,1)',[`P09 Other Vendor ${suffix}`,'P09 Other',`017${String(suffix).slice(-8)}`,hash])).insertId);
+    const owner=Number((await db.execute('INSERT INTO vendors(shop_name,owner_name,phone,password_hash,verified,status,lifecycle_status) VALUES(?,?,?,?,1,1,\'active\')',[`P09 Vendor Owner ${suffix}`,'P09 Owner',`016${String(suffix).slice(-8)}`,hash])).insertId);
+    const other=Number((await db.execute('INSERT INTO vendors(shop_name,owner_name,phone,password_hash,verified,status,lifecycle_status) VALUES(?,?,?,?,1,1,\'active\')',[`P09 Other Vendor ${suffix}`,'P09 Other',`017${String(suffix).slice(-8)}`,hash])).insertId);
     async function makeVendorProduct(vendorId,label){
       return Number((await db.execute('INSERT INTO products(sku,slug,name_bn,name_en,vendor_id,regular_price_paisa,sale_price_paisa,approval_status,status) VALUES(?,?,?,?,?,500,500,\'approved\',1)',[`P09-V-${suffix}-${label}`,`p09-v-${suffix}-${label}`,`P09 ${label}`,'P09 vendor fixture',vendorId])).insertId);
     }
@@ -327,7 +327,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     if(!MYSQL_HOST)return t.skip(SKIP);
     const suffix=Date.now();
     const vendorHash=bcrypt.hashSync('P09 CSRF Vendor Password!2026',8);
-    const vendorId=Number((await db.execute('INSERT INTO vendors(shop_name,owner_name,phone,password_hash,verified,status) VALUES(?,?,?,?,1,1)',[`P09 CSRF Vendor ${suffix}`,'P09 CSRF Owner',`015${String(suffix).slice(-8)}`,vendorHash])).insertId);
+    const vendorId=Number((await db.execute('INSERT INTO vendors(shop_name,owner_name,phone,password_hash,verified,status,lifecycle_status) VALUES(?,?,?,?,1,1,\'active\')',[`P09 CSRF Vendor ${suffix}`,'P09 CSRF Owner',`015${String(suffix).slice(-8)}`,vendorHash])).insertId);
     const vendorSessionId=crypto.randomBytes(20).toString('hex');
     const vendorNonce=crypto.randomBytes(16).toString('hex');
     await upsertSession({sid:vendorSessionId,dataJson:JSON.stringify({_csrfNonce:vendorNonce,vendorUser:{id:vendorId,shop_name:`P09 CSRF Vendor ${suffix}`,owner_name:'P09 CSRF Owner'}}),expiresAtMs:Date.now()+3600000});
