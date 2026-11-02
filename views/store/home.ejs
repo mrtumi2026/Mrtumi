@@ -36,10 +36,10 @@
               <div class="hero-caption">
                 <span class="mt-hero-badge align-self-start mb-2">🛒 <%= b.badge || t('store.heroBadge') %></span>
                 <h1 class="fw-bold display-6 mb-2 text-white" style="max-width: 620px;">
-                  <%= locale === 'en' ? t('store.heroTitle') : (b.title || t('store.heroTitle')) %>
+                  <%= b.title || t('store.heroTitle') %>
                 </h1>
                 <p class="mb-3 fs-6" style="max-width: 560px; color: #e2e8f0;">
-                  <%= locale === 'en' ? t('store.heroSubtitle') : (b.subtitle || t('store.heroSubtitle')) %>
+                  <%= b.subtitle || t('store.heroSubtitle') %>
                 </p>
                 <div class="d-flex flex-wrap gap-2">
                   <a href="<%= b.link || '/all-products' %>" class="btn btn-warning fw-bold px-4 py-2 rounded-pill shadow-sm">

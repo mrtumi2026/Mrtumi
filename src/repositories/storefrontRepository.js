@@ -797,8 +797,8 @@ async function getHomepageData(options = {}, poolOverride = null, config = env) 
         title: replaceLegacyBrandTokens(b.title || '', locale),
         subtitle: replaceLegacyBrandTokens(b.subtitle || '', locale),
         badge: replaceLegacyBrandTokens(b.badge || '', locale),
-        image: sanitizeImagePath(b.image, '/uploads/banner/banner-1.jpg'),
-        link: String(b.link || '/all-products'),
+        image: sanitizeImagePath(b.image_url || b.image, '/uploads/banner/banner-1.jpg'),
+        link: String(b.link_url || b.link || '/all-products'),
       }));
 
     const promoBanners = sqliteDb
@@ -808,8 +808,8 @@ async function getHomepageData(options = {}, poolOverride = null, config = env) 
         title: replaceLegacyBrandTokens(b.title || '', locale),
         subtitle: replaceLegacyBrandTokens(b.subtitle || '', locale),
         badge: replaceLegacyBrandTokens(b.badge || '', locale),
-        image: sanitizeImagePath(b.image, '/uploads/banner/banner-1.jpg'),
-        link: String(b.link || '/all-products'),
+        image: sanitizeImagePath(b.image_url || b.image, '/uploads/banner/banner-1.jpg'),
+        link: String(b.link_url || b.link || '/all-products'),
       }));
 
     const flashProducts = flashWindow.active
@@ -931,16 +931,16 @@ async function getHomepageData(options = {}, poolOverride = null, config = env) 
       title: replaceLegacyBrandTokens(b.title || '', locale),
       subtitle: replaceLegacyBrandTokens(b.subtitle || '', locale),
       badge: replaceLegacyBrandTokens(b.badge || '', locale),
-      image: sanitizeImagePath(b.image_url, '/uploads/banner/banner-1.jpg'),
-      link: String(b.link_url || '/all-products'),
+      image: sanitizeImagePath(b.image_url || b.image, '/uploads/banner/banner-1.jpg'),
+      link: String(b.link_url || b.link || '/all-products'),
     })),
     promoBanners: rawPromoBanners.map((b) => ({
       id: Number(b.id),
       title: replaceLegacyBrandTokens(b.title || '', locale),
       subtitle: replaceLegacyBrandTokens(b.subtitle || '', locale),
       badge: replaceLegacyBrandTokens(b.badge || '', locale),
-      image: sanitizeImagePath(b.image_url, '/uploads/banner/banner-1.jpg'),
-      link: String(b.link_url || '/all-products'),
+      image: sanitizeImagePath(b.image_url || b.image, '/uploads/banner/banner-1.jpg'),
+      link: String(b.link_url || b.link || '/all-products'),
     })),
     featuredCategories,
     flashProducts,

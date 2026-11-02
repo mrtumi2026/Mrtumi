@@ -278,10 +278,10 @@ describe('Phase 03 — Production SQLite Prohibition & DB Connection Failure Han
 describe('Phase 03 — Migration Loader, Validator, Logger Redaction, CSRF, Rate Limit & RBAC', () => {
   test('Loads versioned reversible migration pairs in strict order and validates SQL integrity', () => {
     const pairs = loadMigrationPairs();
-    assert.equal(pairs.length, 14);
+    assert.equal(pairs.length, 15);
     assert.deepEqual(
       pairs.map((p) => p.version),
-      ['0001', '0002', '0003', '0004', '0005', '0006', '0007', '0008', '0009', '0010', '0011', '0012', '0013', '0014']
+      ['0001', '0002', '0003', '0004', '0005', '0006', '0007', '0008', '0009', '0010', '0011', '0012', '0013', '0014', '0015']
     );
 
     let totalCreateTables = 0;
@@ -535,5 +535,41 @@ describe('Phase 03 — Existing Portal Regression & Health/Auth Integration', ()
       headers: { Cookie: cookiePair },
     });
     assert.equal(dashboard.statusCode, 200);
+
+    const adminCsrfResponse = await httpRequest(baseUrl, '/api/v1/csrf-token', { headers: { Cookie: cookiePair } });
+    assert.equal(adminCsrfResponse.statusCode, 200);
+    const adminCsrf = JSON.parse(adminCsrfResponse.body).data.csrfToken;
+
+    const banner = sqliteDb.run('INSERT INTO banners (title,subtitle,badge,position,image,link,sort_order,status) VALUES (?,?,?,?,?,?,?,1)', 'Before', 'Old subtitle', 'Old badge', 'hero', '/uploads/custom/current.jpg', '/old-link', 1);
+    const bannerManage = await httpRequest(baseUrl, '/admin/banner/manage', { headers: { Cookie: cookiePair } });
+    assert.equal(bannerManage.statusCode, 200);
+    assert.match(bannerManage.body, /edit-crud-btn/);
+    assert.match(bannerManage.body, /crudEditModal/);
+    const bannerUpdate = await httpRequest(baseUrl, `/admin/banner/update/${banner.lastInsertRowid}`, {
+      method: 'POST', headers: { Cookie: cookiePair },
+      body: { _csrf: adminCsrf, title: 'Updated hero', subtitle: 'Updated subtitle', badge: 'New badge', position: 'promo_mid', link_url: '/new-link', sort_order: '4' },
+    });
+    assert.equal(bannerUpdate.statusCode, 302, bannerUpdate.body);
+    const updatedBanner = sqliteDb.get('SELECT * FROM banners WHERE id=?', banner.lastInsertRowid);
+    assert.equal(updatedBanner.title, 'Updated hero');
+    assert.equal(updatedBanner.image, '/uploads/custom/current.jpg', 'omitting a replacement image preserves the current banner image');
+    assert.equal(updatedBanner.link, '/new-link');
+    assert.equal(updatedBanner.sort_order, 4);
+
+    const gateway = sqliteDb.run('INSERT INTO payment_gateways (name,code,type,account_number,instructions,app_key,app_secret,sandbox,status) VALUES (?,?,?,?,?,?,?,?,1)', 'Old gateway', 'test_manual', 'manual', '01700000000', 'Old instructions', 'keep-this-key', 'old-secret', 1);
+    const gatewaysPage = await httpRequest(baseUrl, '/admin/paymentgeteway/manual-manage', { headers: { Cookie: cookiePair } });
+    assert.equal(gatewaysPage.statusCode, 200);
+    assert.match(gatewaysPage.body, /edit-crud-btn/);
+    const gatewayUpdate = await httpRequest(baseUrl, `/admin/paymentgeteway/update/${gateway.lastInsertRowid}`, {
+      method: 'POST', headers: { Cookie: cookiePair },
+      body: { _csrf: adminCsrf, name: 'Updated gateway', code: 'test_manual', account_number: '01800000000', instructions: 'New instructions', sandbox: '0', api_key: '', secret_key: 'new-secret' },
+    });
+    assert.equal(gatewayUpdate.statusCode, 302, gatewayUpdate.body);
+    const updatedGateway = sqliteDb.get('SELECT * FROM payment_gateways WHERE id=?', gateway.lastInsertRowid);
+    assert.equal(updatedGateway.name, 'Updated gateway');
+    assert.equal(updatedGateway.account_number, '01800000000');
+    assert.equal(updatedGateway.app_key, 'keep-this-key', 'blank credential fields preserve stored secrets');
+    assert.equal(updatedGateway.app_secret, 'new-secret');
+    assert.equal(updatedGateway.sandbox, 0);
   });
 });
