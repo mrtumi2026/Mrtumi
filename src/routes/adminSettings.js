@@ -1,5 +1,7 @@
 const express = require('express');
 const path = require('path');
+const fs = require('node:fs/promises');
+const crypto = require('node:crypto');
 const db = require('../db/database');
 const { requireAdmin } = require('../middleware/auth');
 const { requireCsrf } = require('../middleware/csrf');
@@ -311,6 +313,32 @@ const removeManagedBannerImage = (image) => {
   const candidate = path.resolve(base, path.basename(value));
   if (path.dirname(candidate) === base) upload.safeUnlink(candidate);
 };
+const saveBannerBase64 = async (value) => {
+  const dataUrl = String(value || '').trim();
+  if (!dataUrl) return null;
+  const match = /^data:image\/(jpeg|jpg|png|webp|gif);base64,([A-Za-z0-9+/]+={0,2})$/i.exec(dataUrl);
+  if (!match) throw new ValidationError('Select a valid raster image and wait for compression to finish.');
+  const buffer = Buffer.from(match[2], 'base64');
+  if (!buffer.length || buffer.length > 180 * 1024 || buffer.toString('base64') !== match[2]) {
+    throw new ValidationError('Compressed banner image must be smaller than 180 KB.');
+  }
+  const mime = match[1].toLowerCase();
+  const signatures = {
+    jpeg: { ext: '.jpg', valid: buffer.length >= 4 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[buffer.length - 2] === 0xff && buffer[buffer.length - 1] === 0xd9 },
+    jpg: { ext: '.jpg', valid: buffer.length >= 4 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[buffer.length - 2] === 0xff && buffer[buffer.length - 1] === 0xd9 },
+    png: { ext: '.png', valid: buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])) },
+    webp: { ext: '.webp', valid: buffer.length >= 12 && buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP' },
+    gif: { ext: '.gif', valid: buffer.length >= 6 && /^GIF8[79]a$/.test(buffer.toString('ascii', 0, 6)) },
+  };
+  const signature = signatures[mime];
+  if (!signature || !signature.valid) throw new ValidationError('Banner image data does not match its raster image type.');
+  const filename = `banner-${Date.now()}-${crypto.randomBytes(8).toString('hex')}${signature.ext}`;
+  const base = path.resolve(upload.resolveUploadBase());
+  const target = path.resolve(base, filename);
+  if (path.dirname(target) !== base) throw new ValidationError('Invalid banner image destination.');
+  await fs.writeFile(target, buffer, { flag: 'wx', mode: 0o644 });
+  return `/uploads/custom/${filename}`;
+};
 
 // Banner & Sliders
 router.get('/admin/banner/manage', asyncHandler(async (req, res) => {
@@ -330,14 +358,18 @@ router.get('/admin/banner/manage', asyncHandler(async (req, res) => {
 router.get('/admin/banner/create', (_req, res) => res.redirect('/admin/banner/manage?create=1'));
 router.post('/admin/banner/create', upload.single('image_file'), requireCsrfAndCleanupBannerFile, asyncHandler(async (req, res) => {
   let image;
+  let generatedImage = null;
   try {
-    image = req.file ? upload.validateUploadedImageFile(req.file) : String(req.body.image_url || req.body.image || '').trim();
+    image = req.file ? upload.validateUploadedImageFile(req.file) : await saveBannerBase64(req.body.image_base64);
+    generatedImage = req.file ? null : image;
+    if (!image) image = String(req.body.image_url || req.body.image || '').trim();
     if (!validBannerImageUrl(image)) throw new ValidationError('Provide a valid banner image upload or an HTTP(S)/site-relative image URL.');
     const b=req.body, position=['hero','promo_mid'].includes(b.position)?b.position:'hero';
     if (integrationsMysql()) await integrationsClient().execute('INSERT INTO banners (title,subtitle,badge,position,image_url,link_url,sort_order,status) VALUES (?,?,?,?,?,?,?,1)', [cleanBannerText(b.title,191),cleanBannerText(b.subtitle,255),cleanBannerText(b.badge,100),position,image,safeBannerLink(b.link_url||b.link),safeSortOrder(b.sort_order)]);
     else db.run('INSERT INTO banners (title,subtitle,badge,position,image,link,sort_order) VALUES (?,?,?,?,?,?,?)',cleanBannerText(b.title,191),cleanBannerText(b.subtitle,255),cleanBannerText(b.badge,100),position,image,safeBannerLink(b.link_url||b.link),safeSortOrder(b.sort_order));
   } catch (err) {
     if (req.file) upload.safeUnlink(req.file.path);
+    if (generatedImage) removeManagedBannerImage(generatedImage);
     if (err instanceof ValidationError) {
       req.flash('error', err.message);
       return res.redirect('/admin/banner/manage?create=1');
@@ -347,7 +379,7 @@ router.post('/admin/banner/create', upload.single('image_file'), requireCsrfAndC
   req.flash('success','ব্যানার যুক্ত হয়েছে!'); res.redirect('/admin/banner/manage');
 }));
 router.post('/admin/banner/update/:id', upload.single('image_file'), requireCsrfAndCleanupBannerFile, asyncHandler(async (req,res)=>{
- let newImage=null, oldImage='';
+ let newImage=null, oldImage='', generatedImage=null;
  try {
    const b=req.body, id=Number(req.params.id);
    if(!Number.isSafeInteger(id)||id<1) throw new ValidationError('Invalid banner identifier.');
@@ -357,6 +389,7 @@ router.post('/admin/banner/update/:id', upload.single('image_file'), requireCsrf
    if(!current) throw new ValidationError('Banner was not found.');
    oldImage=String(current.image||'');
    if(req.file) newImage=upload.validateUploadedImageFile(req.file);
+   else if(b.image_base64) { newImage=await saveBannerBase64(b.image_base64); generatedImage=newImage; }
    const submittedImage=String(b.image_url||'').trim();
    const image=newImage || (validBannerImageUrl(submittedImage)?submittedImage:oldImage);
    const title=cleanBannerText(b.title,191), subtitle=cleanBannerText(b.subtitle,255), badge=cleanBannerText(b.badge,100);
@@ -365,7 +398,12 @@ router.post('/admin/banner/update/:id', upload.single('image_file'), requireCsrf
    if(integrationsMysql()) await integrationsClient().execute('UPDATE banners SET title=?,subtitle=?,badge=?,position=?,image_url=?,link_url=?,sort_order=? WHERE id=?',[title,subtitle,badge,position,image,link,sortOrder,id]);
    else db.run('UPDATE banners SET title=?,subtitle=?,badge=?,position=?,image=?,link=?,sort_order=? WHERE id=?',title,subtitle,badge,position,image,link,sortOrder,id);
    if(image!==oldImage) removeManagedBannerImage(oldImage);
- } catch(err) { if(req.file) upload.safeUnlink(req.file.path); throw err; }
+ } catch(err) {
+   if(req.file) upload.safeUnlink(req.file.path);
+   if(generatedImage) removeManagedBannerImage(generatedImage);
+   if(err instanceof ValidationError) { req.flash('error',err.message); return res.redirect('/admin/banner/manage'); }
+   throw err;
+ }
  req.flash('success','ব্যানার সফলভাবে আপডেট হয়েছে!');
  res.redirect('/admin/banner/manage');
 }));

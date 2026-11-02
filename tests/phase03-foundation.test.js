@@ -556,6 +556,28 @@ describe('Phase 03 — Existing Portal Regression & Health/Auth Integration', ()
     assert.equal(updatedBanner.link, '/new-link');
     assert.equal(updatedBanner.sort_order, 4);
 
+    const tinyJpeg = Buffer.from([0xff, 0xd8, 0xff, 0xd9]).toString('base64');
+    const bannerCreate = await httpRequest(baseUrl, '/admin/banner/create', {
+      method: 'POST', headers: { Cookie: cookiePair },
+      body: { _csrf: adminCsrf, title: 'Compressed upload fallback', subtitle: '', position: 'hero', image_base64: `data:image/jpeg;base64,${tinyJpeg}`, image_url: '' },
+    });
+    assert.equal(bannerCreate.statusCode, 302, bannerCreate.body);
+    const compressedBanner = sqliteDb.get("SELECT * FROM banners WHERE title='Compressed upload fallback' ORDER BY id DESC LIMIT 1");
+    assert.match(compressedBanner.image, /^\/uploads\/custom\/banner-.*\.jpg$/);
+    const upload = require('../src/middleware/upload');
+    const compressedPath = path.join(upload.resolveUploadBase(), path.basename(compressedBanner.image));
+    assert.equal(fs.existsSync(compressedPath), true);
+    const bannerUpdateBase64 = await httpRequest(baseUrl, `/admin/banner/update/${compressedBanner.id}`, {
+      method: 'POST', headers: { Cookie: cookiePair },
+      body: { _csrf: adminCsrf, title: 'Compressed upload fallback updated', subtitle: '', position: 'hero', image_base64: `data:image/jpeg;base64,${tinyJpeg}`, image_url: compressedBanner.image },
+    });
+    assert.equal(bannerUpdateBase64.statusCode, 302, bannerUpdateBase64.body);
+    const updatedCompressedBanner = sqliteDb.get('SELECT * FROM banners WHERE id=?', compressedBanner.id);
+    assert.match(updatedCompressedBanner.image, /^\/uploads\/custom\/banner-.*\.jpg$/);
+    assert.notEqual(updatedCompressedBanner.image, compressedBanner.image);
+    assert.equal(fs.existsSync(compressedPath), false, 'replaced managed banner image is removed after update commits');
+    upload.safeUnlink(path.join(upload.resolveUploadBase(), path.basename(updatedCompressedBanner.image)));
+
     const gateway = sqliteDb.run('INSERT INTO payment_gateways (name,code,type,account_number,instructions,app_key,app_secret,sandbox,status) VALUES (?,?,?,?,?,?,?,?,1)', 'Old gateway', 'test_manual', 'manual', '01700000000', 'Old instructions', 'keep-this-key', 'old-secret', 1);
     const gatewaysPage = await httpRequest(baseUrl, '/admin/paymentgeteway/manual-manage', { headers: { Cookie: cookiePair } });
     assert.equal(gatewaysPage.statusCode, 200);

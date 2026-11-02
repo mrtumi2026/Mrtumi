@@ -791,7 +791,7 @@ async function getHomepageData(options = {}, poolOverride = null, config = env) 
 
   if (!isMysqlMode(config) && !poolOverride) {
     const heroBanners = sqliteDb
-      .all("SELECT * FROM banners WHERE position = 'hero' AND status = 1 ORDER BY sort_order ASC, id ASC")
+      .all("SELECT * FROM banners WHERE position = 'hero' AND status = 1 ORDER BY sort_order ASC, id DESC")
       .map((b) => ({
         id: Number(b.id),
         title: replaceLegacyBrandTokens(b.title || '', locale),
@@ -802,7 +802,7 @@ async function getHomepageData(options = {}, poolOverride = null, config = env) 
       }));
 
     const promoBanners = sqliteDb
-      .all("SELECT * FROM banners WHERE position = 'promo_mid' AND status = 1 ORDER BY sort_order ASC, id ASC")
+      .all("SELECT * FROM banners WHERE position = 'promo_mid' AND status = 1 ORDER BY sort_order ASC, id DESC")
       .map((b) => ({
         id: Number(b.id),
         title: replaceLegacyBrandTokens(b.title || '', locale),
@@ -879,10 +879,10 @@ async function getHomepageData(options = {}, poolOverride = null, config = env) 
     rawBlogs,
   ] = await Promise.all([
     client.queryAll(
-      "SELECT * FROM `banners` WHERE `position` = 'hero' AND `status` = 1 ORDER BY `sort_order` ASC, `id` ASC"
+      "SELECT * FROM `banners` WHERE `position` = 'hero' AND `status` = 1 ORDER BY `sort_order` ASC, `id` DESC"
     ),
     client.queryAll(
-      "SELECT * FROM `banners` WHERE `position` = 'promo_mid' AND `status` = 1 ORDER BY `sort_order` ASC, `id` ASC"
+      "SELECT * FROM `banners` WHERE `position` = 'promo_mid' AND `status` = 1 ORDER BY `sort_order` ASC, `id` DESC"
     ),
     flashWindow.active
       ? client.queryAll(
