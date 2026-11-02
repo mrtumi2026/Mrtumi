@@ -29,15 +29,19 @@
       <div class="tbl-card-head"><h4>Records</h4></div>
       <div class="tbl-card-body">
         <table class="table clean mb-0">
-          <thead><tr><th>#</th><th>Invoice</th><th>Customer</th><th>Gateway</th><th>Provider Transaction</th><th>Purpose</th><th>Amount</th><th>Status</th><th>Created</th></tr></thead>
+          <thead><tr><th>#</th><th>Invoice</th><th>Customer</th><th>Gateway</th><th>Sender</th><th>Provider Transaction</th><th>Purpose</th><th>Amount</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead>
           <tbody>
-            <% if (!rows.length) { %><tr><td colspan="9" class="text-center py-4 text-muted">No payment records found.</td></tr><% } %>
+            <% if (!rows.length) { %><tr><td colspan="11" class="text-center py-4 text-muted">No payment records found.</td></tr><% } %>
             <% rows.forEach(function(row) { %>
               <tr>
                 <td><%= row.id %></td><td><%= row.invoice_no %></td><td><%= row.customer_name %></td>
-                <td><%= row.gateway_code %></td><td><%= row.provider_trx_id || '—' %></td>
+                <td><%= row.gateway_code %></td><td><%= row.sender_number || '—' %></td><td><%= row.provider_trx_id || '—' %></td>
                 <td><%= row.payment_purpose %></td><td>৳<%= Number(row.amount).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}) %></td>
                 <td><span class="sb sb-2"><%= row.status %></span></td><td><%= row.created_at %></td>
+                <td><% if (row.status === 'pending_verification' && typeof hasPermission === 'function' && hasPermission('finance.manage')) { %><div class="d-flex gap-1">
+                  <form method="POST" action="/admin/payment-records/<%= row.id %>/approve"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button type="submit" class="btn btn-success btn-sm">Approve</button></form>
+                  <form method="POST" action="/admin/payment-records/<%= row.id %>/reject"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button type="submit" class="btn btn-outline-danger btn-sm">Reject</button></form>
+                </div><% } else { %>—<% } %></td>
               </tr>
             <% }) %>
           </tbody>

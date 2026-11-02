@@ -107,7 +107,7 @@ describe('Phase 09 dashboard repository contract', () => {
     assert.match(list,/name="request_key"/,'quick and bulk status writes carry retry-stable request keys');
   });
 
-  test('MySQL finance and payment read routes delegate to canonical integer-paisa queries and remain read-only', () => {
+  test('MySQL finance reads and audited manual-payment review use canonical repositories', () => {
     const finance=require('../src/repositories/adminFinanceReadRepository');
     for(const method of ['listPaymentRecords','listFundTransactions','getFundSummary','listExpenses','getReport'])assert.equal(typeof finance[method],'function');
     const operations=fs.readFileSync(path.join(__dirname,'../src/routes/adminOperations.js'),'utf8');
@@ -121,7 +121,10 @@ describe('Phase 09 dashboard repository contract', () => {
     assert.equal(policy.key,'finance.view');assert.equal(policy.auditRead,true);
     const routeInventory=collectAdminRoutes();
     assert.ok(routeInventory.some((route)=>route.method==='GET'&&route.path==='/admin/payment-records'));
-    assert.doesNotMatch(operations,/router\.post\('\/admin\/payment-records/,'payment record page exposes no mutation endpoint');
+    assert.equal(policyForAdminRoute('POST','/admin/payment-records/7/approve').key,'finance.manage');
+    assert.equal(policyForAdminRoute('POST','/admin/payment-records/7/reject').key,'finance.manage');
+    assert.match(operations,/decideManualPayment\(req\.params\.id,'approve'/);
+    assert.match(operations,/decideManualPayment\(req\.params\.id,'reject'/);
   });
 
   test('MySQL coupon administration delegates to a transactional repository and blocks destructive deletion',()=>{
@@ -283,6 +286,9 @@ describe('Phase 09 dashboard repository contract', () => {
       if (sql.includes('FROM orders o')) return [[]];
       if (sql.includes('FROM fund_transactions')) return [[{ credits: 0, debits: 0 }]];
       if (sql.includes('FROM expenses')) return [[{ total: 0, today: 0, monthly: 0 }]];
+      if (sql.includes('FROM order_payments op')) return [[]];
+      if (sql.includes('FROM order_payments WHERE')) return [[{ count: 0 }]];
+      if (sql.includes('FROM vendors v JOIN vendor_applications')) return [[{ count: 0 }]];
       throw new Error(`Unexpected SQL in test: ${sql}`);
     } };
     const data = await repo.getDashboardData({ pool, now: new Date('2026-10-26T06:00:00Z') });

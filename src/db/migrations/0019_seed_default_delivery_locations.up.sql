@@ -13,10 +13,3 @@ WHERE NOT EXISTS (
   SELECT 1 FROM `delivery_locations`
   WHERE `division`='All' AND `district`='All' AND `upazila`='ঢাকার বাইরে (Outside Dhaka)'
 );
-
-INSERT INTO `delivery_locations` (`division`,`district`,`upazila`,`delivery_charge_paisa`,`status`)
-SELECT 'Sub-Dhaka','Gazipur/Savar/Narayanganj','ঢাকা সাব-এরিয়া (Sub-Dhaka)',8000,1
-WHERE NOT EXISTS (
-  SELECT 1 FROM `delivery_locations`
-  WHERE `division`='Sub-Dhaka' AND `district`='Gazipur/Savar/Narayanganj' AND `upazila`='ঢাকা সাব-এরিয়া (Sub-Dhaka)'
-);

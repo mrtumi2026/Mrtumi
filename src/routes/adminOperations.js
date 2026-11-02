@@ -7,11 +7,13 @@ const adminBlogRepository = require('../repositories/adminBlogRepository');
 const hrmEmployeeRepository = require('../repositories/hrmEmployeeRepository');
 const adminComplaintRepository = require('../repositories/adminComplaintRepository');
 const adminFinanceReadRepository = require('../repositories/adminFinanceReadRepository');
+const adminManualPaymentRepository = require('../repositories/adminManualPaymentRepository');
 const adminCustomerRepository = require('../repositories/adminCustomerRepository');
 const phase06Repository = require('../repositories/phase06Repository');
 const adminPartnerDirectoryRepository = require('../repositories/adminPartnerDirectoryRepository');
 const { asyncHandler } = require('../utils/asyncHandler');
 const { requireAdmin } = require('../middleware/auth');
+const { requireCsrf } = require('../middleware/csrf');
 const { ConflictError, ValidationError } = require('../utils/errors');
 
 const router = express.Router();
@@ -664,6 +666,22 @@ router.get('/admin/payment-records', asyncHandler(async (req, res) => {
   const search=String(req.query.search||'');
   const rows=await adminFinanceReadRepository.listPaymentRecords({status,search});
   return res.render('admin/payment-records',{rows,status,search});
+}));
+
+router.post('/admin/payment-records/:id/approve',requireCsrf,asyncHandler(async(req,res)=>{
+  if(env.db.client!=='mysql')throw new ConflictError('Manual payment review is available only in MySQL mode.');
+  await adminManualPaymentRepository.decideManualPayment(req.params.id,'approve',{id:req.adminUser?.id||null,ip:req.ip||'',userAgent:req.get('user-agent')||''});
+  req.adminDomainAudit=true;
+  req.flash('success','Manual payment approved and order payment marked as paid.');
+  return res.redirect('/admin/dashboard');
+}));
+
+router.post('/admin/payment-records/:id/reject',requireCsrf,asyncHandler(async(req,res)=>{
+  if(env.db.client!=='mysql')throw new ConflictError('Manual payment review is available only in MySQL mode.');
+  await adminManualPaymentRepository.decideManualPayment(req.params.id,'reject',{id:req.adminUser?.id||null,ip:req.ip||'',userAgent:req.get('user-agent')||''});
+  req.adminDomainAudit=true;
+  req.flash('success','Manual payment rejected. The order remains unpaid for manual follow-up.');
+  return res.redirect('/admin/dashboard');
 }));
 
 router.get('/admin/fund', asyncHandler(async (req, res) => {
