@@ -27,12 +27,13 @@ function fakePool(balancePaisa) {
   return { calls, getConnection: async () => conn };
 }
 
-test('vendor withdrawal locks balance and atomically deducts, records pending request and audit without exposing account details', async () => {
+test('vendor withdrawal reserves funds without paying or debiting the wallet, and audits without exposing account details', async () => {
   const pool = fakePool(25000);
   const result = await requestVendorWithdrawal(11, { amount: '100.25', payoutAccountId:3 }, { ip: '127.0.0.1' }, { pool });
   assert.equal(result.amount, 100.25);
   assert.ok(pool.calls.find(([sql]) => typeof sql === 'string' && /SELECT id,balance_paisa,status,lifecycle_status,payout_verified_at FROM vendors WHERE id=\? FOR UPDATE/.test(sql)));
-  assert.ok(pool.calls.find(([sql, args]) => typeof sql === 'string' && sql.startsWith('UPDATE vendors') && args[0] === 10025));
+  assert.equal(pool.calls.some(([sql]) => typeof sql === 'string' && sql.startsWith('UPDATE vendors')), false);
+  assert.equal(pool.calls.some(([sql]) => typeof sql === 'string' && sql.startsWith('UPDATE vendor_wallets')), false);
   const audit = pool.calls.find(([sql]) => typeof sql === 'string' && sql.includes('INSERT INTO audit_logs'));
   assert.ok(audit);
   assert.equal(JSON.stringify(audit).includes('01712345678'), false);

@@ -3,6 +3,7 @@
 const mysql = require('../db/mysqlPool');
 const { env } = require('../config/env');
 const { ValidationError, NotFoundError, ConflictError } = require('../utils/errors');
+const { recordAuditLog } = require('./auditLogRepository');
 const { requirePositiveInt } = require('../utils/validator');
 
 function assertMysql() {
@@ -158,11 +159,18 @@ async function processMaturedSettlements({ returnWindowDays = 7, actor = {} } = 
     );
     const results = [];
     for (const candidate of candidates) results.push(await settleOneTx(tx, Number(candidate.id), actor));
-    return {
+    const summary = {
       maturedCount: candidates.length,
       releasedCount: results.filter((result) => result.released).length,
       results,
     };
+    if (actor?.id || actor?.userId) {
+      await recordAuditLog({ actorType: 'admin', actorId: actor.id || actor.userId, action: 'reseller_commerce.settlements.released',
+        entityType: 'settlement_batch', entityId: 'matured', beforeState: {},
+        afterState: { maturedCount: summary.maturedCount, releasedCount: summary.releasedCount },
+        ipAddress: actor.ip || '', userAgent: actor.userAgent || '' }, tx);
+    }
+    return summary;
   });
 }
 

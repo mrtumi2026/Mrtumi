@@ -10,7 +10,7 @@ const read=(file)=>fs.readFileSync(path.join(root,file),'utf8');
 test('reseller MySQL order creation uses canonical pricing, transaction, reservation and audit paths',()=>{
   const repository=read('src/repositories/resellerOrderRepository.js');
   assert.match(repository,/mysql\.withTransaction\(async tx/);
-  assert.match(repository,/SELECT id,verified,status FROM resellers WHERE id=\? FOR UPDATE/);
+  assert.match(repository,/SELECT id,verified,status,shop_name,logo_url,branding_status FROM resellers WHERE id=\? FOR UPDATE/);
   assert.match(repository,/wholesale_price_paisa/);
   assert.match(repository,/reserveOrderInventoryTx\(tx,Number\(order\.insertId\)/);
   assert.match(repository,/reseller_margin_paisa/);

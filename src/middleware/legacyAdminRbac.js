@@ -62,6 +62,7 @@ function policyForAdminRoute(method, pathname) {
   if (has(path,'/admin/salaries') || has(path,'/admin/salary-payments') || has(path,'/admin/bonuses')) return { key:viewOrManage('finance.view','finance.manage'), audit:write };
   if (has(path,'/admin/fund') || has(path,'/admin/expenses') || has(path,'/admin/vendor-withdrawals') || has(path,'/admin/delivery-withdrawals')) return { key:viewOrManage('finance.view','finance.manage'), audit:write };
   if (has(path,'/admin/vendors') || has(path,'/admin/vendor-verifications') || has(path,'/admin/vendor-applications') || has(path,'/admin/vendor-payout-accounts')) return { key:'vendors.manage', audit:write };
+  if (has(path,'/admin/reseller-commerce')) return { key:write ? 'resellers.manage' : 'resellers.manage', audit:write };
   if (has(path,'/admin/resellers') || has(path,'/admin/reseller-verifications')) return { key:'resellers.manage', audit:write };
   if (has(path,'/admin/delivery-boys') || has(path,'/admin/delivery/divisions')) return { key:'delivery.manage', audit:write };
   if (has(path,'/admin/complaints') || has(path,'/admin/contact-messages') || has(path,'/admin/newsletter-subscribers') || has(path,'/admin/customer')) return { key:'customers.manage', audit:write };

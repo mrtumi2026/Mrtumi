@@ -33,6 +33,7 @@ const phase06Routes = require('./src/routes/phase06');
 const vendorPanelRoutes = require('./src/routes/vendorPanel');
 const vendorOnboardingRoutes = require('./src/routes/vendorOnboarding');
 const resellerPanelRoutes = require('./src/routes/resellerPanel');
+const adminResellerCommerceRoutes = require('./src/routes/adminResellerCommerce');
 const storefrontRoutes = require('./src/routes/storefront');
 const customerAccountRoutes = require('./src/routes/customerAccount');
 const phase08AdminRoutes = require('./src/routes/phase08Admin');
@@ -100,6 +101,7 @@ app.use(d7AdminRoutes);
 app.use(vendorOnboardingRoutes);
 app.use(vendorPanelRoutes);
 app.use(resellerPanelRoutes);
+app.use(adminResellerCommerceRoutes);
 app.use(customerAccountRoutes);
 app.use(storefrontRoutes);
 
