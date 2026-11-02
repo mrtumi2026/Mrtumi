@@ -7,11 +7,13 @@ const adminBlogRepository = require('../repositories/adminBlogRepository');
 const hrmEmployeeRepository = require('../repositories/hrmEmployeeRepository');
 const adminComplaintRepository = require('../repositories/adminComplaintRepository');
 const adminFinanceReadRepository = require('../repositories/adminFinanceReadRepository');
+const adminManualPaymentRepository = require('../repositories/adminManualPaymentRepository');
 const adminCustomerRepository = require('../repositories/adminCustomerRepository');
 const phase06Repository = require('../repositories/phase06Repository');
 const adminPartnerDirectoryRepository = require('../repositories/adminPartnerDirectoryRepository');
 const { asyncHandler } = require('../utils/asyncHandler');
 const { requireAdmin } = require('../middleware/auth');
+const { requireCsrf } = require('../middleware/csrf');
 const { ConflictError, ValidationError } = require('../utils/errors');
 
 const router = express.Router();
@@ -118,6 +120,8 @@ router.get('/admin/suppliers/manage', (_req, res) => {
       { name: 'name', label: 'Supplier Name', type: 'text', required: true },
       { name: 'company', label: 'Company / Orchard Name', type: 'text' },
       { name: 'phone', label: 'Phone Number', type: 'text', required: true },
+      { name: 'email', label: 'Email', type: 'email' },
+      { name: 'password', label: 'Initial Password', type: 'password', required: mysqlMode },
       { name: 'address', label: 'Address', type: 'text' },
       { name: 'balance_due', label: 'Opening Due (৳)', type: 'number', value: '0' },
     ],
@@ -664,6 +668,22 @@ router.get('/admin/payment-records', asyncHandler(async (req, res) => {
   return res.render('admin/payment-records',{rows,status,search});
 }));
 
+router.post('/admin/payment-records/:id/approve',requireCsrf,asyncHandler(async(req,res)=>{
+  if(env.db.client!=='mysql')throw new ConflictError('Manual payment review is available only in MySQL mode.');
+  await adminManualPaymentRepository.decideManualPayment(req.params.id,'approve',{id:req.adminUser?.id||null,ip:req.ip||'',userAgent:req.get('user-agent')||''});
+  req.adminDomainAudit=true;
+  req.flash('success','Manual payment approved and order payment marked as paid.');
+  return res.redirect('/admin/dashboard');
+}));
+
+router.post('/admin/payment-records/:id/reject',requireCsrf,asyncHandler(async(req,res)=>{
+  if(env.db.client!=='mysql')throw new ConflictError('Manual payment review is available only in MySQL mode.');
+  await adminManualPaymentRepository.decideManualPayment(req.params.id,'reject',{id:req.adminUser?.id||null,ip:req.ip||'',userAgent:req.get('user-agent')||''});
+  req.adminDomainAudit=true;
+  req.flash('success','Manual payment rejected. The order remains unpaid for manual follow-up.');
+  return res.redirect('/admin/dashboard');
+}));
+
 router.get('/admin/fund', asyncHandler(async (req, res) => {
   if(env.db.client==='mysql'){
     const [rows,summary]=await Promise.all([adminFinanceReadRepository.listFundTransactions(),adminFinanceReadRepository.getFundSummary()]);
@@ -800,11 +820,12 @@ async function renderVendors(res, pendingOnly) {
     : pendingOnly
       ? db.all('SELECT * FROM vendors WHERE verified = 0 ORDER BY id DESC')
       : db.all('SELECT * FROM vendors ORDER BY id DESC');
+  if(mysqlMode&&!pendingOnly)return res.render('admin/vendors-mysql',{rows});
   res.render('admin/crud-module', {
     pageTitle: pendingOnly ? 'Vendor Verifications' : 'All Vendors',
     subtitle: 'মাল্টি-ভেন্ডর সেলার অ্যাকাউন্ট, কমিশন রেট এবং ভেরিফিকেশন',
     mysqlMode,
-    createAction: mysqlMode ? null : '/admin/vendors/create',
+    createAction: pendingOnly ? null : '/admin/vendors/create',
     deletePrefix: mysqlMode ? null : '/admin/vendors/delete',
     customActionPrefix: mysqlMode ? null : '/admin/vendors/verify',
     customActionLabel: 'Verify Vendor',
@@ -828,8 +849,24 @@ async function renderVendors(res, pendingOnly) {
   });
 }
 
-router.post('/admin/vendors/create', (req, res) => {
-  const { shop_name, owner_name, phone, address, commission_rate, password } = req.body;
+router.post('/admin/vendors/create', asyncHandler(async (req, res) => {
+  const { shop_name, owner_name, phone, email, address, commission_rate, password } = req.body;
+  if (env.db.client === 'mysql') {
+    const shop=String(shop_name||'').trim(), owner=String(owner_name||'').trim(), mail=String(email||'').trim().toLowerCase(), addr=String(address||'').trim(), rawPhone=String(phone||'').trim(), rawPassword=String(password||'');
+    const rate=Number(commission_rate??10);
+    if(!shop||shop.length>191||!owner||owner.length>191||rawPhone.length>32||!rawPhone||!Number.isFinite(rate)||rate<0||rate>100||rawPassword.length<10||rawPassword.length>72) throw new ValidationError('Vendor fields, commission rate, and a 10–72 character password are required.');
+    if(mail&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) throw new ValidationError('Enter a valid vendor email.');
+    const phoneValue=require('../utils/validator').normalizeBdPhone(rawPhone);
+    const hash=await bcrypt.hash(rawPassword,12);
+    const mysql=require('../db/mysqlPool');
+    const result=await mysql.withTransaction(async tx=>{
+      const inserted=await tx.execute('INSERT INTO vendors(shop_name,owner_name,phone,email,address,commission_rate_bps,password_hash,verified,status) VALUES(?,?,?,?,?,?,?,1,1)',[shop,owner,phoneValue,mail||null,addr,Math.round(rate*100),hash]);
+      await tx.execute("INSERT INTO audit_logs(actor_type,actor_id,action,entity_type,entity_id,before_json,after_json) VALUES('admin',?,'vendor.account.admin_created','vendor',?,'{}',?)",[req.adminUser?.id||null,String(inserted.insertId),JSON.stringify({shop_name:shop,verified:true,status:1,commission_rate_bps:Math.round(rate*100)})]);
+      return inserted.insertId;
+    });
+    req.flash('success',`নতুন ভেন্ডর তৈরি হয়েছে (ID: ${result})।`);
+    return res.redirect('/admin/vendors');
+  }
   const initialPassword =
     password && String(password).trim().length >= 8
       ? String(password).trim()
@@ -846,7 +883,7 @@ router.post('/admin/vendors/create', (req, res) => {
   );
   req.flash('success', `নতুন ভেন্ডর তৈরি হয়েছে (অস্থায়ী পাসওয়ার্ড: ${initialPassword})।`);
   res.redirect('/admin/vendors');
-});
+}));
 
 router.post('/admin/vendors/verify/:id', (req, res) => {
   db.run('UPDATE vendors SET verified = 1 WHERE id = ?', req.params.id);

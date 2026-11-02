@@ -44,6 +44,7 @@ describe('Phase 06 — Product, Inventory Ledger, Supplier & Purchase Receiving'
       unit_label: '1 pc', opening_stock: '8', low_stock_threshold: '3'
     }, { id: 7 });
     assert.ok(created.id > 0);
+    assert.equal(db.get('SELECT image FROM products WHERE id=?', created.id).image, '/uploads/product/lychee-fresh.jpg');
     assert.equal(db.get('SELECT stock FROM products WHERE id=?', created.id).stock, 8);
     assert.equal(db.get("SELECT COUNT(*) AS n FROM stock_ledger WHERE product_id=? AND movement_type='opening'", created.id).n, 1);
     const summary=await repo.getInventorySummary();
@@ -131,11 +132,14 @@ describe('Phase 06 — Product, Inventory Ledger, Supplier & Purchase Receiving'
       purchase_price:70.25, stock:stockBefore.stock, stock_reserved:stockBefore.stock_reserved,
       vendor_stock_on_hand:stockBefore.vendor_stock_on_hand, unit:'500 g',
     });
+    assert.equal(db.get('SELECT image FROM products WHERE id=?',product.id).image,'/uploads/custom/edited.webp');
     assert.equal(Number(db.get('SELECT COUNT(*) AS n FROM stock_ledger WHERE product_id=?', product.id).n), ledgerBefore, 'catalog edit must not append or overwrite stock movements');
     const audit = db.get("SELECT actor_id,before_json,after_json FROM audit_logs WHERE action='product.update' AND entity_id=? ORDER BY id DESC LIMIT 1", String(product.id));
     assert.equal(audit.actor_id, 7);
     assert.equal(JSON.parse(audit.before_json).name_bn, 'পরীক্ষা পণ্য');
     assert.equal(JSON.parse(audit.after_json).nameBn, 'সম্পাদিত পণ্য');
+    const imagePreserved=await repo.updateProduct(product.id,{...input,image_url:''},{id:7});
+    assert.equal(imagePreserved.product.image,'/uploads/custom/edited.webp','empty edit URL preserves the existing image');
 
     await assert.rejects(() => repo.updateProduct(product.id, { ...input, slug:'phase06-test-product-edited', regular_price_bdt:'10', sale_price_bdt:'12' }), ValidationError);
     const unsafeSlugUpdate = await repo.updateProduct(product.id, { ...input, slug:'!!!' });
@@ -153,6 +157,113 @@ describe('Phase 06 — Product, Inventory Ledger, Supplier & Purchase Receiving'
       db.rawDb.exec('DROP TRIGGER IF EXISTS p06_fail_product_update');
     }
     assert.equal(db.get('SELECT name_en FROM products WHERE id=?', product.id).name_en, 'Edited product', 'audit failure must roll product changes back');
+  });
+
+  test('Phase 06 primary product images upload through multipart with CSRF, URL fallback, and existing-image preservation', async () => {
+    const express=require('express');
+    const {deriveCsrfToken}=require('../src/middleware/csrf');
+    const {legacyAdminRbac,legacyAdminCsrf}=require('../src/middleware/legacyAdminRbac');
+    const {createErrorHandler}=require('../src/middleware/errorHandler');
+    const phase06Routes=require('../src/routes/phase06');
+    const upload=require('../src/middleware/upload');
+    const root=upload.resolveUploadBase();
+    const row=db.get("SELECT id,image,slug FROM products WHERE code='P06-TEST-001'");
+    const originalImage=row.image;
+    const initialFiles=new Set(fs.readdirSync(root));
+    const nonce='phase06-primary-image-csrf-nonce';
+    const token=deriveCsrfToken('phase06-primary-image-session',nonce);
+    const product=await repo.getProductForEdit(row.id);
+    const fields={
+      name_bn:product.name_bn,name_en:product.name_en||'',slug:product.slug,product_type:product.product_type||'grocery',
+      category_id:String(product.category_id||1),subcategory_id:String(product.subcategory_id||''),childcategory_id:String(product.childcategory_id||''),
+      brand_id:String(product.brand_id||''),unit_label:product.unit_label||'1 pc',
+      regular_price_bdt:(Number(product.regular_price_paisa||0)/100).toFixed(2),
+      sale_price_bdt:(Number(product.sale_price_paisa||0)/100).toFixed(2),cost_price_bdt:(Number(product.cost_price_paisa||0)/100).toFixed(2),
+      wholesale_price_bdt:(Number(product.wholesale_price_paisa||0)/100).toFixed(2),wholesale_min_qty:String(product.wholesale_min_qty||0),
+      low_stock_threshold:String(product.low_stock_threshold||0),short_desc_bn:product.short_desc_bn||'',short_desc_en:product.short_desc_en||'',
+      description_bn:product.description_bn||'',description_en:product.description_en||'',
+    };
+    const app=express();app.use(express.urlencoded({extended:false}));app.use(express.json());
+    app.use((req,_res,next)=>{req.sessionID='phase06-primary-image-session';req.session={_csrfNonce:nonce,adminUser:{id:7}};req.adminUser={id:7,role_slug:'phase06_test',permissions:['inventory.manage']};req.locale='en';req.csrfToken=()=>token;req.flash=()=>{};next();});
+    app.use(legacyAdminRbac);app.use(legacyAdminCsrf);app.use(phase06Routes);app.use(createErrorHandler());
+    const server=await new Promise((resolve)=>{const instance=app.listen(0,'127.0.0.1',()=>resolve(instance));});
+    const png={name:'device-photo.PNG',type:'application/octet-stream',bytes:Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a,0x00])};
+    const send=async({csrf=true,file=null,imageUrl,fields:extra={}}={})=>{
+      const form=new FormData();if(csrf)form.append('_csrf',token);
+      for(const [key,value] of Object.entries({...fields,...extra}))form.append(key,String(value));
+      if(imageUrl!==undefined)form.append('image_url',imageUrl);
+      if(file)form.append('image_file',new Blob([file.bytes],{type:file.type}),file.name);
+      const response=await fetch(`http://127.0.0.1:${server.address().port}/admin/phase06/products/${row.id}`,{method:'POST',headers:{accept:'application/json'},body:form});
+      const text=await response.text();let json=null;try{json=JSON.parse(text);}catch{}
+      return {status:response.status,text,json};
+    };
+    let uploadedPath='';
+    try{
+      const rejected=await send({csrf:false,file:png});assert.equal(rejected.status,403,'multipart token is validated after multer parses the form');
+      assert.deepEqual(new Set(fs.readdirSync(root)),initialFiles,'CSRF rejection removes the staged image');
+      const oversized=await send({file:{name:'oversized.png',type:'image/png',bytes:Buffer.alloc(5*1024*1024+1)}});
+      assert.equal(oversized.status,400,'primary product images larger than 5 MiB are rejected');
+      assert.deepEqual(new Set(fs.readdirSync(root)),initialFiles,'oversized uploads leave no staged file');
+      const uploaded=await send({file:png});assert.equal(uploaded.status,200,uploaded.text.slice(0,250));
+      uploadedPath=db.get('SELECT image FROM products WHERE id=?',row.id).image;
+      assert.match(uploadedPath,/^\/uploads\/custom\/[A-Za-z0-9][A-Za-z0-9._-]*\.png$/);
+      const urlFallback=await send({imageUrl:'/uploads/product/manual-fallback.jpg'});assert.equal(urlFallback.status,200,urlFallback.text.slice(0,250));
+      assert.equal(db.get('SELECT image FROM products WHERE id=?',row.id).image,'/uploads/product/manual-fallback.jpg','URL path is used when no file is uploaded');
+      const preserved=await send({imageUrl:''});assert.equal(preserved.status,200,preserved.text.slice(0,250));
+      assert.equal(db.get('SELECT image FROM products WHERE id=?',row.id).image,'/uploads/product/manual-fallback.jpg','empty update preserves the existing image');
+    }finally{
+      await new Promise((resolve)=>server.close(resolve));
+      db.run('UPDATE products SET image=?,slug=? WHERE id=?',originalImage,row.slug,row.id);
+      if(uploadedPath){
+        const filePath=path.join(root,path.basename(uploadedPath));
+        assert.equal(Number(db.get('SELECT COUNT(*) AS n FROM products WHERE image=?',uploadedPath).n),0,'test image is unreferenced before cleanup');
+        if(fs.existsSync(filePath))fs.unlinkSync(filePath);
+      }
+    }
+  });
+
+  test('standard admin product image uploads accept vendor MIME hints and defer CSRF until parsing', async () => {
+    const express=require('express');
+    const {deriveCsrfToken}=require('../src/middleware/csrf');
+    const {legacyAdminRbac,legacyAdminCsrf}=require('../src/middleware/legacyAdminRbac');
+    const {createErrorHandler}=require('../src/middleware/errorHandler');
+    const adminCatalogRoutes=require('../src/routes/adminCatalog');
+    const upload=require('../src/middleware/upload');
+    const root=upload.resolveUploadBase();
+    const initialFiles=new Set(fs.readdirSync(root));
+    const nonce=`standard-product-${process.pid}-${Date.now()}`;
+    const sessionId=`standard-product-session-${process.pid}`;
+    const token=deriveCsrfToken(sessionId,nonce);
+    const app=express();app.use(express.urlencoded({extended:false}));app.use(express.json());
+    app.use((req,_res,next)=>{req.sessionID=sessionId;req.session={_csrfNonce:nonce,adminUser:{id:7}};req.adminUser={id:7,role_slug:'standard_product_test',permissions:['catalog.manage']};req.csrfToken=()=>token;req.flash=()=>{};next();});
+    app.use(legacyAdminRbac);app.use(legacyAdminCsrf);app.use(adminCatalogRoutes);app.use(createErrorHandler());
+    const server=await new Promise((resolve)=>{const instance=app.listen(0,'127.0.0.1',()=>resolve(instance));});
+    const name=`Upload validation ${process.pid} ${Date.now()}`;
+    const file={name:'phone-photo',type:'image/x-png',bytes:Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a,0x00])};
+    const send=async({csrf=true,uploadFile=file}={})=>{
+      const form=new FormData();if(csrf)form.append('_csrf',token);
+      form.append('name',name);form.append('category_id','1');form.append('brand_id','');form.append('image_url','');
+      if(uploadFile)form.append('image_file',new Blob([uploadFile.bytes],{type:uploadFile.type}),uploadFile.name);
+      const response=await fetch(`http://127.0.0.1:${server.address().port}/admin/products/create`,{method:'POST',headers:{accept:'text/html'},body:form,redirect:'manual'});
+      return {status:response.status,location:response.headers.get('location'),text:await response.text()};
+    };
+    let imagePath='';let productId=null;
+    try{
+      const noCsrf=await send({csrf:false});assert.equal(noCsrf.status,403,'legacy admin middleware defers multipart CSRF to the parsed product form');
+      assert.deepEqual(new Set(fs.readdirSync(root)),initialFiles,'CSRF rejection removes the uploaded file');
+      const success=await send();assert.equal(success.status,302,success.text.slice(0,250));
+      const product=db.get('SELECT id,image FROM products WHERE name=?',name);assert.ok(product);
+      productId=Number(product.id);imagePath=product.image;
+      assert.match(imagePath,/^\/uploads\/custom\/[A-Za-z0-9][A-Za-z0-9._-]*\.png$/,'vendor image MIME chooses the matching stored suffix');
+      assert.ok(fs.existsSync(path.join(root,path.basename(imagePath))));
+    }finally{
+      await new Promise((resolve)=>server.close(resolve));
+      if(productId)db.run('DELETE FROM products WHERE id=?',productId);
+      if(imagePath){
+        assert.equal(Number(db.get('SELECT COUNT(*) AS n FROM products WHERE image=?',imagePath).n),0,'uploaded image is unreferenced before cleanup');
+        const stored=path.join(root,path.basename(imagePath));if(fs.existsSync(stored))fs.unlinkSync(stored);
+      }
+    }
   });
 
   test('variant catalog create/update preserves SKU and inventory, uses paisa, soft-disables without deleting, and rolls audit failures back', async () => {
@@ -293,7 +404,7 @@ describe('Phase 06 — Product, Inventory Ledger, Supplier & Purchase Receiving'
     });
     app.use(legacyAdminRbac);app.use(legacyAdminCsrf);app.use(phase06Routes);app.use(createErrorHandler());
     const server=await new Promise((resolve)=>{const instance=app.listen(0,'127.0.0.1',()=>resolve(instance));});
-    const send=async({auth='granted',csrf=true,file={name:'../unsafe.png',type:'image/png',bytes:Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a,0x00])}}={})=>{
+    const send=async({auth='granted',csrf=true,file={name:'../unsafe.PNG',type:'application/octet-stream',bytes:Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a,0x00])}}={})=>{
       const form=new FormData();if(csrf)form.append('_csrf',token);
       if(file)form.append('gallery_images',new Blob([file.bytes],{type:file.type}),file.name);
       const response=await fetch(`http://127.0.0.1:${server.address().port}/admin/phase06/products/${product.id}/gallery/upload`,{
@@ -556,5 +667,40 @@ describe('Phase 06 — Product, Inventory Ledger, Supplier & Purchase Receiving'
     const fake = path.join(os.tmpdir(), `mrtumi-svg-signature-${process.pid}.upload`);
     fs.writeFileSync(fake, '<svg xmlns="http://www.w3.org/2000/svg"></svg>');
     try { assert.equal(upload.hasValidRasterMagicBytes(fake), false); } finally { fs.unlinkSync(fake); }
+
+    const signatures=[
+      ['jpg',Buffer.from([0xff,0xd8,0xff,0xe1,0x00,0x10,0x45,0x78,0x69,0x66,0x00,0x00])],
+      ['png',Buffer.from([0x89,0x50,0x4e,0x47])],
+      ['gif',Buffer.from('GIF89a')],
+      ['webp',Buffer.from('RIFF0000WEBP')],
+    ];
+    for(const [extension,bytes] of signatures){
+      const image=path.join(os.tmpdir(),`mrtumi-signature-${process.pid}.${extension}`);
+      fs.writeFileSync(image,bytes);
+      try { assert.equal(upload.hasValidRasterMagicBytes(image),true,`${extension} signature is accepted`); }
+      finally { fs.unlinkSync(image); }
+    }
+
+    const permissionFile=path.join(os.tmpdir(),`mrtumi-permission-fallback-${process.pid}.jpg`);
+    fs.writeFileSync(permissionFile,'opaque but non-empty upload fixture');
+    const originalOpenSync=fs.openSync;
+    fs.openSync=function(){const error=new Error('permission denied fixture');error.code='EACCES';throw error;};
+    try {
+      assert.equal(upload.validateUploadedImageFile({path:permissionFile,originalname:'DEVICE.JPG',fieldname:'image_file'}),`/uploads/custom/${path.basename(permissionFile)}`,
+        'a permitted raster extension can be used only when OS permissions prevent signature inspection');
+    } finally {
+      fs.openSync=originalOpenSync;
+      fs.unlinkSync(permissionFile);
+    }
+
+    const disguised=path.join(os.tmpdir(),`mrtumi-disguised-${process.pid}.jpg`);
+    fs.writeFileSync(disguised,'not an image');
+    try {
+      assert.throws(()=>upload.validateUploadedImageFile({path:disguised,originalname:'disguised.jpg'}),ValidationError,
+        'a readable non-image cannot pass solely because it has an allowed extension');
+      assert.equal(fs.existsSync(disguised),false,'rejected disguised content is removed');
+    } finally {
+      if(fs.existsSync(disguised))fs.unlinkSync(disguised);
+    }
   });
 });

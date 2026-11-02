@@ -269,6 +269,7 @@ async function listInventoryPage(filters={}) {
   const nameBn=mysql?'p.name_bn':'p.name';
   const stock=mysql?'p.stock_on_hand':'p.stock';
   const reserved='p.stock_reserved';
+  const image=mysql?'p.image_url':'p.image';
   const available=`(${stock}-${reserved})`;
   const sortSql={
     newest:'p.id DESC',
@@ -288,7 +289,7 @@ async function listInventoryPage(filters={}) {
     : Number(sqlite.get(countSql,...params).total);
   const totalPages=Math.max(1,Math.ceil(count/pageSize));
   const page=Math.min(requestedPage,totalPages);
-  const sql=`SELECT p.id,${sku} AS sku,${nameBn} AS name_bn,p.name_en,p.low_stock_threshold,
+  const sql=`SELECT p.id,${sku} AS sku,${nameBn} AS name_bn,p.name_en,${image} AS image_url,p.low_stock_threshold,
     ${stock} AS stock_on_hand,${reserved} AS stock_reserved,${available} AS warehouse_available,
     p.vendor_stock_on_hand,p.vendor_stock_reserved,(p.vendor_stock_on_hand-p.vendor_stock_reserved) AS vendor_available
     FROM ${table} p WHERE ${whereSql} ORDER BY ${sortSql} LIMIT ? OFFSET ?`;
@@ -399,6 +400,8 @@ async function updateProduct(idInput, input, actor = {}) {
         FROM products WHERE id=? FOR UPDATE`, [id]);
       if (!before) throw new NotFoundError('Product not found.');
       if (Number(before.is_archived)) throw new ValidationError('Archived products must be restored before editing.');
+      if (!product.image) product.image = String(before.image_url || '');
+      snapshot.image = product.image;
       await validateTaxonomyRelations(product, tx);
       if (product.brandId) {
         const brand = await tx.queryOne('SELECT id FROM brands WHERE id=? AND status=1 FOR UPDATE', [product.brandId]);
@@ -426,6 +429,8 @@ async function updateProduct(idInput, input, actor = {}) {
       vendor_stock_on_hand,is_archived,status FROM products WHERE id=?`, id);
     if (!before) throw new NotFoundError('Product not found.');
     if (Number(before.is_archived)) throw new ValidationError('Archived products must be restored before editing.');
+    if (!product.image) product.image = String(before.image_url || '');
+    snapshot.image = product.image;
     await validateTaxonomyRelations(product);
     if (product.brandId && !sqlite.get('SELECT id FROM brands WHERE id=? AND status=1', product.brandId)) throw new ValidationError('Selected brand does not exist or is inactive.');
     if (sqlite.get('SELECT id FROM products WHERE slug=? AND id<>?', product.slug, id)) throw new AppError('DUPLICATE_PRODUCT_SLUG', 'Product slug is already in use.', 409);
@@ -757,7 +762,7 @@ async function createProduct(input, actor = {}) {
     wholesale: toPaisa(input.wholesale_price_bdt ?? '0', 'Wholesale price'),
     minQty: positiveInteger(input.wholesale_min_qty ?? 0, 'Wholesale minimum quantity', true),
     threshold: positiveInteger(input.low_stock_threshold ?? 0, 'Low-stock threshold', true),
-    image: cleanText(input.image_url, 500, 'Image URL'),
+    image: cleanText(input.image_url || '/uploads/product/lychee-fresh.jpg', 500, 'Image URL'),
     shortBn: cleanText(input.short_desc_bn || input.short_desc, 2000, 'Short description'),
     shortEn: cleanText(input.short_desc_en, 2000, 'English short description'),
     descriptionBn: cleanText(input.description_bn || input.description, 20000, 'Description'),
@@ -937,11 +942,11 @@ async function getInventorySummary() {
 }
 
 async function listInventory() {
-  if (isMysql()) return require('../db/mysqlPool').queryAll(`SELECT p.id,p.sku,p.name_bn,p.name_en,p.unit_label,p.low_stock_threshold,
+  if (isMysql()) return require('../db/mysqlPool').queryAll(`SELECT p.id,p.sku,p.name_bn,p.name_en,p.image_url,p.unit_label,p.low_stock_threshold,
     p.stock_on_hand,p.stock_reserved,(p.stock_on_hand-p.stock_reserved) AS warehouse_available,
     p.vendor_stock_on_hand,p.vendor_stock_reserved,(p.vendor_stock_on_hand-p.vendor_stock_reserved) AS vendor_available
     FROM products p WHERE p.is_archived=0 ORDER BY p.id DESC LIMIT 1000`);
-  return sqlite.all(`SELECT p.id,p.code AS sku,p.name AS name_bn,p.name_en,p.unit AS unit_label,p.low_stock_threshold,
+  return sqlite.all(`SELECT p.id,p.code AS sku,p.name AS name_bn,p.name_en,p.image AS image_url,p.unit AS unit_label,p.low_stock_threshold,
     p.stock AS stock_on_hand,p.stock_reserved,(p.stock-p.stock_reserved) AS warehouse_available,
     p.vendor_stock_on_hand,p.vendor_stock_reserved,(p.vendor_stock_on_hand-p.vendor_stock_reserved) AS vendor_available
     FROM products p WHERE p.is_archived=0 ORDER BY p.id DESC LIMIT 1000`);

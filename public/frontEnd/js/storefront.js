@@ -230,18 +230,24 @@
       .then(function (response) { return response.json().then(function (data) { if (!response.ok || !data.success) throw new Error(data.message || 'Delivery areas are unavailable.'); return data.locations || []; }); })
       .then(function (locations) {
         select.innerHTML = '';
+        var isEn = window.__MT_I18N && window.__MT_I18N.locale === 'en';
+        var availableLocations = locations.filter(function (location) { return location.division === 'Dhaka' || location.division === 'All'; });
         var placeholder = document.createElement('option');
         placeholder.value = '';
-        placeholder.textContent = locations.length ? i18nStr('selectDeliveryLocation', 'Select a delivery area') : i18nStr('deliveryUnavailable', 'No configured delivery areas are available');
+        placeholder.textContent = availableLocations.length ? (isEn ? 'Choose delivery area' : 'ডেলিভারি এলাকা নির্বাচন করুন') : (isEn ? 'Delivery areas are unavailable' : 'ডেলিভারি এলাকা পাওয়া যাচ্ছে না');
         select.appendChild(placeholder);
-        locations.forEach(function (location) {
+        availableLocations.forEach(function (location) {
           var option = document.createElement('option');
+          var inside = location.division === 'Dhaka';
+          var areaLabel = inside ? (isEn ? 'Inside Dhaka' : 'ঢাকার ভিতরে') : (isEn ? 'Outside Dhaka' : 'ঢাকার বাইরে');
+          var charge = Number(location.delivery_charge_paisa) / 100;
           option.value = String(location.id);
           option.setAttribute('data-charge-paisa', String(location.delivery_charge_paisa));
-          option.textContent = [location.upazila, location.district, location.division].filter(Boolean).join(', ') + ' — ৳' + (Number(location.delivery_charge_paisa) / 100).toLocaleString('en-IN');
+          option.textContent = areaLabel + ' (৳' + charge.toLocaleString(isEn ? 'en-IN' : 'bn-BD') + ')';
           select.appendChild(option);
         });
         select.disabled = locations.length === 0;
+        if (locations.length) select.value = String(locations[0].id);
         select.dataset.locationsLoaded = 'true';
         window.recalcQoTotal();
       })
@@ -252,6 +258,59 @@
       })
       .finally(function () { delete select.dataset.locationsLoading; });
     return select._locationsPromise;
+  }
+
+  function updateQuickOrderPaymentFields() {
+    var select = document.getElementById('qoPaymentMethod');
+    var fields = document.getElementById('qoManualPaymentFields');
+    var sender = document.getElementById('qoSenderNumber');
+    var trx = document.getElementById('qoTrxId');
+    if (!select || !fields || !sender || !trx) return;
+    var option = select.options[select.selectedIndex];
+    var manual = Boolean(option && option.dataset.gatewayType === 'manual');
+    fields.style.display = manual ? 'block' : 'none';
+    sender.required = manual;
+    trx.required = manual;
+    if (manual) {
+      var isEn = window.__MT_I18N && window.__MT_I18N.locale === 'en';
+      document.getElementById('qoManualPaymentAccount').textContent = (isEn ? 'Account: ' : 'অ্যাকাউন্ট নম্বর: ') + (option.dataset.account || (isEn ? 'Not configured' : 'কনফিগার করা হয়নি'));
+      document.getElementById('qoManualPaymentInstructions').textContent = option.dataset.instructions || (isEn ? 'Send the exact order amount, then enter your sender number and TrxID.' : 'অর্ডারের সঠিক পরিমাণ পাঠিয়ে প্রেরকের নম্বর ও TrxID দিন।');
+    } else {
+      sender.value = '';
+      trx.value = '';
+    }
+  }
+
+  function loadQuickOrderPaymentMethods() {
+    var select = document.getElementById('qoPaymentMethod');
+    if (!select) return Promise.resolve();
+    if (select.dataset.methodsLoaded === 'true') return Promise.resolve();
+    if (select._methodsPromise) return select._methodsPromise;
+    select.addEventListener('change', updateQuickOrderPaymentFields);
+    select._methodsPromise = fetch('/api/checkout/payment-methods', { headers: { Accept: 'application/json' } })
+      .then(function (response) { return response.json().then(function (data) { if (!response.ok || !data.success) throw new Error('Payment methods unavailable.'); return data.methods || []; }); })
+      .then(function (methods) {
+        select.innerHTML = '';
+        methods.forEach(function (method) {
+          var option = document.createElement('option');
+          option.value = String(method.code);
+          option.textContent = String(method.name);
+          option.dataset.gatewayType = String(method.gateway_type || '');
+          option.dataset.account = String(method.account_number || '');
+          option.dataset.instructions = String(method.instructions || '');
+          select.appendChild(option);
+        });
+        if (!methods.length) {
+          var unavailable = document.createElement('option'); unavailable.value = ''; unavailable.disabled = true; unavailable.selected = true;
+          unavailable.textContent = window.__MT_I18N && window.__MT_I18N.locale === 'en' ? 'No payment methods available' : 'কোনো পেমেন্ট মাধ্যম পাওয়া যায়নি'; select.appendChild(unavailable);
+        } else {
+          select.value = methods.some(function (method) { return method.code === 'cod'; }) ? 'cod' : String(methods[0].code);
+        }
+        select.dataset.methodsLoaded = 'true';
+        updateQuickOrderPaymentFields();
+      })
+      .catch(function () { select.value = 'cod'; updateQuickOrderPaymentFields(); });
+    return select._methodsPromise;
   }
 
   function newQuickOrderRequestKey() {
@@ -282,6 +341,7 @@
     var requestKey = document.getElementById('qoRequestKey');
     if (requestKey) requestKey.value = newQuickOrderRequestKey();
     loadQuickOrderDeliveryLocations();
+    loadQuickOrderPaymentMethods();
 
     var sizesWrap = document.getElementById('qoSizesWrap');
     var sizes = String(prod.sizes || 'Standard').split(',').map(function (s) { return s.trim(); }).filter(Boolean);

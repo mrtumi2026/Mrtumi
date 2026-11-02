@@ -8,6 +8,7 @@ const { requireCsrf } = require('../middleware/csrf');
 const customers = require('../repositories/customerRepository');
 const privacy = require('../repositories/privacyRepository');
 const { env } = require('../config/env');
+const { ValidationError } = require('../utils/errors');
 const { formatBdt } = require('../utils/money');
 const d7 = require('../repositories/d7Repository');
 const upload = require('../middleware/upload');
@@ -27,7 +28,14 @@ router.post('/customer/register', registerLimiter, requireCsrf, asyncHandler(asy
     return formPage(req, res, isEn(req) ? 'Create account' : 'অ্যাকাউন্ট তৈরি করুন', isEn(req) ? 'Review and acknowledge the privacy notice to continue.' : 'চালিয়ে যেতে গোপনীয়তা নীতিটি পড়ে সম্মতি নিশ্চিত করুন।', { policyVersion: policy.version });
   }
   const guestCart = Array.isArray(req.session.cart) ? req.session.cart : [];
-  const account = await customers.registerCustomer({ ...req.body, policyVersion: req.body.privacy_policy_version, evidence: { ip: req.ip || '', userAgent: req.get('user-agent') || '' } });
+  const title = isEn(req) ? 'Create account' : 'অ্যাকাউন্ট তৈরি করুন';
+  let account;
+  try {
+    account = await customers.registerCustomer({ ...req.body, policyVersion: req.body.privacy_policy_version, evidence: { ip: req.ip || '', userAgent: req.get('user-agent') || '' } });
+  } catch (err) {
+    if (!(err instanceof ValidationError)) throw err;
+    return formPage(req, res, title, err.message, { policyVersion: req.body.privacy_policy_version });
+  }
   await new Promise((resolve, reject) => req.session.regenerate((err) => err ? reject(err) : resolve()));
   req.session.customerUser = account;
   req.session.analyticsConsent = false;

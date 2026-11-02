@@ -17,6 +17,27 @@ function actor(req) {
 }
 function wantsJson(req) { return req.accepts(['html','json']) === 'json' || req.is('application/json'); }
 function asyncRoute(fn) { return (req,res,next) => Promise.resolve(fn(req,res,next)).catch(next); }
+function parsePhase06ProductMultipart(req,res,next){
+  upload.singlePhase06ProductImage()(req,res,(err)=>{
+    if(err){
+      if(req.file)upload.safeUnlink(req.file.path);
+      if(err.name==='MulterError'){
+        const message=err.code==='LIMIT_FILE_SIZE'?'Product images must be no larger than 5 MB.':'Upload one product image at a time.';
+        return next(new ValidationError(message));
+      }
+      return next(err);
+    }
+    requireCsrf(req,res,(csrfError)=>{
+      if(csrfError&&req.file)upload.safeUnlink(req.file.path);
+      return next(csrfError);
+    });
+  });
+}
+function resolvePhase06ProductImage(req,creating){
+  if(req.file)return upload.validateUploadedImageFile(req.file);
+  const supplied=String(req.body?.image_url||'').trim();
+  return supplied || (creating?'/uploads/product/lychee-fresh.jpg':'');
+}
 function parseGalleryMultipart(req,res,next){
   upload.array('gallery_images',6)(req,res,(err)=>{
     if(!err)return next();
@@ -113,8 +134,15 @@ router.get('/admin/phase06/products/:id/edit', asyncRoute(async (req,res) => {
   });
 }));
 
-router.post('/admin/phase06/products/:id', requireCsrf, asyncRoute(async (req,res) => {
-  const result = await repo.updateProduct(req.params.id, req.body, actor(req));
+router.post('/admin/phase06/products/:id', parsePhase06ProductMultipart, asyncRoute(async (req,res) => {
+  let result;
+  try {
+    const input={...req.body,image_url:resolvePhase06ProductImage(req,false)};
+    result=await repo.updateProduct(req.params.id,input,actor(req));
+  } catch(err) {
+    if(req.file)upload.safeUnlink(req.file.path);
+    throw err;
+  }
   if (wantsJson(req)) return res.json({ success:true, product:result });
   req.flash('success', req.locale === 'en' ? `Product ${result.sku} updated. Stock and variant records were not changed.` : `পণ্য ${result.sku} আপডেট হয়েছে। স্টক ও ভ্যারিয়েন্ট অপরিবর্তিত আছে।`);
   return res.redirect('/admin/phase06');
@@ -154,8 +182,15 @@ router.post('/admin/phase06/products/:id/variants/:variantId', requireCsrf, asyn
   return res.redirect(`/admin/phase06/products/${req.params.id}/edit#variants`);
 }));
 
-router.post('/admin/phase06/products', requireCsrf, asyncRoute(async (req,res) => {
-  const created = await repo.createProduct(req.body, actor(req));
+router.post('/admin/phase06/products', parsePhase06ProductMultipart, asyncRoute(async (req,res) => {
+  let created;
+  try {
+    const input={...req.body,image_url:resolvePhase06ProductImage(req,true)};
+    created=await repo.createProduct(input,actor(req));
+  } catch(err) {
+    if(req.file)upload.safeUnlink(req.file.path);
+    throw err;
+  }
   if (wantsJson(req)) return res.status(201).json({ success:true, product:created });
   req.flash('success', req.locale === 'en' ? `Product ${created.product.sku} created.` : `পণ্য ${created.product.sku} তৈরি হয়েছে।`);
   return res.redirect('/admin/phase06');

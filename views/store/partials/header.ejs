@@ -177,8 +177,6 @@
           <a href="/" class="pb-cat-link <%= currentPath === '/' ? 'active' : '' %>">🏠 <%= t('common.home') %></a>
           <a href="/flash-sales" class="pb-cat-link store-nav-hot">⚡ <%= locale === 'en' ? 'Flash Sale' : 'ফ্ল্যাশ সেল' %></a>
           <a href="/hot-deals" class="pb-cat-link">🔥 <%= locale === 'en' ? 'Hot Deals' : 'হট ডিল' %></a>
-          <a href="/all-products" class="pb-cat-link"><%= locale === 'en' ? 'Grocery' : 'গ্রোসারি' %></a>
-          <a href="/all-products?deal=gift" class="pb-cat-link"><%= locale === 'en' ? 'Gift Items' : 'গিফট আইটেম' %></a>
           <a href="/all-products" class="pb-cat-link"><%= t('common.allProducts') %></a>
           <a href="/blogs" class="pb-cat-link <%= currentPath === '/blogs' ? 'active' : '' %>"><%= t('common.blogs') %></a>
           <a href="/faq" class="pb-cat-link <%= currentPath === '/faq' ? 'active' : '' %>"><%= t('store.faqNav') %></a>
@@ -202,9 +200,9 @@
 
           <ul class="list-unstyled mb-3">
             <li class="mb-1"><a href="/" class="d-block py-2 px-2 rounded-2 text-decoration-none text-dark fw-semibold">🏠 <%= t('common.home') %></a></li>
-            <li class="mb-1"><a href="/all-products" class="d-block py-2 px-2 rounded-2 text-decoration-none text-dark fw-semibold">🛒 <%= t('common.allProducts') %></a></li>
             <li class="mb-1"><a href="/flash-sales" class="d-block py-2 px-2 rounded-2 text-decoration-none text-danger fw-semibold">⚡ <%= t('common.flashSale') %></a></li>
             <li class="mb-1"><a href="/hot-deals" class="d-block py-2 px-2 rounded-2 text-decoration-none text-dark fw-semibold">🔥 <%= t('common.hotDeal') %></a></li>
+            <li class="mb-1"><a href="/all-products" class="d-block py-2 px-2 rounded-2 text-decoration-none text-dark fw-semibold">🛒 <%= t('common.allProducts') %></a></li>
             <li class="mb-1"><a href="/track-order" class="d-block py-2 px-2 rounded-2 text-decoration-none text-dark fw-semibold">📦 <%= t('common.trackOrder') %></a></li>
             <li class="mb-1"><a href="/blogs" class="d-block py-2 px-2 rounded-2 text-decoration-none text-dark fw-semibold">📰 <%= t('common.blogs') %></a></li>
             <li class="mb-1"><a href="/about" class="d-block py-2 px-2 rounded-2 text-decoration-none text-dark fw-semibold">ℹ️ <%= t('store.aboutNav') %></a></li>

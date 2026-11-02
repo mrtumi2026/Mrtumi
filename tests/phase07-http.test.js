@@ -31,6 +31,24 @@ test('Phase 07 account forms render localized views and authenticated account pa
   assert.equal(account.status, 302);
   assert.match(account.headers.get('location'), /^\/customer\/login(?:\?_sid=[a-f0-9]+)?$/);
 });
+test('Phase 07 customer registration renders validation failures back into the localized form', async () => {
+  const page = await fetch(`${baseUrl}/customer/register`);
+  const html = await page.text();
+  const cookie = page.headers.get('set-cookie')?.split(';')[0];
+  const csrf = html.match(/name="_csrf" value="([^"]+)"/)?.[1];
+  assert.ok(cookie); assert.ok(csrf);
+  const response = await fetch(`${baseUrl}/customer/register`, {
+    method: 'POST',
+    headers: { cookie, 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ name: 'Invalid phone', phone: '01200000000', password: 'secure-password-123', privacy_notice_acknowledged: 'yes', privacy_policy_version: 'legacy', _csrf: csrf }),
+    redirect: 'manual',
+  });
+  assert.equal(response.status, 400);
+  const errorPage = await response.text();
+  assert.match(errorPage, /class="alert alert-danger" role="alert"/);
+  assert.match(errorPage, /Enter a valid Bangladesh mobile number\./);
+});
+
 test('Phase 07 customer mutation routes reject requests without CSRF token before persistence', async () => {
   const response = await fetch(`${baseUrl}/customer/register`, {
     method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },

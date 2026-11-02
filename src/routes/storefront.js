@@ -821,6 +821,12 @@ router.get('/api/checkout/delivery-locations', asyncHandler(async (_req, res) =>
   return res.json({success:true,locations:locations.map(location=>({id:Number(location.id),division:String(location.division||''),district:String(location.district||''),upazila:String(location.upazila||''),delivery_charge_paisa:Number(location.delivery_charge_paisa)}))});
 }));
 
+router.get('/api/checkout/payment-methods', quickQuoteLimiter, asyncHandler(async (_req,res)=>{
+  if(!storefrontRepo.isMysqlMode())return res.json({success:true,methods:[{code:'cod',name:'Cash on Delivery',gateway_type:'auto',account_number:'',instructions:''}]});
+  const methods=await checkoutRepo.listCheckoutMethods();
+  return res.json({success:true,methods:methods.map(method=>({code:String(method.code),name:String(method.name),gateway_type:String(method.gateway_type),account_number:String(method.account_number||''),instructions:String(method.instructions||'')}))});
+}));
+
 router.get('/api/checkout/quick-quote', quickQuoteLimiter, asyncHandler(async (req,res)=>{
   if(!storefrontRepo.isMysqlMode())return res.status(404).json({success:false,message:'Canonical quick-order quotes are only available in MySQL mode.'});
   const quote=await checkoutRepo.quoteQuickOrder({productId:req.query.product_id,qty:req.query.qty,size:req.query.size,color:req.query.color,deliveryLocationId:req.query.delivery_location_id,locale:req.locale});
@@ -839,7 +845,9 @@ router.post('/order/quick-submit', publicFormLimiter, requireCsrf, asyncHandler(
       phone:req.body.phone,
       address:req.body.address,
       delivery_location_id:req.body.delivery_location_id,
-      payment_method:'cod',
+      payment_method:req.body.payment_method||'cod',
+      trx_id:req.body.trx_id,
+      sender_number:req.body.sender_number,
       note:req.body.note,
     },{
       locale:req.locale,
@@ -1116,6 +1124,7 @@ router.post('/customer/checkout', requireCsrf, asyncHandler(async (req, res) => 
     const result = await checkoutRepo.createOrder({
       customer_name: req.body.customer_name, phone: req.body.phone, address: req.body.address,
       delivery_location_id: req.body.delivery_location_id, payment_method: req.body.payment_method,
+      trx_id: req.body.trx_id, sender_number: req.body.sender_number,
       note: req.body.note, coupon_code: matches(replayKey) ? String(req.body.coupon_code || '') : (req.session.appliedCoupon?.code || ''),
     }, { locale: req.locale, sessionCustomer: req.customerUser || null, ip: req.ip, requestKey: expected, cart: sourceCart, incompleteOrderId, sessionSid: req.sessionID, analyticsConsent: consentGranted(req.session, env.analyticsAttributionEnabled), attribution: req.session.analyticsAttribution || null });
     if (!isReplay) { req.session.checkoutLastCart = JSON.parse(JSON.stringify(sourceCart)); req.session.checkoutLastRequestKey = expected; req.session.checkoutLastRecoveryId = incompleteOrderId; delete req.session.incompleteCheckoutId; req.session.cart = []; delete req.session.appliedCoupon; if (!(storefrontRepo.isMysqlMode() && req.customerUser?.id)) await persistCustomerCart(req); }

@@ -1,4 +1,5 @@
 <%- include('partials/header', { title: t('common.checkout') }) %>
+<% const checkoutEnglish = typeof isEn !== 'undefined' ? Boolean(isEn) : Boolean(typeof isEnglish !== 'undefined' && isEnglish); %>
 
 <main id="mainContent" class="container py-4">
   <!-- Checkout Progress Bar -->
@@ -52,13 +53,13 @@
                 <label for="ckShipping" class="form-label small fw-semibold"><%= t('store.shippingArea') %> *</label>
                 <select name="<%= canonicalMysqlCheckout ? 'delivery_location_id' : 'shipping_area' %>" id="ckShipping" class="form-select" onchange="recalcCheckout()" required>
                   <% if (canonicalMysqlCheckout) { %>
-                    <option value="" data-charge="0"><%= isEn ? 'Choose a configured delivery area' : 'কনফিগার করা ডেলিভারি এলাকা নির্বাচন করুন' %></option>
-                    <% deliveryLocations.forEach(function(location) { const charge = Number(location.delivery_charge_paisa) / 100; %>
-                      <option value="<%= location.id %>" data-charge="<%= charge %>"><%= [location.division, location.district, location.upazila].filter(Boolean).join(' / ') %> (৳<%= charge.toLocaleString('en-IN') %>)</option>
+                    <option value="" data-charge="0"><%= checkoutEnglish ? 'Choose delivery area' : 'ডেলিভারি এলাকা নির্বাচন করুন' %></option>
+                    <% deliveryLocations.filter(function(location) { return location.division === 'Dhaka' || location.division === 'All'; }).forEach(function(location) { const charge = Number(location.delivery_charge_paisa) / 100; const inside = location.division === 'Dhaka'; const areaLabel = inside ? (checkoutEnglish ? 'Inside Dhaka' : 'ঢাকার ভিতরে') : (checkoutEnglish ? 'Outside Dhaka' : 'ঢাকার বাইরে'); %>
+                      <option value="<%= location.id %>" data-charge="<%= charge %>"><%= areaLabel %> (৳<%= charge.toLocaleString(checkoutEnglish ? 'en-IN' : 'bn-BD') %>)</option>
                     <% }) %>
                   <% } else { %>
-                    <option value="ঢাকার ভিতরে" data-charge="<%= siteSettings.inside_dhaka_charge || 60 %>"><%= t('common.insideDhaka') %> (৳<%= siteSettings.inside_dhaka_charge || 60 %>)</option>
-                    <option value="ঢাকার বাইরে" data-charge="<%= siteSettings.outside_dhaka_charge || 120 %>"><%= t('common.outsideDhaka') %> (৳<%= siteSettings.outside_dhaka_charge || 120 %>)</option>
+                    <option value="ঢাকার ভিতরে" data-charge="<%= siteSettings.inside_dhaka_charge || 60 %>"><%= checkoutEnglish ? 'Inside Dhaka' : 'ঢাকার ভিতরে' %> (৳<%= Number(siteSettings.inside_dhaka_charge || 60).toLocaleString(checkoutEnglish ? 'en-IN' : 'bn-BD') %>)</option>
+                    <option value="ঢাকার বাইরে" data-charge="<%= siteSettings.outside_dhaka_charge || 120 %>"><%= checkoutEnglish ? 'Outside Dhaka' : 'ঢাকার বাইরে' %> (৳<%= Number(siteSettings.outside_dhaka_charge || 120).toLocaleString(checkoutEnglish ? 'en-IN' : 'bn-BD') %>)</option>
                   <% } %>
                 </select>
               </div>
@@ -69,7 +70,7 @@
               <% if (canonicalMysqlCheckout) { %>
                 <div class="col-12 form-check ms-2 mt-3">
                   <input class="form-check-input" type="checkbox" id="recoveryConsent" />
-                  <label class="form-check-label small" for="recoveryConsent"><%= isEn ? 'Optional: I consent to saving my phone number and cart so I can resume this checkout. I do not consent to messages.' : 'ঐচ্ছিক: পরে এই চেকআউট চালিয়ে যেতে আমার ফোন নম্বর ও কার্ট সংরক্ষণে সম্মতি দিচ্ছি। কোনো বার্তা পাঠানোর সম্মতি দিচ্ছি না।' %></label>
+                  <label class="form-check-label small" for="recoveryConsent"><%= checkoutEnglish ? 'Optional: I consent to saving my phone number and cart so I can resume this checkout. I do not consent to messages.' : 'ঐচ্ছিক: পরে এই চেকআউট চালিয়ে যেতে আমার ফোন নম্বর ও কার্ট সংরক্ষণে সম্মতি দিচ্ছি। কোনো বার্তা পাঠানোর সম্মতি দিচ্ছি না।' %></label>
                 </div>
               <% } %>
             </div>
@@ -82,11 +83,21 @@
 
             <div class="row g-2">
               <% if (canonicalMysqlCheckout && (!gateways || !gateways.length)) { %>
-                <div class="col-12 alert alert-warning"><%= isEn ? 'Checkout is unavailable: COD is not enabled in payment settings.' : 'চেকআউট করা যাচ্ছে না: পেমেন্ট সেটিংসে COD চালু নেই।' %></div>
+                <div class="col-12 alert alert-warning"><%= checkoutEnglish ? 'Checkout is unavailable: COD is not enabled in payment settings.' : 'চেকআউট করা যাচ্ছে না: পেমেন্ট সেটিংসে COD চালু নেই।' %></div>
+              <% } else if (canonicalMysqlCheckout) { %>
+                <% gateways.forEach(function(gateway, gatewayIndex) { %>
+                  <div class="col-md-6"><label class="pay-option <%= gateway.code === 'cod' ? 'active' : '' %> w-100 d-flex align-items-start gap-2" data-gateway-type="<%= gateway.gateway_type %>" data-account="<%= gateway.account_number || '' %>" data-instructions="<%= gateway.instructions || '' %>">
+                    <input type="radio" name="payment_method" value="<%= gateway.code %>" class="form-check-input mt-1" required <%= gateway.code === 'cod' ? 'checked' : '' %> />
+                    <div><div class="fw-bold small"><%= gateway.name %></div>
+                      <% if (gateway.code === 'cod') { %><div class="text-muted" style="font-size:11.5px;"><%= checkoutEnglish ? 'Pay the configured COD due on delivery.' : 'ডেলিভারির সময় প্রদেয় অর্থ দিন।' %></div>
+                      <% } else { %><% if (gateway.account_number) { %><div class="text-muted" style="font-size:11.5px;"><%= checkoutEnglish ? 'Account' : 'অ্যাকাউন্ট' %>: <%= gateway.account_number %></div><% } %><% if (gateway.instructions) { %><div class="text-muted" style="font-size:11.5px;"><%= gateway.instructions %></div><% } %><div class="text-muted" style="font-size:11.5px;"><%= checkoutEnglish ? 'Payment remains unverified until staff confirms it.' : 'কর্মী নিশ্চিত না করা পর্যন্ত পেমেন্ট যাচাইকৃত হবে না।' %></div><% } %>
+                    </div>
+                  </label></div>
+                <% }) %>
               <% } else { %>
                 <div class="col-md-6"><label class="pay-option active w-100 d-flex align-items-start gap-2">
                   <input type="radio" name="payment_method" value="cod" class="form-check-input mt-1" checked />
-                  <div><div class="fw-bold small"><%= typeof isEn !== 'undefined' && isEn ? 'Cash on delivery' : 'ক্যাশ অন ডেলিভারি' %></div><div class="text-muted" style="font-size:11.5px;"><%= typeof isEn !== 'undefined' && isEn ? 'Pay the configured COD due on delivery. No online payment is accepted.' : 'ডেলিভারির সময় প্রদেয় অর্থ দিন। অনলাইন পেমেন্ট বর্তমানে চালু নেই।' %></div></div>
+                  <div><div class="fw-bold small"><%= checkoutEnglish ? 'Cash on delivery' : 'ক্যাশ অন ডেলিভারি' %></div><div class="text-muted" style="font-size:11.5px;"><%= checkoutEnglish ? 'Pay the configured COD due on delivery. No online payment is accepted.' : 'ডেলিভারির সময় প্রদেয় অর্থ দিন। অনলাইন পেমেন্ট বর্তমানে চালু নেই।' %></div></div>
                 </label></div>
               <% } %>
             </div>
@@ -97,12 +108,12 @@
               <div class="small text-muted mb-2" id="manualPayInst"></div>
               <div class="row g-2">
                 <div class="col-sm-6">
-                  <label class="form-label small fw-semibold mb-1">ট্রানজেকশন আইডি (TrxID) *</label>
-                  <input type="text" name="trx_id" id="ckTrxId" class="form-control form-control-sm" placeholder="যেমন: BGH72K9L1" />
+                  <label for="ckTrxId" class="form-label small fw-semibold mb-1"><%= checkoutEnglish ? 'Transaction ID (TrxID) *' : 'ট্রানজেকশন আইডি (TrxID) *' %></label>
+                  <input type="text" name="trx_id" id="ckTrxId" class="form-control form-control-sm" placeholder="<%= checkoutEnglish ? 'Enter TrxID' : 'TrxID লিখুন' %>" maxlength="128" autocomplete="off" />
                 </div>
                 <div class="col-sm-6">
-                  <label class="form-label small fw-semibold mb-1">প্রেরকের নম্বর (ঐচ্ছিক)</label>
-                  <input type="text" name="sender_number" class="form-control form-control-sm" placeholder="01XXXXXXXXX" />
+                  <label for="ckSenderNumber" class="form-label small fw-semibold mb-1"><%= checkoutEnglish ? 'Sender mobile number *' : 'প্রেরকের মোবাইল নম্বর *' %></label>
+                  <input type="tel" name="sender_number" id="ckSenderNumber" class="form-control form-control-sm" placeholder="01XXXXXXXXX" maxlength="20" autocomplete="tel" />
                 </div>
               </div>
             </div>
@@ -164,7 +175,7 @@
             </div>
 
             <% if (canonicalMysqlCheckout) { %>
-              <div class="form-check small mb-2"><input class="form-check-input" type="checkbox" id="confirmOrder" name="confirm_order" value="yes" required /><label class="form-check-label" for="confirmOrder"><%= isEn ? 'I reviewed the contact, delivery, items and total above and confirm this order.' : 'উপরের যোগাযোগ, ডেলিভারি, পণ্য ও মোট মূল্য যাচাই করে অর্ডারটি নিশ্চিত করছি।' %></label></div>
+              <div class="form-check small mb-2"><input class="form-check-input" type="checkbox" id="confirmOrder" name="confirm_order" value="yes" required /><label class="form-check-label" for="confirmOrder"><%= checkoutEnglish ? 'I reviewed the contact, delivery, items and total above and confirm this order.' : 'উপরের যোগাযোগ, ডেলিভারি, পণ্য ও মোট মূল্য যাচাই করে অর্ডারটি নিশ্চিত করছি।' %></label></div>
             <% } %>
             <button type="submit" <%= canonicalMysqlCheckout && !checkoutAvailable ? 'disabled' : '' %> class="btn btn-success w-100 py-3 fw-bold fs-6 rounded-3 mt-2 shadow-sm" style="background:#1b4332;border-color:#1b4332;">
               ✓ অর্ডার নিশ্চিত করুন
@@ -187,6 +198,7 @@
   var currentDiscount = <%= Number(appliedCoupon ? appliedCoupon.discount : 0) %>;
   var freeShippingMin = <%= Number(siteSettings.free_shipping_min || 0) %>;
   var canonicalMysqlCheckout = <%= canonicalMysqlCheckout ? 'true' : 'false' %>;
+  var checkoutIsEn = <%= checkoutEnglish ? 'true' : 'false' %>;
 
   function recalcCheckout() {
     var sel = document.getElementById('ckShipping');
@@ -239,21 +251,33 @@
     recalcCheckout();
   };
 
-  function selectGateway(labelEl, type, acc, inst) {
+  function selectGateway(labelEl) {
     document.querySelectorAll('.pay-option').forEach(function(el) { el.classList.remove('active'); });
-    labelEl.classList.add('active');
+    if (labelEl) labelEl.classList.add('active');
+    var manual = Boolean(labelEl && labelEl.dataset.gatewayType === 'manual');
     var box = document.getElementById('manualPayFields');
     var trx = document.getElementById('ckTrxId');
-    if (type === 'manual') {
+    var sender = document.getElementById('ckSenderNumber');
+    if (manual) {
       box.style.display = 'block';
-      document.getElementById('manualPayAcc').textContent = 'নম্বর: ' + acc;
-      document.getElementById('manualPayInst').textContent = inst;
+      document.getElementById('manualPayAcc').textContent = (checkoutIsEn ? 'Account: ' : 'অ্যাকাউন্ট নম্বর: ') + (labelEl.dataset.account || (checkoutIsEn ? 'Not configured' : 'কনফিগার করা হয়নি'));
+      document.getElementById('manualPayInst').textContent = labelEl.dataset.instructions || (checkoutIsEn ? 'Send the exact order amount, then enter your sender number and TrxID.' : 'অর্ডারের সঠিক পরিমাণ পাঠিয়ে প্রেরকের নম্বর ও TrxID দিন।');
       trx.required = true;
+      sender.required = true;
     } else {
       box.style.display = 'none';
       trx.required = false;
+      sender.required = false;
+      trx.value = '';
+      sender.value = '';
     }
   }
+
+  document.querySelectorAll('input[name="payment_method"]').forEach(function(input) {
+    input.addEventListener('change', function() { selectGateway(input.closest('.pay-option')); });
+  });
+  var initialPaymentMethod = document.querySelector('input[name="payment_method"]:checked');
+  if (initialPaymentMethod) selectGateway(initialPaymentMethod.closest('.pay-option'));
 
   function applyCouponCode() {
     var code = document.getElementById('couponInput').value.trim();

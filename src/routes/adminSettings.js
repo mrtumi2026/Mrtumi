@@ -1,14 +1,28 @@
 const express = require('express');
+const path = require('path');
+const fs = require('node:fs/promises');
+const crypto = require('node:crypto');
 const db = require('../db/database');
 const { requireAdmin } = require('../middleware/auth');
+const { requireCsrf } = require('../middleware/csrf');
 const upload = require('../middleware/upload');
 const { env } = require('../config/env');
 const settingsRepository = require('../repositories/settingsRepository');
 const adminFinanceReadRepository = require('../repositories/adminFinanceReadRepository');
+const adminPaymentGatewayRepository = require('../repositories/adminPaymentGatewayRepository');
 const { asyncHandler } = require('../utils/asyncHandler');
+const { ValidationError } = require('../utils/errors');
+const { getPool, createQueryClient } = require('../db/mysqlPool');
 
 const router = express.Router();
 router.use('/admin', requireAdmin);
+
+function requireCsrfAndCleanupBannerFile(req, res, next) {
+  return requireCsrf(req, res, (error) => {
+    if (error && req.file) upload.safeUnlink(req.file.path);
+    next(error);
+  });
+}
 
 // ─── Landing Page / Campaigns ───
 function renderCampaigns(res, openModal = false) {
@@ -119,6 +133,31 @@ router.post('/admin/sms/custom-send', (req, res) => {
   return res.redirect('/admin/sms/custom-send');
 });
 
+function getDeliveryLocationChargeUpdates(changes) {
+  const targets = [
+    ['inside_dhaka_charge', 'Dhaka', 'Dhaka', 'ঢাকার ভিতরে (Inside Dhaka)'],
+    ['outside_dhaka_charge', 'All', 'All', 'ঢাকার বাইরে (Outside Dhaka)'],
+  ].filter(([key]) => Object.prototype.hasOwnProperty.call(changes, key));
+  return targets.map(([key, division, district, upazila]) => {
+    const amount = Number(changes[key]);
+    if (!Number.isFinite(amount) || amount < 0 || !Number.isSafeInteger(Math.round(amount * 100))) {
+      throw new ValidationError('ডেলিভারি চার্জ সঠিকভাবে লিখুন।');
+    }
+    return { paisa: Math.round(amount * 100), division, district, upazila };
+  });
+}
+
+async function syncDeliveryLocationCharges(updates) {
+  if (!updates.length) return;
+  const client = createQueryClient(getPool());
+  for (const location of updates) {
+    await client.execute(
+      'UPDATE `delivery_locations` SET `delivery_charge_paisa` = ? WHERE `division` = ? AND `district` = ? AND `upazila` = ?',
+      [location.paisa, location.division, location.district, location.upazila]
+    );
+  }
+}
+
 // ─── Universal Key-Value Settings Save Endpoint ───
 router.post('/admin/settings/save', upload.single('logo_file'), asyncHandler(async (req, res) => {
   const redirectTo = req.body._redirect || req.get('Referrer') || '/admin/settings/manage';
@@ -128,12 +167,14 @@ router.post('/admin/settings/save', upload.single('logo_file'), asyncHandler(asy
     changes.logo_dark = uploadedPath;
     changes.logo_light = uploadedPath;
   }
+  const deliveryChargeUpdates = env.db.client === 'mysql' ? getDeliveryLocationChargeUpdates(changes) : [];
   if (Object.keys(changes).length && env.db.client === 'mysql') {
     await settingsRepository.saveSettings(changes, {
       id: req.adminUser?.id || req.session?.adminUser?.id || null,
       ip: req.ip || '',
       userAgent: req.get('user-agent') || '',
     });
+    await syncDeliveryLocationCharges(deliveryChargeUpdates);
   } else if (Object.keys(changes).length) {
     for (const [key, value] of Object.entries(changes)) db.setSetting(key, value);
   }
@@ -277,167 +318,189 @@ router.post('/admin/page/delete/:id', (req, res) => {
   res.redirect('/admin/page/manage');
 });
 
-// Banner & Sliders
-router.get('/admin/banner/manage', (_req, res) => {
-  const rows = db.all('SELECT * FROM banners ORDER BY sort_order ASC, id DESC');
-  res.render('admin/crud-module', {
-    pageTitle: 'Banner & Sliders',
-    subtitle: 'হোমপেজের মেইন স্লাইডার ও প্রোমো ব্যানার পরিচালনা করুন',
-    createAction: '/admin/banner/create',
-    deletePrefix: '/admin/banner/delete',
-    columns: [
-      { key: 'id', label: '#' },
-      { key: 'image', label: 'Preview', type: 'image' },
-      { key: 'title', label: 'Banner Title' },
-      { key: 'position', label: 'Position', type: 'badge' },
-      { key: 'link', label: 'Target Link' },
-      { key: 'status', label: 'Active', type: 'status' },
-    ],
-    fields: [
-      { name: 'title', label: 'Banner Headline', type: 'text', required: true },
-      { name: 'subtitle', label: 'Subtitle', type: 'text' },
-      {
-        name: 'position',
-        label: 'Placement',
-        type: 'select',
-        options: [
-          { value: 'hero', label: 'Hero Slider (Top)' },
-          { value: 'promo_mid', label: 'Middle Promo Banner' },
-        ],
-      },
-      { name: 'image', label: 'Image URL / Path', type: 'text', value: '/uploads/banner/banner-1.jpg', required: true },
-      { name: 'link', label: 'Target URL', type: 'text', value: '/all-products' },
-    ],
-    rows,
-  });
-});
+// Priority integrations use the async MySQL client in production; SQLite remains a local fallback.
+const integrationsMysql = () => env.db.client === 'mysql';
+const integrationsClient = () => createQueryClient(getPool());
+const safeBannerLink = (value) => {
+  const link = String(value || '/all-products').trim();
+  return ((link.startsWith('/') && !link.startsWith('//') && !link.includes('..')) || /^https?:\/\//i.test(link)) ? link : '/all-products';
+};
+const validBannerImageUrl = (value) => {
+  const image = String(value || '').trim();
+  return (image.startsWith('/') && !image.startsWith('//') && !image.includes('..')) || /^https?:\/\//i.test(image);
+};
+const cleanBannerText = (value, max) => String(value || '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, max);
+const safeSortOrder = (value) => {
+  const order = Number(value);
+  return Number.isSafeInteger(order) && order >= 0 && order <= 2147483647 ? order : 0;
+};
+const removeManagedBannerImage = (image) => {
+  const value = String(image || '');
+  if (!value.startsWith('/uploads/custom/')) return;
+  const base = path.resolve(upload.resolveUploadBase());
+  const candidate = path.resolve(base, path.basename(value));
+  if (path.dirname(candidate) === base) upload.safeUnlink(candidate);
+};
+const saveBannerBase64 = async (value) => {
+  const dataUrl = String(value || '').trim();
+  if (!dataUrl) return null;
+  const match = /^data:image\/(jpeg|jpg|png|webp|gif);base64,([A-Za-z0-9+/]+={0,2})$/i.exec(dataUrl);
+  if (!match) throw new ValidationError('Select a valid raster image and wait for compression to finish.');
+  const buffer = Buffer.from(match[2], 'base64');
+  if (!buffer.length || buffer.length > 180 * 1024 || buffer.toString('base64') !== match[2]) {
+    throw new ValidationError('Compressed banner image must be smaller than 180 KB.');
+  }
+  const mime = match[1].toLowerCase();
+  const signatures = {
+    jpeg: { ext: '.jpg', valid: buffer.length >= 4 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[buffer.length - 2] === 0xff && buffer[buffer.length - 1] === 0xd9 },
+    jpg: { ext: '.jpg', valid: buffer.length >= 4 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[buffer.length - 2] === 0xff && buffer[buffer.length - 1] === 0xd9 },
+    png: { ext: '.png', valid: buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])) },
+    webp: { ext: '.webp', valid: buffer.length >= 12 && buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP' },
+    gif: { ext: '.gif', valid: buffer.length >= 6 && /^GIF8[79]a$/.test(buffer.toString('ascii', 0, 6)) },
+  };
+  const signature = signatures[mime];
+  if (!signature || !signature.valid) throw new ValidationError('Banner image data does not match its raster image type.');
+  const filename = `banner-${Date.now()}-${crypto.randomBytes(8).toString('hex')}${signature.ext}`;
+  const base = path.resolve(upload.resolveUploadBase());
+  const target = path.resolve(base, filename);
+  if (path.dirname(target) !== base) throw new ValidationError('Invalid banner image destination.');
+  await fs.writeFile(target, buffer, { flag: 'wx', mode: 0o644 });
+  return `/uploads/custom/${filename}`;
+};
 
-router.post('/admin/banner/create', (req, res) => {
-  const { title, subtitle, position, image, link } = req.body;
-  db.run(
-    'INSERT INTO banners (title, subtitle, position, image, link) VALUES (?, ?, ?, ?, ?)',
-    title,
-    subtitle || '',
-    position || 'hero',
-    image || '/uploads/banner/banner-1.jpg',
-    link || '/all-products'
-  );
-  req.flash('success', 'ব্যানার যুক্ত হয়েছে!');
+// Banner & Sliders
+router.get('/admin/banner/manage', asyncHandler(async (req, res) => {
+  const rows = integrationsMysql()
+    ? await integrationsClient().queryAll('SELECT id,title,subtitle,badge,position,image_url AS image,link_url AS link,sort_order,status,created_at FROM banners ORDER BY sort_order ASC,id DESC')
+    : db.all('SELECT * FROM banners ORDER BY sort_order ASC, id DESC');
+  res.render('admin/crud-module', {
+    pageTitle: 'Banner & Sliders', subtitle: 'হোমপেজের মেইন স্লাইডার ও প্রোমো ব্যানার পরিচালনা করুন',
+    createAction: '/admin/banner/create', updatePrefix: '/admin/banner/update', multipartForm: true, deletePrefix: '/admin/banner/delete', autoOpenModal: req.query.create === '1',
+    columns: [{key:'id',label:'#'},{key:'image',label:'Preview',type:'image'},{key:'title',label:'Banner Title'},{key:'position',label:'Position',type:'badge'},{key:'link',label:'Target Link'},{key:'status',label:'Active',type:'status'}],
+    fields: [{name:'title',label:'Banner Headline',type:'text',required:true},{name:'subtitle',label:'Subtitle',type:'text'},{name:'badge',label:'Badge',type:'text'},
+      {name:'position',label:'Placement',type:'select',options:[{value:'hero',label:'Hero Slider (Top)'},{value:'promo_mid',label:'Middle Promo Banner'}]},
+      {name:'image_file',label:'Upload raster image (optional)',type:'file'},{name:'image_url',label:'Image URL / Path fallback',type:'text'},
+      {name:'link_url',label:'Target URL',type:'text',value:'/all-products'},{name:'sort_order',label:'Display order',type:'number',value:'0'}], rows,
+  });
+}));
+router.get('/admin/banner/create', (_req, res) => res.redirect('/admin/banner/manage?create=1'));
+router.post('/admin/banner/create', upload.single('image_file'), requireCsrfAndCleanupBannerFile, asyncHandler(async (req, res) => {
+  let image;
+  let generatedImage = null;
+  try {
+    image = req.file ? upload.validateUploadedImageFile(req.file) : await saveBannerBase64(req.body.image_base64);
+    generatedImage = req.file ? null : image;
+    if (!image) image = String(req.body.image_url || req.body.image || '').trim();
+    if (!validBannerImageUrl(image)) throw new ValidationError('Provide a valid banner image upload or an HTTP(S)/site-relative image URL.');
+    const b=req.body, position=['hero','promo_mid'].includes(b.position)?b.position:'hero';
+    if (integrationsMysql()) await integrationsClient().execute('INSERT INTO banners (title,subtitle,badge,position,image_url,link_url,sort_order,status) VALUES (?,?,?,?,?,?,?,1)', [cleanBannerText(b.title,191),cleanBannerText(b.subtitle,255),cleanBannerText(b.badge,100),position,image,safeBannerLink(b.link_url||b.link),safeSortOrder(b.sort_order)]);
+    else db.run('INSERT INTO banners (title,subtitle,badge,position,image,link,sort_order) VALUES (?,?,?,?,?,?,?)',cleanBannerText(b.title,191),cleanBannerText(b.subtitle,255),cleanBannerText(b.badge,100),position,image,safeBannerLink(b.link_url||b.link),safeSortOrder(b.sort_order));
+  } catch (err) {
+    if (req.file) upload.safeUnlink(req.file.path);
+    if (generatedImage) removeManagedBannerImage(generatedImage);
+    if (err instanceof ValidationError) {
+      req.flash('error', err.message);
+      return res.redirect('/admin/banner/manage?create=1');
+    }
+    throw err;
+  }
+  req.flash('success','ব্যানার যুক্ত হয়েছে!'); res.redirect('/admin/banner/manage');
+}));
+router.post('/admin/banner/update/:id', upload.single('image_file'), requireCsrfAndCleanupBannerFile, asyncHandler(async (req,res)=>{
+ let newImage=null, oldImage='', generatedImage=null;
+ try {
+   const b=req.body, id=Number(req.params.id);
+   if(!Number.isSafeInteger(id)||id<1) throw new ValidationError('Invalid banner identifier.');
+   const current=integrationsMysql()
+     ? await integrationsClient().queryOne('SELECT id,image_url AS image FROM banners WHERE id=?',[id])
+     : db.get('SELECT id,image AS image FROM banners WHERE id=?',id);
+   if(!current) throw new ValidationError('Banner was not found.');
+   oldImage=String(current.image||'');
+   if(req.file) newImage=upload.validateUploadedImageFile(req.file);
+   else if(b.image_base64) { newImage=await saveBannerBase64(b.image_base64); generatedImage=newImage; }
+   const submittedImage=String(b.image_url||'').trim();
+   const image=newImage || (validBannerImageUrl(submittedImage)?submittedImage:oldImage);
+   const title=cleanBannerText(b.title,191), subtitle=cleanBannerText(b.subtitle,255), badge=cleanBannerText(b.badge,100);
+   const position=['hero','promo_mid'].includes(b.position)?b.position:'hero';
+   const link=safeBannerLink(b.link_url||b.link), sortOrder=safeSortOrder(b.sort_order);
+   if(integrationsMysql()) await integrationsClient().execute('UPDATE banners SET title=?,subtitle=?,badge=?,position=?,image_url=?,link_url=?,sort_order=? WHERE id=?',[title,subtitle,badge,position,image,link,sortOrder,id]);
+   else db.run('UPDATE banners SET title=?,subtitle=?,badge=?,position=?,image=?,link=?,sort_order=? WHERE id=?',title,subtitle,badge,position,image,link,sortOrder,id);
+   if(image!==oldImage) removeManagedBannerImage(oldImage);
+ } catch(err) {
+   if(req.file) upload.safeUnlink(req.file.path);
+   if(generatedImage) removeManagedBannerImage(generatedImage);
+   if(err instanceof ValidationError) { req.flash('error',err.message); return res.redirect('/admin/banner/manage'); }
+   throw err;
+ }
+ req.flash('success','ব্যানার সফলভাবে আপডেট হয়েছে!');
+ res.redirect('/admin/banner/manage');
+}));
+router.post('/admin/banner/delete/:id', asyncHandler(async (req,res)=>{
+  if(integrationsMysql()) await integrationsClient().execute('DELETE FROM banners WHERE id=?',[req.params.id]);
+  else db.run('DELETE FROM banners WHERE id = ?',req.params.id);
   res.redirect('/admin/banner/manage');
-});
-router.post('/admin/banner/delete/:id', (req, res) => {
-  db.run('DELETE FROM banners WHERE id = ?', req.params.id);
-  res.redirect('/admin/banner/manage');
-});
+}));
+
+// Canonical payment gateway management for COD and configured manual MFS methods.
+router.get('/admin/payment-gateways',asyncHandler(async(_req,res)=>{
+  const rows=await adminPaymentGatewayRepository.listPaymentGateways();
+  return res.render('admin/payment-gateways',{rows});
+}));
+router.post('/admin/payment-gateways/:id/update',requireCsrf,asyncHandler(async(req,res)=>{
+  await adminPaymentGatewayRepository.updatePaymentGateway(req.params.id,req.body,{id:req.adminUser?.id||null,ip:req.ip||'',userAgent:req.get('user-agent')||''});
+  req.adminDomainAudit=true;
+  req.flash('success','Payment gateway settings saved.');
+  return res.redirect('/admin/payment-gateways');
+}));
 
 // Payment Gateways (Auto & Manual)
-router.get('/admin/paymentgeteway/manage', (_req, res) => renderGateways(res, 'auto'));
-router.get('/admin/paymentgeteway/manual-manage', (_req, res) => renderGateways(res, 'manual'));
-
-function renderGateways(res, type) {
-  const rows = db.all('SELECT * FROM payment_gateways WHERE type = ? ORDER BY id ASC', type);
-  res.render('admin/crud-module', {
-    pageTitle: type === 'manual' ? 'Manual Payment Methods (bKash / Nagad / Rocket)' : 'Automatic Payment Gateways',
-    subtitle: 'চেকআউট পেজের পেমেন্ট গেটওয়ে ও অ্যাকাউন্ট নম্বর পরিচালনা করুন',
-    createAction: `/admin/paymentgeteway/${type}/create`,
-    customActionPrefix: '/admin/paymentgeteway/toggle',
-    customActionLabel: 'Toggle Active',
-    deletePrefix: '/admin/paymentgeteway/delete',
-    columns: [
-      { key: 'id', label: '#' },
-      { key: 'name', label: 'Gateway Name' },
-      { key: 'code', label: 'Code' },
-      { key: 'account_number', label: 'Merchant / Personal No' },
-      { key: 'instructions', label: 'Checkout Instructions' },
-      { key: 'status', label: 'Status', type: 'status' },
-    ],
-    fields: [
-      { name: 'name', label: 'Method Name', type: 'text', required: true },
-      { name: 'code', label: 'Unique Code (e.g. upay_manual)', type: 'text', required: true },
-      { name: 'account_number', label: 'Account / Merchant Number', type: 'text' },
-      { name: 'instructions', label: 'Customer Instructions', type: 'textarea' },
-    ],
-    rows,
-  });
+router.get('/admin/paymentgeteway/manage', asyncHandler(async (_req,res)=>renderGateways(res,'auto')));
+router.get('/admin/paymentgeteway/manual-manage', asyncHandler(async (_req,res)=>renderGateways(res,'manual')));
+async function renderGateways(res,type) {
+  const rows=integrationsMysql()
+    ? await integrationsClient().queryAll('SELECT id,name,code,gateway_type AS type,account_number,instructions,status,sandbox,updated_at FROM payment_gateways WHERE gateway_type=? ORDER BY id ASC',[type])
+    : db.all('SELECT * FROM payment_gateways WHERE type = ? ORDER BY id ASC',type);
+  res.render('admin/crud-module',{pageTitle:type==='manual'?'Manual Payment Methods (bKash / Nagad / Rocket)':'Automatic Payment Gateways',subtitle:'চেকআউট পেজের পেমেন্ট গেটওয়ে ও অ্যাকাউন্ট নম্বর পরিচালনা করুন',createAction:`/admin/paymentgeteway/${type}/create`,updatePrefix:'/admin/paymentgeteway/update',customActionPrefix:'/admin/paymentgeteway/toggle',customActionLabel:'Toggle Active',deletePrefix:'/admin/paymentgeteway/delete',
+    columns:[{key:'id',label:'#'},{key:'name',label:'Gateway Name'},{key:'code',label:'Code'},{key:'account_number',label:'Merchant / Personal No'},{key:'instructions',label:'Checkout Instructions'},{key:'status',label:'Status',type:'status'}],
+    fields:[{name:'name',label:'Method Name',type:'text',required:true},{name:'code',label:'Unique Code',type:'text',required:true},{name:'account_number',label:'Account / Merchant Number',type:'text'},{name:'api_key',label:'API credential',type:'password'},{name:'secret_key',label:'Secret credential',type:'password'},{name:'instructions',label:'Customer Instructions',type:'textarea'},{name:'sandbox',label:'Sandbox (1/0)',type:'number',value:'1'}],rows});
 }
-
-router.post('/admin/paymentgeteway/:type/create', (req, res) => {
-  const t = req.params.type === 'manual' ? 'manual' : 'auto';
-  db.run(
-    'INSERT INTO payment_gateways (name, code, type, account_number, instructions, status) VALUES (?, ?, ?, ?, ?, 1)',
-    req.body.name,
-    req.body.code,
-    t,
-    req.body.account_number || '',
-    req.body.instructions || ''
-  );
-  req.flash('success', 'পেমেন্ট মেথড যুক্ত হয়েছে।');
-  res.redirect(t === 'manual' ? '/admin/paymentgeteway/manual-manage' : '/admin/paymentgeteway/manage');
-});
-
-router.post('/admin/paymentgeteway/toggle/:id', (req, res) => {
-  const gw = db.get('SELECT id, status FROM payment_gateways WHERE id = ?', req.params.id);
-  if (gw) db.run('UPDATE payment_gateways SET status = ? WHERE id = ?', gw.status ? 0 : 1, gw.id);
-  req.flash('success', 'পেমেন্ট গেটওয়ে স্ট্যাটাস আপডেট হয়েছে।');
-  res.redirect(req.get('Referrer') || '/admin/paymentgeteway/manage');
-});
-
-router.post('/admin/paymentgeteway/delete/:id', (req, res) => {
-  db.run('DELETE FROM payment_gateways WHERE id = ?', req.params.id);
-  res.redirect(req.get('Referrer') || '/admin/paymentgeteway/manage');
-});
+router.post('/admin/paymentgeteway/:type/create',asyncHandler(async(req,res)=>{
+ const t=req.params.type==='manual'?'manual':'auto',b=req.body;
+ if(integrationsMysql()) await integrationsClient().execute('INSERT INTO payment_gateways (name,code,gateway_type,account_number,api_key,secret_key,instructions,sandbox,status) VALUES (?,?,?,?,?,?,?,?,1)',[b.name,b.code,t,b.account_number||'',b.api_key||null,b.secret_key||null,b.instructions||'',b.sandbox==='0'?0:1]);
+ else db.run('INSERT INTO payment_gateways (name,code,type,account_number,instructions,status) VALUES (?,?,?,?,?,1)',b.name,b.code,t,b.account_number||'',b.instructions||'');
+ req.flash('success','পেমেন্ট মেথড যুক্ত হয়েছে।');res.redirect(t==='manual'?'/admin/paymentgeteway/manual-manage':'/admin/paymentgeteway/manage');
+}));
+router.post('/admin/paymentgeteway/update/:id',asyncHandler(async(req,res)=>{
+ const b=req.body,name=cleanBannerText(b.name,100),code=cleanBannerText(b.code,48),account=cleanBannerText(b.account_number,100),instructions=String(b.instructions||'').trim().slice(0,4000),sandbox=b.sandbox==='0'?0:1;
+ if(!name||!/^[a-zA-Z0-9_-]{1,48}$/.test(code)) throw new ValidationError('Gateway name and a valid unique code are required.');
+ if(integrationsMysql()) await integrationsClient().execute("UPDATE payment_gateways SET name=?,code=?,account_number=?,api_key=COALESCE(NULLIF(?,''),api_key),secret_key=COALESCE(NULLIF(?,''),secret_key),instructions=?,sandbox=? WHERE id=?",[name,code,account,String(b.api_key||''),String(b.secret_key||''),instructions,sandbox,req.params.id]);
+ else db.run("UPDATE payment_gateways SET name=?,code=?,account_number=?,app_key=CASE WHEN ?<>'' THEN ? ELSE app_key END,app_secret=CASE WHEN ?<>'' THEN ? ELSE app_secret END,instructions=?,sandbox=? WHERE id=?",name,code,account,String(b.api_key||''),String(b.api_key||''),String(b.secret_key||''),String(b.secret_key||''),instructions,sandbox,req.params.id);
+ req.flash('success','পেমেন্ট গেটওয়ে সফলভাবে আপডেট হয়েছে।');
+ res.redirect('/admin/paymentgeteway/manage');
+}));
+router.post('/admin/paymentgeteway/toggle/:id',asyncHandler(async(req,res)=>{
+ if(integrationsMysql()) await integrationsClient().execute('UPDATE payment_gateways SET status=1-status WHERE id=?',[req.params.id]);
+ else {const gw=db.get('SELECT id,status FROM payment_gateways WHERE id=?',req.params.id);if(gw)db.run('UPDATE payment_gateways SET status=? WHERE id=?',gw.status?0:1,gw.id);}
+ req.flash('success','পেমেন্ট গেটওয়ে স্ট্যাটাস আপডেট হয়েছে।');res.redirect(req.get('Referrer')||'/admin/paymentgeteway/manage');
+}));
+router.post('/admin/paymentgeteway/delete/:id',asyncHandler(async(req,res)=>{if(integrationsMysql())await integrationsClient().execute('DELETE FROM payment_gateways WHERE id=?',[req.params.id]);else db.run('DELETE FROM payment_gateways WHERE id=?',req.params.id);res.redirect(req.get('Referrer')||'/admin/paymentgeteway/manage');}));
 
 // Courier API Manage
-router.get('/admin/courierapi/manage', (_req, res) => {
-  const rows = db.all('SELECT * FROM courier_apis ORDER BY id ASC');
-  res.render('admin/crud-module', {
-    pageTitle: 'Courier API Integration (Steadfast / Pathao / RedX)',
-    subtitle: 'কুরিয়ার API কী ও ব্যালেন্স কনফিগারেশন',
-    createAction: '/admin/courierapi/create',
-    customActionPrefix: '/admin/courierapi/toggle',
-    customActionLabel: 'Toggle Active',
-    deletePrefix: '/admin/courierapi/delete',
-    columns: [
-      { key: 'id', label: '#' },
-      { key: 'name', label: 'Courier Service' },
-      { key: 'code', label: 'Code' },
-      { key: 'api_key', label: 'API Key' },
-      { key: 'base_url', label: 'Endpoint URL' },
-      { key: 'balance', label: 'Balance', type: 'currency' },
-      { key: 'status', label: 'Active', type: 'status' },
-    ],
-    fields: [
-      { name: 'name', label: 'Courier Name', type: 'text', required: true },
-      { name: 'code', label: 'Code (e.g. paperfly)', type: 'text', required: true },
-      { name: 'api_key', label: 'API Key / Token', type: 'text', required: true },
-      { name: 'secret_key', label: 'Secret Key', type: 'text' },
-      { name: 'base_url', label: 'Base API URL', type: 'text' },
-    ],
-    rows,
-  });
-});
-
-router.post('/admin/courierapi/create', (req, res) => {
-  const { name, code, api_key, secret_key, base_url } = req.body;
-  db.run(
-    'INSERT INTO courier_apis (name, code, api_key, secret_key, base_url) VALUES (?, ?, ?, ?, ?)',
-    name,
-    code,
-    api_key,
-    secret_key || '',
-    base_url || ''
-  );
-  res.redirect('/admin/courierapi/manage');
-});
-router.post('/admin/courierapi/toggle/:id', (req, res) => {
-  const c = db.get('SELECT id, status FROM courier_apis WHERE id = ?', req.params.id);
-  if (c) db.run('UPDATE courier_apis SET status = ? WHERE id = ?', c.status ? 0 : 1, c.id);
-  res.redirect('/admin/courierapi/manage');
-});
-router.post('/admin/courierapi/delete/:id', (req, res) => {
-  db.run('DELETE FROM courier_apis WHERE id = ?', req.params.id);
-  res.redirect('/admin/courierapi/manage');
-});
+router.get('/admin/courierapi/manage',asyncHandler(async(_req,res)=>{
+ const rows=integrationsMysql()?await integrationsClient().queryAll('SELECT id,name,code,api_key,secret_key,client_id,base_url,status,sandbox,updated_at FROM courier_apis ORDER BY id ASC'):db.all('SELECT * FROM courier_apis ORDER BY id ASC');
+ res.render('admin/crud-module',{pageTitle:'Courier API Integration (Steadfast / Pathao / RedX)',subtitle:'কুরিয়ার API কী ও ব্যালেন্স কনফিগারেশন',createAction:'/admin/courierapi/create',updatePrefix:'/admin/courierapi/update',customActionPrefix:'/admin/courierapi/toggle',customActionLabel:'Toggle Active',deletePrefix:'/admin/courierapi/delete',columns:[{key:'id',label:'#'},{key:'name',label:'Courier Service'},{key:'code',label:'Code'},{key:'api_key',label:'API Key'},{key:'base_url',label:'Endpoint URL'},{key:'status',label:'Active',type:'status'}],fields:[{name:'name',label:'Courier Name',type:'text',required:true},{name:'code',label:'Code',type:'text',required:true},{name:'api_key',label:'API Key / Token',type:'password',required:true},{name:'secret_key',label:'Secret Key',type:'password'},{name:'client_id',label:'Client ID',type:'text'},{name:'base_url',label:'Base API URL',type:'text'},{name:'sandbox',label:'Sandbox (1/0)',type:'number',value:'1'}],rows});
+}));
+router.post('/admin/courierapi/create',asyncHandler(async(req,res)=>{const b=req.body;if(integrationsMysql())await integrationsClient().execute('INSERT INTO courier_apis (name,code,base_url,api_key,secret_key,client_id,status,sandbox) VALUES (?,?,?,?,?,?,0,?)',[b.name,b.code,b.base_url||'',b.api_key||null,b.secret_key||null,b.client_id||'',b.sandbox==='0'?0:1]);else db.run('INSERT INTO courier_apis (name,code,api_key,secret_key,base_url,client_id) VALUES (?,?,?,?,?,?)',b.name,b.code,b.api_key,b.secret_key||'',b.base_url||'',b.client_id||'');res.redirect('/admin/courierapi/manage');}));
+router.post('/admin/courierapi/update/:id',asyncHandler(async(req,res)=>{
+ const b=req.body,name=cleanBannerText(b.name,100),code=cleanBannerText(b.code,48),baseUrl=String(b.base_url||'').trim().slice(0,255),apiKey=String(b.api_key||''),secretKey=String(b.secret_key||''),clientId=cleanBannerText(b.client_id,191),sandbox=b.sandbox==='0'?0:1;
+ if(!name||!/^[a-zA-Z0-9_-]{1,48}$/.test(code)) throw new ValidationError('Courier name and a valid unique code are required.');
+ if(integrationsMysql()) await integrationsClient().execute("UPDATE courier_apis SET name=?,code=?,base_url=?,api_key=CASE WHEN ?<>'' THEN ? ELSE api_key END,secret_key=CASE WHEN ?<>'' THEN ? ELSE secret_key END,client_id=?,sandbox=? WHERE id=?",[name,code,baseUrl,apiKey,apiKey,secretKey,secretKey,clientId,sandbox,req.params.id]);
+ else db.run("UPDATE courier_apis SET name=?,code=?,base_url=?,api_key=CASE WHEN ?<>'' THEN ? ELSE api_key END,secret_key=CASE WHEN ?<>'' THEN ? ELSE secret_key END,client_id=?,sandbox=? WHERE id=?",name,code,baseUrl,apiKey,apiKey,secretKey,secretKey,clientId,sandbox,req.params.id);
+ req.flash('success','কুরিয়ার API সফলভাবে আপডেট হয়েছে।');
+ res.redirect('/admin/courierapi/manage');
+}));
+router.post('/admin/courierapi/toggle/:id',asyncHandler(async(req,res)=>{if(integrationsMysql())await integrationsClient().execute('UPDATE courier_apis SET status=1-status WHERE id=?',[req.params.id]);else{const c=db.get('SELECT id,status FROM courier_apis WHERE id=?',req.params.id);if(c)db.run('UPDATE courier_apis SET status=? WHERE id=?',c.status?0:1,c.id);}res.redirect('/admin/courierapi/manage');}));
+router.post('/admin/courierapi/delete/:id',asyncHandler(async(req,res)=>{if(integrationsMysql())await integrationsClient().execute('DELETE FROM courier_apis WHERE id=?',[req.params.id]);else db.run('DELETE FROM courier_apis WHERE id=?',req.params.id);res.redirect('/admin/courierapi/manage');}));
 
 // ─── Live Ads Result (/admin/ads-analytics) ───
 router.get('/admin/ads-analytics', (_req, res) => renderAds(res, 'overview'));

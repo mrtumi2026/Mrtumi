@@ -11,6 +11,25 @@ test('storefront refresh keeps localized customer navigation, category search an
   const header = read('views/store/partials/header.ejs');
   const footer = read('views/store/partials/footer.ejs');
   const js = read('public/frontEnd/js/storefront.js');
+  const bn = require('../src/i18n/locales/bn');
+  const en = require('../src/i18n/locales/en');
+  const desktopNav = header.split('<!-- Category & Storefront Navigation Strip -->')[1].split('</nav>')[0];
+  const mobileDrawer = header.split('id="mobileStoreNavDrawer"')[1];
+  const home = read('views/store/home.ejs');
+  assert.equal(bn.store.allProductsTitle, 'নতুন ও জনপ্রিয় পণ্য');
+  assert.equal(en.store.allProductsTitle, 'Featured Products');
+  assert.equal(bn.store.allProductsSub, 'আমাদের সেরা বাছাইকৃত কোয়ালিটি পণ্য সামগ্রী');
+  assert.equal(en.store.allProductsSub, 'Browse our handpicked quality collection');
+  assert.match(home, /t\('store\.allProductsTitle'\)/);
+  assert.match(home, /t\('store\.allProductsSub'\)/);
+  assert.match(home, /href="\/all-products" class="btn btn-outline-success btn-sm rounded-pill px-3"/);
+  assert.equal(bn.store.searchPlaceholder, 'পছন্দের পণ্য খুঁজুন...');
+  assert.equal(en.store.searchPlaceholder, 'Search products...');
+  assert.match(header, /action="\/all-products" method="GET"/);
+  assert.match(header, /name="q"/);
+  assert.match(header, /placeholder="<%= t\('store\.searchPlaceholder'\) %>"/);
+  assert.doesNotMatch(desktopNav, /Grocery|Gift Items|গ্রোসারি|গিফট আইটেম/);
+  assert.doesNotMatch(mobileDrawer, /href="\/all-products\?deal=gift"|Gift Items|গিফট আইটেম/);
   assert.match(header, /name="category"/);
   assert.match(header, /navCategories/);
   assert.match(header, /store-utility-bar/);
@@ -46,6 +65,7 @@ test('search suggestions query only active products with bound terms and return 
 
 test('homepage and product card provide the accessible hero, trust, discount, stock and direct cart/order affordances', () => {
   const home = read('views/store/home.ejs');
+  const header = read('views/store/partials/header.ejs');
   const card = read('views/store/partials/product-card.ejs');
   const css = read('public/frontEnd/css/storefront.css');
   const authMiddleware = read('src/middleware/auth.js');
@@ -58,6 +78,10 @@ test('homepage and product card provide the accessible hero, trust, discount, st
   assert.match(home, /store-category-card/);
   assert.match(home, /id="heroCategoryMenu"/);
   assert.match(home, /hero-category-link/);
+  assert.doesNotMatch(home, /categoriesTitle|categoriesSub|Shop by Category Grid/);
+  assert.match(header, /id="mobileStoreNavDrawer"/);
+  assert.match(header, /store-all-categories-button/);
+  assert.match(storefrontRoutes, /res\.render\('store\/home',\s*\{\s*\.\.\.homeData/);
   assert.match(home, /store-hero-promos/);
   assert.match(home, /store-trust-row/);
   assert.match(home, /data-countdown=/);
