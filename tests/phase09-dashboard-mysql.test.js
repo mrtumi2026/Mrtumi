@@ -19,7 +19,11 @@ if (MYSQL_HOST) {
 const { getPool, createQueryClient, closePool } = require('../src/db/mysqlPool');
 const { upsertSession } = require('../src/repositories/sessionRepository');
 const { deriveCsrfToken } = require('../src/middleware/csrf');
-const { migrateUp, migrateDown } = require('../src/db/migrator');
+const { splitSqlStatements } = require('../src/db/migrator');
+const fs = require('node:fs');
+const path = require('node:path');
+const { resetDisposableMysqlDatabase } = require('../scripts/qa/mysql-test-database');
+const { closeHttpServer } = require('../scripts/qa/demo-e2e-cleanup');
 const dashboardRepo = require('../src/repositories/adminDashboardRepository');
 const adminOrderRepo = require('../src/repositories/adminOrderReadRepository');
 const { policyForAdminRoute } = require('../src/middleware/legacyAdminRbac');
@@ -39,7 +43,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
   before(async () => {
     if (!MYSQL_HOST) return;
     pool = getPool(); db = createQueryClient(pool);
-    await migrateDown(pool,{steps:13}); await migrateUp(pool);
+    await resetDisposableMysqlDatabase(pool);
     const permissions = await db.queryAll(`SELECT id,name FROM permissions WHERE name IN (${permissionNames.map(()=>'?').join(',')})`,permissionNames);
     assert.equal(permissions.length,permissionNames.length,'0008 permission catalog is applied');
     const preexistingGrants=await db.queryOne(`SELECT COUNT(*) AS n FROM role_permissions rp JOIN permissions p ON p.id=rp.permission_id WHERE p.name IN (${permissionNames.map(()=>'?').join(',')})`,permissionNames);
@@ -90,7 +94,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     baseUrl=`http://127.0.0.1:${server.address().port}`;
     dashboardCookie=await login(fullEmail);
   });
-  after(async()=>{if(server)await new Promise(resolve=>server.close(resolve));if(MYSQL_HOST)await closePool();});
+  after(async()=>{try{if(server)await closeHttpServer(server);}finally{if(MYSQL_HOST)await closePool();}});
 
   async function request(path,{method='GET',cookie=dashboardCookie,body=null,token=csrfToken,accept='application/json'}={}){
     const headers={accept}; if(cookie)headers.cookie=cookie;
@@ -1646,25 +1650,32 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     assert.ok(accessAudit.some(r=>r.action==='admin.staff.deactivated'));
     const grantsBefore=Number((await db.queryOne('SELECT COUNT(*) AS n FROM role_permissions WHERE role_id=?',[roleIds.p09_full])).n);
     const auditRowsBeforeRollback=Number((await db.queryOne('SELECT COUNT(*) AS n FROM audit_logs')).n);
+    const migrationsDir=path.join(__dirname,'..','src','db','migrations');
+    const migrationDown=splitSqlStatements(fs.readFileSync(path.join(migrationsDir,'0009_phase09_legacy_admin_audit.down.sql'),'utf8'));
+    const migrationUp=splitSqlStatements(fs.readFileSync(path.join(migrationsDir,'0009_phase09_legacy_admin_audit.up.sql'),'utf8'));
     await db.execute('CREATE TRIGGER p09_unrelated_fixture BEFORE UPDATE ON orders FOR EACH ROW SET @p09_unrelated_fixture=NEW.id');
     try{
-      // Migrations 0013, 0012, 0011 and 0010 sit above 0009; roll back all five to exercise 0009 trigger cleanup.
-      assert.equal((await migrateDown(pool,{steps:5})).length,5);
+      // Exercise only 0009's reversible SQL in place; rolling back a range would cross irreversible 0023.
+      for(const statement of migrationDown) await db.execute(statement);
       const attributionColumnsAfterDown=await db.queryOne("SELECT COUNT(*) AS n FROM information_schema.columns WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='orders' AND COLUMN_NAME IN ('analytics_consent_at','analytics_consent_version')");
-      assert.equal(Number(attributionColumnsAfterDown.n),0,'0010 rollback removes only its nullable consent columns');
+      assert.equal(Number(attributionColumnsAfterDown.n),2,'0009 rollback leaves later nullable consent columns untouched');
       const triggersAfterDown=await db.queryOne("SELECT COUNT(*) AS n FROM information_schema.triggers WHERE TRIGGER_SCHEMA=DATABASE() AND TRIGGER_NAME IN ('trg_audit_logs_no_update','trg_audit_logs_no_delete')");
       assert.equal(Number(triggersAfterDown.n),0,'0009 rollback removes its two audit triggers');
       assert.equal(Number((await db.queryOne("SELECT COUNT(*) AS n FROM information_schema.triggers WHERE TRIGGER_SCHEMA=DATABASE() AND TRIGGER_NAME='p09_unrelated_fixture'")).n),1,'0009 rollback preserves an unrelated trigger');
       assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM audit_logs')).n),auditRowsBeforeRollback,'0009 rollback never deletes audit history');
       const retained=await db.queryOne(`SELECT COUNT(*) AS n FROM permissions WHERE name IN (${permissionNames.map(()=>'?').join(',')})`,permissionNames);
       assert.equal(Number(retained.n),permissionNames.length,'down migration preserves catalog entries referenced by role grants');
-      await migrateUp(pool);
-      assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM role_permissions WHERE role_id=?',[roleIds.p09_full])).n),grantsBefore);
-      const attributionColumnsAfterReapply=await db.queryOne("SELECT COUNT(*) AS n FROM information_schema.columns WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='orders' AND COLUMN_NAME IN ('analytics_consent_at','analytics_consent_version')");
-      assert.equal(Number(attributionColumnsAfterReapply.n),2,'migration reapplication restores both Phase 14 consent columns');
-      const triggersAfterReapply=await db.queryOne("SELECT COUNT(*) AS n FROM information_schema.triggers WHERE TRIGGER_SCHEMA=DATABASE() AND TRIGGER_NAME IN ('trg_audit_logs_no_update','trg_audit_logs_no_delete')");
-      assert.equal(Number(triggersAfterReapply.n),2,'reapplying 0009 restores both audit triggers');
-    }finally{await db.execute('DROP TRIGGER IF EXISTS p09_unrelated_fixture');}
+    }finally{
+      await db.execute('DROP TRIGGER IF EXISTS trg_audit_logs_no_update');
+      await db.execute('DROP TRIGGER IF EXISTS trg_audit_logs_no_delete');
+      for(const statement of migrationUp) await db.execute(statement);
+      await db.execute('DROP TRIGGER IF EXISTS p09_unrelated_fixture');
+    }
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM role_permissions WHERE role_id=?',[roleIds.p09_full])).n),grantsBefore);
+    const attributionColumnsAfterReapply=await db.queryOne("SELECT COUNT(*) AS n FROM information_schema.columns WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='orders' AND COLUMN_NAME IN ('analytics_consent_at','analytics_consent_version')");
+    assert.equal(Number(attributionColumnsAfterReapply.n),2,'migration reapplication restores/retains both Phase 14 consent columns');
+    const triggersAfterReapply=await db.queryOne("SELECT COUNT(*) AS n FROM information_schema.triggers WHERE TRIGGER_SCHEMA=DATABASE() AND TRIGGER_NAME IN ('trg_audit_logs_no_update','trg_audit_logs_no_delete')");
+    assert.equal(Number(triggersAfterReapply.n),2,'reapplying 0009 restores both audit triggers');
     assert.equal((await request('/logout',{method:'POST',cookie:dashboardCookie,token:''})).status,403,'logout is a CSRF-protected POST');
     const logout=await request('/logout',{method:'POST',cookie:dashboardCookie,token:csrfToken});
     assert.equal(logout.status,302);assert.equal(logout.headers.get('location'),'/admin/login');

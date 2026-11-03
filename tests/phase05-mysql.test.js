@@ -40,7 +40,8 @@ if (MYSQL_HOST) {
 }
 
 const { getPool, closePool, createQueryClient } = require('../src/db/mysqlPool');
-const { migrateUp, migrateDown } = require('../src/db/migrator');
+const { resetDisposableMysqlDatabase, dropDisposableMysqlSchema } = require('../scripts/qa/mysql-test-database');
+const { closeHttpServer } = require('../scripts/qa/demo-e2e-cleanup');
 const storefrontRepo = require('../src/repositories/storefrontRepository');
 const checkoutRepo = require('../src/repositories/checkoutRepository');
 const customerRepo = require('../src/repositories/customerRepository');
@@ -90,8 +91,7 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
     if (!MYSQL_HOST) return;
     pool = getPool();
     client = createQueryClient(pool);
-    await migrateDown(pool, { steps: 13 });
-    await migrateUp(pool);
+    await resetDisposableMysqlDatabase(pool);
 
     const catRes = await client.execute(
       "INSERT INTO `categories` (`name_bn`, `name_en`, `slug`, `icon`, `front_view`, `sort_order`, `status`) VALUES ('চাল ও ডাল', 'Rice & Lentils', 'rice-lentils', '🌾', 1, 1, 1)"
@@ -203,12 +203,13 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
   });
 
   after(async () => {
-    if (server) {
-      await new Promise((resolve) => server.close(resolve));
-    }
-    if (pool) {
-      await migrateDown(pool, { steps: 13 });
-      await closePool();
+    try {
+      if (server) await closeHttpServer(server);
+    } finally {
+      if (pool) {
+        try { await dropDisposableMysqlSchema(pool); }
+        finally { await closePool(); }
+      }
     }
   });
 

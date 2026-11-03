@@ -8,6 +8,8 @@ const crypto = require('node:crypto');
 const nodeAssert = require('node:assert/strict');
 const bcrypt = require('bcryptjs');
 const { chromium } = require('playwright');
+const { resetDisposableMysqlDatabase, dropDisposableMysqlSchema } = require('./mysql-test-database');
+const { cleanupE2eResources } = require('./demo-e2e-cleanup');
 
 const engine = process.env.QA_DB_ENGINE || 'unknown database';
 const outDir = path.join(process.cwd(), 'qa-evidence', 'browser-final', engine);
@@ -20,7 +22,7 @@ const suffix = crypto.randomBytes(4).toString('hex');
 const phoneSuffix = crypto.randomBytes(4).readUInt32BE(0).toString().padStart(10, '0').slice(-8);
 const demoTag = `DEMO-E2E-${suffix}`;
 const demoPassword = `QaOnly-${crypto.randomBytes(12).toString('hex')}!`;
-let pool, db, server, browser;
+let pool, db, server, browser, mysql;
 const ids = { customers: [], vendors: [], products: [], orders: [], category: null, uploadedFiles: [] };
 const customerPhones = [];
 let baseUrl = '';
@@ -37,12 +39,10 @@ async function main() {
   assert(process.env.NODE_ENV === 'test' && process.env.DB_CLIENT === 'mysql', 'Refusing to run outside the MySQL test profile.');
   assert(process.env.DB_NAME === 'mrtumi_test' && process.env.DB_USER === 'mrtumi_test' && process.env.DB_HOST === '127.0.0.1', 'Refusing to use a database other than the named disposable CI service.');
   assert(process.env.MYSQL_TEST_REQUIRED === 'true', 'MYSQL_TEST_REQUIRED must be enabled.');
-  const mysql = require('../../src/db/mysqlPool');
-  const migrator = require('../../src/db/migrator');
+  mysql = require('../../src/db/mysqlPool');
   const { createQueryClient } = mysql;
   pool = mysql.getPool(); db = createQueryClient(pool);
-  await migrator.migrateDown(pool, { steps: 13 });
-  await migrator.migrateUp(pool);
+  await resetDisposableMysqlDatabase(pool);
   const version = await db.queryOne('SELECT VERSION() AS version');
   results.serverVersion = version.version;
 
@@ -271,29 +271,47 @@ async function main() {
     results.runnerFailure = `${error.code || error.name || 'Error'}: ${error.message}`;
     results.stack = String(error.stack || '').split('\n').slice(0, 12).join('\n');
   } finally {
-    try { if (browser) await browser.close(); } catch {}
-    try { if (server) await new Promise(resolve => server.close(resolve)); } catch {}
     try {
       if (pool) {
-        const mysql = require('../../src/db/mysqlPool');
-        const migrator = require('../../src/db/migrator');
         try {
           const auditRows = await db.queryAll('SELECT actor_type,actor_id,action,entity_type,entity_id,created_at FROM audit_logs WHERE (entity_type=\'customer\' AND entity_id IN (SELECT CAST(id AS CHAR) FROM customers WHERE phone LIKE ?)) OR entity_id IN (SELECT CAST(id AS CHAR) FROM orders WHERE customer_note LIKE ? OR invoice_no LIKE ?) ORDER BY id', [`%${suffix}%`, `%${demoTag}%`, `%${demoTag}%`]);
           results.auditEvidence = auditRows;
         } catch (error) { results.auditEvidenceError = `${error.code || error.name}: ${error.message}`; }
-        await migrator.migrateDown(pool, { steps: 13 });
-        await mysql.closePool();
-        results.cleanup.status = 'PASS';
-        results.cleanup.method = 'Migrated down all 13 schema versions on the dedicated CI-only mrtumi_test service database; no production or SQLite database was touched.';
-        const checkPool = mysql.getPool();
-        const [tables] = await checkPool.query("SELECT COUNT(*) AS n FROM information_schema.tables WHERE table_schema=DATABASE() AND table_type='BASE TABLE' AND table_name<>'schema_migrations'");
-        const [migrationRows] = await checkPool.query('SELECT COUNT(*) AS n FROM schema_migrations');
-        results.cleanup.remainingTables = Number(tables[0].n);
-        results.cleanup.remainingMigrationRows = Number(migrationRows[0].n);
-        if (results.cleanup.remainingTables !== 0 || results.cleanup.remainingMigrationRows !== 0) throw new Error(`cleanup verification found ${results.cleanup.remainingTables} application tables and ${results.cleanup.remainingMigrationRows} migration rows`);
-        await mysql.closePool();
+        const cleanupErrors = await cleanupE2eResources({
+          browser,
+          server,
+          pool,
+          resetDatabase: async (targetPool) => {
+            await dropDisposableMysqlSchema(targetPool);
+            const checkPool = mysql.getPool();
+            const [tables] = await checkPool.query("SELECT COUNT(*) AS n FROM information_schema.tables WHERE table_schema=DATABASE() AND table_type='BASE TABLE'");
+            const [migrationRows] = await checkPool.query('SELECT COUNT(*) AS n FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name=\'schema_migrations\'');
+            results.cleanup.remainingTables = Number(tables[0].n);
+            results.cleanup.remainingMigrationTables = Number(migrationRows[0].n);
+            if (results.cleanup.remainingTables !== 0 || results.cleanup.remainingMigrationTables !== 0) {
+              throw new Error(`cleanup verification found ${results.cleanup.remainingTables} tables and ${results.cleanup.remainingMigrationTables} migration tables`);
+            }
+          },
+          closePool: () => mysql.closePool(),
+        });
+        if (cleanupErrors.length) {
+          results.cleanup.status = 'FAIL';
+          results.cleanup.errors = cleanupErrors.map(({ resource, error }) => `${resource}: ${error.code || error.name}: ${error.message}`);
+          failure ||= cleanupErrors[0].error;
+        } else {
+          results.cleanup.status = 'PASS';
+          results.cleanup.method = 'Dropped all tables, including schema_migrations, only in the guarded disposable mrtumi_test database.';
+        }
       } else results.cleanup.status = 'BLOCKED_SETUP_FAILED_BEFORE_DB_INIT';
-    } catch (error) { results.cleanup.status = 'FAIL'; results.cleanup.error = `${error.code || error.name}: ${error.message}`; failure ||= error; }
+    } catch (error) {
+      results.cleanup.status = 'FAIL';
+      results.cleanup.error = `${error.code || error.name}: ${error.message}`;
+      failure ||= error;
+      if (pool && mysql) {
+        try { await mysql.closePool(); }
+        catch (closeError) { results.cleanup.poolCloseError = `${closeError.code || closeError.name}: ${closeError.message}`; }
+      }
+    }
     results.finishedAt = new Date().toISOString();
     fs.writeFileSync(path.join(outDir, 'journey-results.json'), `${JSON.stringify(results, null, 2)}\n`);
     fs.writeFileSync(path.join(outDir, 'runner.log'), [`Engine: ${engine}`, `Tag: ${demoTag}`, `Started: ${results.startedAt}`, ...results.journeys.map(j => `${j.status} ${j.name}${j.error ? ` — ${j.error}` : ''}`), `Cleanup: ${results.cleanup.status}${results.cleanup.error ? ` — ${results.cleanup.error}` : ''}`, `Runner failure: ${results.runnerFailure || 'none'}`].join('\n') + '\n');

@@ -15,7 +15,8 @@ if(MYSQL_REQUIRED&&!MYSQL_HOST)throw new Error('MYSQL_TEST_REQUIRED=true, but MY
 process.env.NODE_ENV='test';process.env.LOG_SILENT='true';
 if(MYSQL_HOST){process.env.DB_CLIENT='mysql';process.env.DB_HOST=MYSQL_HOST;process.env.DB_PORT=String(process.env.MYSQL_TEST_PORT||3306);process.env.DB_NAME=process.env.MYSQL_TEST_DB||'mrtumi_test';process.env.DB_USER=process.env.MYSQL_TEST_USER||'mrtumi_test';process.env.DB_PASSWORD=process.env.MYSQL_TEST_PASSWORD||'mrtumi_test_pw';}
 const {getPool,createQueryClient,closePool}=require('../src/db/mysqlPool');
-const {migrateUp,migrateDown}=require('../src/db/migrator');
+const { resetDisposableMysqlDatabase } = require('../scripts/qa/mysql-test-database');
+const { closeHttpServer } = require('../scripts/qa/demo-e2e-cleanup');
 const phase08=require('../src/repositories/phase08Repository');
 const {attachCsrfToken}=require('../src/middleware/csrf');
 const adminAuth=require('../src/routes/adminAuth');
@@ -30,7 +31,7 @@ describe('Phase 08 — authenticated MySQL admin HTTP, RBAC, CSRF, replay and au
   };
   before(async()=>{
     if(!MYSQL_HOST)return;
-    pool=getPool();db=createQueryClient(pool);await migrateDown(pool,{steps:13});await migrateUp(pool);
+    pool=getPool();db=createQueryClient(pool);await resetDisposableMysqlDatabase(pool);
     for(const [key,permissions] of Object.entries(grantMap)){
       const suffix=`${Date.now()}-${key}`;
       const role=(await db.execute('INSERT INTO roles (name,slug,status) VALUES (?,?,1)',[`P08 ${key}`,`p08_${suffix}`])).insertId;
@@ -55,7 +56,7 @@ describe('Phase 08 — authenticated MySQL admin HTTP, RBAC, CSRF, replay and au
     app.use((err,req,res,_next)=>res.status(err.statusCode||500).json({error:err.code||'ERROR',message:err.message}));
     server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));baseUrl=`http://127.0.0.1:${server.address().port}`;
   });
-  after(async()=>{if(server)await new Promise(resolve=>server.close(resolve));if(MYSQL_HOST)await closePool();});
+  after(async()=>{try{if(server)await closeHttpServer(server);}finally{if(MYSQL_HOST)await closePool();}});
 
   async function request(path,{method='GET',cookie='',body=null,csrf='',headers={}}={}){
     const h={accept:'application/json',...headers};if(cookie)h.cookie=cookie;if(csrf)h['x-csrf-token']=csrf;

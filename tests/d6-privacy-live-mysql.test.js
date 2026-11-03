@@ -10,13 +10,13 @@ if (required && !host) throw new Error('MYSQL_TEST_REQUIRED=true, but MYSQL_TEST
 process.env.NODE_ENV = 'test'; process.env.LOG_SILENT = 'true';
 if (host) { process.env.DB_CLIENT='mysql'; process.env.DB_HOST=host; process.env.DB_PORT=String(process.env.MYSQL_TEST_PORT||3306); process.env.DB_NAME=process.env.MYSQL_TEST_DB||'mrtumi_test'; process.env.DB_USER=process.env.MYSQL_TEST_USER||'mrtumi_test'; process.env.DB_PASSWORD=process.env.MYSQL_TEST_PASSWORD||'mrtumi_test_pw'; }
 const { getPool, createQueryClient, closePool } = require('../src/db/mysqlPool');
-const { migrateUp, migrateDown } = require('../src/db/migrator');
+const { resetDisposableMysqlDatabase } = require('../scripts/qa/mysql-test-database');
 const customers = require('../src/repositories/customerRepository');
 const privacy = require('../src/repositories/privacyRepository');
 
 describe('D6 privacy lifecycle MySQL/MariaDB integration', { skip: !host && !required ? skipReason : false }, () => {
   let db;
-  before(async () => { if (!host) return; const pool=getPool(); db=createQueryClient(pool); await migrateDown(pool,{steps:13}); await migrateUp(pool); });
+  before(async () => { if (!host) return; const pool=getPool(); db=createQueryClient(pool); await resetDisposableMysqlDatabase(pool); });
   after(async () => { if (host) await closePool(); });
   test('policy acceptance, consent history, owned requests, deletion review, anonymization, recovery single-use/expiry and rollback', async t => {
     if(!host)return t.skip(skipReason);

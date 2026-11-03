@@ -9,11 +9,11 @@ if (REQUIRED && !MYSQL_HOST) throw new Error('MYSQL_TEST_REQUIRED=true, but MYSQ
 process.env.NODE_ENV = 'test'; process.env.LOG_SILENT = 'true';
 if (MYSQL_HOST) { process.env.DB_CLIENT='mysql'; process.env.DB_HOST=MYSQL_HOST; process.env.DB_PORT=String(process.env.MYSQL_TEST_PORT||3306); process.env.DB_NAME=process.env.MYSQL_TEST_DB||'mrtumi_test'; process.env.DB_USER=process.env.MYSQL_TEST_USER||'mrtumi_test'; process.env.DB_PASSWORD=process.env.MYSQL_TEST_PASSWORD||'mrtumi_test_pw'; }
 const { getPool, createQueryClient, closePool } = require('../src/db/mysqlPool');
-const { migrateUp, migrateDown } = require('../src/db/migrator');
+const { resetDisposableMysqlDatabase } = require('../scripts/qa/mysql-test-database');
 const vendorPortalRepo = require('../src/repositories/vendorPortalRepository');
 describe('Vendor portal live MySQL/MariaDB repository integration', () => {
   let pool = null; let client = null;
-  before(async () => { if (!MYSQL_HOST) return; pool=getPool(); client=createQueryClient(pool); await migrateDown(pool,{steps:13}); await migrateUp(pool); });
+  before(async () => { if (!MYSQL_HOST) return; pool=getPool(); client=createQueryClient(pool); await resetDisposableMysqlDatabase(pool); });
   after(async () => { if (MYSQL_HOST) await closePool(); });
 
   test('vendor products, cross-vendor denial, inventory audit, rollback, and mixed-vendor fulfillment', { skip: !MYSQL_HOST ? SKIP_REASON : false }, async () => {

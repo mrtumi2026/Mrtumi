@@ -19,7 +19,7 @@ if (MYSQL_HOST) {
 }
 const { CATEGORY_SEEDS, seedCategories, slugifyEnglish } = require('../scripts/seed-categories');
 const mysql = require('../src/db/mysqlPool');
-const { migrateUp, migrateDown } = require('../src/db/migrator');
+const { resetDisposableMysqlDatabase } = require('../scripts/qa/mysql-test-database');
 const MYSQL_SKIP_REASON = 'SKIPPED locally: no disposable MySQL 8.0 service; executed in required MySQL/MariaDB CI.';
 
 test('bilingual category taxonomy has 15 unique categories and stable unique subcategory slugs', () => {
@@ -81,8 +81,7 @@ test('category seed script runs twice on disposable MySQL with exact bilingual c
   const subcategorySlugs = CATEGORY_SEEDS.flatMap((category) => category.subcategories.map(([nameEn]) => `${category.slug}-${slugifyEnglish(nameEn)}`));
   const placeholders = (values) => values.map(() => '?').join(',');
   try {
-    await migrateDown(pool, { steps: 13 });
-    await migrateUp(pool);
+    await resetDisposableMysqlDatabase(pool);
     const db = mysql.createQueryClient(pool);
     const before = await db.queryOne('SELECT (SELECT COUNT(*) FROM categories) AS categories,(SELECT COUNT(*) FROM subcategories) AS subcategories');
     assert.deepEqual([Number(before.categories), Number(before.subcategories)], [0, 0], 'the disposable schema starts without taxonomy rows');

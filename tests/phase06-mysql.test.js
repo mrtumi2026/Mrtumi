@@ -17,7 +17,7 @@ if (MYSQL_HOST) {
   process.env.DB_PASSWORD = process.env.MYSQL_TEST_PASSWORD || 'mrtumi_test_pw';
 }
 const { getPool, createQueryClient, closePool } = require('../src/db/mysqlPool');
-const { migrateUp, migrateDown } = require('../src/db/migrator');
+const { resetDisposableMysqlDatabase } = require('../scripts/qa/mysql-test-database');
 const repo = require('../src/repositories/phase06Repository');
 const customerRepo = require('../src/repositories/customerRepository');
 const phase08 = require('../src/repositories/phase08Repository');
@@ -35,8 +35,7 @@ describe('Phase 06 — Live MySQL 8.0 schema, product, stock ledger & purchase r
     if (!MYSQL_HOST) return;
     pool = getPool();
     db = createQueryClient(pool);
-    await migrateDown(pool, { steps: 13 });
-    await migrateUp(pool);
+    await resetDisposableMysqlDatabase(pool);
     const category = await db.execute("INSERT INTO categories (name_bn,name_en,slug,status) VALUES ('পরীক্ষা','Test','phase06-mysql-test',1)");
     const supplier = await repo.createSupplier({ name:'Phase 06 MySQL Supplier',supplier_code:'P06-MYSQL-SUP',phone:'+8801700000001' },{id:null});
     supplierId = supplier.id;

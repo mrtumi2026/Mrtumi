@@ -30,7 +30,10 @@ test('demo fixtures use tagged synthetic identities, browser journeys, and guara
   assert.match(runner, /Public storefront: all five DEMO products render/);
   assert.match(runner, /Return request, evidence upload, and policy-authorized review/);
   assert.match(runner, /Vendor login, tenant isolation and assigned order visibility/);
-  assert.match(runner, /migrateDown\(pool, \{ steps: 13 \}\)/);
-  assert.match(runner, /remainingTables !== 0 \|\| results\.cleanup\.remainingMigrationRows !== 0/);
+  assert.match(runner, /resetDisposableMysqlDatabase\(pool\)/);
+  assert.match(runner, /cleanupE2eResources\(/);
+  assert.match(runner, /remainingTables !== 0 \|\| results\.cleanup\.remainingMigrationTables !== 0/);
+  assert.doesNotMatch(runner, /migrateDown\s*\(/);
+  assert.match(runner, /closePool: \(\) => mysql\.closePool\(\)/);
   assert.doesNotMatch(runner, /refunds\/execute|payouts\/execute|courier.*book/i);
 });
