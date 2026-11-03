@@ -100,6 +100,14 @@ test('failed-SQL fixture allocates a unique migration version after the current 
   }
 });
 
+test('browser E2E synthetic verified vendors are lifecycle-active', () => {
+  const runner = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'qa', 'demo-browser-e2e.js'), 'utf8');
+  assert.match(
+    runner,
+    /INSERT INTO vendors\(shop_name,owner_name,phone,email,password_hash,verified,status,lifecycle_status\) VALUES\(\?,\?,\?,\?,\?,1,1,'active'\)/
+  );
+});
+
 describe('Phase 03 — Real MySQL 8.0 Schema, Migrations, Constraints, Transactions & Concurrency', () => {
   let pool = null;
   let dbClient = null;
@@ -192,6 +200,12 @@ describe('Phase 03 — Real MySQL 8.0 Schema, Migrations, Constraints, Transacti
         (err) => err instanceof MigrationError && err.code === 'MIGRATION_CHECKSUM_MISMATCH'
       );
 
+      // Restore 0001 before independently checking migration ordering.
+      fs.copyFileSync(
+        path.join(realDir, '0001_core_security_and_sessions.up.sql'),
+        path.join(tmpDir, '0001_core_security_and_sessions.up.sql')
+      );
+
       // A missing version before the applied history must be rejected as out of order.
       fs.writeFileSync(path.join(tmpDir, '0000_out_of_order.up.sql'), 'SELECT 1;');
       fs.writeFileSync(path.join(tmpDir, '0000_out_of_order.down.sql'), 'SELECT 1;');
@@ -202,11 +216,7 @@ describe('Phase 03 — Real MySQL 8.0 Schema, Migrations, Constraints, Transacti
       fs.rmSync(path.join(tmpDir, '0000_out_of_order.up.sql'));
       fs.rmSync(path.join(tmpDir, '0000_out_of_order.down.sql'));
 
-      // Restore 0001 and add a failed migration after the actual current tail.
-      fs.copyFileSync(
-        path.join(realDir, '0001_core_security_and_sessions.up.sql'),
-        path.join(tmpDir, '0001_core_security_and_sessions.up.sql')
-      );
+      // Add a failed migration after the actual current tail.
       const migrationPairs = loadMigrationPairs();
       const brokenVersion = writeFailedSqlMigration(tmpDir);
 

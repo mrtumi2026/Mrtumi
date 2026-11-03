@@ -50,7 +50,7 @@ async function main() {
   ids.category = Number(cat.insertId);
   const vendorPasswordHash = await bcrypt.hash(demoPassword, 8);
   for (let i = 1; i <= 2; i++) {
-    const r = await db.execute('INSERT INTO vendors(shop_name,owner_name,phone,email,password_hash,verified,status) VALUES(?,?,?,?,?,1,1)', [`${demoTag} Vendor 0${i}`, `Demo Vendor 0${i}`, `013${suffix}${i}111`, `demo-vendor-${i}-${suffix}@example.invalid`, vendorPasswordHash]);
+    const r = await db.execute("INSERT INTO vendors(shop_name,owner_name,phone,email,password_hash,verified,status,lifecycle_status) VALUES(?,?,?,?,?,1,1,'active')", [`${demoTag} Vendor 0${i}`, `Demo Vendor 0${i}`, `013${suffix}${i}111`, `demo-vendor-${i}-${suffix}@example.invalid`, vendorPasswordHash]);
     ids.vendors.push(Number(r.insertId));
   }
   const productNames = [
