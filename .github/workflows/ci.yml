@@ -218,7 +218,7 @@ jobs:
           DB_PASSWORD: mrtumi_test_pw
         run: node scripts/diagnose-migrations.js
 
-      - name: Verify MariaDB CLI migration lifecycle (up -> status -> down -> up)
+      - name: Verify MariaDB CLI migrator up and status
         env:
           DB_CLIENT: mysql
           DB_HOST: 127.0.0.1
@@ -231,10 +231,59 @@ jobs:
           npm run migrate:up
           npm run migrate:status
           npm run migrate:status
-          npm run migrate:down -- 2
+
+      - name: Roll back MariaDB migration 0025
+        env:
+          DB_CLIENT: mysql
+          DB_HOST: 127.0.0.1
+          DB_PORT: "3306"
+          DB_NAME: mrtumi_test
+          DB_USER: mrtumi_test
+          DB_PASSWORD: mrtumi_test_pw
+        run: npm run migrate:down -- 1
+
+      - name: Roll back MariaDB migration 0024
+        env:
+          DB_CLIENT: mysql
+          DB_HOST: 127.0.0.1
+          DB_PORT: "3306"
+          DB_NAME: mrtumi_test
+          DB_USER: mrtumi_test
+          DB_PASSWORD: mrtumi_test_pw
+        run: npm run migrate:down -- 1
+
+      - name: Reapply migrations after MariaDB rollback
+        env:
+          DB_CLIENT: mysql
+          DB_HOST: 127.0.0.1
+          DB_PORT: "3306"
+          DB_NAME: mrtumi_test
+          DB_USER: mrtumi_test
+          DB_PASSWORD: mrtumi_test_pw
+        run: |
+          set -euo pipefail
           npm run migrate:up
           npm run migrate:status
-          npm run migrate:down -- 2
+
+      - name: Roll back MariaDB migration 0025 before integration tests
+        env:
+          DB_CLIENT: mysql
+          DB_HOST: 127.0.0.1
+          DB_PORT: "3306"
+          DB_NAME: mrtumi_test
+          DB_USER: mrtumi_test
+          DB_PASSWORD: mrtumi_test_pw
+        run: npm run migrate:down -- 1
+
+      - name: Roll back MariaDB migration 0024 before integration tests
+        env:
+          DB_CLIENT: mysql
+          DB_HOST: 127.0.0.1
+          DB_PORT: "3306"
+          DB_NAME: mrtumi_test
+          DB_USER: mrtumi_test
+          DB_PASSWORD: mrtumi_test_pw
+        run: npm run migrate:down -- 1
 
       - name: Run automated unit, portal regression & live MariaDB 10.11 test suites
         run: |
