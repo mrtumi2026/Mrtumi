@@ -94,6 +94,14 @@ test('withdrawal approval atomically debits only available funds and rejects ove
   assert.equal(insufficient.calls.at(-1)[0], 'ROLLBACK');
 });
 
+test('branding and fee rollback drops CHECK constraints with MySQL and MariaDB compatible syntax', () => {
+  const rollback = read('src/db/migrations/0024_admin_reseller_commerce.down.sql');
+  assert.match(rollback, /DROP CONSTRAINT `chk_reseller_branding_status`/);
+  assert.match(rollback, /DROP CONSTRAINT `chk_reseller_platform_fee_bps`/);
+  assert.match(rollback, /DROP CONSTRAINT `chk_reseller_platform_fee_type`/);
+  assert.doesNotMatch(rollback, /DROP CHECK/);
+});
+
 test('withdrawal UNION ordering and masking use aliases defined by the first SELECT', () => {
   const source = read('src/repositories/adminResellerCommerceRepository.js');
   const start = source.indexOf('async function listWithdrawalRequests');
