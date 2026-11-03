@@ -39,6 +39,12 @@ test('demo fixtures use tagged synthetic identities, browser journeys, and guara
   assert.doesNotMatch(runner, /refunds\/execute|payouts\/execute|courier.*book/i);
 });
 
+test('E2E fixture reuses the migration-seeded COD gateway without inserting a duplicate', () => {
+  assert.match(runner, /SELECT id FROM payment_gateways WHERE code=\? AND status=1/);
+  assert.match(runner, /Expected the active COD gateway seeded by migration 0020/);
+  assert.doesNotMatch(runner, /INSERT INTO payment_gateways/);
+});
+
 test('E2E cleanup drops only the guarded disposable schema and never rolls back migration 0023', () => {
   assert.match(runner, /dropDisposableMysqlSchema\(targetPool\)/);
   assert.doesNotMatch(runner, /migrateDown\s*\(/);

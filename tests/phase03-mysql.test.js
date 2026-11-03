@@ -73,6 +73,33 @@ if (MYSQL_REQUIRED && !testDbConfig) {
 const SKIP_REASON =
   'SKIPPED locally: no local mysqld/docker in sandbox; runs against real mysql:8.0 service in GitHub Actions CI';
 
+function writeFailedSqlMigration(migrationsDir) {
+  const currentPairs = loadMigrationPairs(migrationsDir);
+  const latestVersion = currentPairs.at(-1).version;
+  const version = String(Number(latestVersion) + 1).padStart(4, '0');
+  fs.writeFileSync(path.join(migrationsDir, `${version}_broken_sql.up.sql`), 'INVALID SQL STATEMENT THAT MUST FAIL;');
+  fs.writeFileSync(path.join(migrationsDir, `${version}_broken_sql.down.sql`), 'SELECT 1;');
+  return version;
+}
+
+test('failed-SQL fixture allocates a unique migration version after the current tail', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mrtumi-mysql-fixture-'));
+  try {
+    const realDir = path.join(__dirname, '..', 'src', 'db', 'migrations');
+    for (const file of fs.readdirSync(realDir)) {
+      fs.copyFileSync(path.join(realDir, file), path.join(tmpDir, file));
+    }
+    const currentPairs = loadMigrationPairs();
+    const brokenVersion = writeFailedSqlMigration(tmpDir);
+    const fixturePairs = loadMigrationPairs(tmpDir);
+    assert.equal(brokenVersion, String(Number(currentPairs.at(-1).version) + 1).padStart(4, '0'));
+    assert.equal(fixturePairs.at(-1).version, brokenVersion);
+    assert.equal(fixturePairs.filter((pair) => pair.version === brokenVersion).length, 1);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
 describe('Phase 03 — Real MySQL 8.0 Schema, Migrations, Constraints, Transactions & Concurrency', () => {
   let pool = null;
   let dbClient = null;
@@ -165,29 +192,37 @@ describe('Phase 03 — Real MySQL 8.0 Schema, Migrations, Constraints, Transacti
         (err) => err instanceof MigrationError && err.code === 'MIGRATION_CHECKSUM_MISMATCH'
       );
 
-      // Restore 0001 checksum, add failing 0014 migration after the real 0013, then verify failure handling & advisory lock release
+      // A missing version before the applied history must be rejected as out of order.
+      fs.writeFileSync(path.join(tmpDir, '0000_out_of_order.up.sql'), 'SELECT 1;');
+      fs.writeFileSync(path.join(tmpDir, '0000_out_of_order.down.sql'), 'SELECT 1;');
+      await assert.rejects(
+        () => getMigrationStatus(pool, { migrationsDir: tmpDir }),
+        (err) => err instanceof MigrationError && err.code === 'OUT_OF_ORDER_MIGRATION'
+      );
+      fs.rmSync(path.join(tmpDir, '0000_out_of_order.up.sql'));
+      fs.rmSync(path.join(tmpDir, '0000_out_of_order.down.sql'));
+
+      // Restore 0001 and add a failed migration after the actual current tail.
       fs.copyFileSync(
         path.join(realDir, '0001_core_security_and_sessions.up.sql'),
         path.join(tmpDir, '0001_core_security_and_sessions.up.sql')
       );
-      fs.writeFileSync(
-        path.join(tmpDir, '0014_broken_sql.up.sql'),
-        'INVALID SQL STATEMENT THAT MUST FAIL;'
-      );
-      fs.writeFileSync(
-        path.join(tmpDir, '0014_broken_sql.down.sql'),
-        'SELECT 1;'
-      );
+      const migrationPairs = loadMigrationPairs();
+      const brokenVersion = writeFailedSqlMigration(tmpDir);
 
       await assert.rejects(
         () => migrateUp(pool, { migrationsDir: tmpDir }),
         (err) => err instanceof MigrationError && err.code === 'MIGRATION_STATEMENT_FAILED'
       );
 
-      // Verify 0014 was NOT recorded in schema_migrations and advisory lock was released
+      // Verify the failed version was not recorded and the advisory lock was released.
       const status = await getMigrationStatus(pool);
-      assert.equal(status.length, 13);
-      const failedMigration = await dbClient.queryOne("SELECT version FROM schema_migrations WHERE version='0014'");
+      assert.equal(status.length, migrationPairs.length);
+      assert.equal(status.every((migration) => migration.applied), true);
+      const failedMigration = await dbClient.queryOne(
+        'SELECT version FROM schema_migrations WHERE version=?',
+        [brokenVersion]
+      );
       assert.equal(failedMigration, null, 'failed migration version must not be recorded');
       const lockCheck = await dbClient.queryOne(
         "SELECT IS_FREE_LOCK('mrtumi_schema_migration') AS free_lock"

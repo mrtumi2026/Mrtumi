@@ -67,8 +67,9 @@ async function main() {
     ids.products.push(Number(r.insertId));
   }
   const loc = await db.execute("INSERT INTO delivery_locations(division,district,upazila,delivery_charge_paisa,status) VALUES('QA','QA','QA',0,1)");
-  await db.execute("INSERT INTO payment_gateways(name,code,gateway_type,sandbox,status) VALUES('QA COD','cod','manual',1,1)");
-  results.fixture = { tag: demoTag, ids: JSON.parse(JSON.stringify(ids)), syntheticAccounts: ['demo-customer-01', 'demo-customer-02', 'demo-vendor-01', 'demo-vendor-02'], credentialNote: 'Random password generated for CI-only fixtures; intentionally omitted from artifacts and logs.' };
+  const codGateway = await db.queryOne('SELECT id FROM payment_gateways WHERE code=? AND status=1', ['cod']);
+  assert(codGateway, 'Expected the active COD gateway seeded by migration 0020.');
+  results.fixture = { tag: demoTag, ids: JSON.parse(JSON.stringify(ids)), codGatewayId: Number(codGateway.id), syntheticAccounts: ['demo-customer-01', 'demo-customer-02', 'demo-vendor-01', 'demo-vendor-02'], credentialNote: 'Random password generated for CI-only fixtures; intentionally omitted from artifacts and logs.' };
 
   const { startServer } = require('../../server');
   server = startServer(0, '127.0.0.1');
