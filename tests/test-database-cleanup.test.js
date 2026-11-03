@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
 const { dropDisposableMysqlSchema } = require('../scripts/qa/mysql-test-database');
-const { cleanupE2eResources } = require('../scripts/qa/demo-e2e-cleanup');
+const { closeBrowser, closeHttpServer, cleanupE2eResources } = require('../scripts/qa/demo-e2e-cleanup');
 
 function setDisposableProfile() {
   const keys = ['NODE_ENV', 'DB_CLIENT', 'MYSQL_TEST_REQUIRED', 'DB_NAME', 'DB_HOST'];
@@ -54,11 +54,68 @@ test('disposable reset verifies the actual schema and always restores foreign-ke
     assert.ok(fixture.calls.some((sql) => sql.startsWith('DROP VIEW IF EXISTS `test_view`')));
     assert.equal(fixture.released(), true);
 
+    const success = fakePool();
+    await dropDisposableMysqlSchema(success.pool);
+    assert.ok(success.calls.includes('SET FOREIGN_KEY_CHECKS = 1'));
+    assert.ok(success.calls.some((sql) => sql.startsWith('DROP VIEW IF EXISTS `test_view`')));
+    assert.ok(success.calls.some((sql) => sql.startsWith('DROP TABLE IF EXISTS `orders`')));
+    assert.equal(success.released(), true);
+
     const wrongSchema = fakePool({ connectedDatabase: 'not_mrtumi_test' });
     await assert.rejects(dropDisposableMysqlSchema(wrongSchema.pool), /connected schema is not mrtumi_test/);
     assert.equal(wrongSchema.released(), true);
     assert.equal(wrongSchema.calls.some((sql) => sql.startsWith('DROP TABLE')), false);
   } finally { restore(); }
+});
+
+test('HTTP server closes gracefully without forcing active connections', async () => {
+  let forced = 0;
+  const server = {
+    listening: true,
+    close(callback) { callback(); },
+    closeAllConnections() { forced += 1; },
+  };
+  await closeHttpServer(server, 25);
+  assert.equal(forced, 0);
+});
+
+test('HTTP server shutdown is bounded and force-closes connections only after timeout', async () => {
+  let forced = 0;
+  const server = {
+    listening: true,
+    close() {},
+    closeAllConnections() { forced += 1; },
+  };
+  await assert.rejects(closeHttpServer(server, 10), /HTTP server close exceeded 10ms/);
+  assert.equal(forced, 1);
+});
+
+test('browser shutdown timeout kills the browser process and reports the timeout', async () => {
+  const kills = [];
+  const browser = {
+    close() { return new Promise(() => {}); },
+    process() { return { kill(signal) { kills.push(signal); } }; },
+  };
+  await assert.rejects(closeBrowser(browser, 10), /Browser close exceeded 10ms/);
+  assert.deepEqual(kills, ['SIGKILL']);
+});
+
+test('cleanup continues through browser and server close errors and still closes the DB pool', async () => {
+  let poolClosed = false;
+  const server = {
+    listening: true,
+    close(callback) { callback(new Error('synthetic server close failure')); },
+    closeAllConnections() { assert.fail('force close should be reserved for timeout'); },
+  };
+  const errors = await cleanupE2eResources({
+    browser: { async close() { throw new Error('synthetic browser close failure'); } },
+    server,
+    pool: {},
+    async resetDatabase() { throw new Error('synthetic schema reset failure'); },
+    async closePool() { poolClosed = true; },
+  });
+  assert.equal(poolClosed, true);
+  assert.deepEqual(errors.map(({ resource }) => resource), ['browser', 'server', 'database-reset']);
 });
 
 test('E2E cleanup closes the DB pool even when disposable schema cleanup rejects', async () => {
@@ -74,6 +131,40 @@ test('E2E cleanup closes the DB pool even when disposable schema cleanup rejects
   assert.equal(browserClosed, true);
   assert.equal(poolClosed, true);
   assert.deepEqual(errors.map(({ resource }) => resource), ['database-reset']);
+});
+
+test('E2E cleanup closes the DB pool and records success after schema cleanup succeeds', async () => {
+  let poolClosed = false;
+  const errors = await cleanupE2eResources({
+    browser: null,
+    server: null,
+    pool: {},
+    async resetDatabase() {},
+    async closePool() { poolClosed = true; },
+  });
+  assert.equal(poolClosed, true);
+  assert.deepEqual(errors, []);
+});
+
+test('E2E cleanup lets a child Node process exit after successful reset', () => {
+  const childScript = `
+    const { cleanupE2eResources } = require('./scripts/qa/demo-e2e-cleanup');
+    const pending = setInterval(() => {}, 1000);
+    cleanupE2eResources({
+      pool: {},
+      async resetDatabase() {},
+      async closePool() { clearInterval(pending); },
+    }).then((errors) => {
+      if (errors.length !== 0) process.exitCode = 2;
+      else process.stdout.write('cleanup-succeeded-and-pool-closed\\n');
+    }).catch(() => { process.exitCode = 3; });
+  `;
+  const child = spawnSync(process.execPath, ['-e', childScript], {
+    cwd: process.cwd(), encoding: 'utf8', timeout: 5000,
+  });
+  assert.equal(child.error, undefined, child.error?.message);
+  assert.equal(child.status, 0, child.stderr);
+  assert.match(child.stdout, /cleanup-succeeded-and-pool-closed/);
 });
 
 test('E2E cleanup lets a child Node process exit after reset failure', () => {

@@ -1,7 +1,7 @@
 'use strict';
 
-// Disposable CI-only browser journey. The service DB is reset before use and
-// migrated down after evidence is written; the runner is deliberately fail-closed.
+// Disposable CI-only browser journey. The guarded service DB is reset before use
+// and its schema is dropped after evidence is written; the runner is fail-closed.
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');

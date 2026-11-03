@@ -16,8 +16,7 @@ function closeHttpServer(server, timeoutMs = 5000) {
       catch (error) { return finish(error); }
       finish(new Error(`HTTP server close exceeded ${timeoutMs}ms; active connections were force-closed.`));
     }, timeoutMs);
-    server.close(finish);
-    try { server.closeAllConnections?.(); }
+    try { server.close(finish); }
     catch (error) { finish(error); }
   });
 }

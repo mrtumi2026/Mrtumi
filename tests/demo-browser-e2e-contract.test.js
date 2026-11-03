@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const runner = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'qa', 'demo-browser-e2e.js'), 'utf8');
 const workflow = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'demo-browser-e2e.yml'), 'utf8');
+const migration0023Down = fs.readFileSync(path.join(__dirname, '..', 'src', 'db', 'migrations', '0023_cod_suborder_settlement_reversal.down.sql'), 'utf8');
 
 test('demo browser harness refuses non-test/non-disposable database targets', () => {
   assert.match(runner, /NODE_ENV === 'test'/);
@@ -36,4 +37,11 @@ test('demo fixtures use tagged synthetic identities, browser journeys, and guara
   assert.doesNotMatch(runner, /migrateDown\s*\(/);
   assert.match(runner, /closePool: \(\) => mysql\.closePool\(\)/);
   assert.doesNotMatch(runner, /refunds\/execute|payouts\/execute|courier.*book/i);
+});
+
+test('E2E cleanup drops only the guarded disposable schema and never rolls back migration 0023', () => {
+  assert.match(runner, /dropDisposableMysqlSchema\(targetPool\)/);
+  assert.doesNotMatch(runner, /migrateDown\s*\(/);
+  assert.match(migration0023Down, /SIGNAL SQLSTATE '45000'/);
+  assert.match(migration0023Down, /intentionally irreversible/i);
 });
