@@ -142,7 +142,7 @@ async function getOrderDetails(customerId, orderId) {
   );
   if (!order) throw new NotFoundError('Order not found.');
   const items = await db.queryAll(
-    `SELECT product_name, qty, unit_price_paisa, line_total_paisa, size_label, color_label
+    `SELECT id, product_name, qty, unit_price_paisa, line_total_paisa, size_label, color_label
      FROM order_items WHERE order_id = ? ORDER BY id`,
     [id]
   );

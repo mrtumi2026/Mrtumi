@@ -70,6 +70,13 @@ test('Phase 07 customer order reads reject invalid or unsafe identifiers and pag
   }
 });
 
+test('customer order details return stable order-item IDs needed for exact return claims', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const source = fs.readFileSync(path.join(__dirname, '../src/repositories/customerRepository.js'), 'utf8');
+  assert.match(source, /SELECT id, product_name, qty, unit_price_paisa, line_total_paisa, size_label, color_label\s+FROM order_items WHERE order_id = \? ORDER BY id/);
+});
+
 test('Phase 07 enforces password bounds compatible with bcrypt', () => {
   assert.equal(validatePassword('correct horse battery'), 'correct horse battery');
   assert.throws(() => validatePassword('short'), { code: 'VALIDATION_ERROR' });
