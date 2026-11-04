@@ -14,6 +14,7 @@
  */
 
 const http = require('http');
+const fs = require('node:fs');
 const { describe, test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const bcrypt = require('bcryptjs');
@@ -51,6 +52,17 @@ const SKIP_REASON =
   'SKIPPED locally: no local mysqld/docker in sandbox; runs against real mysql:8.0 service in GitHub Actions CI';
 
 const mysqlCfg = { db: { client: 'mysql' } };
+
+test('Phase 05 setup reuses migration-seeded active COD gateway without a duplicate insert', () => {
+  const source = fs.readFileSync(__filename, 'utf8');
+  assert.ok(source.includes("client.queryOne('SELECT id,status FROM payment_gateways WHERE code=?', ['cod'])"));
+  assert.ok(source.includes("assert.ok(codGateway, 'Migration 0020 must seed COD gateway.')"));
+  assert.ok(source.includes("assert.equal(Number(codGateway.status), 1, 'Migration 0020 COD gateway must be active.')"));
+  assert.doesNotMatch(
+    source,
+    /INSERT INTO payment_gateways\s*\(name,code,gateway_type,sandbox,status\)\s*VALUES\s*\('Cash on delivery','cod'/i
+  );
+});
 
 function httpRequest(baseUrl, urlPath, options = {}) {
   return new Promise((resolve, reject) => {
@@ -190,7 +202,9 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
       "INSERT INTO `cms_pages` (`title_bn`, `title_en`, `slug`, `content_bn`, `content_en`, `status`) VALUES ('আমাদের সম্পর্কে', 'About Mr. Tumi', 'about-us', 'বাংলা বিবরণ', 'English verified summary', 1)"
     );
     deliveryLocationId = (await client.execute("INSERT INTO delivery_locations (division,district,upazila,delivery_charge_paisa,status) VALUES ('Dhaka Division','Dhaka','Dhanmondi',5500,1)")).insertId;
-    await client.execute("INSERT INTO payment_gateways (name,code,gateway_type,sandbox,status) VALUES ('Cash on delivery','cod','manual',1,1)");
+    const codGateway = await client.queryOne('SELECT id,status FROM payment_gateways WHERE code=?', ['cod']);
+    assert.ok(codGateway, 'Migration 0020 must seed COD gateway.');
+    assert.equal(Number(codGateway.status), 1, 'Migration 0020 COD gateway must be active.');
 
     const { startServer } = require('../server');
     await new Promise((resolve) => {
