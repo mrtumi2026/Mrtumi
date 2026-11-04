@@ -92,13 +92,38 @@ class MockCourierAdapter extends CourierBaseAdapter {
     if (invoiceNo && invoiceNo.includes('REC-FOUND')) {
       const trackingId = `MCK-REC-${Date.now()}`;
       return {
+        outcome: 'found',
         found: true,
+        confirmedAbsent: false,
         trackingId,
         consignmentId: `CN-${trackingId}`,
-        status: 'in_review'
+        status: 'in_review',
+        rawResponse: { simulated: true, outcome: 'found' },
+        error: null
       };
     }
-    return { found: false, trackingId: null, consignmentId: null, status: null };
+    if (invoiceNo && invoiceNo.includes('REC-ABSENT')) {
+      return {
+        outcome: 'confirmed_absent',
+        found: false,
+        confirmedAbsent: true,
+        trackingId: null,
+        consignmentId: null,
+        status: null,
+        rawResponse: { simulated: true, outcome: 'confirmed_absent' },
+        error: null
+      };
+    }
+    return {
+      outcome: 'unknown_error',
+      found: false,
+      confirmedAbsent: false,
+      trackingId: null,
+      consignmentId: null,
+      status: null,
+      rawResponse: { simulated: true, outcome: 'unknown_error' },
+      error: 'Mock provider reconciliation inconclusive (unverified absence)'
+    };
   }
 
   async bookShipment({ shipmentId, subOrderId, invoiceNo, recipient, parcel, codAmountPaisa, idempotencyKey }) {

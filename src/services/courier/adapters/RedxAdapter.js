@@ -170,6 +170,82 @@ class RedxAdapter extends CourierBaseAdapter {
     }
   }
 
+  async reconcileBooking({ trackingId, invoiceNo, consignmentId }) {
+    if (!this.apiKey || this.isSandbox) {
+      return {
+        outcome: 'unknown_error',
+        found: false,
+        confirmedAbsent: false,
+        trackingId: null,
+        consignmentId: null,
+        status: null,
+        rawResponse: null,
+        error: 'RedX API key unconfigured or sandbox environment'
+      };
+    }
+
+    const ref = trackingId || consignmentId;
+    if (!ref) {
+      return {
+        outcome: 'unknown_error',
+        found: false,
+        confirmedAbsent: false,
+        trackingId: null,
+        consignmentId: null,
+        status: null,
+        rawResponse: null,
+        error: 'RedX tracking reference missing for reconciliation'
+      };
+    }
+
+    try {
+      const response = await this.safeFetch(`${this.baseUrl}/v1.0.0-beta/parcels/tracking/${encodeURIComponent(ref)}`, {
+        method: 'GET',
+        headers: {
+          'API-ACCESS-TOKEN': `Bearer ${this.apiKey}`
+        }
+      }, 5000);
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data && data.tracking) {
+          return {
+            outcome: 'found',
+            found: true,
+            confirmedAbsent: false,
+            trackingId: ref,
+            consignmentId: ref,
+            status: data.tracking.status || 'in_transit',
+            rawResponse: data,
+            error: null
+          };
+        }
+      }
+
+      return {
+        outcome: 'unknown_error',
+        found: false,
+        confirmedAbsent: false,
+        trackingId: null,
+        consignmentId: null,
+        status: null,
+        rawResponse: null,
+        error: 'RedX parcel status could not be verified; absence is unverified (retry blocked)'
+      };
+    } catch (err) {
+      return {
+        outcome: 'unknown_error',
+        found: false,
+        confirmedAbsent: false,
+        trackingId: null,
+        consignmentId: null,
+        status: null,
+        rawResponse: null,
+        error: `RedX reconciliation error: ${err.message}`
+      };
+    }
+  }
+
   async trackShipment(trackingReference) {
     if (this.isSandbox) {
       return {

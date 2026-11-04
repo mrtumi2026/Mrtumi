@@ -19,6 +19,22 @@ const en = require('../src/i18n/locales/en');
 
 const root = path.join(__dirname, '..');
 
+const MYSQL_HOST = String(process.env.MYSQL_TEST_HOST || '').trim();
+const REQUIRED = process.env.MYSQL_TEST_REQUIRED === 'true';
+const SKIP = 'SKIPPED locally: no disposable MySQL/MariaDB service; required in exact database CI.';
+if (REQUIRED && !MYSQL_HOST) throw new Error('MYSQL_TEST_REQUIRED=true but MYSQL_TEST_HOST was not provided.');
+if (MYSQL_HOST) {
+  process.env.NODE_ENV = 'test';
+  process.env.DB_CLIENT = 'mysql';
+  process.env.DB_HOST = MYSQL_HOST;
+  process.env.DB_PORT = String(process.env.MYSQL_TEST_PORT || 3306);
+  process.env.DB_NAME = process.env.MYSQL_TEST_DB || 'mrtumi_test';
+  process.env.DB_USER = process.env.MYSQL_TEST_USER || 'mrtumi_test';
+  process.env.DB_PASSWORD = process.env.MYSQL_TEST_PASSWORD || 'mrtumi_test_pw';
+}
+const mysql = require('../src/db/mysqlPool');
+const { resetDisposableMysqlDatabase } = require('../scripts/qa/mysql-test-database');
+
 test('Migration 0029 defines multi-courier provider and shipment quote tracking schema changes', () => {
   const pairs = loadMigrationPairs();
   const m29 = pairs.find((pair) => pair.version === '0029');
@@ -270,19 +286,17 @@ test('Phone and address validation prevents malformed booking payloads to courie
   assert.match(shortAddressBooking.error, /at least 10 characters/);
 });
 
-test('Mock adapter simulates timeout and unknown outcome reconciliation safely without duplicate booking', async () => {
+test('Tri-state reconciliation distinguishes found, confirmed_absent, and unknown_error; misses are never assumed absent', async () => {
   const mock = new MockCourierAdapter({ code: 'mock_test', api_key: 'test_key' });
 
-  // Timeout simulation
+  // 1. Timeout & Unknown outcome simulation on booking
   const timeoutResult = await mock.bookShipment({
     subOrderId: 201,
     recipient: { phone: '01800000000' }
   });
   assert.equal(timeoutResult.success, false);
   assert.equal(timeoutResult.isTimeout, true);
-  assert.match(timeoutResult.error, /timeout/i);
 
-  // Unknown outcome simulation
   const unknownResult = await mock.bookShipment({
     subOrderId: 202,
     recipient: { phone: '01811111111' }
@@ -290,11 +304,201 @@ test('Mock adapter simulates timeout and unknown outcome reconciliation safely w
   assert.equal(unknownResult.success, false);
   assert.equal(unknownResult.isUnknownOutcome, true);
 
-  // Reconciliation lookup
+  // 2. Case A: Found outcome
   const recFound = await mock.reconcileBooking({ invoiceNo: 'INV-REC-FOUND-123' });
+  assert.equal(recFound.outcome, 'found');
   assert.equal(recFound.found, true);
+  assert.equal(recFound.confirmedAbsent, false);
   assert.ok(recFound.trackingId.startsWith('MCK-REC-'));
 
-  const recNotFound = await mock.reconcileBooking({ invoiceNo: 'INV-OTHER-456' });
-  assert.equal(recNotFound.found, false);
+  // 3. Case B: Confirmed absent outcome (provider explicitly verifies no parcel was created)
+  const recAbsent = await mock.reconcileBooking({ invoiceNo: 'INV-REC-ABSENT-456' });
+  assert.equal(recAbsent.outcome, 'confirmed_absent');
+  assert.equal(recAbsent.found, false);
+  assert.equal(recAbsent.confirmedAbsent, true);
+
+  // 4. Case C: Unknown error / Inconclusive (lookup miss is NOT confirmed absence)
+  const recInconclusive = await mock.reconcileBooking({ invoiceNo: 'INV-OTHER-789' });
+  assert.equal(recInconclusive.outcome, 'unknown_error');
+  assert.equal(recInconclusive.found, false);
+  assert.equal(recInconclusive.confirmedAbsent, false);
+  assert.match(recInconclusive.error, /inconclusive/i);
+
+  // 5. Steadfast and Pathao adapters never treat unverified lookup misses as confirmed absence
+  const sf = new SteadfastAdapter({ code: 'steadfast', api_key: 'key', secret_key: 'sec', sandbox: 1 });
+  const sfRec = await sf.reconcileBooking({ invoiceNo: 'INV-999' });
+  assert.equal(sfRec.outcome, 'unknown_error');
+  assert.equal(sfRec.confirmedAbsent, false);
+
+  const pathao = new PathaoAdapter({ code: 'pathao', api_key: 'tok', sandbox: 1 });
+  const pathaoRec = await pathao.reconcileBooking({ invoiceNo: 'INV-888' });
+  assert.equal(pathaoRec.outcome, 'unknown_error');
+  assert.equal(pathaoRec.confirmedAbsent, false);
+});
+
+test('Live disposable MySQL/MariaDB: timeout persistence, duplicate booking prevention, tri-state reconciliation and retry gating', { skip: !MYSQL_HOST ? SKIP : false }, async (t) => {
+  const pool = mysql.getPool();
+  const db = mysql.createQueryClient(pool);
+  t.after(() => mysql.closePool());
+  await resetDisposableMysqlDatabase(pool);
+
+  // 1. Seed active mock courier in courier_apis
+  await db.execute(`
+    INSERT INTO courier_apis (code, name, provider_type, base_url, api_key, secret_key, client_id, sandbox, supports_live_quotes, status, created_at, updated_at)
+    VALUES ('mock_courier', 'Mock Express Services', 'mock', 'http://localhost/mock', 'test_key', 'test_secret', 'cid', 1, 1, 1, UTC_TIMESTAMP(), UTC_TIMESTAMP())
+    ON DUPLICATE KEY UPDATE status = 1, supports_live_quotes = 1
+  `);
+
+  // 2. Seed customer, vendor, order, and vendor_sub_order in ready_for_pickup status
+  const custRes = await db.execute(`
+    INSERT INTO customers (name, email, phone, status, created_at, updated_at)
+    VALUES ('Test Customer', 'cust@example.test', '01712345678', 1, UTC_TIMESTAMP(), UTC_TIMESTAMP())
+  `);
+  const custId = custRes.insertId;
+
+  const vendRes = await db.execute(`
+    INSERT INTO vendors (shop_name, owner_name, email, phone, status, created_at, updated_at)
+    VALUES ('Test Vendor Shop', 'Vendor Owner', 'vendor@example.test', '01787654321', 1, UTC_TIMESTAMP(), UTC_TIMESTAMP())
+  `);
+  const vendId = vendRes.insertId;
+
+  const orderRes = await db.execute(`
+    INSERT INTO orders (customer_id, invoice_id, name, email, phone, address, shipping_area, payment_method, payment_status, total_paisa, created_at, updated_at)
+    VALUES (?, 'INV-REC-TEST', 'Test Recipient', 'cust@example.test', '01800000000', '123 Test Street, Dhanmondi', 'Dhaka', 'cod', 'unpaid', 50000, UTC_TIMESTAMP(), UTC_TIMESTAMP())
+  `, [custId]);
+  const orderId = orderRes.insertId;
+
+  const subOrderRes = await db.execute(`
+    INSERT INTO vendor_sub_orders (order_id, vendor_id, status, subtotal_paisa, commission_paisa, vendor_payout_paisa, delivery_mode, booking_status, created_at, updated_at)
+    VALUES (?, ?, 'ready_for_pickup', 50000, 5000, 45000, 'vendor_managed', NULL, UTC_TIMESTAMP(), UTC_TIMESTAMP())
+  `, [orderId, vendId]);
+  const subOrderId = subOrderRes.insertId;
+
+  const actor = { vendorId: vendId };
+
+  // Step A: Attempt booking that triggers timeout (recipient phone 01800000000)
+  await assert.rejects(
+    async () => {
+      await courierRepo.executeOneClickBooking({
+        subOrderId,
+        courierCode: 'mock_courier',
+        actor
+      });
+    },
+    (err) => {
+      assert.equal(err.code, 'COURIER_BOOKING_TIMEOUT');
+      return true;
+    }
+  );
+
+  // Step B: Verify timeout persistence in database
+  const shipmentAfterTimeout = await db.queryOne(
+    `SELECT booking_status, courier_code FROM fulfillment_shipments WHERE vendor_sub_order_id = ?`,
+    [subOrderId]
+  );
+  assert.ok(shipmentAfterTimeout, 'Shipment record must exist');
+  assert.equal(shipmentAfterTimeout.booking_status, 'unknown_timeout');
+
+  const timeoutEvent = await db.queryOne(
+    `SELECT event_type, result_code FROM fulfillment_shipment_events WHERE vendor_id = ? ORDER BY id DESC LIMIT 1`,
+    [vendId]
+  );
+  assert.ok(timeoutEvent);
+  assert.equal(timeoutEvent.result_code, 'timeout');
+
+  // Step C: Duplicate/ambiguous booking prevention: Attempting to re-book while in unknown_timeout MUST throw ValidationError
+  await assert.rejects(
+    async () => {
+      await courierRepo.executeOneClickBooking({
+        subOrderId,
+        courierCode: 'mock_courier',
+        actor
+      });
+    },
+    (err) => {
+      assert.match(err.message, /ambiguous state/);
+      return true;
+    }
+  );
+
+  // Step D: Inconclusive reconciliation (unknown_error) - does NOT clear retry
+  // Order invoice is 'INV-REC-TEST-...' which doesn't match REC-FOUND or REC-ABSENT -> returns unknown_error
+  const inconclResult = await courierRepo.reconcileBookingResult({
+    subOrderId,
+    actor
+  });
+  assert.equal(inconclResult.reconciled, false);
+  assert.equal(inconclResult.outcome, 'unknown_error');
+
+  const shipmentStillBlocked = await db.queryOne(
+    `SELECT booking_status FROM fulfillment_shipments WHERE vendor_sub_order_id = ?`,
+    [subOrderId]
+  );
+  assert.equal(shipmentStillBlocked.booking_status, 'unknown_timeout');
+
+  // Booking attempt is STILL blocked!
+  await assert.rejects(
+    async () => {
+      await courierRepo.executeOneClickBooking({
+        subOrderId,
+        courierCode: 'mock_courier',
+        actor
+      });
+    },
+    (err) => {
+      assert.match(err.message, /ambiguous state/);
+      return true;
+    }
+  );
+
+  // Step E: Authoritative absence reconciliation (confirmed_absent)
+  // Update order invoice to include REC-ABSENT to simulate verified absence
+  await db.execute(`UPDATE orders SET invoice_id = 'INV-REC-ABSENT-100' WHERE id = ?`, [orderId]);
+
+  const absentResult = await courierRepo.reconcileBookingResult({
+    subOrderId,
+    actor
+  });
+  assert.equal(absentResult.reconciled, true);
+  assert.equal(absentResult.outcome, 'confirmed_absent');
+  assert.equal(absentResult.bookingStatus, 'failed');
+
+  const shipmentCleared = await db.queryOne(
+    `SELECT booking_status FROM fulfillment_shipments WHERE vendor_sub_order_id = ?`,
+    [subOrderId]
+  );
+  assert.equal(shipmentCleared.booking_status, 'failed');
+
+  // Step F: Retry is now UNLOCKED! Update recipient phone to normal to avoid timeout trigger
+  await db.execute(`UPDATE orders SET phone = '01799999999' WHERE id = ?`, [orderId]);
+
+  const retryBooking = await courierRepo.executeOneClickBooking({
+    subOrderId,
+    courierCode: 'mock_courier',
+    actor
+  });
+  assert.equal(retryBooking.success, true);
+  assert.ok(retryBooking.trackingId.startsWith('MCK-'));
+
+  const shipmentSuccess = await db.queryOne(
+    `SELECT booking_status, tracking_id FROM fulfillment_shipments WHERE vendor_sub_order_id = ?`,
+    [subOrderId]
+  );
+  assert.equal(shipmentSuccess.booking_status, 'succeeded');
+  assert.ok(shipmentSuccess.tracking_id);
+
+  // Step G: Subsequent booking attempt throws 'already booked' error
+  await assert.rejects(
+    async () => {
+      await courierRepo.executeOneClickBooking({
+        subOrderId,
+        courierCode: 'mock_courier',
+        actor
+      });
+    },
+    (err) => {
+      assert.match(err.message, /already booked/);
+      return true;
+    }
+  );
 });

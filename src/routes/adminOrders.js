@@ -86,7 +86,7 @@ router.post('/admin/fulfillment/sub-orders/:subOrderId/reconcile-booking', requi
   if (req.accepts('json') && !req.body.redirect) {
     return res.json({ success: true, data: result });
   }
-  req.flash('success', result.message || 'Booking reconciliation completed.');
+  req.flash(result.outcome === 'unknown_error' ? 'error' : 'success', result.message || 'Booking reconciliation completed.');
   return res.redirect('/admin/reseller-commerce');
 }));
 

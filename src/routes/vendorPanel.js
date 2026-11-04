@@ -457,7 +457,7 @@ router.post('/vendor/sub-orders/:subOrderId/reconcile-booking', requireCsrf, asy
     if (req.accepts('json') && !req.body.redirect) {
       return res.json({ success: true, data: result });
     }
-    req.flash('success', result.message || 'কুরিয়ার বুকিং রিকনসিলিয়েশন সম্পন্ন হয়েছে।');
+    req.flash(result.outcome === 'unknown_error' ? 'error' : 'success', result.message || 'কুরিয়ার বুকিং রিকনসিলিয়েশন সম্পন্ন হয়েছে।');
     return res.redirect('/vendor/orders');
   } catch (error) { return next(error); }
 });

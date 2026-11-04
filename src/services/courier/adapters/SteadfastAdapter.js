@@ -83,37 +83,103 @@ class SteadfastAdapter extends CourierBaseAdapter {
 
   /**
    * Reconciles booking if a timeout or ambiguous state occurs.
+   * NOTE: Steadfast lookup miss is never treated as confirmed absence because invoice reference
+   * indexing semantics can have queue lag; miss is treated strictly as unknown_error.
    */
-  async reconcileBooking({ invoiceNo }) {
-    if (!this.apiKey || !this.secretKey || this.isSandbox) {
-      return { found: false, trackingId: null, consignmentId: null, status: null };
+  async reconcileBooking({ invoiceNo, consignmentId, trackingId }) {
+    if (!this.apiKey || !this.secretKey) {
+      return {
+        outcome: 'unknown_error',
+        found: false,
+        confirmedAbsent: false,
+        trackingId: null,
+        consignmentId: null,
+        status: null,
+        rawResponse: null,
+        error: 'Steadfast API credentials unconfigured'
+      };
+    }
+
+    if (this.isSandbox) {
+      return {
+        outcome: 'unknown_error',
+        found: false,
+        confirmedAbsent: false,
+        trackingId: null,
+        consignmentId: null,
+        status: null,
+        rawResponse: null,
+        error: 'Steadfast sandbox does not provide authoritative absence reconciliation'
+      };
+    }
+
+    const queryKey = consignmentId || invoiceNo || trackingId;
+    if (!queryKey) {
+      return {
+        outcome: 'unknown_error',
+        found: false,
+        confirmedAbsent: false,
+        trackingId: null,
+        consignmentId: null,
+        status: null,
+        rawResponse: null,
+        error: 'Missing invoiceNo or consignmentId for Steadfast reconciliation'
+      };
     }
 
     try {
-      // Steadfast supports checking by invoice reference
-      const response = await this.safeFetch(`${this.baseUrl}/status_by_trackingcode/${encodeURIComponent(invoiceNo)}`, {
+      const endpoint = consignmentId
+        ? `${this.baseUrl}/status_by_cid/${encodeURIComponent(consignmentId)}`
+        : `${this.baseUrl}/status_by_invoice/${encodeURIComponent(invoiceNo)}`;
+
+      const response = await this.safeFetch(endpoint, {
         method: 'GET',
         headers: {
           'Api-Key': this.apiKey,
-          'Secret-Key': this.secretKey
+          'Secret-Key': this.secretKey,
+          'Accept': 'application/json'
         }
       }, 5000);
 
       if (response.ok) {
         const data = await response.json();
-        if (data.status === 200 && data.delivery_status) {
+        if (data && (data.status === 200 || data.delivery_status)) {
           return {
+            outcome: 'found',
             found: true,
-            trackingId: data.tracking_code || invoiceNo,
+            confirmedAbsent: false,
+            trackingId: String(data.tracking_code || invoiceNo),
             consignmentId: String(data.consignment_id || ''),
-            status: data.delivery_status
+            status: data.delivery_status || 'in_review',
+            rawResponse: data,
+            error: null
           };
         }
       }
-    } catch (_err) {
-      // Quietly ignore reconciliation errors
+
+      // If response is 404 or parcel not found: lookup miss is NOT confirmed absence!
+      return {
+        outcome: 'unknown_error',
+        found: false,
+        confirmedAbsent: false,
+        trackingId: null,
+        consignmentId: null,
+        status: null,
+        rawResponse: null,
+        error: 'Steadfast status query returned no active parcel; absence is unverified (retry blocked)'
+      };
+    } catch (err) {
+      return {
+        outcome: 'unknown_error',
+        found: false,
+        confirmedAbsent: false,
+        trackingId: null,
+        consignmentId: null,
+        status: null,
+        rawResponse: null,
+        error: `Steadfast reconciliation network error: ${err.message}`
+      };
     }
-    return { found: false, trackingId: null, consignmentId: null, status: null };
   }
 
   async bookShipment({ shipmentId, subOrderId, invoiceNo, recipient, parcel, codAmountPaisa, idempotencyKey }) {

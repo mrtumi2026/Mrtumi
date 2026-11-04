@@ -121,35 +121,132 @@ class PathaoAdapter extends CourierBaseAdapter {
     return { serviceable: true, reason: null };
   }
 
-  async reconcileBooking({ consignmentId }) {
-    if (!this.apiKey || !consignmentId || this.isSandbox) {
-      return { found: false, trackingId: null, consignmentId: null, status: null };
+  /**
+   * Reconciles booking if a timeout or ambiguous state occurs.
+   * If consignmentId is absent, uses provider-supported alternative lookup: merchant_order_id.
+   * Lookup miss is strictly treated as unknown_error (never assumed absent).
+   */
+  async reconcileBooking({ consignmentId, invoiceNo, trackingId }) {
+    if (!this.apiKey) {
+      return {
+        outcome: 'unknown_error',
+        found: false,
+        confirmedAbsent: false,
+        trackingId: null,
+        consignmentId: null,
+        status: null,
+        rawResponse: null,
+        error: 'Pathao API Bearer token unconfigured'
+      };
+    }
+
+    if (this.isSandbox) {
+      return {
+        outcome: 'unknown_error',
+        found: false,
+        confirmedAbsent: false,
+        trackingId: null,
+        consignmentId: null,
+        status: null,
+        rawResponse: null,
+        error: 'Pathao sandbox does not provide authoritative absence reconciliation'
+      };
+    }
+
+    const queryConsignment = consignmentId || trackingId;
+    const queryMerchantOrder = invoiceNo;
+
+    if (!queryConsignment && !queryMerchantOrder) {
+      return {
+        outcome: 'unknown_error',
+        found: false,
+        confirmedAbsent: false,
+        trackingId: null,
+        consignmentId: null,
+        status: null,
+        rawResponse: null,
+        error: 'Neither consignmentId nor merchant_order_id (invoiceNo) provided for Pathao reconciliation'
+      };
     }
 
     try {
-      const response = await this.safeFetch(`${this.baseUrl}/aladdin/api/v1/orders/${encodeURIComponent(consignmentId)}/info`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
-          'Accept': 'application/json'
-        }
-      }, 5000);
+      // 1. Primary lookup by consignment_id if available
+      if (queryConsignment) {
+        const response = await this.safeFetch(`${this.baseUrl}/aladdin/api/v1/orders/${encodeURIComponent(queryConsignment)}/info`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${this.apiKey}`,
+            'Accept': 'application/json'
+          }
+        }, 5000);
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data && data.data && data.data.consignment_id) {
-          return {
-            found: true,
-            trackingId: String(data.data.consignment_id),
-            consignmentId: String(data.data.consignment_id),
-            status: data.data.order_status
-          };
+        if (response.ok) {
+          const data = await response.json();
+          if (data && data.data && data.data.consignment_id) {
+            return {
+              outcome: 'found',
+              found: true,
+              confirmedAbsent: false,
+              trackingId: String(data.data.consignment_id),
+              consignmentId: String(data.data.consignment_id),
+              status: data.data.order_status,
+              rawResponse: data,
+              error: null
+            };
+          }
         }
       }
-    } catch (_err) {
-      // Quietly ignore reconciliation errors
+
+      // 2. Alternative lookup by merchant_order_id (provider-supported fallback)
+      if (queryMerchantOrder) {
+        const altResponse = await this.safeFetch(`${this.baseUrl}/aladdin/api/v1/orders?merchant_order_id=${encodeURIComponent(queryMerchantOrder)}`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${this.apiKey}`,
+            'Accept': 'application/json'
+          }
+        }, 5000);
+
+        if (altResponse.ok) {
+          const altData = await altResponse.json();
+          const match = altData?.data?.data?.[0] || altData?.data?.[0] || (altData?.data?.consignment_id ? altData.data : null);
+          if (match && match.consignment_id) {
+            return {
+              outcome: 'found',
+              found: true,
+              confirmedAbsent: false,
+              trackingId: String(match.consignment_id),
+              consignmentId: String(match.consignment_id),
+              status: match.order_status,
+              rawResponse: altData,
+              error: null
+            };
+          }
+        }
+      }
+
+      return {
+        outcome: 'unknown_error',
+        found: false,
+        confirmedAbsent: false,
+        trackingId: null,
+        consignmentId: null,
+        status: null,
+        rawResponse: null,
+        error: 'Pathao order not found by consignment ID or merchant_order_id; absence is unverified (retry blocked)'
+      };
+    } catch (err) {
+      return {
+        outcome: 'unknown_error',
+        found: false,
+        confirmedAbsent: false,
+        trackingId: null,
+        consignmentId: null,
+        status: null,
+        rawResponse: null,
+        error: `Pathao reconciliation network error: ${err.message}`
+      };
     }
-    return { found: false, trackingId: null, consignmentId: null, status: null };
   }
 
   async bookShipment({ shipmentId, subOrderId, invoiceNo, recipient, parcel, codAmountPaisa, idempotencyKey }) {

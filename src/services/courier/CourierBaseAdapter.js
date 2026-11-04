@@ -102,10 +102,27 @@ class CourierBaseAdapter {
 
   /**
    * Reconcile an existing or timed-out booking attempt with provider before retrying.
-   * Returns: { found: boolean, trackingId: string | null, consignmentId: string | null, status: string | null }
+   * Tri-state outcome contract:
+   *  - outcome: 'found' | 'confirmed_absent' | 'unknown_error'
+   *  - found: boolean (true only if provider confirms parcel was created)
+   *  - confirmedAbsent: boolean (true ONLY if provider explicitly verified parcel does not exist)
+   *  - trackingId: string | null
+   *  - consignmentId: string | null
+   *  - status: string | null
+   *  - rawResponse: any
+   *  - error: string | null
    */
   async reconcileBooking(_query) {
-    return { found: false, trackingId: null, consignmentId: null, status: null };
+    return {
+      outcome: 'unknown_error',
+      found: false,
+      confirmedAbsent: false,
+      trackingId: null,
+      consignmentId: null,
+      status: null,
+      rawResponse: null,
+      error: 'Reconciliation is not implemented for this adapter'
+    };
   }
 
   /**

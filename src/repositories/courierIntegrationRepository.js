@@ -233,18 +233,23 @@ async function executeOneClickBooking({ subOrderId, courierCode, actor, idempote
       shipment = await tx.queryOne(`SELECT * FROM fulfillment_shipments WHERE id = ? FOR UPDATE`, [res.insertId]);
     }
 
-    // Duplicate booking check: Idempotency protection
-    if (shipment.booking_status === 'succeeded' && shipment.tracking_id) {
-      if (idempotencyKey && shipment.booking_idempotency_key === idempotencyKey) {
-        return {
-          idempotentReplay: true,
-          success: true,
-          trackingId: shipment.tracking_id,
-          courierCode: shipment.courier_code,
-          message: 'Booking already completed with this idempotency key.'
-        };
+    // Ambiguous state or already booked: Block new booking attempt (Priority 1)
+    if (['succeeded', 'unknown_timeout', 'in_review'].includes(shipment.booking_status)) {
+      if (shipment.booking_status === 'succeeded' && shipment.tracking_id) {
+        if (idempotencyKey && shipment.booking_idempotency_key === idempotencyKey) {
+          return {
+            idempotentReplay: true,
+            success: true,
+            trackingId: shipment.tracking_id,
+            courierCode: shipment.courier_code,
+            message: 'Booking already completed with this idempotency key.'
+          };
+        }
+        throw new ValidationError(`Shipment is already booked with courier '${shipment.courier_code}' (Tracking: ${shipment.tracking_id}).`);
       }
-      throw new ValidationError(`Shipment is already booked with courier '${shipment.courier_code}' (Tracking: ${shipment.tracking_id}).`);
+      throw new ValidationError(
+        `Shipment booking is in an ambiguous state ('${shipment.booking_status}'). You must reconcile the courier status before attempting to re-book.`
+      );
     }
 
     // Resolve courier provider configuration
@@ -421,38 +426,48 @@ async function reconcileBookingResult({ subOrderId, actor }) {
     const invoiceNo = `${subOrder.invoice_id}-${subOrder.id}`;
     const recResult = await adapter.reconcileBooking({
       invoiceNo,
-      consignmentId: subOrder.external_consignment_id
+      consignmentId: subOrder.external_consignment_id,
+      trackingId: subOrder.tracking_id
     });
 
     const actorType = actor.vendorId ? 'vendor' : 'admin';
+    const actorVendorId = actor.vendorId || null;
+    const actorUserId = actor.userId || null;
 
-    if (recResult.found && recResult.trackingId) {
-      // Recovered successful booking!
+    if (recResult.outcome === 'found' && recResult.trackingId) {
+      // 1. Recovered confirmed booking from carrier
       await tx.execute(
         `UPDATE fulfillment_shipments
          SET booking_status = 'succeeded',
              tracking_id = ?,
              external_consignment_id = ?,
+             booking_response_json = ?,
              updated_at = UTC_TIMESTAMP()
          WHERE id = ?`,
-        [recResult.trackingId, recResult.consignmentId || recResult.trackingId, subOrder.shipment_id]
+        [
+          recResult.trackingId,
+          recResult.consignmentId || recResult.trackingId,
+          JSON.stringify(recResult.rawResponse || { recovered: true }),
+          subOrder.shipment_id
+        ]
       );
 
       await tx.execute(
         `INSERT INTO fulfillment_shipment_events
          (shipment_id, event_type, actor_type, vendor_id, user_id, courier_code, tracking_reference, result_code, note, created_at)
          VALUES (?, 'booking_reconciled', ?, ?, ?, ?, ?, 'succeeded', 'Recovered booking reference from carrier reconciliation', UTC_TIMESTAMP())`,
-        [subOrder.shipment_id, actorType, actor.vendorId || null, actor.userId || null, subOrder.courier_code, recResult.trackingId]
+        [subOrder.shipment_id, actorType, actorVendorId, actorUserId, subOrder.courier_code, recResult.trackingId]
       );
 
       return {
         reconciled: true,
+        outcome: 'found',
         bookingStatus: 'succeeded',
         trackingId: recResult.trackingId,
         message: 'Carrier confirmed parcel was created. Tracking reference recovered successfully.'
       };
-    } else {
-      // Carrier confirms no parcel exists; safe to retry fresh booking
+    } else if (recResult.outcome === 'confirmed_absent') {
+      // 2. Carrier explicitly and unambiguously confirmed no parcel exists; safe to retry fresh booking
       await tx.execute(
         `UPDATE fulfillment_shipments
          SET booking_status = 'failed',
@@ -465,13 +480,37 @@ async function reconcileBookingResult({ subOrderId, actor }) {
         `INSERT INTO fulfillment_shipment_events
          (shipment_id, event_type, actor_type, vendor_id, user_id, courier_code, tracking_reference, result_code, note, created_at)
          VALUES (?, 'booking_reconciled', ?, ?, ?, ?, '', 'failed', 'Carrier confirmed no parcel exists; cleared for safe retry', UTC_TIMESTAMP())`,
-        [subOrder.shipment_id, actorType, actor.vendorId || null, actor.userId || null, subOrder.courier_code || '']
+        [subOrder.shipment_id, actorType, actorVendorId, actorUserId, subOrder.courier_code || '']
       );
 
       return {
         reconciled: true,
+        outcome: 'confirmed_absent',
         bookingStatus: 'failed',
         message: 'Carrier confirmed no parcel was created. Cleared for safe retry.'
+      };
+    } else {
+      // 3. Inconclusive (unknown_error, network failure, missing keys, or unverified absence):
+      // Retry remains strictly BLOCKED to prevent duplicate parcel creation.
+      await tx.execute(
+        `INSERT INTO fulfillment_shipment_events
+         (shipment_id, event_type, actor_type, vendor_id, user_id, courier_code, tracking_reference, result_code, note, created_at)
+         VALUES (?, 'booking_reconciled', ?, ?, ?, ?, '', 'unknown_error', ?, UTC_TIMESTAMP())`,
+        [
+          subOrder.shipment_id,
+          actorType,
+          actorVendorId,
+          actorUserId,
+          subOrder.courier_code || '',
+          recResult.error || 'Reconciliation outcome is inconclusive; parcel absence not verified'
+        ]
+      );
+
+      return {
+        reconciled: false,
+        outcome: 'unknown_error',
+        bookingStatus: subOrder.booking_status,
+        message: recResult.error || 'Carrier reconciliation inconclusive. Absence could not be confirmed; re-booking remains blocked.'
       };
     }
   });
