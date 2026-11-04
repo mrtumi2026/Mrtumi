@@ -73,12 +73,36 @@ test('banner upload handlers validate compressed raster payloads, preserve edits
   assert.ok(home.includes('hero-slide-graphic'));
 });
 
-test('dashboard provider widgets return graceful HTTP 200 unconfigured payloads asynchronously', () => {
+test('dashboard provider widgets return graceful HTTP 200 unconfigured payloads without contacting providers', () => {
   const source = fs.readFileSync(path.join(root, 'src/routes/adminDashboard.js'), 'utf8');
-  assert.match(source, /success: true, configured: false, balance: 0, message/);
+  assert.match(source, /success: false, configured: false, status: 'unconfigured', message/);
   assert.match(source, /API credentials not yet configured/);
+  assert.match(source, /if \(kind === 'bdcourier'\) Object\.assign\(body, \{ data: null \}\)/);
+  const helper = source.slice(source.indexOf('const unconfiguredProviderWidget'), source.indexOf("router.get('/admin/smsgeteway/balance'"));
+  assert.match(helper, /res\.status\(200\)\.json\(body\)/);
+  assert.doesNotMatch(helper, /\b(?:fetch|axios|https?\.request|integrationsClient)\b/);
   for (const route of ['/admin/smsgeteway/balance', '/admin/bdcourier/my-plan', '/admin/steadfast/dashboard-widget']) {
     assert.ok(source.includes(route));
+    assert.match(source, new RegExp(`router\\.get\\('${route.replaceAll('/', '\\/')}'[^\\n]*unconfiguredProviderWidget`));
   }
   assert.doesNotMatch(source, /res\.status\(503\)/);
+});
+
+test('dashboard provider widgets render configured success data only on the success path and otherwise show unavailable', () => {
+  const dashboard = fs.readFileSync(path.join(root, 'views/admin/dashboard.ejs'), 'utf8');
+  const widgets = [
+    ['fetchSmsBalance', /parseFloat\(d\.balance\)/],
+    ['fetchBdCourierPlan', /d\.data\.plan_name/],
+    ['fetchSteadfastWidget', /d\.balance_display/],
+  ];
+  for (const [name, configuredData] of widgets) {
+    const start = dashboard.indexOf(`function ${name}()`);
+    assert.notEqual(start, -1, `${name} exists`);
+    const nextFunction = dashboard.indexOf('  function ', start + 1);
+    const body = dashboard.slice(start, nextFunction === -1 ? dashboard.length : nextFunction);
+    assert.match(body, /if \(d\.success(?: && d\.data)?\)/, `${name} gates live values on success`);
+    assert.match(body, configuredData, `${name} preserves its configured-provider success path`);
+    assert.match(body, /অনুপলব্ধ|Unavailable/, `${name} reports unavailable for unsuccessful or unconfigured responses`);
+    if (name === 'fetchSmsBalance') assert.match(body, /#b91c1c/, 'SMS unconfigured state is styled as an error, not success');
+  }
 });

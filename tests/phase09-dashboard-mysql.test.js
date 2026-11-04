@@ -1409,8 +1409,20 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     assert.equal((await request('/admin/gemini-chat/send',{method:'POST',body:{message:'  '}})).status,400);
     const assistant=await request('/admin/gemini-chat/send',{method:'POST',body:{message:'today orders'}}); assert.equal(assistant.status,200); assert.equal(assistant.json.success,true);
     const assistantClear=await request('/admin/gemini-chat/clear',{method:'POST',body:{}});assert.equal(assistantClear.status,200);
-    for(const path of ['/admin/smsgeteway/balance','/admin/bdcourier/my-plan','/admin/steadfast/dashboard-widget']){
-      const response=await request(path); assert.equal(response.status,503); assert.equal(response.json.status,'unavailable'); assert.equal(response.json.success,false);
+    for(const [path,providerFields] of [
+      ['/admin/smsgeteway/balance',[]],
+      ['/admin/bdcourier/my-plan',['data']],
+      ['/admin/steadfast/dashboard-widget',[]],
+    ]){
+      const response=await request(path);
+      assert.equal(response.status,200,`${path} returns the established HTTP 200 unconfigured state`);
+      assert.equal(response.json.configured,false,`${path} explicitly reports that credentials are not configured`);
+      assert.equal(response.json.success,false,`${path} does not claim provider data was fetched successfully`);
+      assert.equal(response.json.status,'unconfigured',`${path} reports its unconfigured state`);
+      assert.equal(response.json.message,'API credentials not yet configured');
+      for(const field of providerFields)assert.equal(response.json[field],null,`${path} preserves its route-specific empty ${field} field`);
+      for(const field of ['balance','balance_display','in_review_count','courier_pending_orders'])
+        assert.equal(Object.hasOwn(response.json,field),false,`${path} does not fabricate live ${field} data`);
     }
     const audit=await db.queryAll("SELECT action,after_json FROM audit_logs WHERE actor_id=? AND action IN ('admin.dashboard.popup.dismissed','admin.assistant.report','admin.assistant.context.cleared') ORDER BY id",[dashboardUserId]);
     assert.ok(audit.some(r=>r.action==='admin.dashboard.popup.dismissed'));
