@@ -3,7 +3,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const db = require('../db/database');
-const { requireCsrf } = require('../middleware/csrf');
+const { requireCsrf, requireCsrfForAuthenticatedCustomer } = require('../middleware/csrf');
 const checkoutRepo = require('../repositories/checkoutRepository');
 const phase08Repo = require('../repositories/phase08Repository');
 const { asyncHandler } = require('../utils/asyncHandler');
@@ -1678,6 +1678,7 @@ router.post(
 router.post(
   '/api/review',
   publicFormLimiter,
+  requireCsrfForAuthenticatedCustomer,
   asyncHandler(async (req, res) => {
     const t = res.locals.t;
     const result = await storefrontRepo.submitProductReview({

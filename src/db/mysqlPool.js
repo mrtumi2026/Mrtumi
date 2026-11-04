@@ -74,7 +74,8 @@ function sanitizeDbError(err, context = 'query') {
     context,
     mysqlCode,
     errno,
-    message: err && err.message ? err.message : 'Unknown error',
+    sqlState: err && err.sqlState ? String(err.sqlState).slice(0, 16) : undefined,
+    errorName: err && err.name ? String(err.name).slice(0, 80) : 'DatabaseError',
   });
   const generic = new DatabaseError('DB_QUERY_FAILED', `Database error (${mysqlCode}).`, 500);
   generic.mysqlCode = mysqlCode;
@@ -268,7 +269,10 @@ async function withTransaction(workFn, { pool = null, isolationLevel = null } = 
     try {
       await conn.rollback();
     } catch (rollbackErr) {
-      logger.error('MySQL transaction rollback error', { message: rollbackErr.message });
+      logger.error('MySQL transaction rollback error', {
+        mysqlCode: rollbackErr && rollbackErr.code ? String(rollbackErr.code).slice(0, 64) : 'MYSQL_ERROR',
+        errno: rollbackErr && Number.isFinite(Number(rollbackErr.errno)) ? Number(rollbackErr.errno) : undefined,
+      });
     }
     if (err && err.isOperational) {
       throw err;

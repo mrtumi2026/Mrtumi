@@ -68,9 +68,18 @@ function requireCsrf(req, _res, next) {
   return next();
 }
 
+/** Keep anonymous public review submissions compatible while protecting customer sessions. */
+function requireCsrfForAuthenticatedCustomer(req, res, next) {
+  if (req.customerUser?.id || req.session?.customerUser?.id) {
+    return requireCsrf(req, res, next);
+  }
+  return next();
+}
+
 module.exports = {
   attachCsrfToken,
   requireCsrf,
+  requireCsrfForAuthenticatedCustomer,
   deriveCsrfToken,
   verifyTokenConstantTime,
 };

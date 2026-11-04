@@ -12,6 +12,7 @@ const adminOrderStatusRepository = require('../repositories/adminOrderStatusRepo
 const adminPosRepository = require('../repositories/adminPosRepository');
 const adminOrderMutationRepository = require('../repositories/adminOrderMutationRepository');
 const adminCustomerRepository = require('../repositories/adminCustomerRepository');
+const logger = require('../utils/logger');
 
 const router = express.Router();
 router.use('/admin', requireAdmin);
@@ -221,7 +222,12 @@ router.post('/admin/order/create', asyncHandler(async (req, res) => {
     req.flash('success', `POS অর্ডার #${inv} সফলভাবে তৈরি হয়েছে!`);
     res.redirect(`/admin/order/view/${orderId}`);
   } catch (err) {
-    console.error('POS create error:', err);
+    logger.error('POS order creation failed', {
+      code: err && err.code ? String(err.code).slice(0, 64) : 'POS_CREATE_FAILED',
+      mysqlCode: err && err.mysqlCode ? String(err.mysqlCode).slice(0, 64) : undefined,
+      errno: err && Number.isFinite(Number(err.errno)) ? Number(err.errno) : undefined,
+      requestId: req.requestId || '',
+    });
     req.flash('error', 'অর্ডার তৈরি করতে সমস্যা হয়েছে।');
     res.redirect('/admin/order/create');
   }

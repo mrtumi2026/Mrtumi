@@ -6,7 +6,7 @@ const { requestVendorWithdrawal, requestResellerWithdrawal } = require('../src/r
 const pii=require('../src/utils/vendorPii');
 process.env.VENDOR_PII_KEY=Buffer.alloc(32,9).toString('base64');
 
-function fakePool(balancePaisa) {
+function fakePool(balancePaisa, { vendorId = 11, payoutVendorId = 11, resellerId = 11 } = {}) {
   const calls = [];
   const conn = {
     async beginTransaction() { calls.push(['begin']); },
@@ -15,10 +15,11 @@ function fakePool(balancePaisa) {
     release() {},
     async query(sql, params) {
       calls.push([sql, params]);
-      if (sql.includes('FROM vendors')) return [[{ id: 11, balance_paisa: String(balancePaisa), status:1, lifecycle_status:'active', payout_verified_at:'2026-01-01' }], []];
-      if (sql.includes('FROM vendor_payout_accounts')) return [[{id:3,vendor_id:11,method:'bkash',details_ciphertext:pii.encryptVendorPii(JSON.stringify({account_number:'01712345678'})),masked_account:'••••5678'}], []];
+      if (sql.includes('FROM vendors')) return [Number(params?.[0]) === vendorId ? [{ id: vendorId, balance_paisa: String(balancePaisa), status:1, lifecycle_status:'active', payout_verified_at:'2026-01-01' }] : [], []];
+      if (sql.includes('FROM vendor_payout_accounts')) return Number(params?.[1]) === payoutVendorId ? [[{id:3,vendor_id:payoutVendorId,method:'bkash',details_ciphertext:pii.encryptVendorPii(JSON.stringify({account_number:'01712345678'})),masked_account:'••••5678'}], []] : [[], []];
       if (sql.includes('FROM vendor_wallets')) return [[{available_balance:String(balancePaisa)}], []];
       if (sql.includes('FROM partner_wallets')) return [[{available_balance:String(balancePaisa)}], []];
+      if (sql.includes('FROM resellers')) return Number(params?.[0]) === resellerId ? [[{ id: resellerId, balance_paisa: String(balancePaisa) }], []] : [[], []];
       if (sql.startsWith('SELECT')) return [[{ id: 11, balance_paisa: String(balancePaisa) }], []];
       if (sql.startsWith('INSERT INTO vendor_withdrawals') || sql.startsWith('INSERT INTO reseller_transactions')) return [{ insertId: 42, affectedRows: 1 }, []];
       return [{ affectedRows: 1 }, []];
@@ -39,6 +40,22 @@ test('vendor withdrawal reserves funds without paying or debiting the wallet, an
   assert.equal(JSON.stringify(audit).includes('01712345678'), false);
   assert.ok(pool.calls.some(([sql,args])=>typeof sql==='string'&&sql.startsWith('INSERT INTO vendor_withdrawals')&&args.includes('••••5678')));
   assert.deepEqual(pool.calls.at(-1), ['commit']);
+});
+
+test('vendor withdrawal rejects another vendor payout-account ID before inserting or reserving funds', async () => {
+  const pool = fakePool(25000, { payoutVendorId: 12 });
+  await assert.rejects(requestVendorWithdrawal(11, { amount: '100', payoutAccountId: 3 }, {}, { pool }), { code: 'CONFLICT' });
+  const payoutLookup = pool.calls.find(([sql]) => typeof sql === 'string' && sql.includes('FROM vendor_payout_accounts'));
+  assert.match(payoutLookup[0], /WHERE id=\? AND vendor_id=\?/);
+  assert.deepEqual(payoutLookup[1], [3, 11]);
+  assert.equal(pool.calls.some(([sql]) => typeof sql === 'string' && sql.startsWith('INSERT INTO vendor_withdrawals')), false);
+});
+
+test('reseller withdrawal rejects a foreign reseller identity before wallet mutation', async () => {
+  const pool = fakePool(25000, { resellerId: 12 });
+  await assert.rejects(requestResellerWithdrawal(11, { amount: '100', accountNumber: 'synthetic-account' }, {}, { pool }), { code: 'NOT_FOUND' });
+  assert.ok(pool.calls.some(([sql, args]) => typeof sql === 'string' && /FROM resellers WHERE id=\? FOR UPDATE/.test(sql) && args[0] === 11));
+  assert.equal(pool.calls.some(([sql]) => typeof sql === 'string' && sql.startsWith('INSERT INTO reseller_transactions')), false);
 });
 
 test('reseller withdrawal uses canonical transaction columns and rolls back insufficient balance', async () => {

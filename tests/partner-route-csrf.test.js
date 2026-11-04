@@ -21,7 +21,9 @@ const db = require('../src/db/database');
 let server;
 let baseUrl;
 let vendorId;
+let otherVendorId;
 let resellerId;
+let otherResellerId;
 let vendorProductId;
 let vendorCookie;
 let vendorCsrf;
@@ -75,6 +77,12 @@ before(async () => {
     'CSRF Fixture Vendor', 'Fixture Vendor Owner', '01755505001', 'vendor-csrf@example.test', 'Fixture address', bcrypt.hashSync(vendorPassword, 8)
   );
   vendorId = Number(vendor.lastInsertRowid);
+  const otherVendor = db.run(
+    `INSERT INTO vendors(shop_name,owner_name,phone,email,address,password_hash,commission_rate,balance,verified,status)
+     VALUES(?,?,?,?,?,?,10,500,1,1)`,
+    'Other CSRF Vendor', 'Other Vendor Owner', '01755505003', 'other-vendor-csrf@example.test', 'Other fixture address', bcrypt.hashSync(vendorPassword, 8)
+  );
+  otherVendorId = Number(otherVendor.lastInsertRowid);
   const product = db.run(
     `INSERT INTO products(name,slug,code,category_id,vendor_id,new_price,stock,approval_status,status)
      VALUES('CSRF Vendor Product','csrf-vendor-product','VCSRF-1',1,?,500,10,'approved',1)`, vendorId
@@ -86,6 +94,12 @@ before(async () => {
     'CSRF Fixture Reseller', 'Fixture Reseller Shop', '01755505002', 'reseller-csrf@example.test', bcrypt.hashSync(resellerPassword, 8)
   );
   resellerId = Number(reseller.lastInsertRowid);
+  const otherReseller = db.run(
+    `INSERT INTO resellers(name,shop_name,phone,email,balance,password_hash,verified,status)
+     VALUES(?,?,?,?,500,?,1,1)`,
+    'Other CSRF Reseller', 'Other Reseller Shop', '01755505004', 'other-reseller-csrf@example.test', bcrypt.hashSync(resellerPassword, 8)
+  );
+  otherResellerId = Number(otherReseller.lastInsertRowid);
 
   const { startServer } = require('../server');
   server = startServer(0, '127.0.0.1');
@@ -183,6 +197,62 @@ test('invalid-CSRF multipart product uploads delete only the newly uploaded file
   assert.deepEqual(db.get('SELECT id,name FROM products WHERE id=? AND vendor_id=?', vendorProductId, vendorId), { id: vendorProductId, name: 'CSRF Vendor Product' });
 });
 
+test('active vendor and reseller sessions remain valid on dashboard, orders, withdrawals, and profile reads', async () => {
+  for (const [kind, cookie] of [['vendor', vendorCookie], ['reseller', resellerCookie]]) {
+    for (const route of [`/${kind}/dashboard`, `/${kind}/orders`, `/${kind}/withdrawals`, `/${kind}/profile`]) {
+      const response = await fetch(`${baseUrl}${route}`, { headers: { cookie }, redirect: 'manual' });
+      assert.equal(response.status, 200, `active ${kind} session remains authorized for ${route}`);
+    }
+  }
+});
+
+test('Vendor/Reseller profile and wallet writes ignore foreign IDs and remain bound to the authenticated owner', async () => {
+  const vendorAuth = await loginPartner('vendor', '01755505001', 'VendorCSRFFixturePass!2026');
+  const otherVendorBefore = db.get('SELECT shop_name,owner_name,phone,balance FROM vendors WHERE id=?', otherVendorId);
+  const vendorProfile = await formPost('/vendor/profile', vendorAuth.cookie, vendorAuth.csrf, {
+    vendor_id: String(otherVendorId), shop_name: 'Updated Own Vendor', owner_name: 'Own Vendor Owner',
+    phone: '01755505001', email: 'vendor-csrf@example.test', address: 'Own fixture address',
+  });
+  assert.equal(vendorProfile.status, 302);
+  assert.deepEqual(db.get('SELECT shop_name,owner_name,phone,balance FROM vendors WHERE id=?', otherVendorId), otherVendorBefore);
+  assert.equal(db.get('SELECT shop_name FROM vendors WHERE id=?', vendorId).shop_name, 'Updated Own Vendor');
+
+  const otherVendorWithdrawals = Number(db.get('SELECT COUNT(*) AS n FROM vendor_withdrawals WHERE vendor_id=?', otherVendorId).n);
+  const vendorWithdrawal = await formPost('/vendor/withdrawals/request', vendorAuth.cookie, vendorAuth.csrf, {
+    vendor_id: String(otherVendorId), amount: '100', method: 'bKash', account_number: '01755509999',
+  });
+  assert.equal(vendorWithdrawal.status, 302);
+  assert.equal(Number(db.get('SELECT COUNT(*) AS n FROM vendor_withdrawals WHERE vendor_id=?', otherVendorId).n), otherVendorWithdrawals);
+  assert.equal(Number(db.get('SELECT COUNT(*) AS n FROM vendor_withdrawals WHERE vendor_id=?', vendorId).n), 1);
+
+  const resellerAuth = await loginPartner('reseller', '01755505002', 'ResellerCSRFFixturePass!2026');
+  const otherResellerBefore = db.get('SELECT name,shop_name,phone,balance FROM resellers WHERE id=?', otherResellerId);
+  const resellerProfile = await formPost('/reseller/profile', resellerAuth.cookie, resellerAuth.csrf, {
+    reseller_id: String(otherResellerId), name: 'Updated Own Reseller', shop_name: 'Own Reseller Shop',
+    phone: '01755505002', email: 'reseller-csrf@example.test',
+  });
+  assert.equal(resellerProfile.status, 302);
+  assert.deepEqual(db.get('SELECT name,shop_name,phone,balance FROM resellers WHERE id=?', otherResellerId), otherResellerBefore);
+  assert.equal(db.get('SELECT name FROM resellers WHERE id=?', resellerId).name, 'Updated Own Reseller');
+
+  const updatedResellerCookie = responseCookie(resellerProfile) || resellerAuth.cookie;
+  const profilePage = await fetch(`${baseUrl}/reseller/profile`, { headers: { cookie: updatedResellerCookie } });
+  const profileToken = (await profilePage.text()).match(/name="_csrf" value="([^"]+)"/);
+  assert.ok(profileToken, 'rotated reseller profile session has a fresh CSRF token');
+  const otherTxBefore = Number(db.get('SELECT COUNT(*) AS n FROM reseller_transactions WHERE reseller_id=?', otherResellerId).n);
+  const deposit = await formPost('/reseller/deposits/create', updatedResellerCookie, profileToken[1], {
+    reseller_id: String(otherResellerId), amount: '100', method: 'test', trx_id: 'OWN-DEPOSIT-1',
+  });
+  assert.equal(deposit.status, 302);
+  const withdrawal = await formPost('/reseller/withdrawals/create', updatedResellerCookie, profileToken[1], {
+    reseller_id: String(otherResellerId), amount: '100', method: 'test', trx_id: 'own-account-1',
+  });
+  assert.equal(withdrawal.status, 302);
+  assert.equal(Number(db.get('SELECT COUNT(*) AS n FROM reseller_transactions WHERE reseller_id=?', otherResellerId).n), otherTxBefore);
+  assert.equal(Number(db.get('SELECT COUNT(*) AS n FROM reseller_transactions WHERE reseller_id=?', resellerId).n), 2);
+  assert.equal(Number(db.get('SELECT balance FROM resellers WHERE id=?', otherResellerId).balance), Number(otherResellerBefore.balance));
+});
+
 test('session-bound hidden form tokens authorize the normal vendor and reseller logout flows', async () => {
   const vendorLogout = await hiddenTokenPost('/vendor/logout', vendorCookie, vendorCsrf);
   assert.equal(vendorLogout.status, 302);
@@ -192,4 +262,31 @@ test('session-bound hidden form tokens authorize the normal vendor and reseller 
   assert.equal(resellerLogout.headers.get('location'), '/reseller/login');
   assert.equal((await fetch(`${baseUrl}/vendor/dashboard`, { headers: { cookie: vendorCookie }, redirect: 'manual' })).headers.get('location'), '/vendor/login');
   assert.equal((await fetch(`${baseUrl}/reseller/dashboard`, { headers: { cookie: resellerCookie }, redirect: 'manual' })).headers.get('location'), '/reseller/login');
+});
+
+test('deactivated Vendor and Reseller lose existing-session access to dashboard, orders, withdrawals, and profile', async () => {
+  const activeVendor = await loginPartner('vendor', '01755505001', 'VendorCSRFFixturePass!2026');
+  const activeReseller = await loginPartner('reseller', '01755505002', 'ResellerCSRFFixturePass!2026');
+  db.run('UPDATE vendors SET status=0 WHERE id=?', vendorId);
+  db.run('UPDATE resellers SET status=0 WHERE id=?', resellerId);
+  try {
+    for (const route of ['/vendor/dashboard', '/vendor/orders', '/vendor/withdrawals', '/vendor/profile']) {
+      const response = await fetch(`${baseUrl}${route}`, { headers: { cookie: activeVendor.cookie }, redirect: 'manual' });
+      assert.equal(response.status, 302, `deactivated Vendor must be denied at ${route}`);
+      assert.equal(response.headers.get('location'), '/vendor/login');
+    }
+    for (const route of ['/reseller/dashboard', '/reseller/orders', '/reseller/withdrawals', '/reseller/profile']) {
+      const response = await fetch(`${baseUrl}${route}`, { headers: { cookie: activeReseller.cookie }, redirect: 'manual' });
+      assert.equal(response.status, 302, `deactivated Reseller must be denied at ${route}`);
+      assert.equal(response.headers.get('location'), '/reseller/login');
+    }
+  } finally {
+    db.run('UPDATE vendors SET status=1 WHERE id=?', vendorId);
+    db.run('UPDATE resellers SET status=1 WHERE id=?', resellerId);
+  }
+  for (const [kind, cookie] of [['vendor', activeVendor.cookie], ['reseller', activeReseller.cookie]]) {
+    const response = await fetch(`${baseUrl}/${kind}/dashboard`, { headers: { cookie }, redirect: 'manual' });
+    assert.equal(response.status, 302, `reactivating an account does not restore an actor already removed from the old session`);
+    assert.equal(response.headers.get('location'), `/${kind}/login`);
+  }
 });

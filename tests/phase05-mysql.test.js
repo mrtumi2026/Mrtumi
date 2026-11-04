@@ -1046,6 +1046,7 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
       if (index === 20) newestInvoice = invoice;
     }
     const foreignOrderId = await insertOrder(other, `P07-OTHER-${suffix}`, 'Private other customer item');
+    const foreignOrderItemId = Number((await client.queryOne('SELECT id FROM order_items WHERE order_id=? LIMIT 1', [foreignOrderId])).id);
 
     const initial = await httpRequest(baseUrl, '/api/v1/csrf-token');
     let cookie = (Array.isArray(initial.headers['set-cookie']) ? initial.headers['set-cookie'] : [initial.headers['set-cookie']]).filter(Boolean).map((value) => value.split(';')[0]).join('; ');
@@ -1085,6 +1086,24 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
     assert.equal(foreignDetail.statusCode, 404, 'a different customer cannot retrieve order details by guessing its numeric ID');
     const invalidDetail = await httpRequest(baseUrl, '/customer/account/orders/not-an-id', { headers: { Cookie: cookie } });
     assert.equal(invalidDetail.statusCode, 404);
+
+    const csrfPage = await httpRequest(baseUrl, '/api/v1/csrf-token', { headers: { Cookie: cookie } });
+    const customerCsrf = JSON.parse(csrfPage.body).data.csrfToken;
+    for (const [route, body] of [
+      [`/customer/account/orders/${foreignOrderId}/cancel`, { reason: 'Foreign order cancellation attempt' }],
+      [`/customer/account/orders/${foreignOrderId}/returns`, { claim_type: 'wrong', reason: 'Foreign order return attempt', items_json: JSON.stringify([{ orderItemId: foreignOrderItemId, qty: 1 }]) }],
+      [`/customer/account/orders/${foreignOrderId}/refunds`, { amount_paisa: '100', reason: 'Foreign order refund attempt', request_key: `foreign-${suffix}` }],
+    ]) {
+      const denied = await httpRequest(baseUrl, route, {
+        method: 'POST',
+        headers: { Cookie: cookie, 'x-csrf-token': customerCsrf, 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams(body).toString(),
+      });
+      assert.equal(denied.statusCode, 404, `${route} must hide another customer's order`);
+    }
+    assert.equal(Number((await client.queryOne('SELECT COUNT(*) AS n FROM order_cancellation_requests WHERE order_id=? AND customer_id=?', [foreignOrderId, owner.id])).n), 0, 'foreign cancel did not create a customer-scoped request');
+    assert.equal(Number((await client.queryOne('SELECT COUNT(*) AS n FROM customer_return_requests WHERE order_id=? AND customer_id=?', [foreignOrderId, owner.id])).n), 0, 'foreign return did not create a customer-scoped request');
+    assert.equal(Number((await client.queryOne('SELECT COUNT(*) AS n FROM refunds WHERE order_id=?', [foreignOrderId])).n), 0, 'foreign refund did not create a refund request');
   });
 
   test('12. Phase 07 failed persistent-cart replacement rolls back instead of deleting valid saved data', { skip: !MYSQL_HOST ? SKIP_REASON : false }, async () => {

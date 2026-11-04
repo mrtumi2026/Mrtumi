@@ -70,13 +70,15 @@ async function attachGlobals(req, res, next) {
     let vendorUser = req.session.vendorUser || null;
     if (req.path.startsWith('/vendor') && vendorUser && vendorUser.id) {
       const freshV = await findVendorById(vendorUser.id);
-      if (freshV) vendorUser = freshV;
+      vendorUser = freshV || null;
+      if (!freshV) delete req.session.vendorUser;
     }
 
     let resellerUser = req.session.resellerUser || null;
     if (req.path.startsWith('/reseller') && resellerUser && resellerUser.id) {
       const freshR = await findResellerById(resellerUser.id);
-      if (freshR) resellerUser = freshR;
+      resellerUser = freshR || null;
+      if (!freshR) delete req.session.resellerUser;
     }
 
     let customerUser = req.session.customerUser || null;
@@ -171,7 +173,8 @@ function requireAdmin(req, res, next) {
 }
 
 function requireVendor(req, res, next) {
-  if (!req.session || !req.session.vendorUser) {
+  if (!req.session || !req.session.vendorUser || (req.vendorUser !== undefined && !req.vendorUser)) {
+    if (req.session) delete req.session.vendorUser;
     return res.redirect('/vendor/login');
   }
   return next();

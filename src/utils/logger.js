@@ -6,7 +6,7 @@
  */
 
 const SENSITIVE_KEY_REGEX =
-  /(password|pass|secret|token|api_?key|authorization|cookie|csrf|private_?key|trx_secret|e-?mail|address|street|customer_?name|recipient_?name|owner_?name)/i;
+  /(password|pass|secret|token|api_?key|authorization|cookie|csrf|private_?key|trx_secret|trx_?id|transaction_?id|provider_?trx_?id|account_?number|account_?no|bank_?account|payout_?account|sender_?number|destination|e-?mail|address|street|customer_?name|recipient_?name|owner_?name)/i;
 
 const BD_PHONE_IN_TEXT_REGEX = /\b(\+?8801[3-9]\d{2}|01[3-9]\d{2})\d{4}(\d{2})\b/g;
 const EMAIL_IN_TEXT_REGEX = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;

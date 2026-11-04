@@ -122,10 +122,10 @@ async function recordAdminLoginSuccess(userId, poolOverride = null, config = env
 async function findVendorById(id, poolOverride = null, config = env) {
   if (!id) return null;
   if (!isMysqlMode(config) && !poolOverride) {
-    return sqliteDb.get('SELECT id,shop_name,owner_name,phone,email,balance,verified,status FROM vendors WHERE id = ?', id) || null;
+    return sqliteDb.get('SELECT id,shop_name,owner_name,phone,email,balance,verified,status FROM vendors WHERE id = ? AND status = 1', id) || null;
   }
   const client = getClient(poolOverride);
-  return client.queryOne('SELECT `id`,`shop_name`,`owner_name`,`phone`,`email`,`balance_paisa`/100 AS `balance`,`verified`,`status`,`lifecycle_status` FROM `vendors` WHERE `id` = ? LIMIT 1', [id]);
+  return client.queryOne("SELECT `id`,`shop_name`,`owner_name`,`phone`,`email`,`balance_paisa`/100 AS `balance`,`verified`,`status`,`lifecycle_status` FROM `vendors` WHERE `id` = ? AND `status` = 1 AND `lifecycle_status` NOT IN ('suspended','deactivated') LIMIT 1", [id]);
 }
 
 async function findResellerById(id, poolOverride = null, config = env) {
