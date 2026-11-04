@@ -396,6 +396,14 @@ router.get('/vendor/order-items/:itemId', async (req, res, next) => {
 });
 
 // Independent vendor sub-order fulfillment; a vendor can only mutate its own sub-orders.
+router.post('/vendor/sub-orders/:subOrderId/booking-result', requireCsrf, async (req,res,next) => {
+  if(!mysqlActive()){req.flash('error','Shipment booking records require the MySQL workflow.');return res.redirect('/vendor/orders');}
+  try { await require('../repositories/vendorOrderRepository').recordBookingResult({subOrderId:req.params.subOrderId,courierCode:req.body.courier_code,trackingReference:req.body.tracking_reference,resultCode:req.body.result_code,note:req.body.note,actor:{vendorId:req.session.vendorUser.id}}); req.flash('success','Courier booking result recorded; this does not confirm pickup.'); return res.redirect('/vendor/orders'); } catch(error){return next(error);}
+});
+router.post('/vendor/sub-orders/:subOrderId/handover', requireCsrf, async (req,res,next) => {
+  if(!mysqlActive()){req.flash('error','Shipment handover requires the MySQL workflow.');return res.redirect('/vendor/orders');}
+  try { await require('../repositories/vendorOrderRepository').recordPhysicalHandover({subOrderId:req.params.subOrderId,note:req.body.note,actor:{vendorId:req.session.vendorUser.id}}); req.flash('success','Physical courier handover recorded.'); return res.redirect('/vendor/orders'); } catch(error){return next(error);}
+});
 router.post('/vendor/sub-orders/:subOrderId/status', requireCsrf, async (req, res, next) => {
   if (!mysqlActive()) { req.flash('error', 'Sub-order fulfillment is only available through the MySQL workflow.'); return res.redirect('/vendor/orders'); }
   try {

@@ -72,4 +72,80 @@ describe('Vendor portal live MySQL/MariaDB repository integration', () => {
     await client.execute('DELETE FROM vendors WHERE id IN (?,?)', [vendorA.insertId, vendorB.insertId]);
     await client.execute('DELETE FROM categories WHERE id=?', [categoryId]);
   });
+
+  test('sub-order fulfillment separates booking from handover, enforces ownership, retries failures and synchronizes multi-vendor parent completion', { skip: !MYSQL_HOST ? SKIP_REASON : false }, async (t) => {
+    const repo=require('../src/repositories/vendorOrderRepository');
+    const suffix=String(Date.now()).slice(-8);
+    const passwordHash=await bcrypt.hash('VendorFulfillmentPassword!2026',10);
+    const vendors=[]; const orders=[]; const subOrders=[]; let actorUserId=null;
+    t.after(async()=>{
+      for(const id of subOrders){
+        await client.execute('DELETE FROM fulfillment_shipment_events WHERE shipment_id IN (SELECT id FROM fulfillment_shipments WHERE vendor_sub_order_id=?)',[id]);
+        await client.execute('DELETE FROM fulfillment_shipments WHERE vendor_sub_order_id=?',[id]);
+        await client.execute('DELETE FROM vendor_order_status_history WHERE vendor_sub_order_id=?',[id]);
+        await client.execute('DELETE FROM order_status_history WHERE vendor_sub_order_id=?',[id]);
+      }
+      if(subOrders.length)await client.execute(`DELETE FROM vendor_sub_order_items WHERE vendor_sub_order_id IN (${subOrders.map(()=>'?').join(',')})`,subOrders);
+      if(subOrders.length)await client.execute(`DELETE FROM vendor_sub_orders WHERE id IN (${subOrders.map(()=>'?').join(',')})`,subOrders);
+      for(const id of orders){await client.execute('DELETE FROM order_status_history WHERE order_id=?',[id]);await client.execute('DELETE FROM orders WHERE id=?',[id]);}
+      if(actorUserId)await client.execute('DELETE FROM users WHERE id=?',[actorUserId]);
+      if(vendors.length)await client.execute(`DELETE FROM vendors WHERE id IN (${vendors.map(()=>'?').join(',')})`,vendors);
+    });
+    for(const [n,phone] of [['A',`016${suffix}221`],['B',`017${suffix}221`],['C',`018${suffix}221`]]){
+      const result=await client.execute("INSERT INTO vendors(shop_name,owner_name,phone,email,password_hash,verified,status,lifecycle_status) VALUES(?,?,?,?,?,1,1,'active')",[`Fulfillment ${n} ${suffix}`,`Owner ${n}`,phone,`fulfillment-${n}-${suffix}@example.invalid`,passwordHash]);vendors.push(Number(result.insertId));
+    }
+    const actor=await client.execute('INSERT INTO users(name,email,password_hash,role_label,status) VALUES(?,?,?,\'Super Admin\',1)',[`Fulfillment admin ${suffix}`,`fulfillment-admin-${suffix}@example.invalid`,passwordHash]);actorUserId=Number(actor.insertId);
+    const createOrder=async(tag)=>{
+      const order=await client.execute("INSERT INTO orders(invoice_no,customer_name,customer_phone,shipping_address,subtotal_paisa,total_paisa,cod_due_paisa,payment_method,payment_status,order_status,order_channel) VALUES(?, 'Fulfillment test','01600000000','Test address',0,0,0,'cod','unpaid','processing','storefront')",[`VFUL-${tag}-${suffix}`]);orders.push(Number(order.insertId));return Number(order.insertId);
+    };
+    const createSubOrder=async(orderId,vendorId,tag,status='order_placed')=>{
+      const result=await client.execute('INSERT INTO vendor_sub_orders(order_id,vendor_id,vendor_order_no,status,vendor_entitlement_paisa,marketplace_fee_paisa,net_payable_paisa) VALUES(?,?,?,?,0,0,0)',[orderId,vendorId,`VFUL-${tag}-${suffix}`,status]);subOrders.push(Number(result.insertId));return Number(result.insertId);
+    };
+    const ready=async(id,vendorId)=>{
+      for(const toStatus of ['vendor_accepted','processing','packed','ready_for_pickup'])await repo.transitionSubOrder({subOrderId:id,toStatus,actor:{vendorId}});
+    };
+
+    const oneOrder=await createOrder('single');
+    const one=await createSubOrder(oneOrder,vendors[0],'single');
+    await assert.rejects(()=>repo.transitionSubOrder({subOrderId:one,toStatus:'processing',actor:{vendorId:vendors[0]}}),{code:'CONFLICT'});
+    await assert.rejects(()=>repo.transitionSubOrder({subOrderId:one,toStatus:'vendor_accepted',actor:{vendorId:vendors[1]}}),{code:'NOT_FOUND'});
+    await ready(one,vendors[0]);
+    await repo.setDeliveryMode({subOrderId:one,deliveryMode:'vendor_managed',actor:{userId:actorUserId,platformAdmin:true}});
+    await repo.recordBookingResult({subOrderId:one,courierCode:'TEST-COURIER',trackingReference:'TEST-REF-1',resultCode:'failed',actor:{vendorId:vendors[0]}});
+    await assert.rejects(()=>repo.recordPhysicalHandover({subOrderId:one,actor:{vendorId:vendors[0]}}),{code:'CONFLICT'});
+    await repo.recordBookingResult({subOrderId:one,courierCode:'TEST-COURIER',trackingReference:'TEST-REF-1',resultCode:'succeeded',actor:{vendorId:vendors[0]}});
+    let shipment=await client.queryOne('SELECT status,picked_up_at,booking_status FROM fulfillment_shipments WHERE vendor_sub_order_id=?',[one]);
+    assert.deepEqual([shipment.status,shipment.picked_up_at,shipment.booking_status],['ready_for_pickup',null,'succeeded'],'booking alone must never signal physical pickup');
+    await repo.recordPhysicalHandover({subOrderId:one,actor:{vendorId:vendors[0]}});
+    await assert.rejects(()=>repo.transitionSubOrder({subOrderId:one,toStatus:'delivered',actor:{vendorId:vendors[0]}}),{code:'AUTHORIZATION_ERROR'});
+    await repo.transitionSubOrder({subOrderId:one,toStatus:'delivered',actor:{userId:actorUserId,platformAdmin:true}});
+    assert.equal((await client.queryOne('SELECT order_status FROM orders WHERE id=?',[oneOrder])).order_status,'delivered');
+
+    const multiOrder=await createOrder('multi');
+    const a=await createSubOrder(multiOrder,vendors[0],'multi-a');
+    const b=await createSubOrder(multiOrder,vendors[1],'multi-b');
+    const cancelled=await createSubOrder(multiOrder,vendors[2],'multi-c','cancelled');
+    await ready(a,vendors[0]); await ready(b,vendors[1]);
+    await repo.setDeliveryMode({subOrderId:a,deliveryMode:'platform_managed',actor:{userId:actorUserId,platformAdmin:true}});
+    await repo.setDeliveryMode({subOrderId:b,deliveryMode:'vendor_managed',actor:{userId:actorUserId,platformAdmin:true}});
+    await repo.recordBookingResult({subOrderId:a,courierCode:'TEST-PLATFORM',trackingReference:'TEST-REF-A',resultCode:'succeeded',actor:{userId:actorUserId,platformAdmin:true}});
+    await repo.recordBookingResult({subOrderId:b,courierCode:'TEST-VENDOR',trackingReference:'TEST-REF-B',resultCode:'succeeded',actor:{vendorId:vendors[1]}});
+    await assert.rejects(()=>repo.recordPhysicalHandover({subOrderId:a,actor:{vendorId:vendors[0]}}),{code:'AUTHORIZATION_ERROR'});
+    await repo.recordPhysicalHandover({subOrderId:a,actor:{userId:actorUserId,platformAdmin:true}});
+    await repo.recordPhysicalHandover({subOrderId:b,actor:{vendorId:vendors[1]}});
+    assert.equal((await client.queryOne('SELECT order_status FROM orders WHERE id=?',[multiOrder])).order_status,'shipped','cancelled siblings are excluded; all remaining vendors have a handover');
+    await repo.transitionSubOrder({subOrderId:a,toStatus:'delivered',actor:{userId:actorUserId,platformAdmin:true}});
+    assert.equal((await client.queryOne('SELECT order_status FROM orders WHERE id=?',[multiOrder])).order_status,'shipped','one delivered shipment cannot complete a multi-vendor parent while another is open');
+    await repo.transitionSubOrder({subOrderId:b,toStatus:'failed_delivery',actor:{userId:actorUserId,platformAdmin:true}});
+    await repo.transitionSubOrder({subOrderId:b,toStatus:'ready_for_pickup',actor:{vendorId:vendors[1]}});
+    await repo.recordBookingResult({subOrderId:b,courierCode:'TEST-VENDOR',trackingReference:'TEST-REF-B-RETRY',resultCode:'succeeded',actor:{vendorId:vendors[1]}});
+    await repo.recordPhysicalHandover({subOrderId:b,actor:{vendorId:vendors[1]}});
+    await repo.transitionSubOrder({subOrderId:b,toStatus:'delivered',actor:{userId:actorUserId,platformAdmin:true}});
+    assert.equal((await client.queryOne('SELECT order_status FROM orders WHERE id=?',[multiOrder])).order_status,'delivered','parent completion follows every applicable sub-order delivery');
+    assert.equal(Number((await client.queryOne('SELECT COUNT(*) AS n FROM fulfillment_shipments WHERE vendor_sub_order_id=?',[b])).n),2,'failed delivery retry creates a new shipment and preserves the original shipment');
+    const events=await client.queryAll('SELECT event_type,actor_type FROM fulfillment_shipment_events WHERE shipment_id IN (SELECT id FROM fulfillment_shipments WHERE vendor_sub_order_id IN (?,?)) ORDER BY id',[a,b]);
+    assert.ok(events.some((event)=>event.event_type==='physical_handover'&&event.actor_type==='admin'));
+    assert.ok(events.some((event)=>event.event_type==='physical_handover'&&event.actor_type==='vendor'));
+    assert.equal((await client.queryOne('SELECT status FROM vendor_sub_orders WHERE id=?',[cancelled])).status,'cancelled');
+  });
 });

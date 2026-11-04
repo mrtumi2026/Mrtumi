@@ -2,6 +2,8 @@ const express = require('express');
 const crypto = require('crypto');
 const db = require('../db/database');
 const { requireAdmin } = require('../middleware/auth');
+const { requireCsrf } = require('../middleware/csrf');
+const { requirePermission } = require('../middleware/rbac');
 const { env } = require('../config/env');
 const { asyncHandler } = require('../utils/asyncHandler');
 const { AppError, ConflictError, ValidationError, NotFoundError } = require('../utils/errors');
@@ -13,6 +15,25 @@ const adminCustomerRepository = require('../repositories/adminCustomerRepository
 
 const router = express.Router();
 router.use('/admin', requireAdmin);
+
+const fulfillmentActor = (req) => ({ userId: req.adminUser?.id || null, platformAdmin: true });
+const fulfillmentRepository = () => require('../repositories/vendorOrderRepository');
+router.post('/admin/fulfillment/sub-orders/:subOrderId/delivery-mode', requirePermission('orders.manage'), requireCsrf, asyncHandler(async (req,res) => {
+  const result=await fulfillmentRepository().setDeliveryMode({subOrderId:req.params.subOrderId,deliveryMode:req.body.delivery_mode,actor:fulfillmentActor(req)});
+  return req.accepts('json')?res.json({data:result}):res.redirect('/admin/reseller-commerce');
+}));
+router.post('/admin/fulfillment/sub-orders/:subOrderId/booking-result', requirePermission('orders.manage'), requireCsrf, asyncHandler(async (req,res) => {
+  const result=await fulfillmentRepository().recordBookingResult({subOrderId:req.params.subOrderId,courierCode:req.body.courier_code,trackingReference:req.body.tracking_reference,resultCode:req.body.result_code,note:req.body.note,actor:fulfillmentActor(req)});
+  return req.accepts('json')?res.json({data:result}):res.redirect('/admin/reseller-commerce');
+}));
+router.post('/admin/fulfillment/sub-orders/:subOrderId/handover', requirePermission('orders.manage'), requireCsrf, asyncHandler(async (req,res) => {
+  const result=await fulfillmentRepository().recordPhysicalHandover({subOrderId:req.params.subOrderId,note:req.body.note,actor:fulfillmentActor(req)});
+  return req.accepts('json')?res.json({data:result}):res.redirect('/admin/reseller-commerce');
+}));
+router.post('/admin/fulfillment/sub-orders/:subOrderId/status', requirePermission('orders.manage'), requireCsrf, asyncHandler(async (req,res) => {
+  const result=await fulfillmentRepository().transitionSubOrder({subOrderId:req.params.subOrderId,toStatus:req.body.to_status,note:req.body.note,actor:fulfillmentActor(req)});
+  return req.accepts('json')?res.json({data:result}):res.redirect('/admin/reseller-commerce');
+}));
 
 function generateInvoiceId() {
   for (let i = 0; i < 10; i++) {

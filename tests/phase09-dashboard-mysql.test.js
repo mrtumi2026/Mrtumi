@@ -327,6 +327,50 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     }
   });
 
+  test('vendor sub-order HTTP progression is bilingual, CSRF/ownership guarded, and separates booking from platform handover',async(t)=>{
+    if(!MYSQL_HOST)return t.skip(SKIP);
+    const suffix=Date.now(); const hash=bcrypt.hashSync('P09 Fulfillment Vendor Password!2026',8);
+    const owner=Number((await db.execute("INSERT INTO vendors(shop_name,owner_name,phone,password_hash,verified,status,lifecycle_status) VALUES(?,?,?,?,1,1,'active')",[`P09 Fulfillment Owner ${suffix}`,'P09 Fulfillment Owner',`018${String(suffix).slice(-8)}`,hash])).insertId);
+    const other=Number((await db.execute("INSERT INTO vendors(shop_name,owner_name,phone,password_hash,verified,status,lifecycle_status) VALUES(?,?,?,?,1,1,'active')",[`P09 Fulfillment Other ${suffix}`,'P09 Fulfillment Other',`019${String(suffix).slice(-8)}`,hash])).insertId);
+    const product=Number((await db.execute('INSERT INTO products(sku,slug,name_bn,name_en,vendor_id,regular_price_paisa,sale_price_paisa,approval_status,status) VALUES(?,?,?,?,?,500,500,\'approved\',1)',[`P09-F-${suffix}`,`p09-f-${suffix}`,'Phase B','Phase B',owner])).insertId);
+    const order=Number((await db.execute("INSERT INTO orders(invoice_no,customer_name,customer_phone,shipping_address,subtotal_paisa,total_paisa,payment_method,payment_status,order_status,order_channel) VALUES(?, 'P09 fulfillment','01600000000','Test address',500,500,'cod','unpaid','processing','storefront')",[`P09-F-${suffix}`])).insertId);
+    const item=Number((await db.execute('INSERT INTO order_items(order_id,product_id,vendor_id,product_name,unit_price_paisa,qty,line_total_paisa) VALUES(?,?,?,\'Phase B line\',500,1,500)',[order,product,owner])).insertId);
+    const subOrder=Number((await db.execute("INSERT INTO vendor_sub_orders(order_id,vendor_id,vendor_order_no,status) VALUES(?,?,?,'order_placed')",[order,owner,`P09-F-${suffix}`])).insertId);
+    await db.execute('INSERT INTO vendor_sub_order_items(vendor_sub_order_id,order_item_id,quantity) VALUES(?,?,1)',[subOrder,item]);
+    const sid=crypto.randomBytes(20).toString('hex');const nonce=crypto.randomBytes(16).toString('hex');
+    await upsertSession({sid,dataJson:JSON.stringify({_csrfNonce:nonce,vendorUser:{id:owner,shop_name:`P09 Fulfillment Owner ${suffix}`}}),expiresAtMs:Date.now()+3600000});
+    const vendorCookie=`pholbazar_sid=${sid}`,vendorToken=deriveCsrfToken(sid,nonce);
+    t.after(async()=>{
+      await db.execute('DELETE FROM fulfillment_shipment_events WHERE shipment_id IN (SELECT id FROM fulfillment_shipments WHERE vendor_sub_order_id=?)',[subOrder]);
+      await db.execute('DELETE FROM fulfillment_shipments WHERE vendor_sub_order_id=?',[subOrder]);
+      await db.execute('DELETE FROM vendor_order_status_history WHERE vendor_sub_order_id=?',[subOrder]);
+      await db.execute('DELETE FROM order_status_history WHERE order_id=?',[order]);
+      await db.execute('DELETE FROM vendor_sub_order_items WHERE vendor_sub_order_id=?',[subOrder]);
+      await db.execute('DELETE FROM vendor_sub_orders WHERE id=?',[subOrder]);
+      await db.execute('DELETE FROM order_items WHERE id=?',[item]);await db.execute('DELETE FROM orders WHERE id=?',[order]);
+      await db.execute('DELETE FROM products WHERE id=?',[product]);await db.execute('DELETE FROM vendors WHERE id IN (?,?)',[owner,other]);
+    });
+    const bn=await request('/vendor/orders?lang=bn',{cookie:vendorCookie,accept:'text/html'});assert.equal(bn.status,200);assert.match(bn.text,/অর্ডার গ্রহণ করা হয়েছে/);assert.match(bn.text,/মূল অর্ডারের অবস্থা/);
+    const en=await request('/vendor/orders?lang=en',{cookie:vendorCookie,accept:'text/html'});assert.equal(en.status,200);assert.match(en.text,/Order received/);assert.match(en.text,/Parent order status/);
+    assert.equal((await request(`/vendor/sub-orders/${subOrder}/status`,{method:'POST',cookie:vendorCookie,token:'',body:{to_status:'vendor_accepted'}})).status,403,'vendor status changes require CSRF');
+    assert.equal((await request(`/vendor/sub-orders/${subOrder}/status`,{method:'POST',cookie:vendorCookie,token:vendorToken,body:{to_status:'processing'}})).status,409,'out-of-order states are rejected');
+    assert.equal((await request(`/vendor/sub-orders/${subOrder}/status`,{method:'POST',cookie:vendorCookie,token:vendorToken,body:{to_status:'vendor_accepted'}})).status,302);
+    for(const status of ['processing','packed','ready_for_pickup'])assert.equal((await request(`/vendor/sub-orders/${subOrder}/status`,{method:'POST',cookie:vendorCookie,token:vendorToken,body:{to_status:status}})).status,302);
+    const ownDenied=await request(`/vendor/sub-orders/${subOrder}/booking-result`,{method:'POST',cookie:vendorCookie,token:vendorToken,body:{courier_code:'TEST-P09',tracking_reference:'P09-HTTP-TRACK',result_code:'succeeded'}});assert.equal(ownDenied.status,409,'unknown delivery ownership fails closed');
+    const mode=await request(`/admin/fulfillment/sub-orders/${subOrder}/delivery-mode`,{method:'POST',body:{delivery_mode:'platform_managed'}});assert.equal(mode.status,200,mode.text.slice(0,250));
+    const noGrant=await noGrantSession();assert.equal((await request(`/admin/fulfillment/sub-orders/${subOrder}/booking-result`,{method:'POST',cookie:noGrant.cookie,token:noGrant.token,body:{courier_code:'TEST-P09',tracking_reference:'P09-HTTP-TRACK',result_code:'succeeded'}})).status,403,'booking requires orders.manage');
+    const booking=await request(`/admin/fulfillment/sub-orders/${subOrder}/booking-result`,{method:'POST',body:{courier_code:'TEST-P09',tracking_reference:'P09-HTTP-TRACK',result_code:'succeeded'}});assert.equal(booking.status,200,booking.text.slice(0,250));
+    assert.equal((await db.queryOne('SELECT picked_up_at FROM fulfillment_shipments WHERE vendor_sub_order_id=?',[subOrder])).picked_up_at,null,'booking is not physical pickup evidence');
+    assert.equal((await request(`/vendor/sub-orders/${subOrder}/handover`,{method:'POST',cookie:vendorCookie,token:vendorToken,body:{}})).status,403,'vendor cannot hand over a platform-managed shipment');
+    const handover=await request(`/admin/fulfillment/sub-orders/${subOrder}/handover`,{method:'POST',body:{}});assert.equal(handover.status,200,handover.text.slice(0,250));
+    assert.ok((await db.queryOne('SELECT picked_up_at FROM fulfillment_shipments WHERE vendor_sub_order_id=?',[subOrder])).picked_up_at);
+    assert.equal((await db.queryOne('SELECT order_status FROM orders WHERE id=?',[order])).order_status,'shipped');
+    const vendorDelivered=await request(`/vendor/sub-orders/${subOrder}/status`,{method:'POST',cookie:vendorCookie,token:vendorToken,body:{to_status:'delivered'}});assert.equal(vendorDelivered.status,403,'vendor cannot assert delivery');
+    const delivered=await request(`/admin/fulfillment/sub-orders/${subOrder}/status`,{method:'POST',body:{to_status:'delivered'}});assert.equal(delivered.status,200,delivered.text.slice(0,250));
+    assert.equal((await db.queryOne('SELECT order_status FROM orders WHERE id=?',[order])).order_status,'delivered');
+    assert.equal((await db.queryOne('SELECT fulfillment_status FROM order_items WHERE id=?',[item])).fulfillment_status,'pending','new sub-order fulfillment does not rewrite legacy item-level history');
+  });
+
   test('vendor and reseller portal POST routes reject missing CSRF in MySQL mode before writes',async(t)=>{
     if(!MYSQL_HOST)return t.skip(SKIP);
     const suffix=Date.now();

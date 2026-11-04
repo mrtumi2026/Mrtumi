@@ -119,11 +119,13 @@ after(async () => {
   }
 });
 
-test('vendor mark-ready form carries the session-bound CSRF token', async () => {
+test('Vendor Panel uses the vendor sub-order workflow and never exposes a parent-order fulfillment mutation', async () => {
   const { response, text } = await request('/vendor/orders');
   assert.equal(response.status, 200);
   assert.match(text, /name="_csrf" value="[^"]+"/);
-  assert.match(text, new RegExp(`/vendor/orders/mark-ready/${ownedOrderId}`));
+  assert.doesNotMatch(text, new RegExp(`/vendor/orders/mark-ready/${ownedOrderId}`));
+  assert.match(text,/মূল অর্ডারের অবস্থা/);
+  assert.match(text,/আপনার সাব-অর্ডারের অবস্থা/);
 });
 
 test('vendor mark-ready POST rejects missing CSRF before any order/history write', async () => {

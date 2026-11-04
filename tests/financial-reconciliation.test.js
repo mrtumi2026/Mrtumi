@@ -79,17 +79,20 @@ test('a delivered vendor sub-order enters pending settlement without waiting for
   const calls = [];
   const tx = {
     async queryOne(sql) {
+      if (sql.includes('SELECT id,order_id,vendor_id FROM vendor_sub_orders')) return { id:7,order_id:2,vendor_id:8 };
+      if (sql.includes('SELECT id FROM orders WHERE id=? FOR UPDATE')) return { id:2 };
       if (sql.includes('SELECT so.*,o.order_status')) return { id: 7, order_id: 2, vendor_id: 8, status: 'in_transit', parent_status: 'processing', payment_method: 'cod', payment_status: 'unpaid', cod_due_paisa: 500 };
-      if (sql.includes('FROM fulfillment_shipments WHERE vendor_sub_order_id')) return { id: 12 };
+      if (sql.includes('FROM fulfillment_shipments WHERE vendor_sub_order_id')) return { id: 12, picked_up_at: '2026-01-01 00:00:00', status: 'in_transit' };
       if (sql.includes('snapshot_vendor_paisa')) return { id: 7, order_id: 2, vendor_id: 8, status: 'delivered', vendor_entitlement_paisa: 500, marketplace_fee_paisa: 0, reseller_id: null, snapshot_vendor_paisa: 500, reseller_paisa: 0, marketplace_paisa: 0 };
       if (sql.includes('FROM vendor_transactions WHERE idempotency_key')) return null;
       if (sql.includes('COUNT(*) AS n FROM vendor_sub_orders')) return { n: 1 };
       return null;
     },
+    async queryAll(sql) { if(sql.includes('SELECT id,status FROM vendor_sub_orders')) return [{id:7,status:'delivered'},{id:9,status:'ready_for_pickup'}]; return []; },
     async execute(sql, params = []) { calls.push({ sql, params }); return { insertId: 1, affectedRows: 1 }; },
   };
   withFakeTransaction(t, tx);
-  const result = await vendorOrders.transitionSubOrder({ subOrderId: 7, toStatus: 'delivered', actor: { vendorId: 8 } });
+  const result = await vendorOrders.transitionSubOrder({ subOrderId: 7, toStatus: 'delivered', actor: { userId: 99, platformAdmin: true } });
   assert.equal(result.to, 'delivered');
   assert.ok(calls.some(({ sql }) => sql.includes('UPDATE vendor_wallets SET pending_settlement=pending_settlement+')));
   assert.ok(calls.some(({ sql }) => sql.includes('INSERT INTO order_status_history(order_id,vendor_sub_order_id')));

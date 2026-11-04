@@ -1,72 +1,82 @@
-<%- include('partials/layout-top', { title: 'Vendor Orders' }) %>
+<%- include('partials/layout-top', { title: t('vendorFulfillment.subOrder') }) %>
 
 <div class="mb-3">
-  <h4 class="fw-bold mb-0">🛒 আমার পণ্যের অর্ডারসমূহ (<%= orderLines.length %>)</h4>
-  <p class="text-muted small mb-0">শুধু আপনার অর্ডার আইটেমের fulfillment এগিয়ে নিন; parent order status সব vendor item থেকে স্বয়ংক্রিয়ভাবে গণনা হয়।</p>
+  <h4 class="fw-bold mb-0">🛒 <%= t('vendorFulfillment.subOrder') %> (<%= orderLines.length %>)</h4>
+  <p class="text-muted small mb-0"><%= t('vendorFulfillment.pageIntro') %></p>
 </div>
 
 <div class="tbl-card">
   <div class="tbl-card-body">
-    <table class="table clean mb-0 align-middle">
-      <thead>
-        <tr>
-          <th>ইনভয়েস</th>
-          <th>গ্রাহক ও ঠিকানা</th>
-          <th>পণ্য ও প্যাক</th>
-          <th>বিক্রয় মূল্য</th>
-          <th>আপনার নিট আয় (<%= 100 - Number(vendor.commission_rate || 10) %>%)</th>
-          <th>স্ট্যাটাস</th>
-          <th class="text-end">অ্যাকশন</th>
-        </tr>
-      </thead>
-      <tbody>
-        <% if (!orderLines.length) { %>
-          <tr><td colspan="7" class="text-center py-4 text-muted">কোনো অর্ডার পাওয়া যায়নি।</td></tr>
-        <% } %>
-        <% orderLines.forEach(function(ol) {
-             const gross = Number(ol.price) * Number(ol.qty);
-             const net = Math.round(gross * (1 - Number(vendor.commission_rate || 10) / 100));
-        %>
-          <tr>
-            <td>
-              <div class="fw-bold">#<%= ol.invoice_id %></div>
-              <small class="text-muted"><%= String(ol.created_at).slice(0, 10) %></small>
-            </td>
-            <td>
-              <div class="small text-muted">Customer contact details are restricted to protect privacy.</div>
-            </td>
-            <td><%= ol.product_name %> <span class="badge bg-light text-dark border"><%= ol.size %> × <%= ol.qty %></span></td>
-            <td>৳<%= gross.toLocaleString('en-IN') %></td>
-            <td class="fw-bold text-success">৳<%= net.toLocaleString('en-IN') %></td>
-            <td><span class="sb <%= ol.order_status === 'completed' ? 'sb-6' : 'sb-1' %>"><%= ol.order_status %></span></td>
-            <td class="text-end">
-              <% if (ol.vendor_sub_order_id) { const availableSubOrderStatuses = ({order_placed:['vendor_accepted','cancelled'],vendor_accepted:['processing','cancelled'],processing:['packed','cancelled'],packed:['ready_for_pickup','cancelled'],ready_for_pickup:['in_transit','failed_delivery','cancelled'],in_transit:['delivered','failed_delivery','return_requested'],failed_delivery:['ready_for_pickup','cancelled'],delivered:['return_requested'],return_requested:['returned']})[ol.vendor_sub_order_status] || []; %>
-                <span class="small me-2"><%= ol.vendor_sub_order_status %></span>
-                <% if (availableSubOrderStatuses.length) { %>
-                  <form action="/vendor/sub-orders/<%= ol.vendor_sub_order_id %>/status" method="POST" class="d-inline-flex flex-wrap gap-1 align-items-center">
-                    <input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>" />
-                    <label class="visually-hidden" for="sub-order-status-<%= ol.order_item_id %>">Next sub-order status</label>
-                    <select id="sub-order-status-<%= ol.order_item_id %>" name="to_status" class="form-select form-select-sm" required>
-                      <% availableSubOrderStatuses.forEach(function(status) { %><option value="<%= status %>"><%= status %></option><% }); %>
-                    </select>
-                    <input class="form-control form-control-sm" name="carrier" maxlength="48" value="<%= ol.shipment_carrier || '' %>" placeholder="Courier (for dispatch)" aria-label="Courier carrier" />
-                    <input class="form-control form-control-sm" name="tracking_code" maxlength="120" value="<%= ol.tracking_code || '' %>" placeholder="Tracking code (for dispatch)" aria-label="Tracking code" />
-                    <button type="submit" class="btn btn-sm btn-success py-1 px-2">Update status</button>
-                  </form>
-                <% } %>
-              <% } else if (typeof ol.fulfillment_status === 'undefined') { %>
-                <% if (ol.order_status === 'pending') { %><form action="/vendor/orders/mark-ready/<%= ol.order_id %>" method="POST" class="d-inline"><input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>" /><button type="submit" class="btn btn-sm btn-success py-1 px-2">Mark Ready (disabled)</button></form><% } %>
-              <% } else { const nextFulfillment = ({pending:'processing', processing:'ready', ready:'dispatched'})[ol.fulfillment_status]; %>
-                <span class="small me-2"><%= ol.fulfillment_status %></span>
-                <% if (nextFulfillment && !['cancelled','delivered'].includes(ol.order_status)) { %>
-                  <form action="/vendor/order-items/<%= ol.order_item_id %>/fulfillment" method="POST" class="d-inline"><input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>" /><input type="hidden" name="fulfillment_status" value="<%= nextFulfillment %>"><button type="submit" class="btn btn-sm btn-success py-1 px-2">Move to <%= nextFulfillment %></button></form>
-                <% } %>
-              <% } %>
-            </td>
-          </tr>
-        <% }) %>
-      </tbody>
-    </table>
+    <div class="table-responsive">
+      <table class="table clean mb-0 align-middle">
+        <thead><tr>
+          <th><%= t('vendorFulfillment.invoice') %></th><th><%= t('vendorFulfillment.customerAddress') %></th><th><%= t('vendorFulfillment.productPack') %></th><th><%= t('vendorFulfillment.salePrice') %></th>
+          <th><%= t('vendorFulfillment.netIncome') %> (<%= 100 - Number(vendor.commission_rate || 10) %>%)</th><th><%= t('vendorFulfillment.parentOrder') %></th>
+          <th><%= t('vendorFulfillment.subOrder') %></th><th class="text-end">অ্যাকশন</th>
+        </tr></thead>
+        <tbody>
+          <% if (!orderLines.length) { %><tr><td colspan="8" class="text-center py-4 text-muted"><%= t('vendorFulfillment.noOrders') %></td></tr><% } %>
+          <% orderLines.forEach(function(ol) {
+               const gross=Number(ol.price)*Number(ol.qty);
+               const net=Math.round(gross*(1-Number(vendor.commission_rate||10)/100));
+               const parentLabel=t('orderStatus.'+String(ol.order_status||''),{},t('vendorFulfillment.unknownStatus'));
+               const subKey=String(ol.vendor_sub_order_status||'');
+               const subLabel=t('vendorFulfillment.'+subKey,{},t('vendorFulfillment.unknownStatus'));
+               const nextActions={order_placed:['vendor_accepted'],vendor_accepted:['processing'],processing:['packed'],packed:['ready_for_pickup'],failed_delivery:['ready_for_pickup']}[subKey]||[];
+               const actionLabels={vendor_accepted:t('vendorFulfillment.acceptOrder'),processing:t('vendorFulfillment.startPacking'),packed:t('vendorFulfillment.finishPacking'),ready_for_pickup:t('vendorFulfillment.readyPickup')};
+               const legacyKey=String(ol.fulfillment_status||'');
+               const legacyLabels={pending:t('vendorFulfillment.legacyPending'),processing:t('vendorFulfillment.legacyProcessing'),ready:t('vendorFulfillment.legacyReady'),dispatched:t('vendorFulfillment.legacyDispatched')};
+          %>
+            <tr>
+              <td><div class="fw-bold">#<%= ol.invoice_id %></div><small class="text-muted"><%= String(ol.created_at).slice(0,10) %></small></td>
+              <td><div class="small text-muted"><%= t('vendorFulfillment.customerPrivacy') %></div></td>
+              <td><%= ol.product_name %> <span class="badge bg-light text-dark border"><%= ol.size %> × <%= ol.qty %></span></td>
+              <td>৳<%= gross.toLocaleString('en-IN') %></td><td class="fw-bold text-success">৳<%= net.toLocaleString('en-IN') %></td>
+              <td><span class="sb <%= ['delivered','completed'].includes(ol.order_status)?'sb-6':'sb-1' %>"><%= parentLabel %></span></td>
+              <td>
+                <% if (ol.vendor_sub_order_id) { %>
+                  <span class="sb <%= subKey==='delivered'?'sb-6':subKey==='cancelled'?'sb-7':'sb-1' %>"><%= subLabel %></span>
+                  <% if (ol.delivery_mode) { %><div class="small text-muted mt-1"><%= t('vendorFulfillment.'+ol.delivery_mode,{},t('vendorFulfillment.unknownStatus')) %></div><% } else { %><div class="small text-warning mt-1"><%= t('vendorFulfillment.deliveryModeUnknown') %></div><% } %>
+                  <% if (ol.booking_status) { %><div class="small mt-1"><%= t('vendorFulfillment.booking') %>: <%= t('vendorFulfillment.booking_'+ol.booking_status,{},t('vendorFulfillment.unknownStatus')) %></div><% if(ol.shipment_carrier){ %><div class="small"><%= t('vendorFulfillment.courier') %>: <%= ol.shipment_carrier %></div><% } %><% if(ol.tracking_code){ %><div class="small"><%= t('vendorFulfillment.trackingLabel') %>: <%= ol.tracking_code %></div><% } %><% } else if (subKey==='ready_for_pickup') { %><div class="small text-muted mt-1"><%= t('vendorFulfillment.notBooked') %></div><% } %>
+                  <% if (ol.picked_up_at) { %><span class="badge bg-success mt-1"><%= t('vendorFulfillment.handoverRecorded') %></span><% } else if (subKey==='ready_for_pickup') { %><div class="small text-muted mt-1"><%= t('vendorFulfillment.notHandedOver') %></div><% } %>
+                <% } else if (ol.fulfillment_status) { %>
+                  <span class="badge bg-secondary"><%= legacyLabels[legacyKey]||t('vendorFulfillment.unknownStatus') %></span>
+                <% } else { %><span class="small text-muted"><%= t('vendorFulfillment.unknownStatus') %></span><% } %>
+              </td>
+              <td class="text-end">
+                <div class="d-flex flex-column align-items-end gap-2">
+                  <% if (ol.vendor_sub_order_id && nextActions.length) { nextActions.forEach(function(target) { %>
+                    <form action="/vendor/sub-orders/<%= ol.vendor_sub_order_id %>/status" method="POST" class="d-inline">
+                      <input type="hidden" name="_csrf" value="<%= typeof csrfToken!=='undefined'?csrfToken:'' %>" />
+                      <input type="hidden" name="to_status" value="<%= target %>" />
+                      <button type="submit" class="btn btn-sm btn-success"><%= actionLabels[target] %></button>
+                    </form>
+                  <% }); } %>
+                  <% if (ol.vendor_sub_order_id && subKey==='ready_for_pickup' && ol.delivery_mode==='vendor_managed' && ol.booking_status!=='succeeded') { %>
+                    <form action="/vendor/sub-orders/<%= ol.vendor_sub_order_id %>/booking-result" method="POST" class="d-flex flex-wrap gap-1 justify-content-end">
+                      <input type="hidden" name="_csrf" value="<%= typeof csrfToken!=='undefined'?csrfToken:'' %>" />
+                      <input class="form-control form-control-sm" name="courier_code" maxlength="48" required placeholder="<%= t('vendorFulfillment.courierCode') %>" aria-label="<%= t('vendorFulfillment.courierCode') %>" />
+                      <input class="form-control form-control-sm" name="tracking_reference" maxlength="120" placeholder="<%= t('vendorFulfillment.trackingReference') %>" aria-label="<%= t('vendorFulfillment.trackingReference') %>" />
+                      <select class="form-select form-select-sm" name="result_code" required aria-label="<%= t('vendorFulfillment.bookingResult') %>"><option value="succeeded"><%= t('vendorFulfillment.bookingSucceeded') %></option><option value="failed"><%= t('vendorFulfillment.bookingFailed') %></option></select>
+                      <button type="submit" class="btn btn-sm btn-outline-primary"><%= t('vendorFulfillment.recordBooking') %></button>
+                    </form>
+                  <% } %>
+                  <% if (ol.vendor_sub_order_id && subKey==='ready_for_pickup' && ol.delivery_mode==='vendor_managed' && ol.booking_status==='succeeded' && !ol.picked_up_at) { %>
+                    <form action="/vendor/sub-orders/<%= ol.vendor_sub_order_id %>/handover" method="POST" class="d-inline"><input type="hidden" name="_csrf" value="<%= typeof csrfToken!=='undefined'?csrfToken:'' %>" /><button type="submit" class="btn btn-sm btn-outline-success"><%= t('vendorFulfillment.confirmHandover') %></button></form>
+                  <% } %>
+                  <% if (ol.vendor_sub_order_id && subKey==='ready_for_pickup' && ol.delivery_mode==='platform_managed') { %><span class="small text-muted"><%= t('vendorFulfillment.platformAwaiting') %></span><% } %>
+                  <% if (!ol.vendor_sub_order_id && ol.fulfillment_status) { %>
+                    <% const legacyNext=({pending:'processing',processing:'ready',ready:'dispatched'})[legacyKey]; if(legacyNext && !['cancelled','delivered'].includes(ol.order_status)) { %>
+                      <form action="/vendor/order-items/<%= ol.order_item_id %>/fulfillment" method="POST" class="d-inline"><input type="hidden" name="_csrf" value="<%= typeof csrfToken!=='undefined'?csrfToken:'' %>" /><input type="hidden" name="fulfillment_status" value="<%= legacyNext %>" /><button type="submit" class="btn btn-sm btn-outline-secondary"><%= t('vendorFulfillment.legacyNext') %></button></form>
+                    <% } %>
+                  <% } %>
+                </div>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
   </div>
 </div>
 
