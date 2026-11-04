@@ -357,8 +357,8 @@ test('Live disposable MySQL/MariaDB: timeout persistence, duplicate booking prev
   const custId = custRes.insertId;
 
   const vendRes = await db.execute(`
-    INSERT INTO vendors (shop_name, owner_name, email, phone, status, created_at, updated_at)
-    VALUES ('Test Vendor Shop', 'Vendor Owner', 'vendor@example.test', '01787654321', 1, UTC_TIMESTAMP(), UTC_TIMESTAMP())
+    INSERT INTO vendors (shop_name, owner_name, email, phone, password_hash, status, created_at, updated_at)
+    VALUES ('Test Vendor Shop', 'Vendor Owner', 'vendor@example.test', '01787654321', 'test_hash', 1, UTC_TIMESTAMP(), UTC_TIMESTAMP())
   `);
   const vendId = vendRes.insertId;
 
@@ -369,8 +369,8 @@ test('Live disposable MySQL/MariaDB: timeout persistence, duplicate booking prev
   const orderId = orderRes.insertId;
 
   const subOrderRes = await db.execute(`
-    INSERT INTO vendor_sub_orders (order_id, vendor_id, status, subtotal_paisa, commission_paisa, vendor_payout_paisa, delivery_mode, booking_status, created_at, updated_at)
-    VALUES (?, ?, 'ready_for_pickup', 50000, 5000, 45000, 'vendor_managed', NULL, UTC_TIMESTAMP(), UTC_TIMESTAMP())
+    INSERT INTO vendor_sub_orders (order_id, vendor_id, vendor_order_no, status, delivery_mode, vendor_entitlement_paisa, marketplace_fee_paisa, net_payable_paisa, created_at, updated_at)
+    VALUES (?, ?, 'VSO-REC-TEST-1', 'ready_for_pickup', 'vendor_managed', 45000, 5000, 45000, UTC_TIMESTAMP(), UTC_TIMESTAMP())
   `, [orderId, vendId]);
   const subOrderId = subOrderRes.insertId;
 
