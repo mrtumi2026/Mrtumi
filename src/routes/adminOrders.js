@@ -76,6 +76,20 @@ router.post('/admin/fulfillment/sub-orders/:subOrderId/track-sync', requirePermi
   return res.redirect('/admin/reseller-commerce');
 }));
 
+// Multi-courier booking reconciliation
+router.post('/admin/fulfillment/sub-orders/:subOrderId/reconcile-booking', requirePermission('orders.manage'), requireCsrf, asyncHandler(async (req, res) => {
+  const courierRepo = require('../repositories/courierIntegrationRepository');
+  const result = await courierRepo.reconcileBookingResult({
+    subOrderId: req.params.subOrderId,
+    actor: fulfillmentActor(req)
+  });
+  if (req.accepts('json') && !req.body.redirect) {
+    return res.json({ success: true, data: result });
+  }
+  req.flash('success', result.message || 'Booking reconciliation completed.');
+  return res.redirect('/admin/reseller-commerce');
+}));
+
 function generateInvoiceId() {
   for (let i = 0; i < 10; i++) {
     const code = String(Math.floor(10000 + Math.random() * 90000));

@@ -338,15 +338,20 @@ async function executeOneClickBooking({ subOrderId, courierCode, actor, idempote
         courierName: providerConfig.name
       };
     } else {
-      // Record failed booking event
+      const isTimeout = Boolean(bookingResult.isTimeout || bookingResult.isUnknownOutcome);
+      const failStatus = isTimeout ? 'unknown_timeout' : 'failed';
+      const eventResultCode = isTimeout ? 'timeout' : 'failed';
+
+      // Record failed or unknown-timeout booking event
       await tx.execute(
         `UPDATE fulfillment_shipments
-         SET booking_status = 'failed',
+         SET booking_status = ?,
              booking_response_json = ?,
              updated_at = UTC_TIMESTAMP()
          WHERE id = ?`,
         [
-          JSON.stringify(bookingResult.rawResponse || { error: bookingResult.error }),
+          failStatus,
+          JSON.stringify(bookingResult.rawResponse || { error: bookingResult.error, isTimeout }),
           shipment.id
         ]
       );
@@ -354,18 +359,120 @@ async function executeOneClickBooking({ subOrderId, courierCode, actor, idempote
       await tx.execute(
         `INSERT INTO fulfillment_shipment_events
          (shipment_id, event_type, actor_type, vendor_id, user_id, courier_code, tracking_reference, result_code, note, created_at)
-         VALUES (?, 'courier_booking', ?, ?, ?, ?, '', 'failed', ?, UTC_TIMESTAMP())`,
+         VALUES (?, 'courier_booking', ?, ?, ?, ?, '', ?, ?, UTC_TIMESTAMP())`,
         [
           shipment.id,
           actorType,
           actorVendorId,
           actorUserId,
           providerConfig.code,
-          bookingResult.error || 'Courier booking rejected'
+          eventResultCode,
+          bookingResult.error || (isTimeout ? 'Courier request timed out' : 'Courier booking rejected')
         ]
       );
 
-      throw new AppError('COURIER_BOOKING_FAILED', bookingResult.error || 'Courier provider rejected booking.', 422);
+      throw new AppError(
+        isTimeout ? 'COURIER_BOOKING_TIMEOUT' : 'COURIER_BOOKING_FAILED',
+        bookingResult.error || 'Courier provider rejected booking.',
+        isTimeout ? 504 : 422
+      );
+    }
+  });
+}
+
+/**
+ * Reconciles an ambiguous or timed-out booking before allowing retry,
+ * preventing accidental duplicate parcel creation.
+ */
+async function reconcileBookingResult({ subOrderId, actor }) {
+  return withTransaction(async (tx) => {
+    const subOrder = await tx.queryOne(
+      `SELECT vso.id, vso.order_id, vso.vendor_id, vso.status, o.invoice_id,
+              fs.id AS shipment_id, fs.courier_code, fs.tracking_id, fs.booking_status, fs.external_consignment_id
+       FROM vendor_sub_orders vso
+       JOIN orders o ON o.id = vso.order_id
+       LEFT JOIN fulfillment_shipments fs ON fs.vendor_sub_order_id = vso.id
+       WHERE vso.id = ? FOR UPDATE`,
+      [subOrderId]
+    );
+
+    if (!subOrder) throw new NotFoundError('Vendor sub-order not found.');
+    assertActorAccess(subOrder, actor);
+
+    if (!subOrder.shipment_id) {
+      throw new ValidationError('No shipment record found to reconcile.');
+    }
+
+    if (subOrder.booking_status === 'succeeded' && subOrder.tracking_id) {
+      return {
+        reconciled: true,
+        bookingStatus: 'succeeded',
+        trackingId: subOrder.tracking_id,
+        message: 'Booking is already confirmed and active.'
+      };
+    }
+
+    const providerConfig = await tx.queryOne(
+      `SELECT * FROM courier_apis WHERE LOWER(code) = ? LIMIT 1`,
+      [String(subOrder.courier_code || '').toLowerCase()]
+    );
+
+    const adapter = CourierProviderFactory.createAdapter(providerConfig || { code: subOrder.courier_code });
+    const invoiceNo = `${subOrder.invoice_id}-${subOrder.id}`;
+    const recResult = await adapter.reconcileBooking({
+      invoiceNo,
+      consignmentId: subOrder.external_consignment_id
+    });
+
+    const actorType = actor.vendorId ? 'vendor' : 'admin';
+
+    if (recResult.found && recResult.trackingId) {
+      // Recovered successful booking!
+      await tx.execute(
+        `UPDATE fulfillment_shipments
+         SET booking_status = 'succeeded',
+             tracking_id = ?,
+             external_consignment_id = ?,
+             updated_at = UTC_TIMESTAMP()
+         WHERE id = ?`,
+        [recResult.trackingId, recResult.consignmentId || recResult.trackingId, subOrder.shipment_id]
+      );
+
+      await tx.execute(
+        `INSERT INTO fulfillment_shipment_events
+         (shipment_id, event_type, actor_type, vendor_id, user_id, courier_code, tracking_reference, result_code, note, created_at)
+         VALUES (?, 'booking_reconciled', ?, ?, ?, ?, ?, 'succeeded', 'Recovered booking reference from carrier reconciliation', UTC_TIMESTAMP())`,
+        [subOrder.shipment_id, actorType, actor.vendorId || null, actor.userId || null, subOrder.courier_code, recResult.trackingId]
+      );
+
+      return {
+        reconciled: true,
+        bookingStatus: 'succeeded',
+        trackingId: recResult.trackingId,
+        message: 'Carrier confirmed parcel was created. Tracking reference recovered successfully.'
+      };
+    } else {
+      // Carrier confirms no parcel exists; safe to retry fresh booking
+      await tx.execute(
+        `UPDATE fulfillment_shipments
+         SET booking_status = 'failed',
+             updated_at = UTC_TIMESTAMP()
+         WHERE id = ?`,
+        [subOrder.shipment_id]
+      );
+
+      await tx.execute(
+        `INSERT INTO fulfillment_shipment_events
+         (shipment_id, event_type, actor_type, vendor_id, user_id, courier_code, tracking_reference, result_code, note, created_at)
+         VALUES (?, 'booking_reconciled', ?, ?, ?, ?, '', 'failed', 'Carrier confirmed no parcel exists; cleared for safe retry', UTC_TIMESTAMP())`,
+        [subOrder.shipment_id, actorType, actor.vendorId || null, actor.userId || null, subOrder.courier_code || '']
+      );
+
+      return {
+        reconciled: true,
+        bookingStatus: 'failed',
+        message: 'Carrier confirmed no parcel was created. Cleared for safe retry.'
+      };
     }
   });
 }
@@ -437,5 +544,6 @@ async function syncShipmentTracking({ subOrderId, actor }) {
 module.exports = {
   getShipmentQuotesAndRecommendation,
   executeOneClickBooking,
+  reconcileBookingResult,
   syncShipmentTracking
 };

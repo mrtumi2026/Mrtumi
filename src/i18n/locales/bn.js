@@ -314,6 +314,8 @@ module.exports = {
     notHandedOver: 'শারীরিক হস্তান্তর এখনও রেকর্ড হয়নি',
     booking_succeeded: 'বুকিং সফল',
     booking_failed: 'বুকিং ব্যর্থ',
+    booking_unknown_timeout: 'টাইমআউট / নিশ্চিতকরণ অপেক্ষমাণ',
+    reconcileBooking: 'বুকিং রিকনসিল করুন',
     platform_managed: 'প্ল্যাটফর্ম-পরিচালিত ডেলিভারি',
     vendor_managed: 'ভেন্ডার-পরিচালিত ডেলিভারি',
     platformAwaiting: 'প্ল্যাটফর্ম পিকআপ নিশ্চিত করবে',

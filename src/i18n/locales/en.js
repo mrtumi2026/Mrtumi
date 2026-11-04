@@ -315,6 +315,8 @@ module.exports = {
     notHandedOver: 'Physical handover is not recorded',
     booking_succeeded: 'Booking succeeded',
     booking_failed: 'Booking failed',
+    booking_unknown_timeout: 'Booking timeout / confirmation pending',
+    reconcileBooking: 'Reconcile booking',
     platform_managed: 'Platform-managed delivery',
     vendor_managed: 'Vendor-managed delivery',
     platformAwaiting: 'Platform will confirm pickup',

@@ -13,7 +13,7 @@ class SteadfastAdapter extends CourierBaseAdapter {
   }
 
   /**
-   * Steadfast does not have a dynamic quote API endpoint;
+   * Steadfast does not provide a dynamic quote API endpoint in v1;
    * it operates on standard zone tariff slabs.
    * We return the contracted tariff clearly marked as isLiveQuote = false.
    */
@@ -22,6 +22,23 @@ class SteadfastAdapter extends CourierBaseAdapter {
     const isInsideDhaka = dest === 'dhaka' || dest.includes('dhaka city') || dest === 'ঢাকা';
     const isSubDhaka = ['gazipur', 'narayanganj', 'savar', 'keraniganj', 'tongui', 'গাজীপুর', 'নারায়ণগঞ্জ', 'সাভার'].includes(dest);
     const weightKg = Math.max(1, Math.ceil(Number(weightGrams || 1000) / 1000));
+
+    // Restriction check
+    if (weightKg > 15) {
+      return {
+        providerCode: this.providerCode || 'steadfast',
+        providerName: this.providerName || 'Steadfast Courier',
+        available: false,
+        chargePaisa: 0,
+        codFeePaisa: 0,
+        estimatedDaysMin: 0,
+        estimatedDaysMax: 0,
+        isLiveQuote: false,
+        serviceType: 'standard_doorstep',
+        reasonUnavailable: 'Steadfast standard parcel limit exceeded (maximum 15kg)',
+        notes: 'Weight restriction exceeded'
+      };
+    }
 
     let baseChargePaisa = 13000; // Outside Dhaka: ৳130
     let daysMin = 2;
@@ -42,7 +59,7 @@ class SteadfastAdapter extends CourierBaseAdapter {
     const extraChargePaisa = extraKg * 2000;
     const totalChargePaisa = baseChargePaisa + extraChargePaisa;
 
-    // COD fee: 1% COD fee
+    // COD fee: 1% of COD amount
     const codFeePaisa = codAmountPaisa > 0 ? Math.round(codAmountPaisa * 0.01) : 0;
 
     return {
@@ -61,8 +78,42 @@ class SteadfastAdapter extends CourierBaseAdapter {
   }
 
   async checkServiceability({ origin, destination }) {
-    // Steadfast covers 64 districts in Bangladesh nationwide
     return { serviceable: true, reason: null };
+  }
+
+  /**
+   * Reconciles booking if a timeout or ambiguous state occurs.
+   */
+  async reconcileBooking({ invoiceNo }) {
+    if (!this.apiKey || !this.secretKey || this.isSandbox) {
+      return { found: false, trackingId: null, consignmentId: null, status: null };
+    }
+
+    try {
+      // Steadfast supports checking by invoice reference
+      const response = await this.safeFetch(`${this.baseUrl}/status_by_trackingcode/${encodeURIComponent(invoiceNo)}`, {
+        method: 'GET',
+        headers: {
+          'Api-Key': this.apiKey,
+          'Secret-Key': this.secretKey
+        }
+      }, 5000);
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.status === 200 && data.delivery_status) {
+          return {
+            found: true,
+            trackingId: data.tracking_code || invoiceNo,
+            consignmentId: String(data.consignment_id || ''),
+            status: data.delivery_status
+          };
+        }
+      }
+    } catch (_err) {
+      // Quietly ignore reconciliation errors
+    }
+    return { found: false, trackingId: null, consignmentId: null, status: null };
   }
 
   async bookShipment({ shipmentId, subOrderId, invoiceNo, recipient, parcel, codAmountPaisa, idempotencyKey }) {
@@ -76,14 +127,27 @@ class SteadfastAdapter extends CourierBaseAdapter {
       };
     }
 
+    // Phone format validation
+    const rawPhone = String(recipient?.phone || '').replace(/[^0-9]/g, '');
+    const cleanPhone = rawPhone.length === 13 && rawPhone.startsWith('880') ? rawPhone.slice(2) : rawPhone;
+    if (!/^01[3-9]\d{8}$/.test(cleanPhone)) {
+      return {
+        success: false,
+        trackingId: null,
+        consignmentId: null,
+        rawResponse: { error: 'INVALID_PHONE' },
+        error: `Invalid Bangladesh recipient phone number format: '${recipient?.phone}'. Must be 11 digits (e.g. 017XXXXXXXX).`
+      };
+    }
+
     const codBdt = Math.round(Number(codAmountPaisa || 0) / 100);
     const payload = {
-      invoice: String(invoiceNo || subOrderId || ''),
-      recipient_name: String(recipient?.name || '').trim(),
-      recipient_phone: String(recipient?.phone || '').trim(),
-      recipient_address: String(recipient?.address || '').trim(),
+      invoice: String(invoiceNo || subOrderId || '').slice(0, 100),
+      recipient_name: String(recipient?.name || '').trim().slice(0, 100),
+      recipient_phone: cleanPhone,
+      recipient_address: String(recipient?.address || '').trim().slice(0, 255),
       cod_amount: codBdt,
-      note: String(recipient?.note || `Mr. Tumi Order #${invoiceNo}`)
+      note: String(recipient?.note || `Mr. Tumi Order #${invoiceNo}`).slice(0, 255)
     };
 
     // If sandbox mode, return mock success response without external HTTP
@@ -111,8 +175,7 @@ class SteadfastAdapter extends CourierBaseAdapter {
     }
 
     try {
-      const fetch = globalThis.fetch || require('node-fetch');
-      const response = await fetch(`${this.baseUrl}/create_order`, {
+      const response = await this.safeFetch(`${this.baseUrl}/create_order`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -120,7 +183,7 @@ class SteadfastAdapter extends CourierBaseAdapter {
           'Secret-Key': this.secretKey
         },
         body: JSON.stringify(payload)
-      });
+      }, 8000);
 
       const data = await response.json();
       if (response.ok && data.status === 200 && data.consignment) {
@@ -128,7 +191,7 @@ class SteadfastAdapter extends CourierBaseAdapter {
           success: true,
           trackingId: data.consignment.tracking_code || String(data.consignment.consignment_id),
           consignmentId: String(data.consignment.consignment_id),
-          rawResponse: data,
+          rawResponse: CourierBaseAdapter.sanitize(data),
           error: null
         };
       }
@@ -137,16 +200,19 @@ class SteadfastAdapter extends CourierBaseAdapter {
         success: false,
         trackingId: null,
         consignmentId: null,
-        rawResponse: data,
-        error: data.message || `Steadfast booking failed with status ${data.status || response.status}`
+        rawResponse: CourierBaseAdapter.sanitize(data),
+        error: data.message || (data.errors ? JSON.stringify(data.errors) : `Steadfast booking failed (HTTP ${response.status})`)
       };
     } catch (err) {
       return {
         success: false,
         trackingId: null,
         consignmentId: null,
-        rawResponse: { error: err.message },
-        error: `Steadfast network error: ${err.message}`
+        isTimeout: err.code === 'COURIER_NETWORK_TIMEOUT',
+        rawResponse: { error: err.message, code: err.code },
+        error: err.code === 'COURIER_NETWORK_TIMEOUT'
+          ? 'Steadfast booking request timed out after 8 seconds. Ambiguous state saved for reconciliation.'
+          : `Steadfast network error: ${err.message}`
       };
     }
   }
@@ -173,14 +239,14 @@ class SteadfastAdapter extends CourierBaseAdapter {
     }
 
     try {
-      const fetch = globalThis.fetch || require('node-fetch');
-      const response = await fetch(`${this.baseUrl}/status_by_trackingcode/${encodeURIComponent(trackingReference)}`, {
+      const response = await this.safeFetch(`${this.baseUrl}/status_by_trackingcode/${encodeURIComponent(trackingReference)}`, {
         method: 'GET',
         headers: {
           'Api-Key': this.apiKey,
           'Secret-Key': this.secretKey
         }
-      });
+      }, 8000);
+
       const data = await response.json();
       const rawStatus = data.delivery_status || 'unknown';
       return {

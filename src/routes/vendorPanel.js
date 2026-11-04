@@ -445,6 +445,23 @@ router.post('/vendor/sub-orders/:subOrderId/track-sync', requireCsrf, async (req
   } catch (error) { return next(error); }
 });
 
+// Multi-courier booking reconciliation for vendor
+router.post('/vendor/sub-orders/:subOrderId/reconcile-booking', requireCsrf, async (req, res, next) => {
+  if (!mysqlActive()) { req.flash('error', 'Requires MySQL workflow.'); return res.redirect('/vendor/orders'); }
+  try {
+    const courierRepo = require('../repositories/courierIntegrationRepository');
+    const result = await courierRepo.reconcileBookingResult({
+      subOrderId: req.params.subOrderId,
+      actor: { vendorId: req.session.vendorUser.id }
+    });
+    if (req.accepts('json') && !req.body.redirect) {
+      return res.json({ success: true, data: result });
+    }
+    req.flash('success', result.message || 'কুরিয়ার বুকিং রিকনসিলিয়েশন সম্পন্ন হয়েছে।');
+    return res.redirect('/vendor/orders');
+  } catch (error) { return next(error); }
+});
+
 // Independent vendor sub-order fulfillment; a vendor can only mutate its own sub-orders.
 router.post('/vendor/sub-orders/:subOrderId/booking-result', requireCsrf, async (req,res,next) => {
   if(!mysqlActive()){req.flash('error','Shipment booking records require the MySQL workflow.');return res.redirect('/vendor/orders');}

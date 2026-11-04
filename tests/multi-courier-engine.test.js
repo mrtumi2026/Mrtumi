@@ -19,28 +19,28 @@ const en = require('../src/i18n/locales/en');
 
 const root = path.join(__dirname, '..');
 
-test('Migration 0028 defines multi-courier provider and shipment quote tracking schema changes', () => {
+test('Migration 0029 defines multi-courier provider and shipment quote tracking schema changes', () => {
   const pairs = loadMigrationPairs();
-  const m28 = pairs.find((pair) => pair.version === '0028');
-  assert.ok(m28, 'Migration 0028 pair must be loaded');
+  const m29 = pairs.find((pair) => pair.version === '0029');
+  assert.ok(m29, 'Migration 0029 pair must be loaded');
 
   // Verify upSql
-  assert.match(m28.upSql, /ALTER TABLE `courier_apis`/);
-  assert.match(m28.upSql, /ADD COLUMN `provider_type` VARCHAR\(32\)/);
-  assert.match(m28.upSql, /ADD COLUMN `webhook_token` VARCHAR\(120\)/);
-  assert.match(m28.upSql, /ADD COLUMN `supports_live_quotes` TINYINT\(1\)/);
-  assert.match(m28.upSql, /ADD COLUMN `service_options_json` TEXT/);
+  assert.match(m29.upSql, /ALTER TABLE `courier_apis`/);
+  assert.match(m29.upSql, /ADD COLUMN `provider_type` VARCHAR\(32\)/);
+  assert.match(m29.upSql, /ADD COLUMN `webhook_token` VARCHAR\(120\)/);
+  assert.match(m29.upSql, /ADD COLUMN `supports_live_quotes` TINYINT\(1\)/);
+  assert.match(m29.upSql, /ADD COLUMN `service_options_json` TEXT/);
 
-  assert.match(m28.upSql, /ALTER TABLE `fulfillment_shipments`/);
-  assert.match(m28.upSql, /ADD COLUMN `quoted_charge_paisa` BIGINT UNSIGNED/);
-  assert.match(m28.upSql, /ADD COLUMN `booking_idempotency_key` VARCHAR\(120\)/);
-  assert.match(m28.upSql, /ADD COLUMN `recommendation_snapshot_json` TEXT/);
-  assert.match(m28.upSql, /ADD COLUMN `booking_response_json` TEXT/);
-  assert.match(m28.upSql, /ADD COLUMN `external_consignment_id` VARCHAR\(120\)/);
+  assert.match(m29.upSql, /ALTER TABLE `fulfillment_shipments`/);
+  assert.match(m29.upSql, /ADD COLUMN `quoted_charge_paisa` BIGINT UNSIGNED/);
+  assert.match(m29.upSql, /ADD COLUMN `booking_idempotency_key` VARCHAR\(120\)/);
+  assert.match(m29.upSql, /ADD COLUMN `recommendation_snapshot_json` TEXT/);
+  assert.match(m29.upSql, /ADD COLUMN `booking_response_json` TEXT/);
+  assert.match(m29.upSql, /ADD COLUMN `external_consignment_id` VARCHAR\(120\)/);
 
   // Verify reversible downSql
-  assert.match(m28.downSql, /DROP COLUMN `provider_type`/);
-  assert.match(m28.downSql, /DROP COLUMN `booking_idempotency_key`/);
+  assert.match(m29.downSql, /DROP COLUMN `provider_type`/);
+  assert.match(m29.downSql, /DROP COLUMN `booking_idempotency_key`/);
 });
 
 test('Courier Provider Factory correctly instantiates appropriate adapters', () => {
@@ -214,4 +214,87 @@ test('Vendor view includes compare & book modal, recommendation view, and preser
   assert.match(vendorView, /recommendedCourier/);
   assert.match(vendorView, /confirmHandover/);
   assert.match(vendorView, /syncTracking/);
+});
+
+test('CourierBaseAdapter sanitization redacts sensitive credentials without corrupting tracking identifiers', () => {
+  const rawPayload = {
+    api_key: 'secret_key_12345',
+    secret_key: 'top_secret_67890',
+    bearer_token: 'jwt.token.here',
+    consignment_id: 'CN-987654',
+    tracking_code: 'TRK-12345',
+    invoice: 'INV-1001',
+    merchant_order_id: 'SUB-2002',
+    nested: {
+      auth_password: 'mypassword',
+      status: 'success',
+      sub_tracking: 'TRK-NESTED'
+    }
+  };
+
+  const sanitized = CourierBaseAdapter.sanitize(rawPayload);
+  assert.equal(sanitized.api_key, '[REDACTED]');
+  assert.equal(sanitized.secret_key, '[REDACTED]');
+  assert.equal(sanitized.bearer_token, '[REDACTED]');
+  assert.equal(sanitized.nested.auth_password, '[REDACTED]');
+
+  // Vital reconciliation identifiers must remain accessible
+  assert.equal(sanitized.consignment_id, 'CN-987654');
+  assert.equal(sanitized.tracking_code, 'TRK-12345');
+  assert.equal(sanitized.invoice, 'INV-1001');
+  assert.equal(sanitized.merchant_order_id, 'SUB-2002');
+  assert.equal(sanitized.nested.status, 'success');
+  assert.equal(sanitized.nested.sub_tracking, 'TRK-NESTED');
+});
+
+test('Phone and address validation prevents malformed booking payloads to courier APIs', async () => {
+  const sf = new SteadfastAdapter({ code: 'steadfast', api_key: 'dummy', secret_key: 'dummy' });
+  const pathao = new PathaoAdapter({ code: 'pathao', api_key: 'dummy' });
+
+  // Invalid phone test for Steadfast
+  const badPhoneBooking = await sf.bookShipment({
+    subOrderId: 101,
+    invoiceNo: 'INV-1',
+    recipient: { name: 'Customer', phone: '12345', address: 'Dhanmondi, Dhaka' }
+  });
+  assert.equal(badPhoneBooking.success, false);
+  assert.match(badPhoneBooking.error, /Invalid Bangladesh recipient phone number format/);
+
+  // Short address test for Pathao (< 10 chars)
+  const shortAddressBooking = await pathao.bookShipment({
+    subOrderId: 102,
+    invoiceNo: 'INV-2',
+    recipient: { name: 'Customer', phone: '01712345678', address: 'Dhaka' }
+  });
+  assert.equal(shortAddressBooking.success, false);
+  assert.match(shortAddressBooking.error, /at least 10 characters/);
+});
+
+test('Mock adapter simulates timeout and unknown outcome reconciliation safely without duplicate booking', async () => {
+  const mock = new MockCourierAdapter({ code: 'mock_test', api_key: 'test_key' });
+
+  // Timeout simulation
+  const timeoutResult = await mock.bookShipment({
+    subOrderId: 201,
+    recipient: { phone: '01800000000' }
+  });
+  assert.equal(timeoutResult.success, false);
+  assert.equal(timeoutResult.isTimeout, true);
+  assert.match(timeoutResult.error, /timeout/i);
+
+  // Unknown outcome simulation
+  const unknownResult = await mock.bookShipment({
+    subOrderId: 202,
+    recipient: { phone: '01811111111' }
+  });
+  assert.equal(unknownResult.success, false);
+  assert.equal(unknownResult.isUnknownOutcome, true);
+
+  // Reconciliation lookup
+  const recFound = await mock.reconcileBooking({ invoiceNo: 'INV-REC-FOUND-123' });
+  assert.equal(recFound.found, true);
+  assert.ok(recFound.trackingId.startsWith('MCK-REC-'));
+
+  const recNotFound = await mock.reconcileBooking({ invoiceNo: 'INV-OTHER-456' });
+  assert.equal(recNotFound.found, false);
 });
