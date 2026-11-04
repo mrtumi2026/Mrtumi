@@ -86,6 +86,8 @@ const requiredDocs = [
   'INTEGRATION_STATUS.md',
   'DEPLOYMENT.md',
   'docs/PHASE_F_OPERATIONS.md',
+  'docs/PHASE_F_OWNER_DECISIONS.md',
+  'docs/PHASE_F_PRODUCTION_READINESS_CHECKLIST.md',
   'docs/PHASE_01_REFERENCE_AUDIT.md',
   'docs/ARCHITECTURE.md',
   'docs/CPANEL_COMPATIBILITY.md',

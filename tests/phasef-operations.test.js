@@ -122,3 +122,24 @@ test('Phase F docs disclose owner decisions, destructive restore scope, monitori
     assert.ok(doc.toLowerCase().includes(term.toLowerCase()), `Expected operational document to cover ${term}`);
   }
 });
+
+test('Phase F owner register covers required decisions with status, approval, evidence, and limitations', () => {
+  const register = fs.readFileSync(path.join(root, 'docs/PHASE_F_OWNER_DECISIONS.md'), 'utf8');
+  for (const topic of ['Backup cadence', 'Retention', 'RPO', 'RTO', 'Backup storage/provider', 'Restore-test frequency', 'Monitoring thresholds', 'Escalation and responsible teams', 'Scheduled job inventory/cadence', 'Scheduled job failures/retries', 'Production DB runtime role', 'Migration / backup / restore DB roles', 'COD reconciliation', 'Financial exceptions and settlement', 'Launch acceptance authority']) {
+    assert.ok(register.includes(topic), `Missing owner decision topic: ${topic}`);
+  }
+  for (const column of ['Current status', 'Owner decision required', 'Evidence required to verify', 'Limitation until decision/evidence']) {
+    assert.ok(register.includes(column), `Missing decision register column: ${column}`);
+  }
+  assert.match(register, /intentionally contains no guessed thresholds/);
+  assert.match(register, /An absent decision is a \*\*BLOCKED\*\* gate/);
+});
+
+test('Production readiness checklist keeps unapproved requirements blocked and makes acceptance evidence explicit', () => {
+  const checklist = fs.readFileSync(path.join(root, 'docs/PHASE_F_PRODUCTION_READINESS_CHECKLIST.md'), 'utf8');
+  for (const topic of ['Backup cadence', 'Retention and archive handling', 'RPO', 'RTO', 'Storage/provider and data scope', 'Restore-test frequency', 'Alert thresholds', 'Escalation / responsible persons', 'Job inventory and cadence', 'Job failure/retry', 'Runtime DB principal', 'Migration/backup/restore principals', 'COD reconciliation', 'Payment/financial exceptions and settlement', 'Migration sequence and database CI', 'Full application verification', 'Browser E2E / workflows', 'Backup/restore rehearsal', 'Monitoring/host acceptance', 'Release identity and approval']) {
+    assert.ok(checklist.includes(topic), `Missing readiness gate: ${topic}`);
+  }
+  assert.match(checklist, /\*\*NOT READY \/ BLOCKED\*\*/);
+  assert.match(checklist, /No exceptions are pre-approved/);
+});
