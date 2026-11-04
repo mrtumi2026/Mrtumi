@@ -539,7 +539,7 @@ test('Database-backed Safety: Concurrent requests, idempotency replays, ambiguou
   assert.match(raceRejections[0].reason.message, /already booked|ambiguous state/);
 
   // Verify database state: exactly 1 shipment record was created and has succeeded status
-  const raceShipmentCheck = await db.query(
+  const raceShipmentCheck = await db.queryAll(
     `SELECT * FROM fulfillment_shipments WHERE vendor_sub_order_id = ?`,
     [raceSubOrderId]
   );
@@ -580,7 +580,7 @@ test('Database-backed Safety: Concurrent requests, idempotency replays, ambiguou
   for (const res of sameKeyFulfilled) {
     assert.equal(res.value.success, true);
   }
-  const sameKeyShipments = await db.query(
+  const sameKeyShipments = await db.queryAll(
     `SELECT * FROM fulfillment_shipments WHERE vendor_sub_order_id = ?`,
     [raceSubOrderIdSameKey]
   );
