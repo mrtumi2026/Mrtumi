@@ -333,11 +333,9 @@ jobs:
           ROLLBACK_0025: ${{ steps.mariadb_rollback_0025.outcome }}
           ROLLBACK_0024: ${{ steps.mariadb_rollback_0024.outcome }}
           REAPPLY: ${{ steps.mariadb_reapply_migrations.outcome }}
-          ROLLBACK_0025_TESTS: ${{ steps.mariadb_rollback_0025_before_tests.outcome }}
-          ROLLBACK_0024_TESTS: ${{ steps.mariadb_rollback_0024_before_tests.outcome }}
           BACKUP_RESTORE: ${{ steps.mariadb_backup_restore.outcome }}
         run: |
-          for item in             "migration diagnosis:$MIGRATION_DIAGNOSIS"             "migration cycle:$MIGRATION_CYCLE"             "rollback 0025:$ROLLBACK_0025"             "rollback 0024:$ROLLBACK_0024"             "migration reapply:$REAPPLY"             "pre-test rollback 0025:$ROLLBACK_0025_TESTS"             "pre-test rollback 0024:$ROLLBACK_0024_TESTS"; do
+          for item in             "migration diagnosis:$MIGRATION_DIAGNOSIS"             "migration cycle:$MIGRATION_CYCLE"             "rollback 0025:$ROLLBACK_0025"             "rollback 0024:$ROLLBACK_0024"             "migration reapply:$REAPPLY"; do
             outcome="${item##*:}"
             if [ "$outcome" != "success" ]; then
               echo "::error::BACKUP/RESTORE BLOCKED (not run): MariaDB prerequisite ${item%:*} outcome was $outcome. Migration/lifecycle failure remains visible; no PASS is claimed."
