@@ -39,11 +39,11 @@
             <div class="row g-3">
               <div class="col-md-6">
                 <label for="ckName" class="form-label small fw-semibold"><%= t('store.fullName') %> *</label>
-                <input type="text" name="customer_name" id="ckName" class="form-control" placeholder="<%= t('store.fullNamePlaceholder') %>" required value="<%= checkoutCustomer ? checkoutCustomer.name : '' %>" />
+                <input type="text" name="customer_name" id="ckName" class="form-control" placeholder="<%= t('store.fullNamePlaceholder') %>" required value="<%= typeof checkoutCustomer !== 'undefined' && checkoutCustomer ? checkoutCustomer.name : '' %>" />
               </div>
               <div class="col-md-6">
                 <label for="ckPhone" class="form-label small fw-semibold"><%= t('store.mobileNumber') %> *</label>
-                <input type="tel" name="phone" id="ckPhone" class="form-control" placeholder="<%= t('store.mobilePlaceholder') %>" minlength="11" required value="<%= checkoutCustomer ? checkoutCustomer.phone : '' %>" />
+                <input type="tel" name="phone" id="ckPhone" class="form-control" placeholder="<%= t('store.mobilePlaceholder') %>" minlength="11" required value="<%= typeof checkoutCustomer !== 'undefined' && checkoutCustomer ? checkoutCustomer.phone : '' %>" />
               </div>
               <% if (canonicalMysqlCheckout && checkoutCustomer && savedAddresses && savedAddresses.length) { %>
                 <div class="col-12">

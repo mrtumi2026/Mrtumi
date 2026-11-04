@@ -18,6 +18,22 @@ class RedxAdapter extends CourierBaseAdapter {
     const isSubDhaka = ['gazipur', 'narayanganj', 'savar', 'keraniganj', 'tongui', 'গাজীপুর', 'নারায়ণগঞ্জ', 'সাভার'].includes(dest);
     const weightKg = Math.max(1, Math.ceil(Number(weightGrams || 1000) / 1000));
 
+    if (weightKg > 10) {
+      return {
+        providerCode: this.providerCode || 'redx',
+        providerName: this.providerName || 'RedX Courier',
+        available: false,
+        chargePaisa: 0,
+        codFeePaisa: 0,
+        estimatedDaysMin: 0,
+        estimatedDaysMax: 0,
+        isLiveQuote: false,
+        serviceType: 'standard_delivery',
+        reasonUnavailable: 'RedX parcel weight limit exceeded (maximum 10kg)',
+        notes: 'Weight restriction exceeded'
+      };
+    }
+
     let baseChargePaisa = 13000; // Outside Dhaka: ৳130
     let daysMin = 2;
     let daysMax = 4;
@@ -67,6 +83,19 @@ class RedxAdapter extends CourierBaseAdapter {
       };
     }
 
+    // Phone format validation
+    const rawPhone = String(recipient?.phone || '').replace(/[^0-9]/g, '');
+    const cleanPhone = rawPhone.length === 13 && rawPhone.startsWith('880') ? rawPhone.slice(2) : rawPhone;
+    if (!/^01[3-9]\d{8}$/.test(cleanPhone)) {
+      return {
+        success: false,
+        trackingId: null,
+        consignmentId: null,
+        rawResponse: { error: 'INVALID_PHONE' },
+        error: `Invalid Bangladesh recipient phone number format: '${recipient?.phone}'. Must be 11 digits (e.g. 017XXXXXXXX).`
+      };
+    }
+
     const codBdt = Math.round(Number(codAmountPaisa || 0) / 100);
     const weightGrams = Math.max(500, Number(parcel?.weightGrams || 1000));
 
@@ -86,24 +115,23 @@ class RedxAdapter extends CourierBaseAdapter {
     }
 
     try {
-      const fetch = globalThis.fetch || require('node-fetch');
-      const response = await fetch(`${this.baseUrl}/v1.0.0-beta/parcels`, {
+      const response = await this.safeFetch(`${this.baseUrl}/v1.0.0-beta/parcels`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'API-ACCESS-TOKEN': `Bearer ${this.apiKey}`
         },
         body: JSON.stringify({
-          customer_name: String(recipient?.name || '').trim(),
-          customer_phone: String(recipient?.phone || '').trim(),
+          customer_name: String(recipient?.name || '').trim().slice(0, 100),
+          customer_phone: cleanPhone,
           delivery_area: String(recipient?.district || recipient?.city || 'Dhaka').trim(),
-          customer_address: String(recipient?.address || '').trim(),
+          customer_address: String(recipient?.address || '').trim().slice(0, 255),
           merchant_invoice_id: String(invoiceNo || subOrderId),
           cash_collection_amount: codBdt,
           parcel_weight: weightGrams,
-          instruction: recipient?.note || `Mr. Tumi Order #${invoiceNo}`
+          instruction: String(recipient?.note || `Mr. Tumi Order #${invoiceNo}`).slice(0, 255)
         })
-      });
+      }, 8000);
 
       const data = await response.json();
       if (response.ok && data.tracking_id) {
@@ -111,7 +139,7 @@ class RedxAdapter extends CourierBaseAdapter {
           success: true,
           trackingId: String(data.tracking_id),
           consignmentId: String(data.tracking_id),
-          rawResponse: data,
+          rawResponse: CourierBaseAdapter.sanitize(data),
           error: null
         };
       }
@@ -120,7 +148,7 @@ class RedxAdapter extends CourierBaseAdapter {
         success: false,
         trackingId: null,
         consignmentId: null,
-        rawResponse: data,
+        rawResponse: CourierBaseAdapter.sanitize(data),
         error: data.message || `RedX booking failed: HTTP ${response.status}`
       };
     } catch (err) {
@@ -128,8 +156,87 @@ class RedxAdapter extends CourierBaseAdapter {
         success: false,
         trackingId: null,
         consignmentId: null,
-        rawResponse: { error: err.message },
-        error: `RedX network error: ${err.message}`
+        isTimeout: err.code === 'COURIER_NETWORK_TIMEOUT',
+        rawResponse: { error: err.message, code: err.code },
+        error: err.code === 'COURIER_NETWORK_TIMEOUT'
+          ? 'RedX booking request timed out after 8 seconds. Ambiguous state saved for reconciliation.'
+          : `RedX network error: ${err.message}`
+      };
+    }
+  }
+
+  async reconcileBooking({ trackingId, invoiceNo, consignmentId }) {
+    if (!this.apiKey || this.isSandbox) {
+      return {
+        outcome: 'unknown_error',
+        found: false,
+        confirmedAbsent: false,
+        trackingId: null,
+        consignmentId: null,
+        status: null,
+        rawResponse: null,
+        error: 'RedX API key unconfigured or sandbox environment'
+      };
+    }
+
+    const ref = trackingId || consignmentId;
+    if (!ref) {
+      return {
+        outcome: 'unknown_error',
+        found: false,
+        confirmedAbsent: false,
+        trackingId: null,
+        consignmentId: null,
+        status: null,
+        rawResponse: null,
+        error: 'RedX tracking reference missing for reconciliation'
+      };
+    }
+
+    try {
+      const response = await this.safeFetch(`${this.baseUrl}/v1.0.0-beta/parcels/tracking/${encodeURIComponent(ref)}`, {
+        method: 'GET',
+        headers: {
+          'API-ACCESS-TOKEN': `Bearer ${this.apiKey}`
+        }
+      }, 5000);
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data && data.tracking) {
+          return {
+            outcome: 'found',
+            found: true,
+            confirmedAbsent: false,
+            trackingId: ref,
+            consignmentId: ref,
+            status: data.tracking.status || 'in_transit',
+            rawResponse: CourierBaseAdapter.sanitize(data),
+            error: null
+          };
+        }
+      }
+
+      return {
+        outcome: 'unknown_error',
+        found: false,
+        confirmedAbsent: false,
+        trackingId: null,
+        consignmentId: null,
+        status: null,
+        rawResponse: null,
+        error: 'RedX parcel status could not be verified; absence is unverified (retry blocked)'
+      };
+    } catch (err) {
+      return {
+        outcome: 'unknown_error',
+        found: false,
+        confirmedAbsent: false,
+        trackingId: null,
+        consignmentId: null,
+        status: null,
+        rawResponse: null,
+        error: `RedX reconciliation error: ${err.message}`
       };
     }
   }
@@ -147,13 +254,13 @@ class RedxAdapter extends CourierBaseAdapter {
     }
 
     try {
-      const fetch = globalThis.fetch || require('node-fetch');
-      const response = await fetch(`${this.baseUrl}/v1.0.0-beta/parcels/tracking/${encodeURIComponent(trackingReference)}`, {
+      const response = await this.safeFetch(`${this.baseUrl}/v1.0.0-beta/parcels/tracking/${encodeURIComponent(trackingReference)}`, {
         method: 'GET',
         headers: {
           'API-ACCESS-TOKEN': `Bearer ${this.apiKey}`
         }
-      });
+      }, 8000);
+
       const data = await response.json();
       const rawStatus = data.tracking?.status || 'unknown';
       return {

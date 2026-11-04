@@ -19,15 +19,31 @@ class PathaoAdapter extends CourierBaseAdapter {
     const isSubDhaka = ['gazipur', 'narayanganj', 'savar', 'keraniganj', 'tongui', 'গাজীপুর', 'নারায়ণগঞ্জ', 'সাভার'].includes(dest);
     const weightKg = Math.max(0.5, Number(weightGrams || 1000) / 1000);
 
+    if (weightKg > 10) {
+      return {
+        providerCode: this.providerCode || 'pathao',
+        providerName: this.providerName || 'Pathao Courier',
+        available: false,
+        chargePaisa: 0,
+        codFeePaisa: 0,
+        estimatedDaysMin: 0,
+        estimatedDaysMax: 0,
+        isLiveQuote: false,
+        serviceType: 'standard_48h',
+        reasonUnavailable: 'Pathao parcel weight limit exceeded (maximum 10kg)',
+        notes: 'Weight restriction exceeded'
+      };
+    }
+
     // If live API is configured and live quotes are supported
     if (this.supportsLiveQuotes && this.apiKey && !this.isSandbox) {
       try {
-        const fetch = globalThis.fetch || require('node-fetch');
-        const response = await fetch(`${this.baseUrl}/aladdin/api/v1/merchant/price-plan`, {
+        const response = await this.safeFetch(`${this.baseUrl}/aladdin/api/v1/merchant/price-plan`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${this.apiKey}`
+            'Authorization': `Bearer ${this.apiKey}`,
+            'Accept': 'application/json'
           },
           body: JSON.stringify({
             store_id: this.storeId,
@@ -37,7 +53,7 @@ class PathaoAdapter extends CourierBaseAdapter {
             recipient_city: isInsideDhaka ? 1 : 2,
             recipient_zone: 1
           })
-        });
+        }, 5000);
 
         if (response.ok) {
           const data = await response.json();
@@ -61,7 +77,7 @@ class PathaoAdapter extends CourierBaseAdapter {
           }
         }
       } catch (_err) {
-        // Fall back to standard tariff if live API call fails
+        // Fall back to standard tariff schedule if live quote times out or errors
       }
     }
 
@@ -105,6 +121,134 @@ class PathaoAdapter extends CourierBaseAdapter {
     return { serviceable: true, reason: null };
   }
 
+  /**
+   * Reconciles booking if a timeout or ambiguous state occurs.
+   * If consignmentId is absent, uses provider-supported alternative lookup: merchant_order_id.
+   * Lookup miss is strictly treated as unknown_error (never assumed absent).
+   */
+  async reconcileBooking({ consignmentId, invoiceNo, trackingId }) {
+    if (!this.apiKey) {
+      return {
+        outcome: 'unknown_error',
+        found: false,
+        confirmedAbsent: false,
+        trackingId: null,
+        consignmentId: null,
+        status: null,
+        rawResponse: null,
+        error: 'Pathao API Bearer token unconfigured'
+      };
+    }
+
+    if (this.isSandbox) {
+      return {
+        outcome: 'unknown_error',
+        found: false,
+        confirmedAbsent: false,
+        trackingId: null,
+        consignmentId: null,
+        status: null,
+        rawResponse: null,
+        error: 'Pathao sandbox does not provide authoritative absence reconciliation'
+      };
+    }
+
+    const queryConsignment = consignmentId || trackingId;
+    const queryMerchantOrder = invoiceNo;
+
+    if (!queryConsignment && !queryMerchantOrder) {
+      return {
+        outcome: 'unknown_error',
+        found: false,
+        confirmedAbsent: false,
+        trackingId: null,
+        consignmentId: null,
+        status: null,
+        rawResponse: null,
+        error: 'Neither consignmentId nor merchant_order_id (invoiceNo) provided for Pathao reconciliation'
+      };
+    }
+
+    try {
+      // 1. Primary lookup by consignment_id if available
+      if (queryConsignment) {
+        const response = await this.safeFetch(`${this.baseUrl}/aladdin/api/v1/orders/${encodeURIComponent(queryConsignment)}/info`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${this.apiKey}`,
+            'Accept': 'application/json'
+          }
+        }, 5000);
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data && data.data && data.data.consignment_id) {
+            return {
+              outcome: 'found',
+              found: true,
+              confirmedAbsent: false,
+              trackingId: String(data.data.consignment_id),
+              consignmentId: String(data.data.consignment_id),
+              status: data.data.order_status,
+              rawResponse: CourierBaseAdapter.sanitize(data),
+              error: null
+            };
+          }
+        }
+      }
+
+      // 2. Alternative lookup by merchant_order_id (provider-supported fallback)
+      if (queryMerchantOrder) {
+        const altResponse = await this.safeFetch(`${this.baseUrl}/aladdin/api/v1/orders?merchant_order_id=${encodeURIComponent(queryMerchantOrder)}`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${this.apiKey}`,
+            'Accept': 'application/json'
+          }
+        }, 5000);
+
+        if (altResponse.ok) {
+          const altData = await altResponse.json();
+          const match = altData?.data?.data?.[0] || altData?.data?.[0] || (altData?.data?.consignment_id ? altData.data : null);
+          if (match && match.consignment_id) {
+            return {
+              outcome: 'found',
+              found: true,
+              confirmedAbsent: false,
+              trackingId: String(match.consignment_id),
+              consignmentId: String(match.consignment_id),
+              status: match.order_status,
+              rawResponse: CourierBaseAdapter.sanitize(altData),
+              error: null
+            };
+          }
+        }
+      }
+
+      return {
+        outcome: 'unknown_error',
+        found: false,
+        confirmedAbsent: false,
+        trackingId: null,
+        consignmentId: null,
+        status: null,
+        rawResponse: null,
+        error: 'Pathao order not found by consignment ID or merchant_order_id; absence is unverified (retry blocked)'
+      };
+    } catch (err) {
+      return {
+        outcome: 'unknown_error',
+        found: false,
+        confirmedAbsent: false,
+        trackingId: null,
+        consignmentId: null,
+        status: null,
+        rawResponse: null,
+        error: `Pathao reconciliation network error: ${err.message}`
+      };
+    }
+  }
+
   async bookShipment({ shipmentId, subOrderId, invoiceNo, recipient, parcel, codAmountPaisa, idempotencyKey }) {
     if (!this.apiKey && !this.isSandbox) {
       return {
@@ -113,6 +257,31 @@ class PathaoAdapter extends CourierBaseAdapter {
         consignmentId: null,
         rawResponse: { error: 'CREDENTIALS_MISSING' },
         error: 'Pathao API Bearer Token is not configured.'
+      };
+    }
+
+    // Phone format validation
+    const rawPhone = String(recipient?.phone || '').replace(/[^0-9]/g, '');
+    const cleanPhone = rawPhone.length === 13 && rawPhone.startsWith('880') ? rawPhone.slice(2) : rawPhone;
+    if (!/^01[3-9]\d{8}$/.test(cleanPhone)) {
+      return {
+        success: false,
+        trackingId: null,
+        consignmentId: null,
+        rawResponse: { error: 'INVALID_PHONE' },
+        error: `Invalid Bangladesh recipient phone number format: '${recipient?.phone}'. Must be 11 digits (e.g. 017XXXXXXXX).`
+      };
+    }
+
+    // Pathao requires min 10 characters for recipient address
+    const cleanAddress = String(recipient?.address || '').trim();
+    if (cleanAddress.length < 10) {
+      return {
+        success: false,
+        trackingId: null,
+        consignmentId: null,
+        rawResponse: { error: 'ADDRESS_TOO_SHORT' },
+        error: 'Pathao requires a detailed recipient address of at least 10 characters.'
       };
     }
 
@@ -141,8 +310,7 @@ class PathaoAdapter extends CourierBaseAdapter {
     }
 
     try {
-      const fetch = globalThis.fetch || require('node-fetch');
-      const response = await fetch(`${this.baseUrl}/aladdin/api/v1/orders`, {
+      const response = await this.safeFetch(`${this.baseUrl}/aladdin/api/v1/orders`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -153,19 +321,19 @@ class PathaoAdapter extends CourierBaseAdapter {
           store_id: this.storeId,
           merchant_order_id: String(invoiceNo || subOrderId),
           recipient_name: String(recipient?.name || '').trim(),
-          recipient_phone: String(recipient?.phone || '').trim(),
-          recipient_address: String(recipient?.address || '').trim(),
+          recipient_phone: cleanPhone,
+          recipient_address: cleanAddress,
           recipient_city: 1,
           recipient_zone: 1,
           delivery_type: 48,
           item_type: 1,
-          special_instruction: recipient?.note || '',
+          special_instruction: String(recipient?.note || '').slice(0, 255),
           item_quantity: 1,
           item_weight: weightKg,
           amount_to_collect: codBdt,
           item_description: `Order #${invoiceNo}`
         })
-      });
+      }, 8000);
 
       const data = await response.json();
       if (response.ok && data.data && data.data.consignment_id) {
@@ -173,7 +341,7 @@ class PathaoAdapter extends CourierBaseAdapter {
           success: true,
           trackingId: String(data.data.consignment_id),
           consignmentId: String(data.data.consignment_id),
-          rawResponse: data,
+          rawResponse: CourierBaseAdapter.sanitize(data),
           error: null
         };
       }
@@ -182,7 +350,7 @@ class PathaoAdapter extends CourierBaseAdapter {
         success: false,
         trackingId: null,
         consignmentId: null,
-        rawResponse: data,
+        rawResponse: CourierBaseAdapter.sanitize(data),
         error: data.message || `Pathao booking failed: HTTP ${response.status}`
       };
     } catch (err) {
@@ -190,8 +358,11 @@ class PathaoAdapter extends CourierBaseAdapter {
         success: false,
         trackingId: null,
         consignmentId: null,
-        rawResponse: { error: err.message },
-        error: `Pathao network error: ${err.message}`
+        isTimeout: err.code === 'COURIER_NETWORK_TIMEOUT',
+        rawResponse: { error: err.message, code: err.code },
+        error: err.code === 'COURIER_NETWORK_TIMEOUT'
+          ? 'Pathao booking request timed out after 8 seconds. Ambiguous state saved for reconciliation.'
+          : `Pathao network error: ${err.message}`
       };
     }
   }
@@ -209,14 +380,14 @@ class PathaoAdapter extends CourierBaseAdapter {
     }
 
     try {
-      const fetch = globalThis.fetch || require('node-fetch');
-      const response = await fetch(`${this.baseUrl}/aladdin/api/v1/orders/${encodeURIComponent(trackingReference)}/info`, {
+      const response = await this.safeFetch(`${this.baseUrl}/aladdin/api/v1/orders/${encodeURIComponent(trackingReference)}/info`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${this.apiKey}`,
           'Accept': 'application/json'
         }
-      });
+      }, 8000);
+
       const data = await response.json();
       const rawStatus = data.data?.order_status || 'unknown';
       return {

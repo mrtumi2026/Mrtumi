@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - "arena/**"
+      - "antigravity/**"
   pull_request:
 
 permissions:

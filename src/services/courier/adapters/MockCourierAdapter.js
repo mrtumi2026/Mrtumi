@@ -4,12 +4,15 @@ const CourierBaseAdapter = require('../CourierBaseAdapter');
 
 /**
  * Mock Courier Adapter for test suites, QA sandboxing, and offline development.
- * Allows predictable quote comparison, serviceability checks, booking, and tracking.
+ * Allows predictable quote comparison, serviceability checks, booking, timeout simulation,
+ * unknown outcome reconciliation, and tracking without external API dependencies.
  */
 class MockCourierAdapter extends CourierBaseAdapter {
   constructor(config = {}) {
     super(config);
     this.isMock = true;
+    this.isSandbox = config.sandbox !== undefined ? Boolean(Number(config.sandbox)) : true;
+    this.apiKey = this.apiKey || 'mock_test_key';
     this.rateProfile = config.rate_profile || 'standard'; // 'express', 'budget', 'standard'
   }
 
@@ -85,6 +88,44 @@ class MockCourierAdapter extends CourierBaseAdapter {
     };
   }
 
+  async reconcileBooking({ invoiceNo }) {
+    if (invoiceNo && invoiceNo.includes('REC-FOUND')) {
+      const trackingId = `MCK-REC-${Date.now()}`;
+      return {
+        outcome: 'found',
+        found: true,
+        confirmedAbsent: false,
+        trackingId,
+        consignmentId: `CN-${trackingId}`,
+        status: 'in_review',
+        rawResponse: { simulated: true, outcome: 'found' },
+        error: null
+      };
+    }
+    if (invoiceNo && invoiceNo.includes('REC-ABSENT')) {
+      return {
+        outcome: 'confirmed_absent',
+        found: false,
+        confirmedAbsent: true,
+        trackingId: null,
+        consignmentId: null,
+        status: null,
+        rawResponse: { simulated: true, outcome: 'confirmed_absent' },
+        error: null
+      };
+    }
+    return {
+      outcome: 'unknown_error',
+      found: false,
+      confirmedAbsent: false,
+      trackingId: null,
+      consignmentId: null,
+      status: null,
+      rawResponse: { simulated: true, outcome: 'unknown_error' },
+      error: 'Mock provider reconciliation inconclusive (unverified absence)'
+    };
+  }
+
   async bookShipment({ shipmentId, subOrderId, invoiceNo, recipient, parcel, codAmountPaisa, idempotencyKey }) {
     if (!this.apiKey && !this.isSandbox) {
       return {
@@ -96,14 +137,40 @@ class MockCourierAdapter extends CourierBaseAdapter {
       };
     }
 
-    // Check test trigger for failure simulation
-    if (recipient?.phone === '01999999999') {
+    const phone = String(recipient?.phone || '');
+
+    // Edge-case trigger 1: Rejection
+    if (phone === '01999999999') {
       return {
         success: false,
         trackingId: null,
         consignmentId: null,
         rawResponse: { code: 'SIMULATED_REJECTION', message: 'Simulated courier booking rejection' },
         error: 'Simulated courier booking rejection'
+      };
+    }
+
+    // Edge-case trigger 2: Simulated timeout
+    if (phone === '01800000000') {
+      return {
+        success: false,
+        trackingId: null,
+        consignmentId: null,
+        isTimeout: true,
+        rawResponse: { code: 'SIMULATED_TIMEOUT', message: 'Simulated 8000ms network timeout' },
+        error: 'Simulated 8000ms network timeout'
+      };
+    }
+
+    // Edge-case trigger 3: Simulated unknown booking outcome
+    if (phone === '01811111111') {
+      return {
+        success: false,
+        trackingId: null,
+        consignmentId: null,
+        isUnknownOutcome: true,
+        rawResponse: { code: 'SIMULATED_UNKNOWN_OUTCOME', message: 'Carrier acknowledged request but connection dropped before response' },
+        error: 'Unknown outcome: carrier connection dropped before confirmation'
       };
     }
 

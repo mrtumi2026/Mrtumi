@@ -77,6 +77,116 @@ router.post('/admin/fulfillment/sub-orders/:subOrderId/track-sync', requirePermi
   return res.redirect('/admin/reseller-commerce');
 }));
 
+// Multi-courier booking reconciliation
+router.post('/admin/fulfillment/sub-orders/:subOrderId/reconcile-booking', requirePermission('orders.manage'), requireCsrf, asyncHandler(async (req, res) => {
+  const courierRepo = require('../repositories/courierIntegrationRepository');
+  const result = await courierRepo.reconcileBookingResult({
+    subOrderId: req.params.subOrderId,
+    actor: fulfillmentActor(req)
+  });
+  if (req.accepts('json') && !req.body.redirect) {
+    return res.json({ success: true, data: result });
+  }
+  req.flash(result.outcome === 'unknown_error' ? 'error' : 'success', result.message || 'Booking reconciliation completed.');
+  return res.redirect('/admin/reseller-commerce');
+}));
+
+// Multi-courier ambiguous shipments monitoring & reporting
+router.get('/admin/fulfillment/ambiguous-shipments', requirePermission('orders.manage'), asyncHandler(async (req, res) => {
+  const courierRepo = require('../repositories/courierIntegrationRepository');
+  const result = await courierRepo.listAmbiguousShipments({
+    status: req.query.status,
+    courierCode: req.query.courier,
+    vendorId: req.query.vendorId,
+    olderThanMinutes: req.query.olderThanMinutes,
+    search: req.query.search,
+    page: req.query.page,
+    limit: req.query.limit,
+    actor: fulfillmentActor(req)
+  });
+
+  if (req.accepts('json') && !req.query.html) {
+    return res.json({ success: true, data: result.shipments, pagination: result.pagination });
+  }
+
+  const successMsg = req.flash ? req.flash('success') : null;
+  const errorMsg = req.flash ? req.flash('error') : null;
+  const flash = successMsg ? { type: 'success', message: successMsg } : (errorMsg ? { type: 'danger', message: errorMsg } : null);
+
+  return res.render('admin/ambiguous-courier-shipments', {
+    pageTitle: 'Courier Operations & Monitoring Center',
+    subtitle: 'কুরিয়ার বুকিং, অমীমাংসিত পার্সেল ও ডেলিভারি ট্র্যাকিং অপারেশন্স',
+    shipments: result.shipments,
+    pagination: result.pagination,
+    summary: result.summary || {},
+    filters: req.query,
+    csrfToken: req.csrfToken(),
+    locale: req.locale || 'bn',
+    flash
+  });
+}));
+
+// Multi-courier shipment audit trail & history
+router.get('/admin/fulfillment/shipments/:shipmentId/audit-trail', requirePermission('orders.manage'), asyncHandler(async (req, res) => {
+  const courierRepo = require('../repositories/courierIntegrationRepository');
+  const result = await courierRepo.getShipmentAuditTrail({
+    shipmentId: req.params.shipmentId,
+    actor: fulfillmentActor(req)
+  });
+  return res.json({ success: true, data: result });
+}));
+
+// Super Admin manual override for ambiguous courier booking
+router.post('/admin/fulfillment/shipments/:shipmentId/manual-override', requirePermission('orders.manage'), requireCsrf, asyncHandler(async (req, res) => {
+  const user = req.adminUser || (req.res?.locals?.adminUser);
+  const roleSlug = String(user?.role_slug || user?.role_name || '').trim().toLowerCase().replace(/\s+/g, '_');
+  const isSuperAdmin = roleSlug === 'super_admin' || roleSlug === 'superadmin' || String(user?.role_name || '').toLowerCase().includes('super admin');
+
+  if (!isSuperAdmin) {
+    throw new AuthorizationError('Manual override of ambiguous courier booking requires Super Admin authorization.');
+  }
+
+  const courierRepo = require('../repositories/courierIntegrationRepository');
+  const result = await courierRepo.resolveAmbiguousBookingOverride({
+    shipmentId: req.params.shipmentId,
+    resolution: req.body.resolution,
+    providerEvidence: req.body.provider_evidence,
+    trackingReference: req.body.tracking_reference,
+    note: req.body.note,
+    actor: { userId: user?.id, isSuperAdmin: true, platformAdmin: true }
+  });
+
+  if (req.accepts('json') && !req.body.redirect) {
+    return res.json({ success: true, data: result });
+  }
+
+  req.flash('success', result.message);
+  return res.redirect('/admin/fulfillment/ambiguous-shipments');
+}));
+
+// Multi-courier COD remittance recording & reconciliation
+router.post('/admin/fulfillment/shipments/:shipmentId/reconcile-cod', requirePermission('orders.manage'), requireCsrf, asyncHandler(async (req, res) => {
+  const codRepo = require('../repositories/courierCodRepository');
+  const result = await codRepo.reconcileCourierCollection({
+    shipmentId: req.params.shipmentId,
+    collectedAmountPaisa: req.body.collected_amount_paisa,
+    remittanceRef: req.body.remittance_ref,
+    bankTransRef: req.body.bank_trans_ref,
+    courierName: req.body.courier_name,
+    consignmentId: req.body.consignment_id,
+    courierFeePaisa: req.body.courier_fee_paisa || 0,
+    codFeePaisa: req.body.cod_fee_paisa || 0,
+    actor: fulfillmentActor(req)
+  });
+
+  if (req.accepts('json') && !req.body.redirect) {
+    return res.json({ success: true, data: result });
+  }
+
+  req.flash('success', result.orderPaid ? 'Courier COD collection reconciled. All order shipments verified; order payment marked as PAID.' : `Courier COD collection reconciled with status: ${result.status}.`);
+  return res.redirect('/admin/fulfillment/ambiguous-shipments?status=all');
+}));
+
 function generateInvoiceId() {
   for (let i = 0; i < 10; i++) {
     const code = String(Math.floor(10000 + Math.random() * 90000));

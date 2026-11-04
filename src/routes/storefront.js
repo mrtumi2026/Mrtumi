@@ -1356,12 +1356,40 @@ router.post('/order/:invoiceId/cancel', requireCsrf, asyncHandler(async (req, re
   return res.redirect(`/track-order?q=${order.invoice_id}`);
 }));
 
-router.get(['/track-order', '/order-track', '/site/order-track'], (req, res) => {
+router.get(['/track-order', '/order-track', '/site/order-track'], asyncHandler(async (req, res) => {
   const query = String(req.query.q || '').trim().replace(/^#/, '');
   // Order details are available only in the authenticated, ownership-scoped customer account.
-  const orders = [];
-  res.render('store/track-order', { query: '', orders });
-});
+  let orders = [];
+  if (query && req.session?.customerUser?.id && storefrontRepo.isMysqlMode()) {
+    const db = require('../db/mysqlPool').createQueryClient(require('../db/mysqlPool').getPool());
+    const customerId = req.session.customerUser.id;
+    const found = await db.queryAll(
+      `SELECT o.id, o.invoice_no AS invoice_id, o.order_status AS status,
+              o.customer_name, o.courier_code AS courier_name, o.courier_code, o.courier_tracking_id,
+              o.total_paisa, o.payment_method, o.created_at
+       FROM orders o
+       WHERE o.customer_id = ? AND (o.invoice_no = ? OR o.courier_tracking_id = ?)
+       ORDER BY o.id DESC LIMIT 5`,
+      [customerId, query, query]
+    );
+    if (found.length) {
+      for (const ord of found) {
+        const items = await db.queryAll(
+          `SELECT product_name, qty, line_total_paisa FROM order_items WHERE order_id = ?`,
+          [ord.id]
+        );
+        orders.push({
+          ...ord,
+          amount: (ord.total_paisa || 0) / 100,
+          status_label: ord.status,
+          status_color: ord.status === 'delivered' ? '#15803d' : '#2563eb',
+          items: items.map(it => ({ product_name: it.product_name, qty: it.qty, price: it.qty > 0 ? (it.line_total_paisa / it.qty) / 100 : 0 }))
+        });
+      }
+    }
+  }
+  res.render('store/track-order', { query, orders });
+}));
 
 router.get('/campaign/:slug', asyncHandler(async (req, res) => {
   const result = await storefrontRepo.getCampaignBySlug(req.params.slug, req.locale);

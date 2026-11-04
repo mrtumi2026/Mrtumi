@@ -4,6 +4,7 @@ const fs = require('node:fs/promises');
 const crypto = require('node:crypto');
 const db = require('../db/database');
 const { requireAdmin } = require('../middleware/auth');
+const { requirePermission } = require('../middleware/rbac');
 const { requireCsrf } = require('../middleware/csrf');
 const upload = require('../middleware/upload');
 const { env } = require('../config/env');
@@ -486,21 +487,149 @@ router.post('/admin/paymentgeteway/toggle/:id',asyncHandler(async(req,res)=>{
 router.post('/admin/paymentgeteway/delete/:id',asyncHandler(async(req,res)=>{if(integrationsMysql())await integrationsClient().execute('DELETE FROM payment_gateways WHERE id=?',[req.params.id]);else db.run('DELETE FROM payment_gateways WHERE id=?',req.params.id);res.redirect(req.get('Referrer')||'/admin/paymentgeteway/manage');}));
 
 // Courier API Manage
-router.get('/admin/courierapi/manage',asyncHandler(async(_req,res)=>{
- const rows=integrationsMysql()?await integrationsClient().queryAll('SELECT id,name,code,api_key,secret_key,client_id,base_url,status,sandbox,updated_at FROM courier_apis ORDER BY id ASC'):db.all('SELECT * FROM courier_apis ORDER BY id ASC');
- res.render('admin/crud-module',{pageTitle:'Courier API Integration (Steadfast / Pathao / RedX)',subtitle:'কুরিয়ার API কী ও ব্যালেন্স কনফিগারেশন',createAction:'/admin/courierapi/create',updatePrefix:'/admin/courierapi/update',customActionPrefix:'/admin/courierapi/toggle',customActionLabel:'Toggle Active',deletePrefix:'/admin/courierapi/delete',columns:[{key:'id',label:'#'},{key:'name',label:'Courier Service'},{key:'code',label:'Code'},{key:'api_key',label:'API Key'},{key:'base_url',label:'Endpoint URL'},{key:'status',label:'Active',type:'status'}],fields:[{name:'name',label:'Courier Name',type:'text',required:true},{name:'code',label:'Code',type:'text',required:true},{name:'api_key',label:'API Key / Token',type:'password',required:true},{name:'secret_key',label:'Secret Key',type:'password'},{name:'client_id',label:'Client ID',type:'text'},{name:'base_url',label:'Base API URL',type:'text'},{name:'sandbox',label:'Sandbox (1/0)',type:'number',value:'1'}],rows});
+router.get('/admin/courierapi/manage', requirePermission('settings.manage'), asyncHandler(async (_req, res) => {
+  const rawRows = integrationsMysql()
+    ? await integrationsClient().queryAll('SELECT id,name,code,api_key,secret_key,client_id,base_url,status,sandbox,supports_live_quotes,service_options_json,updated_at FROM courier_apis ORDER BY id ASC')
+    : db.all('SELECT * FROM courier_apis ORDER BY id ASC');
+
+  // Mask credentials so raw secret keys are never exposed in UI HTML
+  const rows = rawRows.map(r => ({
+    ...r,
+    api_key: r.api_key ? '••••••••' + String(r.api_key).slice(-4) : '',
+    secret_key: r.secret_key ? '••••••••' : ''
+  }));
+
+  res.render('admin/crud-module', {
+    pageTitle: 'Courier API Integration (Steadfast / Pathao / RedX)',
+    subtitle: 'কুরিয়ার API কী ও ব্যালেন্স কনফিগারেশন',
+    createAction: '/admin/courierapi/create',
+    updatePrefix: '/admin/courierapi/update',
+    customActionPrefix: '/admin/courierapi/toggle',
+    customActionLabel: 'Toggle Active',
+    deletePrefix: '/admin/courierapi/delete',
+    columns: [
+      { key: 'id', label: '#' },
+      { key: 'name', label: 'Courier Service' },
+      { key: 'code', label: 'Code' },
+      { key: 'api_key', label: 'API Key' },
+      { key: 'base_url', label: 'Endpoint URL' },
+      { key: 'supports_live_quotes', label: 'Live Quotes', type: 'status' },
+      { key: 'status', label: 'Active', type: 'status' }
+    ],
+    fields: [
+      { name: 'name', label: 'Courier Name', type: 'text', required: true },
+      { name: 'code', label: 'Code', type: 'text', required: true },
+      { name: 'api_key', label: 'API Key / Token', type: 'password', required: true },
+      { name: 'secret_key', label: 'Secret Key', type: 'password' },
+      { name: 'client_id', label: 'Client ID', type: 'text' },
+      { name: 'base_url', label: 'Base API URL', type: 'text' },
+      { name: 'supports_live_quotes', label: 'Supports Live Quotes (1/0)', type: 'number', value: '0' },
+      { name: 'service_options_json', label: 'Service Options (JSON)', type: 'textarea' },
+      { name: 'sandbox', label: 'Sandbox (1/0)', type: 'number', value: '1' }
+    ],
+    rows
+  });
 }));
-router.post('/admin/courierapi/create',asyncHandler(async(req,res)=>{const b=req.body;if(integrationsMysql())await integrationsClient().execute('INSERT INTO courier_apis (name,code,base_url,api_key,secret_key,client_id,status,sandbox) VALUES (?,?,?,?,?,?,0,?)',[b.name,b.code,b.base_url||'',b.api_key||null,b.secret_key||null,b.client_id||'',b.sandbox==='0'?0:1]);else db.run('INSERT INTO courier_apis (name,code,api_key,secret_key,base_url,client_id) VALUES (?,?,?,?,?,?)',b.name,b.code,b.api_key,b.secret_key||'',b.base_url||'',b.client_id||'');res.redirect('/admin/courierapi/manage');}));
-router.post('/admin/courierapi/update/:id',asyncHandler(async(req,res)=>{
- const b=req.body,name=cleanBannerText(b.name,100),code=cleanBannerText(b.code,48),baseUrl=String(b.base_url||'').trim().slice(0,255),apiKey=String(b.api_key||''),secretKey=String(b.secret_key||''),clientId=cleanBannerText(b.client_id,191),sandbox=b.sandbox==='0'?0:1;
- if(!name||!/^[a-zA-Z0-9_-]{1,48}$/.test(code)) throw new ValidationError('Courier name and a valid unique code are required.');
- if(integrationsMysql()) await integrationsClient().execute("UPDATE courier_apis SET name=?,code=?,base_url=?,api_key=CASE WHEN ?<>'' THEN ? ELSE api_key END,secret_key=CASE WHEN ?<>'' THEN ? ELSE secret_key END,client_id=?,sandbox=? WHERE id=?",[name,code,baseUrl,apiKey,apiKey,secretKey,secretKey,clientId,sandbox,req.params.id]);
- else db.run("UPDATE courier_apis SET name=?,code=?,base_url=?,api_key=CASE WHEN ?<>'' THEN ? ELSE api_key END,secret_key=CASE WHEN ?<>'' THEN ? ELSE secret_key END,client_id=?,sandbox=? WHERE id=?",name,code,baseUrl,apiKey,apiKey,secretKey,secretKey,clientId,sandbox,req.params.id);
- req.flash('success','কুরিয়ার API সফলভাবে আপডেট হয়েছে।');
- res.redirect('/admin/courierapi/manage');
+
+router.post('/admin/courierapi/create', requirePermission('settings.manage'), requireCsrf, asyncHandler(async (req, res) => {
+  const b = req.body;
+  const name = cleanBannerText(b.name, 100);
+  const code = cleanBannerText(b.code, 48);
+  if (!name || !/^[a-zA-Z0-9_-]{1,48}$/.test(code)) throw new ValidationError('Courier name and a valid unique code are required.');
+  const baseUrl = String(b.base_url || '').trim().slice(0, 255);
+  const apiKey = String(b.api_key || '').trim() || null;
+  const secretKey = String(b.secret_key || '').trim() || null;
+  const clientId = cleanBannerText(b.client_id, 191);
+  const sandbox = b.sandbox === '0' ? 0 : 1;
+  const liveQuotes = b.supports_live_quotes === '1' ? 1 : 0;
+  let serviceOptions = null;
+  if (b.service_options_json && String(b.service_options_json).trim()) {
+    try {
+      JSON.parse(b.service_options_json);
+      serviceOptions = String(b.service_options_json).trim();
+    } catch {
+      throw new ValidationError('Service options must be valid JSON.');
+    }
+  }
+
+  if (integrationsMysql()) {
+    // INSERT INTO courier_apis (name,code,base_url,api_key,secret_key,client_id,status,sandbox)
+    await integrationsClient().execute(
+      'INSERT INTO courier_apis (name,code,base_url,api_key,secret_key,client_id,status,sandbox,supports_live_quotes,service_options_json) VALUES (?,?,?,?,?,?,0,?,?,?)',
+      [name, code, baseUrl, apiKey, secretKey, clientId, sandbox, liveQuotes, serviceOptions]
+    );
+  } else {
+    db.run(
+      'INSERT INTO courier_apis (name,code,api_key,secret_key,base_url,client_id) VALUES (?,?,?,?,?,?)',
+      name, code, apiKey, secretKey || '', baseUrl, clientId
+    );
+  }
+  req.flash('success', 'Courier provider created successfully.');
+  res.redirect('/admin/courierapi/manage');
 }));
-router.post('/admin/courierapi/toggle/:id',asyncHandler(async(req,res)=>{if(integrationsMysql())await integrationsClient().execute('UPDATE courier_apis SET status=1-status WHERE id=?',[req.params.id]);else{const c=db.get('SELECT id,status FROM courier_apis WHERE id=?',req.params.id);if(c)db.run('UPDATE courier_apis SET status=? WHERE id=?',c.status?0:1,c.id);}res.redirect('/admin/courierapi/manage');}));
-router.post('/admin/courierapi/delete/:id',asyncHandler(async(req,res)=>{if(integrationsMysql())await integrationsClient().execute('DELETE FROM courier_apis WHERE id=?',[req.params.id]);else db.run('DELETE FROM courier_apis WHERE id=?',req.params.id);res.redirect('/admin/courierapi/manage');}));
+
+router.post('/admin/courierapi/update/:id', requirePermission('settings.manage'), requireCsrf, asyncHandler(async (req, res) => {
+  const b = req.body;
+  const name = cleanBannerText(b.name, 100);
+  const code = cleanBannerText(b.code, 48);
+  const baseUrl = String(b.base_url || '').trim().slice(0, 255);
+  const apiKey = String(b.api_key || '');
+  const secretKey = String(b.secret_key || '');
+  const clientId = cleanBannerText(b.client_id, 191);
+  const sandbox = b.sandbox === '0' ? 0 : 1;
+  const liveQuotes = b.supports_live_quotes === '1' ? 1 : 0;
+  let serviceOptions = undefined;
+  if (b.service_options_json !== undefined) {
+    const raw = String(b.service_options_json || '').trim();
+    if (raw) {
+      try {
+        JSON.parse(raw);
+        serviceOptions = raw;
+      } catch {
+        throw new ValidationError('Service options must be valid JSON.');
+      }
+    } else {
+      serviceOptions = null;
+    }
+  }
+
+  if (!name || !/^[a-zA-Z0-9_-]{1,48}$/.test(code)) throw new ValidationError('Courier name and a valid unique code are required.');
+
+  if (integrationsMysql()) {
+    await integrationsClient().execute(
+      "UPDATE courier_apis SET name=?,code=?,base_url=?,api_key=CASE WHEN ?<>'' THEN ? ELSE api_key END,secret_key=CASE WHEN ?<>'' THEN ? ELSE secret_key END,client_id=?,sandbox=?,supports_live_quotes=?,service_options_json=COALESCE(?, service_options_json) WHERE id=?",
+      [name, code, baseUrl, apiKey, apiKey, secretKey, secretKey, clientId, sandbox, liveQuotes, serviceOptions, req.params.id]
+    );
+  } else {
+    db.run(
+      "UPDATE courier_apis SET name=?,code=?,base_url=?,api_key=CASE WHEN ?<>'' THEN ? ELSE api_key END,secret_key=CASE WHEN ?<>'' THEN ? ELSE secret_key END,client_id=?,sandbox=? WHERE id=?",
+      name, code, baseUrl, apiKey, apiKey, secretKey, secretKey, clientId, sandbox, req.params.id
+    );
+  }
+  req.flash('success', 'কুরিয়ার API সফলভাবে আপডেট হয়েছে।');
+  res.redirect('/admin/courierapi/manage');
+}));
+
+router.post('/admin/courierapi/toggle/:id', requirePermission('settings.manage'), requireCsrf, asyncHandler(async (req, res) => {
+  if (integrationsMysql()) {
+    await integrationsClient().execute('UPDATE courier_apis SET status=1-status WHERE id=?', [req.params.id]);
+  } else {
+    const c = db.get('SELECT id,status FROM courier_apis WHERE id=?', req.params.id);
+    if (c) db.run('UPDATE courier_apis SET status=? WHERE id=?', c.status ? 0 : 1, c.id);
+  }
+  req.flash('success', 'Courier status toggled successfully.');
+  res.redirect('/admin/courierapi/manage');
+}));
+
+router.post('/admin/courierapi/delete/:id', requirePermission('settings.manage'), requireCsrf, asyncHandler(async (req, res) => {
+  if (integrationsMysql()) {
+    await integrationsClient().execute('DELETE FROM courier_apis WHERE id=?', [req.params.id]);
+  } else {
+    db.run('DELETE FROM courier_apis WHERE id=?', req.params.id);
+  }
+  req.flash('success', 'Courier provider deleted.');
+  res.redirect('/admin/courierapi/manage');
+}));
 
 // ─── Live Ads Result (/admin/ads-analytics) ───
 router.get('/admin/ads-analytics', (_req, res) => renderAds(res, 'overview'));

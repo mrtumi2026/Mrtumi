@@ -15,16 +15,32 @@
   </section>
 
   <section class="card card-body mb-4" aria-labelledby="tracking-title">
-    <h2 id="tracking-title" class="h5"><%= isEn ? 'Shipment tracking' : 'শিপমেন্ট ট্র্যাকিং' %></h2>
-    <% if (tracking) { %>
+    <h2 id="tracking-title" class="h5"><%= isEn ? 'Delivery & Shipment Tracking' : 'ডেলিভারি ও শিপমেন্ট ট্র্যাকিং' %></h2>
+    <% if (shipments && shipments.length) { %>
+      <div class="row g-3">
+        <% shipments.forEach((shipment) => { %>
+          <div class="col-12"><article class="border rounded-3 p-3">
+            <h3 class="h6"><%= shipment.courier_name || shipment.courier_code || (isEn ? 'Courier service' : 'কুরিয়ার সার্ভিস') %></h3>
+            <dl class="row mb-0">
+              <% if (shipment.tracking_id) { %><dt class="col-sm-3"><%= isEn ? 'Tracking Number' : 'ট্র্যাকিং নম্বর' %></dt><dd class="col-sm-9"><code><%= shipment.tracking_id %></code></dd><% } %>
+              <% if (shipment.external_consignment_id) { %><dt class="col-sm-3"><%= isEn ? 'Consignment' : 'কনসাইনমেন্ট' %></dt><dd class="col-sm-9"><code><%= shipment.external_consignment_id %></code></dd><% } %>
+              <dt class="col-sm-3"><%= isEn ? 'Recorded delivery status' : 'রেকর্ডকৃত ডেলিভারি অবস্থা' %></dt><dd class="col-sm-9"><%= shipment.deliveryStatusLabel %></dd>
+              <% if (shipment.bookingStatusLabel) { %><dt class="col-sm-3"><%= isEn ? 'Booking status' : 'বুকিং অবস্থা' %></dt><dd class="col-sm-9"><%= shipment.bookingStatusLabel %></dd><% } %>
+              <% if (shipment.picked_up_at) { %><dt class="col-sm-3"><%= isEn ? 'Picked up' : 'পিকআপ' %></dt><dd class="col-sm-9"><%= shipment.picked_up_at instanceof Date ? shipment.picked_up_at.toISOString() : shipment.picked_up_at %></dd><% } %>
+              <% if (shipment.delivered_at) { %><dt class="col-sm-3"><%= isEn ? 'Delivered at' : 'ডেলিভারির সময়' %></dt><dd class="col-sm-9"><%= shipment.delivered_at instanceof Date ? shipment.delivered_at.toISOString() : shipment.delivered_at %></dd><% } %>
+            </dl>
+          </article></div>
+        <% }) %>
+      </div>
+    <% } else if (tracking) { %>
       <dl class="row mb-0">
         <% if (tracking.courier_code) { %><dt class="col-sm-3"><%= isEn ? 'Courier' : 'কুরিয়ার' %></dt><dd class="col-sm-9"><%= tracking.courier_code %></dd><% } %>
-        <% if (tracking.tracking_code) { %><dt class="col-sm-3"><%= isEn ? 'Tracking code' : 'ট্র্যাকিং কোড' %></dt><dd class="col-sm-9"><code><%= tracking.tracking_code %></code></dd><% } %>
+        <% if (tracking.tracking_code) { %><dt class="col-sm-3"><%= isEn ? 'Tracking Number' : 'ট্র্যাকিং নম্বর' %></dt><dd class="col-sm-9"><code><%= tracking.tracking_code %></code></dd><% } %>
         <% if (tracking.consignment_id) { %><dt class="col-sm-3"><%= isEn ? 'Consignment' : 'কনসাইনমেন্ট' %></dt><dd class="col-sm-9"><%= tracking.consignment_id %></dd><% } %>
-        <% if (tracking.courier_status) { %><dt class="col-sm-3"><%= isEn ? 'Courier status' : 'কুরিয়ার অবস্থা' %></dt><dd class="col-sm-9"><%= tracking.courier_status %></dd><% } %>
+        <% if (tracking.courier_status) { %><dt class="col-sm-3"><%= isEn ? 'Courier status' : 'কուրিয়ার অবস্থা' %></dt><dd class="col-sm-9"><%= tracking.courier_status %></dd><% } %>
       </dl>
       <% if (!tracking.tracking_code && !tracking.consignment_id) { %><p class="text-muted mb-0"><%= isEn ? 'The current shipment record does not include a tracking reference.' : 'বর্তমান শিপমেন্ট রেকর্ডে ট্র্যাকিং রেফারেন্স নেই।' %></p><% } %>
-    <% } else { %><p class="text-muted mb-0"><%= isEn ? 'Courier tracking is not available for this order yet. No tracking details have been inferred.' : 'এই অর্ডারের কুরিয়ার ট্র্যাকিং এখনো পাওয়া যায়নি। কোনো তথ্য অনুমান করে দেখানো হচ্ছে না।' %></p><% } %>
+    <% } else { %><p class="text-muted mb-0"><%= isEn ? 'No courier shipment or tracking reference is recorded for this order.' : 'এই অর্ডারের জন্য কোনো কুরিয়ার শিপমেন্ট বা ট্র্যাকিং রেফারেন্স রেকর্ড করা নেই।' %></p><% } %>
   </section>
 
   <section class="mb-4" aria-labelledby="status-history-title">

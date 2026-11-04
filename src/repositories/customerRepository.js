@@ -178,7 +178,18 @@ async function getOrderDetails(customerId, orderId) {
      FROM order_items WHERE order_id = ? ORDER BY id`,
     [id]
   );
-  return { order, items };
+  const shipments = await db.queryAll(
+    `SELECT fs.id, fs.courier_code, fs.tracking_id, fs.external_consignment_id, fs.status AS delivery_status,
+            fs.booking_status, fs.picked_up_at, fs.delivered_at,
+            ca.name AS courier_name
+     FROM vendor_sub_orders vso
+     JOIN fulfillment_shipments fs ON fs.vendor_sub_order_id = vso.id
+     LEFT JOIN courier_apis ca ON ca.code = fs.courier_code
+     WHERE vso.order_id = ?
+     ORDER BY fs.id ASC`,
+    [id]
+  );
+  return { order, items, shipments };
 }
 function normalizeAddressInput(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new ValidationError('Enter a valid address.');

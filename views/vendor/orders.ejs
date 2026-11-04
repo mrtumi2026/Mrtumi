@@ -73,6 +73,9 @@
                       <form action="/vendor/sub-orders/<%= ol.vendor_sub_order_id %>/handover" method="POST" class="d-inline"><input type="hidden" name="_csrf" value="<%= typeof csrfToken!=='undefined'?csrfToken:'' %>" /><button type="submit" class="btn btn-sm btn-outline-success"><%= t('vendorFulfillment.confirmHandover') %></button></form>
                     </div>
                   <% } %>
+                  <% if (ol.vendor_sub_order_id && ol.booking_status==='unknown_timeout') { %>
+                    <form action="/vendor/sub-orders/<%= ol.vendor_sub_order_id %>/reconcile-booking" method="POST" class="d-inline mt-1"><input type="hidden" name="_csrf" value="<%= typeof csrfToken!=='undefined'?csrfToken:'' %>" /><button type="submit" class="btn btn-sm btn-outline-warning" title="<%= t('vendorFulfillment.reconcileBooking') %>"><i class="fas fa-rotate me-1"></i><%= t('vendorFulfillment.reconcileBooking') %></button></form>
+                  <% } %>
                   <% if (ol.vendor_sub_order_id && subKey==='ready_for_pickup' && ol.delivery_mode==='platform_managed') { %><span class="small text-muted"><%= t('vendorFulfillment.platformAwaiting') %></span><% } %>
                   <% if (!ol.vendor_sub_order_id && ol.fulfillment_status) { %>
                     <% const legacyNext=({pending:'processing',processing:'ready',ready:'dispatched'})[legacyKey]; if(legacyNext && !['cancelled','delivered'].includes(ol.order_status)) { %>

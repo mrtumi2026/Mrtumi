@@ -1,4 +1,4 @@
--- 0028_multi_courier_engine.down.sql
+-- 0029_multi_courier_engine.down.sql
 -- Revert multi-courier integration schema enhancements.
 
 ALTER TABLE `fulfillment_shipments`
