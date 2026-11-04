@@ -527,6 +527,7 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
       }).toString();
       const csrfRejected = await httpRequest(baseUrl, '/customer/checkout', { method:'POST',headers:{Cookie:cookieHeader,'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({checkout_request_key:requestKey[1],confirm_order:'yes'}).toString() });
       assert.equal(csrfRejected.statusCode,403,'checkout rejects a missing CSRF token');
+      const parentReservedBeforeCheckout = Number((await client.queryOne('SELECT stock_reserved FROM products WHERE id=?',[inhouseProdId])).stock_reserved);
       const submitted = await httpRequest(baseUrl, '/customer/checkout', { method:'POST',headers:{Cookie:cookieHeader,'Content-Type':'application/x-www-form-urlencoded'},body:form });
       assert.equal(submitted.statusCode,302);
       const invoice = decodeURIComponent(submitted.headers.location.split('/').pop());
@@ -537,7 +538,7 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
       assert.deepEqual([placed.traffic_source,placed.utm_source,placed.utm_medium,placed.utm_campaign,placed.analytics_consent_version],['Meta','facebook','paid_social','p14-ci','p14-v1']);
       assert.ok(placed.analytics_consent_at,'the successful order records the explicit first-party attribution consent');
       assert.equal(Number((await client.queryOne('SELECT COUNT(*) AS n FROM order_payments WHERE order_id=?',[placed.id])).n),0,'unverified payment is never recorded as paid');
-      assert.equal(Number((await client.queryOne('SELECT stock_reserved FROM products WHERE id=?',[inhouseProdId])).stock_reserved),7);
+      assert.equal(Number((await client.queryOne('SELECT stock_reserved FROM products WHERE id=?',[inhouseProdId])).stock_reserved),parentReservedBeforeCheckout,'variant checkout leaves parent-product reservations unchanged');
       assert.equal(Number((await client.queryOne('SELECT stock_reserved FROM product_variants WHERE id=?',[variant5KgId])).stock_reserved),5);
       const replayResponses = await Promise.all([1,2].map(()=>httpRequest(baseUrl, '/customer/checkout', { method:'POST',headers:{Cookie:cookieHeader,'Content-Type':'application/x-www-form-urlencoded'},body:form })));
       assert.ok(replayResponses.every((replay)=>replay.statusCode===302));
