@@ -881,7 +881,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     if(!MYSQL_HOST)return t.skip(SKIP);
     csrfToken=await fetchCsrf(dashboardCookie);
     const {cookie:noGrantCookie,token:noGrantToken}=await noGrantSession();
-    assert.equal((await request('/admin/order/create',{cookie:'',accept:'text/html'})).status,302,'POS requires an authenticated admin');
+    assert.equal((await request('/admin/order/create',{cookie:'',accept:'text/html'})).status,401,'global admin authentication guard rejects anonymous POS access');
     assert.equal((await request('/admin/order/create',{cookie:noGrantCookie,token:noGrantToken,accept:'text/html'})).status,403,'POS requires orders.manage');
     const page=await request('/admin/order/create',{accept:'text/html'});
     assert.equal(page.status,200,page.text.slice(0,300));assert.match(page.text,/Dashboard product/);assert.match(page.text,/name="_csrf"/);
@@ -1114,7 +1114,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     if(!MYSQL_HOST)return t.skip(SKIP);
     csrfToken=await fetchCsrf(dashboardCookie);
     const {cookie:noGrantCookie,token:noGrantToken}=await noGrantSession();
-    assert.equal((await request('/admin/orderstatus/manage',{cookie:'',accept:'text/html'})).status,302,'order-status management requires authentication');
+    assert.equal((await request('/admin/orderstatus/manage',{cookie:'',accept:'text/html'})).status,401,'global admin authentication guard rejects anonymous order-status access');
     assert.equal((await request('/admin/orderstatus/manage',{cookie:noGrantCookie,token:noGrantToken,accept:'text/html'})).status,403,'orders.manage is required');
     const page=await request('/admin/orderstatus/manage',{accept:'text/html'});
     assert.equal(page.status,200,page.text.slice(0,300));
@@ -1160,7 +1160,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     if(!MYSQL_HOST)return t.skip(SKIP);
     dashboardCookie=await login(fullEmail);csrfToken=await fetchCsrf(dashboardCookie);
     const {cookie:noGrantCookie,token:noGrantToken}=await noGrantSession();
-    assert.equal((await request('/admin/employees',{cookie:'',accept:'text/html'})).status,302);
+    assert.equal((await request('/admin/employees',{cookie:'',accept:'text/html'})).status,401,'global admin authentication guard rejects anonymous HR access');
     assert.equal((await request('/admin/employees',{cookie:noGrantCookie,token:noGrantToken,accept:'text/html'})).status,403,'hr.manage is required to read employee records');
     const page=await request('/admin/employees',{accept:'text/html'});
     assert.equal(page.status,200,page.text.slice(0,300));assert.match(page.text,/Employees \(CRM \/ HR\)/);
@@ -1195,7 +1195,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     if(!MYSQL_HOST)return t.skip(SKIP);
     const {cookie:noGrantCookie,token:noGrantToken}=await noGrantSession();
     assert.equal((await request('/admin/complaints',{cookie:noGrantCookie,token:noGrantToken,accept:'text/html'})).status,403,'customers.manage is required to read complaints');
-    assert.equal((await request('/admin/complaints',{cookie:'',accept:'text/html'})).status,302,'complaint list requires authentication');
+    assert.equal((await request('/admin/complaints',{cookie:'',accept:'text/html'})).status,401,'global admin authentication guard rejects anonymous complaint access');
     assert.equal((await request('/admin/complaints/create',{method:'POST',token:'',body:{}})).status,403,'complaint create requires CSRF');
     const suffix=Date.now();
     const input={name:`P09 Complaint ${suffix}`,phone:'01712345678',invoice_id:`P09-${suffix}`,details:'A complaint fixture for the MySQL admin route.'};
@@ -1233,7 +1233,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     const inserted=await db.execute('INSERT INTO contact_messages(name,phone,email,subject,message,status) VALUES(?,?,?,?,?,?)',[marker,'01712345678',email,'MySQL inbox fixture','Contact message body fixture','unread']);
     const denied=await request('/admin/contact-messages',{cookie:noGrantCookie,token:noGrantToken,accept:'text/html'});
     assert.equal(denied.status,403,'customers.manage is required to read contact messages');
-    assert.equal((await request('/admin/contact-messages',{cookie:'',accept:'text/html'})).status,302,'contact inbox requires authentication');
+    assert.equal((await request('/admin/contact-messages',{cookie:'',accept:'text/html'})).status,401,'global admin authentication guard rejects anonymous contact-inbox access');
     const page=await request('/admin/contact-messages',{accept:'text/html'});
     assert.equal(page.status,200,page.text.slice(0,300));assert.match(page.text,new RegExp(marker));assert.match(page.text,new RegExp(email));
     assert.equal(page.text.includes('/admin/contact-messages/delete/'),false,'production inbox does not offer destructive deletion while retention policy is unapproved');
