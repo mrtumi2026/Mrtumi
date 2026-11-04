@@ -49,6 +49,20 @@ function evidenceKey(file) {
   fs.chmodSync(resolvedFile, 0o600);
   return `return-evidence/${path.basename(resolvedFile)}`;
 }
+function removeUploadedEvidence(file) {
+  if (!file || !file.path) return false;
+  const base = path.resolve(resolveEvidenceDir());
+  const resolved = path.resolve(String(file.path));
+  if (!isWithin(base, resolved)) return false;
+  try {
+    fs.unlinkSync(resolved);
+    return true;
+  } catch (error) {
+    if (error.code === 'ENOENT') return true;
+    return false;
+  }
+}
+
 function resolveEvidencePath(key) {
   const raw = String(key || '');
   const match = /^return-evidence\/([A-Za-z0-9-]+\.(?:jpg|jpeg|png|webp|gif))$/i.exec(raw);
@@ -81,4 +95,4 @@ const single = multer({
   limits: { fileSize: 5 * 1024 * 1024, files: 1 },
 }).single('evidence');
 
-module.exports = { single, evidenceKey, resolveEvidenceDir, resolveEvidencePath };
+module.exports = { single, evidenceKey, resolveEvidenceDir, resolveEvidencePath, removeUploadedEvidence };

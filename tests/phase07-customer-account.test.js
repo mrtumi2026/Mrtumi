@@ -77,6 +77,14 @@ test('customer order details return stable order-item IDs needed for exact retur
   assert.match(source, /SELECT id, product_name, qty, unit_price_paisa, line_total_paisa, size_label, color_label\s+FROM order_items WHERE order_id = \? ORDER BY id/);
 });
 
+test('multipart return requests parse the CSRF field after upload and remove untrusted evidence on CSRF failure', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const route = fs.readFileSync(path.join(__dirname, '../src/routes/customerAccount.js'), 'utf8');
+  assert.match(route, /router\.post\('\/customer\/account\/orders\/:id\/returns',\s*requireCustomer,\s*customerReturnEvidence\.single,\s*requireCsrfAfterEvidenceUpload/);
+  assert.match(route, /if \(error && req\.file\) customerReturnEvidence\.removeUploadedEvidence\(req\.file\)/);
+});
+
 test('customer return evidence uses a private directory and rejects arbitrary filesystem paths', () => {
   const fs = require('node:fs');
   const path = require('node:path');

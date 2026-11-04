@@ -230,7 +230,14 @@ router.post('/customer/account/orders/:id/cancel', requireCustomer, requireCsrf,
   req.flash('success',isEn(req)?'Your pre-dispatch cancellation was recorded.':'ডিসপ্যাচের আগের বাতিলের অনুরোধ গ্রহণ করা হয়েছে।');
   return res.redirect(`/customer/account/orders/${encodeURIComponent(req.params.id)}`);
 }));
-router.post('/customer/account/orders/:id/returns', requireCustomer, requireCsrf, customerReturnEvidence.single, asyncHandler(async(req,res)=>{
+function requireCsrfAfterEvidenceUpload(req, res, next) {
+  return requireCsrf(req, res, (error) => {
+    if (error && req.file) customerReturnEvidence.removeUploadedEvidence(req.file);
+    return next(error);
+  });
+}
+
+router.post('/customer/account/orders/:id/returns', requireCustomer, customerReturnEvidence.single, requireCsrfAfterEvidenceUpload, asyncHandler(async(req,res)=>{
   let evidencePath='';
   let persisted=false;
   try {
