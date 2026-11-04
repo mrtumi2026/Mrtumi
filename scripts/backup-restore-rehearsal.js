@@ -26,7 +26,13 @@ function validateTarget(env = process.env) {
   for (const key of ['DB_HOST', 'DB_USER']) {
     if (!String(env[key] || '').trim()) throw new Error(`Missing ${key}; no values are printed by this script.`);
   }
-  return { dbName, host: env.DB_HOST, port: Number(env.DB_PORT || 3306), user: env.DB_USER, password: env.DB_PASSWORD || '' };
+  const host = String(env.DB_HOST).trim().toLowerCase();
+  if (!['localhost', '127.0.0.1', '::1'].includes(host)) {
+    throw new Error('Refusing destructive restore: DB_HOST must be localhost or a loopback address. Remote hosts are never accepted.');
+  }
+  const port = Number(env.DB_PORT || 3306);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('DB_PORT must be an integer from 1 to 65535.');
+  return { dbName, host, port, user: env.DB_USER, password: env.DB_PASSWORD || '' };
 }
 
 function run(binary, args, { env, input } = {}) {
@@ -119,6 +125,47 @@ function sameSnapshot(before, after) {
   return JSON.stringify(before) === JSON.stringify(after);
 }
 
+function verifyBackupArtifact(expectedHash, artifact) {
+  const actualHash = crypto.createHash('sha256').update(artifact).digest('hex');
+  if (!artifact || artifact.length === 0 || actualHash !== expectedHash) {
+    const error = new Error('Backup artifact is empty or failed its SHA-256 integrity check.');
+    error.code = 'BACKUP_ARTIFACT_INTEGRITY_FAILED';
+    throw error;
+  }
+  return actualHash;
+}
+
+async function restoreAndVerify({ before, restore, snapshot, checkIntegrity }) {
+  try {
+    await restore();
+  } catch (cause) {
+    const error = new Error('Restore command failed or was interrupted; the disposable target may be partially restored and must be discarded and recreated.', { cause });
+    error.code = 'RESTORE_COMMAND_FAILED';
+    throw error;
+  }
+  let after;
+  try {
+    after = await snapshot();
+  } catch (cause) {
+    const error = new Error('Could not inspect restored schema; treat target as partially restored and discard/recreate it.', { cause });
+    error.code = 'RESTORE_VERIFICATION_UNAVAILABLE';
+    throw error;
+  }
+  if (!sameSnapshot(before, after)) {
+    const error = new Error('Restore verification failed: schema, table list/counts, or row-content hash differs from the pre-backup state.');
+    error.code = 'RESTORE_VERIFICATION_MISMATCH';
+    throw error;
+  }
+  try {
+    await checkIntegrity();
+  } catch (cause) {
+    const error = new Error('Restore integrity checks failed; do not treat the database as restored.', { cause });
+    error.code = 'RESTORE_INTEGRITY_FAILED';
+    throw error;
+  }
+  return after;
+}
+
 async function rehearse(env = process.env) {
   const target = validateTarget(env);
   const passwordEnv = { ...process.env, MYSQL_PWD: target.password };
@@ -143,21 +190,28 @@ async function rehearse(env = process.env) {
     if (/\bMySQL\b/i.test(dumpVersion) && !/MariaDB/i.test(dumpVersion)) dumpArgs.splice(-1, 0, '--set-gtid-purged=OFF');
     const dump = run('mysqldump', dumpArgs, { env: passwordEnv });
     if (!dump.trim()) throw new Error('Backup artifact is empty.');
+    const expectedBackupHash = crypto.createHash('sha256').update(dump).digest('hex');
     fs.writeFileSync(dumpPath, dump, { mode: 0o600 });
-    const backupHash = crypto.createHash('sha256').update(fs.readFileSync(dumpPath)).digest('hex');
+    const backupArtifact = fs.readFileSync(dumpPath);
+    const backupHash = verifyBackupArtifact(expectedBackupHash, backupArtifact);
 
-    // Guarded import to the exact same disposable schema; the dump uses DROP TABLE IF EXISTS.
-    run('mysql', ['--host', target.host, '--port', String(target.port), '--user', target.user, '--default-character-set=utf8mb4', target.dbName], {
-      env: passwordEnv,
-      input: fs.readFileSync(dumpPath)
+    connection = await restoreAndVerify({
+      before,
+      // Guarded import to the exact same loopback disposable schema; dump contains DROP TABLE IF EXISTS.
+      restore: async () => run('mysql', ['--host', target.host, '--port', String(target.port), '--user', target.user, '--default-character-set=utf8mb4', target.dbName], {
+        env: passwordEnv,
+        input: backupArtifact
+      }),
+      snapshot: async () => {
+        connection = await mysql.createConnection({ host: target.host, port: target.port, user: target.user, password: target.password, database: target.dbName, connectTimeout: 5000 });
+        return snapshotDatabase(connection);
+      },
+      checkIntegrity: async () => {
+        const [integrityRows] = await connection.query('SELECT TABLE_NAME, ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = \'BASE TABLE\'');
+        const nonInnoDb = integrityRows.filter(row => row.ENGINE !== 'InnoDB');
+        if (nonInnoDb.length) throw new Error(`Restore integrity check found non-InnoDB tables: ${nonInnoDb.map(row => row.TABLE_NAME).join(', ')}`);
+      }
     });
-
-    connection = await mysql.createConnection({ host: target.host, port: target.port, user: target.user, password: target.password, database: target.dbName, connectTimeout: 5000 });
-    const after = await snapshotDatabase(connection);
-    if (!sameSnapshot(before, after)) throw new Error('Restore verification failed: schema, table list/counts, or row-content hash differs from the pre-backup state.');
-    const [integrityRows] = await connection.query('SELECT TABLE_NAME, ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = \'BASE TABLE\'');
-    const nonInnoDb = integrityRows.filter(row => row.ENGINE !== 'InnoDB');
-    if (nonInnoDb.length) throw new Error(`Restore integrity check found non-InnoDB tables: ${nonInnoDb.map(row => row.TABLE_NAME).join(', ')}`);
     console.log(JSON.stringify({ result: 'PASS', server: serverInfo.version, serverComment: serverInfo.version_comment, database: target.dbName, tables: before.tableNames.length, essentialTables: ESSENTIAL_TABLES, rowContentSha256: before.rowHash, schemaSha256: before.schemaHash, backupSha256: backupHash, dumpClient: dumpVersion.trim() }, null, 2));
   } finally {
     if (connection) await connection.end().catch(() => {});
@@ -172,4 +226,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { REQUIRED_ACK, ESSENTIAL_TABLES, validateTarget, snapshotDatabase, sameSnapshot, rehearse };
+module.exports = { REQUIRED_ACK, ESSENTIAL_TABLES, validateTarget, run, snapshotDatabase, sameSnapshot, verifyBackupArtifact, restoreAndVerify, rehearse };

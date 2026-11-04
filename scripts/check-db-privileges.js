@@ -13,11 +13,12 @@ const DANGEROUS_GLOBAL = new Set([
 function parseGrant(grant) {
   const normalized = String(grant).trim().replace(/;$/, '');
   const match = normalized.match(/^GRANT\s+(.+?)\s+ON\s+(.+?)\s+TO\s+/i);
-  if (!match) return { raw: normalized, scope: 'other', privileges: [] };
+  if (!match) return { raw: normalized, scope: 'other', privileges: [], hasGrantOption: /\bWITH\s+GRANT\s+OPTION\b/i.test(normalized) };
   return {
     raw: normalized,
     scope: match[2].trim(),
-    privileges: match[1].split(',').map(value => value.trim().toUpperCase())
+    privileges: match[1].split(',').map(value => value.trim().toUpperCase()),
+    hasGrantOption: /\bWITH\s+GRANT\s+OPTION\b/i.test(normalized)
   };
 }
 
@@ -25,6 +26,11 @@ function analyzeRuntimeGrants(grants) {
   const parsed = grants.map(parseGrant);
   const violations = [];
   for (const grant of parsed) {
+    if (grant.scope === 'other') {
+      violations.push(`Unanalyzed grant or role assignment requires manual review: ${grant.raw}`);
+      continue;
+    }
+    if (grant.hasGrantOption) violations.push('Runtime role must not have WITH GRANT OPTION.');
     if (grant.scope === '*.*') {
       const effective = grant.privileges.filter(privilege => privilege !== 'USAGE');
       if (effective.length) violations.push(`Global grant present: ${effective.join(', ')}`);

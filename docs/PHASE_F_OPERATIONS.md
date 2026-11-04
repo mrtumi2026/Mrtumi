@@ -65,7 +65,7 @@ Create separate principals for separate duties. Do not reuse a privileged migrat
 | Restore operator | Time-limited, controlled identity for an isolated restore target; required schema DDL and data load privileges. | Never give this identity to the application; production restore requires separate owner approval and documented impact review. |
 | Monitoring probe | Prefer existing unauthenticated, rate-limited health endpoint; if direct DB probing is unavoidable, narrowly scoped read-only probe. | No customer table scans, writes, DDL, or broad metadata access. |
 
-Automated check: `npm run db:privileges:check` connects with the configured account and rejects an application runtime account with global grants or schema privileges beyond DML. It is intentionally conservative and only evaluates the account used for that connection; it is not a complete effective-role analyzer. Review `SHOW GRANTS` and role inheritance manually, then assess migration and backup accounts separately. Do not put credentials on the command line or commit them.
+Automated check: `npm run db:privileges:check` connects with the configured account and rejects global grants (except global `USAGE`), schema privileges beyond DML, `WITH GRANT OPTION`, and unparsed grants/role assignments. It is intentionally conservative. It does not resolve active/inherited/mandatory roles, proxy privileges, authentication plugins, dynamic privileges unknown to its allowlist, host-matching precedence, or grants on individual tables/routines/views; it checks the account returned by `CURRENT_USER()` and its `SHOW GRANTS` output only. Treat an `ok` result as a narrow static screen, **not a complete effective-privilege proof**. A DBA must review role activation/inheritance and exact effective privileges using the target engine/version, repeat the check for all relevant hosts/accounts, and assess migration and backup accounts separately. Do not put credentials on the command line or commit them.
 
 ## 5. Operational runbooks
 
@@ -108,6 +108,14 @@ Automated check: `npm run db:privileges:check` connects with the configured acco
 4. Contain using least-disruptive approved controls. Record every action/actor/reason. Restore only from a verified clean artifact after the incident lead approves.
 5. Reconcile payment/COD/settlement ledgers independently; do not issue refunds/payouts or edit balances as an incident shortcut. Preserve evidence and produce a reviewed post-incident report.
 
-## 6. Launch gates and evidence
+## 6. Repository-verifiable work vs host/provider-only verification
+
+| Can be checked in this repository/CI | Cannot be established without approved host/provider configuration |
+|---|---|
+| Health handler contract and redaction; backup script safety and failure classification; grant analyzer unit cases; migrations/tests on disposable CI engines; workflow reporting and test results. | Production DB version/hostname/TLS/grants; cloud/host backup scheduling, encryption, archive durability and restore access; upload/vendor-document backup; actual restore duration and RPO/RTO; alert delivery/escalation; process manager/proxy/TLS behavior; cron availability, cadence and identity; provider-specific monitoring/backup APIs; production financial/payment/COD reconciliation. |
+
+The right column is **NOT VERIFIED** until an owner authorizes and an operator records evidence from the real target or a provider-equivalent isolated staging setup. CI success cannot change that classification. Never substitute production data or credentials for the disposable tests.
+
+## 7. Launch gates and evidence
 
 Require exact-SHA `npm run verify`, MySQL 8.0 and MariaDB 10.11 migration/integration evidence where supported, Browser E2E, successful disposable restore drill on both engines, reviewed grants for all service accounts, tested monitoring/alerts and job heartbeats, and owner-approved decisions above. CI passing does not prove provider-specific hosting, off-site backup, alert delivery, legal retention, financial reconciliation, or production readiness.
