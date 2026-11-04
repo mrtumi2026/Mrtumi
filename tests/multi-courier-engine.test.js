@@ -363,8 +363,8 @@ test('Live disposable MySQL/MariaDB: timeout persistence, duplicate booking prev
   const vendId = vendRes.insertId;
 
   const orderRes = await db.execute(`
-    INSERT INTO orders (customer_id, invoice_id, name, email, phone, address, shipping_area, payment_method, payment_status, total_paisa, created_at, updated_at)
-    VALUES (?, 'INV-REC-TEST', 'Test Recipient', 'cust@example.test', '01800000000', '123 Test Street, Dhanmondi', 'Dhaka', 'cod', 'unpaid', 50000, UTC_TIMESTAMP(), UTC_TIMESTAMP())
+    INSERT INTO orders (customer_id, invoice_no, customer_name, customer_phone, shipping_address, shipping_zone, payment_method, payment_status, total_paisa, created_at, updated_at)
+    VALUES (?, 'INV-REC-TEST', 'Test Recipient', '01800000000', '123 Test Street, Dhanmondi', 'Inside Dhaka', 'cod', 'unpaid', 50000, UTC_TIMESTAMP(), UTC_TIMESTAMP())
   `, [custId]);
   const orderId = orderRes.insertId;
 
@@ -453,7 +453,7 @@ test('Live disposable MySQL/MariaDB: timeout persistence, duplicate booking prev
 
   // Step E: Authoritative absence reconciliation (confirmed_absent)
   // Update order invoice to include REC-ABSENT to simulate verified absence
-  await db.execute(`UPDATE orders SET invoice_id = 'INV-REC-ABSENT-100' WHERE id = ?`, [orderId]);
+  await db.execute(`UPDATE orders SET invoice_no = 'INV-REC-ABSENT-100' WHERE id = ?`, [orderId]);
 
   const absentResult = await courierRepo.reconcileBookingResult({
     subOrderId,
@@ -470,7 +470,7 @@ test('Live disposable MySQL/MariaDB: timeout persistence, duplicate booking prev
   assert.equal(shipmentCleared.booking_status, 'failed');
 
   // Step F: Retry is now UNLOCKED! Update recipient phone to normal to avoid timeout trigger
-  await db.execute(`UPDATE orders SET phone = '01799999999' WHERE id = ?`, [orderId]);
+  await db.execute(`UPDATE orders SET customer_phone = '01799999999' WHERE id = ?`, [orderId]);
 
   const retryBooking = await courierRepo.executeOneClickBooking({
     subOrderId,

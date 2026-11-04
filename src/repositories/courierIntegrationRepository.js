@@ -75,7 +75,7 @@ async function getShipmentQuotesAndRecommendation({ subOrderId, actor }) {
   try {
     const subOrder = await client.queryOne(
       `SELECT vso.id, vso.order_id, vso.vendor_id, vso.status, vso.delivery_mode,
-              o.invoice_id, o.name AS customer_name, o.phone, o.address, o.shipping_area,
+              o.invoice_no AS invoice_id, o.customer_name, o.customer_phone AS phone, o.shipping_address AS address, o.shipping_zone AS shipping_area,
               o.payment_method, o.payment_status,
               fs.id AS shipment_id, fs.tracking_id, fs.courier_code, fs.booking_status, fs.cod_due_paisa, fs.picked_up_at
        FROM vendor_sub_orders vso
@@ -198,7 +198,7 @@ async function executeOneClickBooking({ subOrderId, courierCode, actor, idempote
     // Lock suborder and shipment FOR UPDATE
     const subOrder = await tx.queryOne(
       `SELECT vso.id, vso.order_id, vso.vendor_id, vso.status, vso.delivery_mode,
-              o.invoice_id, o.name AS customer_name, o.phone, o.address, o.shipping_area,
+              o.invoice_no AS invoice_id, o.customer_name, o.customer_phone AS phone, o.shipping_address AS address, o.shipping_zone AS shipping_area,
               o.payment_method, o.payment_status
        FROM vendor_sub_orders vso
        JOIN orders o ON o.id = vso.order_id
@@ -393,7 +393,7 @@ async function executeOneClickBooking({ subOrderId, courierCode, actor, idempote
 async function reconcileBookingResult({ subOrderId, actor }) {
   return withTransaction(async (tx) => {
     const subOrder = await tx.queryOne(
-      `SELECT vso.id, vso.order_id, vso.vendor_id, vso.status, o.invoice_id,
+      `SELECT vso.id, vso.order_id, vso.vendor_id, vso.status, o.invoice_no AS invoice_id,
               fs.id AS shipment_id, fs.courier_code, fs.tracking_id, fs.booking_status, fs.external_consignment_id
        FROM vendor_sub_orders vso
        JOIN orders o ON o.id = vso.order_id
