@@ -21,7 +21,7 @@
       </a>
       <% statuses.forEach(function(st) { %>
         <a href="/admin/order/<%= st.slug %>" class="btn btn-sm <%= statusFilter === st.slug ? 'btn-dark' : 'btn-outline-secondary bg-white' %>">
-          <%= st.name %> (<%= statusCounts[st.slug] || 0 %>)
+          <%= t('orderStatus.' + st.slug, {}, st.name) %> (<%= statusCounts[st.slug] || 0 %>)
         </a>
       <% }) %>
     </div>
@@ -109,11 +109,15 @@
                     <input type="hidden" name="order_id" value="<%= o.id %>" />
                     <input type="hidden" name="request_key" value="<%= o.status_request_key || '' %>" />
                     <input type="hidden" name="reason" value="Admin status update" />
-                    <select name="status" class="form-select form-select-sm py-0 px-2" style="width:128px;font-size:12px;" onchange="this.form.submit()">
-                      <% statuses.forEach(function(st) { %>
-                        <option value="<%= st.slug %>" <%= o.status === st.slug ? 'selected' : '' %>><%= st.name %></option>
+                    <% const currentStatusLabel=t('orderStatus.' + o.status, {}, o.status_label || o.status); const allowedTargets=o.allowed_status_targets || []; %>
+                    <label class="visually-hidden" for="order-status-actions-<%= o.id %>"><%= t('adminOrders.chooseNextStatus') %></label>
+                    <select id="order-status-actions-<%= o.id %>" name="status" class="form-select form-select-sm py-0 px-2" style="width:170px;font-size:12px;" onchange="if(this.value)this.form.submit()" <%= allowedTargets.length ? '' : 'disabled' %>>
+                      <option value="" selected disabled><%= t('adminOrders.currentStatus', { status: currentStatusLabel }) %></option>
+                      <% allowedTargets.forEach(function(st) { %>
+                        <option value="<%= st.slug %>"><%= t('adminOrders.moveToStatus', { status: t('orderStatus.' + st.slug, {}, st.name) }) %></option>
                       <% }) %>
                     </select>
+                    <% if (!allowedTargets.length) { %><span class="visually-hidden"><%= t('adminOrders.noAllowedTransition') %></span><% } %>
                   </form>
                 </td>
                 <td class="text-muted small" style="white-space:nowrap;"><%= String(o.created_at).slice(0, 10) %></td>

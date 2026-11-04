@@ -13,6 +13,10 @@ const SAFE_ADMIN_STATUSES = new Set(['confirmed','processing','shipped']);
 const EDITABLE_STATUSES = new Set(['pending','confirmed','processing']);
 const MAX_BULK_ORDERS = 50;
 
+function allowedAdminTransitionTargets(currentStatus) {
+  return (phase08.TRANSITIONS[String(currentStatus || '')] || []).filter((target) => SAFE_ADMIN_STATUSES.has(target));
+}
+
 function assertMysql() {
   if (env.db.client !== 'mysql') throw new Error('Admin order mutations require MySQL/InnoDB.');
 }
@@ -300,4 +304,4 @@ async function bulkOrderAction(input={},actor={}) {
   return out.response;
 }
 
-module.exports={SAFE_ADMIN_STATUSES,EDITABLE_STATUSES,normalizeOrderQty,recalculateTotals,addOrderItem,updateOrderItem,updateAdminOrder,transitionOrder,bulkOrderAction,normalizeOrderIds};
+module.exports={SAFE_ADMIN_STATUSES,EDITABLE_STATUSES,allowedAdminTransitionTargets,normalizeOrderQty,recalculateTotals,addOrderItem,updateOrderItem,updateAdminOrder,transitionOrder,bulkOrderAction,normalizeOrderIds};

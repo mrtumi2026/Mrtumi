@@ -1004,6 +1004,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     const quick={order_id:listFixture.id,status:'confirmed',request_key:statusKey,reason:'Verified order details'};
     assert.equal((await request('/admin/order/status-quick',{method:'POST',token:'',body:quick})).status,403,'quick status requires CSRF');
     assert.equal((await request('/admin/order/status-quick',{method:'POST',cookie:noGrantCookie,token:noGrantToken,body:quick})).status,403,'quick status requires orders.manage');
+    assert.equal((await request('/admin/order/status-quick',{method:'POST',body:{...quick,status:'processing',request_key:`p09-status-invalid-${suffix}`} })).status,409,'pending orders cannot skip the confirmed lifecycle state');
     const quickResult=await request('/admin/order/status-quick',{method:'POST',body:quick});assert.equal(quickResult.status,302,`quick status response: ${quickResult.text.slice(0,500)}`);
     const quickReplay=await request('/admin/order/status-quick',{method:'POST',body:quick});assert.equal(quickReplay.status,302,`quick status replay response: ${quickReplay.text.slice(0,500)}`);
     assert.equal((await db.queryOne('SELECT order_status FROM orders WHERE id=?',[listFixture.id])).order_status,'confirmed');
@@ -1018,6 +1019,50 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     assert.equal(Number((await db.queryOne('SELECT stock_on_hand FROM products WHERE id=?',[productId])).stock_on_hand),Number(initial.stock_on_hand));
     assert.ok(await db.queryOne("SELECT id FROM audit_logs WHERE action='order.item.added' AND entity_id=?",[String(target.id)]));
     assert.ok(await db.queryOne("SELECT id FROM audit_logs WHERE action='order.updated' AND entity_id=?",[String(target.id)]));
+  });
+
+  test('canonical order-status migration seeds an empty master, is idempotent and preserves pre-existing rows',async(t)=>{
+    if(!MYSQL_HOST)return t.skip(SKIP);
+    const migration=splitSqlStatements(fs.readFileSync(path.join(__dirname,'../src/db/migrations/0026_seed_canonical_order_statuses.up.sql'),'utf8'));
+    const original=await db.queryAll('SELECT name,slug,badge_class,color,sort_order,status FROM order_statuses ORDER BY id');
+    t.after(async()=>{
+      await db.execute('DELETE FROM order_statuses');
+      for(const row of original)await db.execute('INSERT INTO order_statuses(name,slug,badge_class,color,sort_order,status) VALUES(?,?,?,?,?,?)',[row.name,row.slug,row.badge_class,row.color,row.sort_order,row.status]);
+    });
+    await db.execute('DELETE FROM order_statuses');
+    const applySeed=async()=>{for(const statement of migration)await db.execute(statement);};
+    await applySeed();
+    const seeded=await db.queryAll('SELECT name,slug,badge_class,color,sort_order,status FROM order_statuses ORDER BY sort_order,id');
+    const expected=['pending','confirmed','processing','shipped','delivered','return_requested','cancelled','failed','returned','completed'];
+    assert.deepEqual(seeded.map(row=>row.slug),expected,'an empty MySQL/MariaDB status master gets the canonical lifecycle definitions');
+    assert.ok(seeded.every(row=>Number(row.status)===1));
+    const countBefore=Number((await db.queryOne('SELECT COUNT(*) AS n FROM order_statuses')).n);
+    await db.execute("UPDATE order_statuses SET name='Operator Pending Label',status=0 WHERE slug='pending'");
+    await applySeed();
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM order_statuses')).n),countBefore,'reapplying the seed adds no duplicates');
+    const preserved=await db.queryOne("SELECT name,status FROM order_statuses WHERE slug='pending'");
+    assert.deepEqual([preserved.name,Number(preserved.status)],['Operator Pending Label',0],'seed does not overwrite existing operator-customized or inactive rows');
+  });
+
+  test('admin order list renders localized definitions and only legal per-order action targets',async(t)=>{
+    if(!MYSQL_HOST)return t.skip(SKIP);
+    const suffix=Date.now();
+    const orderId=Number((await db.execute("INSERT INTO orders(invoice_no,customer_name,customer_phone,shipping_address,subtotal_paisa,total_paisa,cod_due_paisa,payment_method,payment_status,order_status,order_channel) VALUES(?, 'P09 status dropdown','01712345678','Status fixture',5000,5000,5000,'cod','unpaid','pending','storefront')",[`P09-STATUS-DROPDOWN-${suffix}`])).insertId);
+    t.after(async()=>db.execute('DELETE FROM orders WHERE id=?',[orderId]));
+    const bn=await request('/admin/order/all?lang=bn',{accept:'text/html'});
+    assert.equal(bn.status,200);
+    assert.match(bn.text,/অপেক্ষমাণ/,'filter/current status label uses Bangla by default');
+    const optionPattern=new RegExp(`<select id="order-status-actions-${orderId}"[\\s\\S]*?<\\/select>`);
+    const bnSelect=bn.text.match(optionPattern)?.[0];assert.ok(bnSelect,'per-order status selector is rendered');
+    assert.match(bnSelect,/বর্তমান: অপেক্ষমাণ/);
+    assert.match(bnSelect,/value="confirmed"/);
+    assert.doesNotMatch(bnSelect,/value="processing"|value="shipped"|value="cancelled"/,'pending orders expose only their legal Admin target');
+    const en=await request('/admin/order/all?lang=en',{accept:'text/html'});
+    assert.equal(en.status,200);
+    assert.match(en.text,/Pending/,'English locale is available');
+    const enSelect=en.text.match(optionPattern)?.[0];assert.ok(enSelect);
+    assert.match(enSelect,/Current: Pending/);
+    assert.match(enSelect,/Move to Confirmed/);
   });
 
   test('legacy order-status configuration uses MySQL, permission/CSRF, validation, audit and history-preserving deactivation',async(t)=>{

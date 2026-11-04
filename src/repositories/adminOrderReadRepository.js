@@ -2,6 +2,7 @@
 
 const { getPool, createQueryClient } = require('../db/mysqlPool');
 const { paisaToBdtString } = require('../utils/money');
+const { allowedAdminTransitionTargets } = require('./adminOrderMutationRepository');
 
 function toBdtString(value) {
   return paisaToBdtString(Number(value || 0), { fixedDecimals: true });
@@ -159,8 +160,14 @@ async function listAdminOrders({ statusParam = 'all', searchQuery = '', page = 1
   ]);
   const statusCounts = { all: Number(total?.c || 0) };
   for (const row of counts) statusCounts[row.status] = Number(row.c || 0);
+  const statusBySlug = new Map(statuses.map((statusRow) => [statusRow.slug, statusRow]));
   return {
-    orders: orders.map((row) => ({ ...row, amount: toBdtString(row.total_paisa) })),
+    orders: orders.map((row) => ({
+      ...row,
+      amount: toBdtString(row.total_paisa),
+      allowed_status_targets: allowedAdminTransitionTargets(row.status)
+        .map((slug) => statusBySlug.get(slug)).filter(Boolean),
+    })),
     statuses,
     statusCounts,
     pagination:{page:currentPage,perPage:pageSize,total:Number(matched?.c||0),totalPages:Math.ceil(Number(matched?.c||0)/pageSize)},
