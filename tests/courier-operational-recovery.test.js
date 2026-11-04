@@ -202,7 +202,12 @@ test('Operational Recovery & Monitoring: Reporting, vendor isolation, audit hist
   `, [orderId3, vendIdA]);
   const subOrderId3 = subOrderRes3.insertId;
 
-  const superAdminActor = { userId: 1, isSuperAdmin: true, platformAdmin: true };
+  const adminUserRes = await db.execute(`
+    INSERT INTO users (name, email, password_hash, role_label, status)
+    VALUES ('Super Admin', 'superadmin-op@example.invalid', 'dummy_hash', 'Super Admin', 1)
+  `);
+  const adminUserId = Number(adminUserRes.insertId);
+  const superAdminActor = { userId: adminUserId, isSuperAdmin: true, platformAdmin: true };
   const vendorActorA = { vendorId: vendIdA };
   const vendorActorB = { vendorId: vendIdB };
 
@@ -501,7 +506,7 @@ test('Operational Recovery & Monitoring: Reporting, vendor isolation, audit hist
     consignmentId: 'TRK-OVERRIDE-12345',
     courierFeePaisa: 6000,
     codFeePaisa: 1500,
-    actor: { userId: 1 }
+    actor: { userId: adminUserId }
   });
   assert.equal(codResult.shipmentId, shipmentId1);
   assert.equal(codResult.status, 'reconciled');
