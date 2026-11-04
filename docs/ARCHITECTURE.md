@@ -78,7 +78,7 @@ Based on BestWebHostBD support confirmation (**Node.js supported**, **SSH availa
 ### 2.9 Logging, Validation, CSRF, Rate Limiting & Error Handling
 - **Validation:** Schema-driven server-side input sanitizer/validator on all `POST`/`PUT`/`PATCH`/`DELETE` and query filters; parameterized SQL placeholders (`?`) exclusively.
 - **CSRF Protection:** Synchronizer token (`_csrf` hidden input / `X-CSRF-Token` header) on all browser session state-changing routes; HMAC signature verification on incoming courier/payment webhooks.
-- **Rate Limiting:** MySQL/memory-backed sliding-window limiters on `/admin/login`, `/customer/login`, `/vendor/login`, `/reseller/login`, `/checkout`, OTP send/verify, and fraud check—aware of Bangladesh mobile carrier CGNAT (`ADR-007`).
+- **Rate Limiting:** Login throttles on the four portal entry points use the shared MySQL `rate_limits` table in production (process memory only for non-production SQLite); other endpoint limiters remain independently configured. Login budgets combine IP and IP+account keys, avoid account-wide hard lockout, and fail closed with 503 if the production shared store is unavailable. See `docs/SECURITY_PRODUCTION_HARDENING_ROUND_3.md`.
 - **Logging:** Structured JSON/line logger redacting `password`, `token`, `secret`, `authorization`, `cookie`, and masking phone numbers (`017****78`) in logs.
 
 ### 2.10 File Upload & Persistent Storage Strategy

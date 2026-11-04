@@ -14,6 +14,8 @@ const { attachGlobals } = require('./src/middleware/auth');
 const { legacyAdminRbac, legacyAdminCsrf } = require('./src/middleware/legacyAdminRbac');
 const { legacyAdminAudit } = require('./src/middleware/legacyAdminAudit');
 const { recordErrorLog } = require('./src/repositories/auditLogRepository');
+const { createSecurityHeaders } = require('./src/middleware/securityHeaders');
+const { createRateLimiter } = require('./src/middleware/rateLimit');
 
 if (require.main === module && env.isDevelopment) {
   throw new Error('DEPLOYMENT STARTUP ERROR: direct server.js startup refuses development defaults; use `npm run dev` locally or configure production and use app.js.');
@@ -61,6 +63,33 @@ if (!env.isProduction) {
     next();
   });
 }
+
+app.use(createSecurityHeaders({ isProduction: env.isProduction }));
+
+const cspReportLimiter = createRateLimiter({ keyPrefix: 'csp-report', windowMs: 60_000, max: 60 });
+app.post(
+  '/api/security/csp-report',
+  cspReportLimiter,
+  express.json({ type: ['application/csp-report', 'application/reports+json'], limit: '16kb' }),
+  (req, res) => {
+    const payload = req.body;
+    const reports = Array.isArray(payload) ? payload.slice(0, 5) : [payload];
+    for (const item of reports) {
+      const report = item && (item['csp-report'] || item.body || item);
+      if (!report || typeof report !== 'object') continue;
+      const origin = (value) => {
+        try { return new URL(String(value)).origin.slice(0, 200); } catch (_err) { return ''; }
+      };
+      logger.warn('CSP report-only violation', {
+        directive: String(report.effectiveDirective || report['effective-directive'] || report.violatedDirective || report['violated-directive'] || '').slice(0, 100),
+        disposition: String(report.disposition || '').slice(0, 32),
+        documentOrigin: origin(report.documentURL || report['document-uri']),
+        blockedOrigin: origin(report.blockedURL || report['blocked-uri']),
+      });
+    }
+    return res.status(204).end();
+  }
+);
 
 app.use(attachRequestId);
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));

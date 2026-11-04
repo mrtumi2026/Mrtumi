@@ -17,7 +17,6 @@ const router = express.Router();
 const adminLoginLimiters = createLoginRateLimiters({
   windowMs: 15 * 60 * 1000,
   maxPerIp: 2000,
-  maxPerAccount: 100,
   maxPerIpAccount: 12,
   identifierFields: ['email'],
   keyPrefix: 'admin-login',

@@ -13,7 +13,7 @@ const partnerWithdrawalRepository = require('../repositories/partnerWithdrawalRe
 const mysqlActive = () => env.db.client === 'mysql';
 
 const router = express.Router();
-const vendorAuthLimiters = createLoginRateLimiters({ keyPrefix: 'vendor_auth', identifierFields: ['identifier'], windowMs: 15 * 60 * 1000, maxPerIp: 2000, maxPerAccount: 100, maxPerIpAccount: 8 });
+const vendorAuthLimiters = createLoginRateLimiters({ keyPrefix: 'vendor_auth', identifierFields: ['identifier'], windowMs: 15 * 60 * 1000, maxPerIp: 2000, maxPerIpAccount: 8 });
 
 function establishVendorSession(req, vendor, callback) {
   const preserved = { cart: Array.isArray(req.session.cart) ? req.session.cart : [], locale: req.session.locale };

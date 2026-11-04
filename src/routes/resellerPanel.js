@@ -27,7 +27,7 @@ function rotateResellerSession(req, reseller, callback) {
 }
 
 const router = express.Router();
-const resellerAuthLimiters = createLoginRateLimiters({ keyPrefix: 'reseller_auth', identifierFields: ['identifier'], windowMs: 15 * 60 * 1000, maxPerIp: 2000, maxPerAccount: 100, maxPerIpAccount: 8 });
+const resellerAuthLimiters = createLoginRateLimiters({ keyPrefix: 'reseller_auth', identifierFields: ['identifier'], windowMs: 15 * 60 * 1000, maxPerIp: 2000, maxPerIpAccount: 8 });
 
 function generateInvoiceId() {
   for (let i = 0; i < 10; i++) {

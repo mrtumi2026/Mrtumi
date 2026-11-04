@@ -1,7 +1,11 @@
 'use strict';
 
 const crypto = require('node:crypto');
-const { RateLimitError } = require('../utils/errors');
+const { RateLimitError, DatabaseError } = require('../utils/errors');
+const { env } = require('../config/env');
+const { consumeLoginBucket } = require('../repositories/loginRateLimitRepository');
+
+const localLoginBuckets = new Map();
 
 /**
  * Extracts client IP safely when running behind cPanel LiteSpeed/Passenger reverse proxy.
@@ -90,33 +94,83 @@ function createRateLimiter(options = {}) {
 }
 
 function normalizeLoginIdentifier(value) {
-  let normalized = String(value || '').trim().toLowerCase().replace(/[\s()-]/g, '');
-  if (/^(?:\+?880|0)1[3-9]\d{8}$/.test(normalized)) {
-    if (normalized.startsWith('+880')) normalized = `0${normalized.slice(4)}`;
-    else if (normalized.startsWith('880')) normalized = `0${normalized.slice(3)}`;
+  const input = String(value || '').trim().toLowerCase();
+  let phoneCandidate = input.replace(/[\s()-]/g, '');
+  if (/^(?:\+?880|0)1[3-9]\d{8}$/.test(phoneCandidate)) {
+    if (phoneCandidate.startsWith('+880')) phoneCandidate = `0${phoneCandidate.slice(4)}`;
+    else if (phoneCandidate.startsWith('880')) phoneCandidate = `0${phoneCandidate.slice(3)}`;
+    return phoneCandidate.slice(0, 191);
   }
-  return normalized.slice(0, 191);
+  // Preserve email punctuation: stripping hyphens/parentheses globally can merge distinct accounts.
+  return input.slice(0, 191);
 }
 
 /**
- * Three independent login budgets: a generous IP ceiling, an account ceiling
- * shared across source IPs, and a tighter IP+account ceiling. Keys for account
- * identifiers are hashed so limiter memory never retains raw email/phone values.
+ * Shared login budgets: a generous IP ceiling and a tighter IP+account ceiling.
+ * There is deliberately no account-only hard lockout. Identifier/IP values are
+ * hashed before reaching either MySQL or the local development adapter.
  */
 function createLoginRateLimiters(options = {}) {
   const prefix = String(options.keyPrefix || 'login');
   const windowMs = Number(options.windowMs || 15 * 60 * 1000);
   const fields = Array.isArray(options.identifierFields) ? options.identifierFields : ['identifier'];
+  const maxPerIp = Number(options.maxPerIp || 2000);
+  const maxPerIpAccount = Number(options.maxPerIpAccount || options.max || 12);
+  const sharedStore = options.sharedStore === undefined ? env.db.client === 'mysql' : Boolean(options.sharedStore);
+  const consume = options.consume || (sharedStore ? consumeLoginBucket : consumeLocalLoginBucket);
+
   const identityHash = (req) => {
     const raw = fields.map((field) => req.body && req.body[field]).find((value) => value !== undefined && value !== null && String(value).trim());
     const normalized = normalizeLoginIdentifier(raw);
     return crypto.createHash('sha256').update(normalized || 'missing-identifier').digest('hex');
   };
-  return [
-    createRateLimiter({ windowMs, max: Number(options.maxPerIp || 2000), keyPrefix: `${prefix}-ip`, keyGenerator: getClientIp }),
-    createRateLimiter({ windowMs, max: Number(options.maxPerAccount || 100), keyPrefix: `${prefix}-account`, keyGenerator: identityHash }),
-    createRateLimiter({ windowMs, max: Number(options.maxPerIpAccount || options.max || 12), keyPrefix: `${prefix}-ip-account`, keyGenerator: (req) => `${getClientIp(req)}:${identityHash(req)}` }),
+  const clientHash = (req) => crypto.createHash('sha256').update(getClientIp(req)).digest('hex');
+  const policies = [
+    { scope: 'ip', max: maxPerIp, key: (req) => `${prefix}:ip:${clientHash(req)}` },
+    { scope: 'ip-account', max: maxPerIpAccount, key: (req) => `${prefix}:pair:${clientHash(req)}:${identityHash(req)}` },
   ];
+
+  return policies.map((policy) => async function sharedLoginRateLimit(req, res, next) {
+    try {
+      const outcome = await consume({ bucketKey: policy.key(req), max: policy.max, windowMs });
+      req.loginThrottle = {
+        ...(req.loginThrottle || {}),
+        [policy.scope]: { count: outcome.count, limit: outcome.limit, remaining: outcome.remaining, retryAfterSec: outcome.retryAfterSec },
+        // Extension point for a future account recovery / step-up challenge policy.
+        challengeSuggested: policy.scope === 'ip-account' && outcome.count >= Math.max(1, policy.max - 2),
+      };
+      res.setHeader('RateLimit-Limit', String(policy.max));
+      res.setHeader('RateLimit-Remaining', String(outcome.remaining));
+      res.setHeader('RateLimit-Reset', String(outcome.retryAfterSec));
+      if (!outcome.allowed) {
+        res.setHeader('Retry-After', String(outcome.retryAfterSec));
+        if (typeof options.onLimited === 'function') await options.onLimited(req, { scope: policy.scope, ...outcome });
+        return next(new RateLimitError(options.message || 'Too many login attempts. Please try again later.', outcome.retryAfterSec));
+      }
+      return next();
+    } catch (_err) {
+      if (sharedStore) {
+        return next(new DatabaseError('LOGIN_RATE_LIMIT_UNAVAILABLE', 'Login protection is temporarily unavailable.', 503));
+      }
+      return next(_err);
+    }
+  });
+}
+
+async function consumeLocalLoginBucket({ bucketKey, max, windowMs }) {
+  const now = Date.now();
+  let bucket = localLoginBuckets.get(bucketKey);
+  if (!bucket || bucket.resetAt <= now) {
+    bucket = { count: 0, resetAt: now + windowMs };
+    localLoginBuckets.set(bucketKey, bucket);
+  }
+  const retryAfterSec = Math.max(1, Math.ceil((bucket.resetAt - now) / 1000));
+  const allowed = bucket.count < max;
+  if (allowed) bucket.count += 1;
+  if (localLoginBuckets.size > 20_000) {
+    for (const [key, entry] of localLoginBuckets) if (entry.resetAt <= now) localLoginBuckets.delete(key);
+  }
+  return { allowed, count: bucket.count, limit: max, remaining: Math.max(0, max - bucket.count), retryAfterSec };
 }
 
 module.exports = {
