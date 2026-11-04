@@ -7,7 +7,8 @@ const bcrypt = require('bcryptjs');
 const db = require('../db/database');
 const { requireReseller } = require('../middleware/auth');
 const { requireCsrf } = require('../middleware/csrf');
-const { createRateLimiter } = require('../middleware/rateLimit');
+const { createRateLimiter, createLoginRateLimiters } = require('../middleware/rateLimit');
+const { revokeActorSessions } = require('../repositories/sessionRepository');
 const { env } = require('../config/env');
 const resellerPortal = require('../repositories/resellerPortalRepository');
 const partnerWithdrawalRepository = require('../repositories/partnerWithdrawalRepository');
@@ -26,7 +27,7 @@ function rotateResellerSession(req, reseller, callback) {
 }
 
 const router = express.Router();
-const resellerAuthLimiter = createRateLimiter({ keyPrefix: 'reseller_auth', windowMs: 60_000, max: 8 });
+const resellerAuthLimiters = createLoginRateLimiters({ keyPrefix: 'reseller_auth', identifierFields: ['identifier'], windowMs: 15 * 60 * 1000, maxPerIp: 2000, maxPerAccount: 100, maxPerIpAccount: 8 });
 
 function generateInvoiceId() {
   for (let i = 0; i < 10; i++) {
@@ -49,7 +50,7 @@ router.get('/reseller/login', (req, res) => {
   res.render('reseller/auth', { mode: 'login', error: null });
 });
 
-router.post('/reseller/login', resellerAuthLimiter, requireCsrf, async (req, res, next) => {
+router.post('/reseller/login', ...resellerAuthLimiters, requireCsrf, async (req, res, next) => {
   const identifier = String(req.body.identifier || '').trim();
   if (mysqlActive()) { try { const reseller = await resellerPortal.authenticate(identifier, req.body.password); if (!reseller) return res.status(401).render('reseller/auth', { mode: 'login', error: 'রিসেলার লগইন তথ্য সঠিক নয় অথবা অ্যাকাউন্ট নিষ্ক্রিয়।' }); return rotateResellerSession(req, reseller, error => { if (error) return next(error); req.flash('success', `স্বাগতম রিসেলার প্যানেলে, ${reseller.name}!`); return res.redirect('/reseller/dashboard'); }); } catch (error) { return next(error); } }
   const password = String(req.body.password || '');
@@ -62,7 +63,7 @@ router.post('/reseller/login', resellerAuthLimiter, requireCsrf, async (req, res
   if (!reseller || !reseller.status) {
     return res.render('reseller/auth', {
       mode: 'login',
-      error: 'রিসেলার ইমেইল/মোবাইল নম্বর খুঁজে পাওয়া যায়নি।',
+      error: 'রিসেলার ইমেইল/মোবাইল অথবা পাসওয়ার্ড সঠিক নয়। আবার চেষ্টা করুন।',
     });
   }
 
@@ -71,19 +72,22 @@ router.post('/reseller/login', resellerAuthLimiter, requireCsrf, async (req, res
   if (!valid) {
     return res.render('reseller/auth', {
       mode: 'login',
-      error: 'পাসওয়ার্ড সঠিক নয়। আবার চেষ্টা করুন।',
+      error: 'রিসেলার ইমেইল/মোবাইল অথবা পাসওয়ার্ড সঠিক নয়। আবার চেষ্টা করুন।'
     });
   }
 
-  req.session.resellerUser = {
+  const sessionUser = {
     id: reseller.id,
     name: reseller.name,
     shop_name: reseller.shop_name,
     phone: reseller.phone,
     email: reseller.email,
   };
-  req.flash('success', `স্বাগতম রিসেলার প্যানেলে, ${reseller.name}!`);
-  res.redirect('/reseller/dashboard');
+  return rotateResellerSession(req, sessionUser, error => {
+    if (error) return next(error);
+    req.flash('success', `স্বাগতম রিসেলার প্যানেলে, ${reseller.name}!`);
+    return res.redirect('/reseller/dashboard');
+  });
 });
 
 router.get('/reseller/register', (req, res) => {
@@ -122,15 +126,18 @@ router.post('/reseller/register', requireCsrf, async (req, res, next) => {
   );
 
   const newReseller = db.get('SELECT * FROM resellers WHERE id = ?', result.lastInsertRowid);
-  req.session.resellerUser = {
+  const sessionUser = {
     id: newReseller.id,
     name: newReseller.name,
     shop_name: newReseller.shop_name,
     phone: newReseller.phone,
     email: newReseller.email,
   };
-  req.flash('success', 'রিসেলার অ্যাকাউন্ট তৈরি হয়েছে! এখন পাইকারি ক্যাটালগ থেকে অর্ডার প্লেস করতে পারবেন।');
-  res.redirect('/reseller/dashboard');
+  return rotateResellerSession(req, sessionUser, error => {
+    if (error) return next(error);
+    req.flash('success', 'রিসেলার অ্যাকাউন্ট তৈরি হয়েছে! এখন পাইকারি ক্যাটালগ থেকে অর্ডার প্লেস করতে পারবেন।');
+    return res.redirect('/reseller/dashboard');
+  });
 });
 
 router.post('/reseller/logout', requireCsrf, (req, res, next) => {
@@ -422,8 +429,13 @@ router.get('/reseller/profile', async (req, res, next) => {
 
 router.post('/reseller/profile', requireCsrf, async (req, res, next) => {
   const { name, shop_name, phone, email, new_password } = req.body;
-  if (mysqlActive()) { try { const updated = await resellerPortal.updateProfile(req.session.resellerUser.id, { name, shop_name, email, new_password }); const current = await resellerPortal.getProfile(updated.id); const sessionUser = { id: current.id, name: current.name, shop_name: current.shop_name, phone: current.phone, email: current.email }; return rotateResellerSession(req, sessionUser, error => { if (error) return next(error); req.flash('success', 'রিসেলার প্রোফাইল আপডেট হয়েছে।'); return res.redirect('/reseller/profile'); }); } catch (error) { return next(error); } }
+  if (mysqlActive()) { try { const updated = await resellerPortal.updateProfile(req.session.resellerUser.id, { name, shop_name, email, new_password }, { sessionId:req.sessionID, currentPassword:req.body.current_password }); const current = await resellerPortal.getProfile(updated.id); const sessionUser = { id: current.id, name: current.name, shop_name: current.shop_name, phone: current.phone, email: current.email }; return rotateResellerSession(req, sessionUser, error => { if (error) return next(error); req.flash('success', 'রিসেলার প্রোফাইল আপডেট হয়েছে।'); return res.redirect('/reseller/profile'); }); } catch (error) { if (['CONFLICT','VALIDATION_ERROR'].includes(error.code)) { req.flash('error',error.message); return res.redirect('/reseller/profile'); } return next(error); } }
   const rId = req.session.resellerUser.id;
+  const currentReseller = db.get('SELECT password_hash FROM resellers WHERE id=?', rId);
+  if (new_password && (!currentReseller || !currentReseller.password_hash || !req.body.current_password || !await bcrypt.compare(String(req.body.current_password), currentReseller.password_hash))) {
+    req.flash('error', 'বর্তমান পাসওয়ার্ড সঠিক নয়।');
+    return res.redirect('/reseller/profile');
+  }
   db.run(
     'UPDATE resellers SET name = ?, shop_name = ?, phone = ?, email = ? WHERE id = ?',
     name.trim(),
@@ -435,6 +447,7 @@ router.post('/reseller/profile', requireCsrf, async (req, res, next) => {
   if (new_password && new_password.trim().length >= 6) {
     const hash = bcrypt.hashSync(new_password.trim(), 10);
     db.run('UPDATE resellers SET password_hash = ? WHERE id = ?', hash, rId);
+    await revokeActorSessions('reseller', rId, req.sessionID);
   }
   req.flash('success', 'রিসেলার প্রোফাইল আপডেট হয়েছে!');
   res.redirect('/reseller/profile');

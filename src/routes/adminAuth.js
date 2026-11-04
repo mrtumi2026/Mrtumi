@@ -2,7 +2,7 @@
 
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const { createRateLimiter, getClientIp } = require('../middleware/rateLimit');
+const { createLoginRateLimiters, getClientIp } = require('../middleware/rateLimit');
 const { asyncHandler } = require('../utils/asyncHandler');
 const {
   findActiveAdminByEmail,
@@ -14,9 +14,12 @@ const { logger } = require('../utils/logger');
 
 const router = express.Router();
 
-const adminLoginLimiter = createRateLimiter({
+const adminLoginLimiters = createLoginRateLimiters({
   windowMs: 15 * 60 * 1000,
-  max: 12,
+  maxPerIp: 2000,
+  maxPerAccount: 100,
+  maxPerIpAccount: 12,
+  identifierFields: ['email'],
   keyPrefix: 'admin-login',
   message: 'অনেকবার ভুল চেষ্টা করা হয়েছে। কিছুক্ষণ পর আবার চেষ্টা করুন।',
 });
@@ -37,7 +40,7 @@ router.get('/admin/login', (req, res) => {
 
 router.post(
   '/admin/login',
-  adminLoginLimiter,
+  ...adminLoginLimiters,
   requireCsrf,
   asyncHandler(async (req, res) => {
     const email = String(req.body.email || '').trim().toLowerCase();

@@ -118,6 +118,28 @@ async function deleteSession(sid, poolOverride = null, config = env) {
   await client.execute('DELETE FROM `web_sessions` WHERE `sid` = ?', [sid]);
 }
 
+async function revokeActorSessions(actorType, actorId, exceptSid = '', { pool = null, config = env } = {}) {
+  const type = String(actorType || '').trim();
+  const id = Number(actorId);
+  if (!['admin', 'vendor', 'reseller', 'customer'].includes(type) || !Number.isSafeInteger(id) || id < 1) return 0;
+  if (!isMysqlMode(config) && !pool) {
+    ensureSqliteSessionTable();
+    const sessionKey = `${type}User`;
+    const rows = sqliteDb.all('SELECT sid,data FROM web_sessions WHERE sid<>?', String(exceptSid || ''));
+    let removed = 0;
+    for (const row of rows) {
+      let data = {};
+      try { data = JSON.parse(row.data || '{}'); } catch (_error) { continue; }
+      if (Number(data[sessionKey]?.id) === id) {
+        removed += sqliteDb.run('DELETE FROM web_sessions WHERE sid=?', row.sid).changes || 0;
+      }
+    }
+    return removed;
+  }
+  const db = createQueryClient(pool || getPool());
+  return (await db.execute('DELETE FROM web_sessions WHERE actor_type=? AND actor_id=? AND sid<>?', [type, id, String(exceptSid || '')])).affectedRows;
+}
+
 async function purgeExpiredSessions(nowEpochMs = Date.now(), poolOverride = null, config = env) {
   if (!isMysqlMode(config) && !poolOverride) {
     return;
@@ -134,6 +156,7 @@ module.exports = {
   getActiveSession,
   upsertSession,
   deleteSession,
+  revokeActorSessions,
   purgeExpiredSessions,
   toMysqlUtcDatetime,
 };

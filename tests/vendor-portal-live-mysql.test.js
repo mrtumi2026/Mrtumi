@@ -73,6 +73,24 @@ describe('Vendor portal live MySQL/MariaDB repository integration', () => {
     await client.execute('DELETE FROM categories WHERE id=?', [categoryId]);
   });
 
+  test('vendor password updates require current credentials and revoke other active sessions', { skip: !MYSQL_HOST ? SKIP_REASON : false }, async (t) => {
+    const suffix=String(Date.now()).slice(-8),oldPassword='VendorIntegrationPassword!2026',newPassword='VendorReplacementPassword!2026';
+    const hash=await bcrypt.hash(oldPassword,10),email=`session-vendor-${suffix}@example.invalid`;
+    const vendor=(await client.execute("INSERT INTO vendors(shop_name,owner_name,phone,email,address,password_hash,verified,status,lifecycle_status) VALUES(?,?,?,?,?,?,1,1,'active')",[`Session Vendor ${suffix}`,'Session Owner',`013${suffix}222`,email,'Dhaka',hash])).insertId;
+    const currentSid=`v-current-${suffix}`,stolenSid=`v-stolen-${suffix}`;
+    t.after(async()=>{await client.execute("DELETE FROM web_sessions WHERE actor_type='vendor' AND actor_id=?",[vendor]);await client.execute('DELETE FROM vendors WHERE id=?',[vendor]);});
+    await client.execute("INSERT INTO web_sessions(sid,actor_type,actor_id,data_json,expires_at) VALUES(?,'vendor',?,'{}',DATE_ADD(UTC_TIMESTAMP(),INTERVAL 1 HOUR)),(?,'vendor',?,'{}',DATE_ADD(UTC_TIMESTAMP(),INTERVAL 1 HOUR))",[currentSid,vendor,stolenSid,vendor]);
+    const onboarding=require('../src/repositories/vendorOnboardingRepository');
+    const profile={shop_name:'Session Vendor',owner_name:'Session Owner',email,address:'Dhaka',district:'Comilla',upazila:'Debidwar',new_password:newPassword};
+    await assert.rejects(()=>onboarding.updateVendorProfile(vendor,profile,{sessionId:currentSid,currentPassword:'wrong-password'}),{code:'CONFLICT'});
+    assert.equal(Number((await client.queryOne("SELECT COUNT(*) AS n FROM web_sessions WHERE actor_type='vendor' AND actor_id=?",[vendor])).n),2);
+    await onboarding.updateVendorProfile(vendor,profile,{sessionId:currentSid,currentPassword:oldPassword});
+    const sessions=await client.queryAll("SELECT sid FROM web_sessions WHERE actor_type='vendor' AND actor_id=? ORDER BY sid",[vendor]);
+    assert.deepEqual(sessions.map(row=>row.sid),[currentSid]);
+    const changed=await client.queryOne('SELECT password_hash FROM vendors WHERE id=?',[vendor]);
+    assert.equal(await bcrypt.compare(newPassword,changed.password_hash),true,'replacement password is stored as a bcrypt hash');
+  });
+
   test('sub-order fulfillment separates booking from handover, enforces ownership, retries failures and synchronizes multi-vendor parent completion', { skip: !MYSQL_HOST ? SKIP_REASON : false }, async (t) => {
     const repo=require('../src/repositories/vendorOrderRepository');
     const suffix=String(Date.now()).slice(-8);

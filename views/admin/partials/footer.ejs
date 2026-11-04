@@ -155,8 +155,8 @@
     <script>
       document.addEventListener('DOMContentLoaded', function() {
         if (typeof toastr !== 'undefined') {
-          toastr.options = { positionClass: 'toast-top-right', timeOut: 3500 };
-          toastr["<%= flash.type === 'error' ? 'error' : 'success' %>"](<%- JSON.stringify(flash.message) %>);
+          toastr.options = { positionClass: 'toast-top-right', timeOut: 3500, escapeHtml: true };
+          toastr["<%= flash.type === 'error' ? 'error' : 'success' %>"](<%- JSON.stringify(flash.message).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029') %>);
         }
       });
     </script>

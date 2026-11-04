@@ -100,7 +100,7 @@ async function getProfile(resellerId, pool) {
   return { ...row, id: Number(row.id), email: row.email || '' };
 }
 
-async function updateProfile(resellerId, input, pool) {
+async function updateProfile(resellerId, input, { pool = null, sessionId = null, currentPassword = '' } = {}) {
   assertMysql();
   const id = requirePositiveInt(resellerId, 'Reseller ID');
   const name = text(input.name, 'Name', 191, { required: true });
@@ -111,10 +111,11 @@ async function updateProfile(resellerId, input, pool) {
 
   return withTransaction(async (tx) => {
     const before = await tx.queryOne(
-      'SELECT id,name,shop_name,email FROM resellers WHERE id=? AND status=1 FOR UPDATE',
+      'SELECT id,name,shop_name,email,password_hash FROM resellers WHERE id=? AND status=1 FOR UPDATE',
       [id]
     );
     if (!before) throw new NotFoundError('Reseller account not found.');
+    if (password && (!currentPassword || !before.password_hash || !await bcrypt.compare(String(currentPassword), before.password_hash))) throw new ConflictError('Current password is incorrect.');
 
     await tx.execute(
       'UPDATE resellers SET name=?,shop_name=?,email=? WHERE id=? AND status=1',
@@ -122,6 +123,7 @@ async function updateProfile(resellerId, input, pool) {
     );
     if (passwordHash) {
       await tx.execute('UPDATE resellers SET password_hash=? WHERE id=? AND status=1', [passwordHash, id]);
+      await tx.execute("DELETE FROM web_sessions WHERE actor_type='reseller' AND actor_id=? AND sid<>?", [id, String(sessionId || '')]);
     }
     await tx.execute(
       "INSERT INTO audit_logs(actor_type,actor_id,action,entity_type,entity_id,before_json,after_json) VALUES('reseller',?,'reseller.profile.updated','reseller',?,?,?)",

@@ -414,8 +414,8 @@
     <script src="/shared/js/mrtumi-ui.js"></script>
     <% if (flash && flash.message) { %>
       <script>
-        toastr.options = { positionClass: 'toast-top-right', timeOut: 3500 };
-        toastr["<%= flash.type === 'error' ? 'error' : 'success' %>"](<%- JSON.stringify(flash.message) %>);
+        toastr.options = { positionClass: 'toast-top-right', timeOut: 3500, escapeHtml: true };
+        toastr["<%= flash.type === 'error' ? 'error' : 'success' %>"](<%- JSON.stringify(flash.message).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029') %>);
       </script>
     <% } %>
     <nav class="store-mobile-bottom-nav" aria-label="<%= locale === 'en' ? 'Quick navigation' : 'দ্রুত নেভিগেশন' %>">

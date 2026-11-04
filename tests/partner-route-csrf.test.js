@@ -34,6 +34,13 @@ function responseCookie(response) {
   return (response.headers.get('set-cookie') || '').split(';')[0];
 }
 
+function fixtureActorSessions(type, id) {
+  const key = `${type}User`;
+  return db.all('SELECT data FROM web_sessions').filter((row) => {
+    try { return Number(JSON.parse(row.data || '{}')[key]?.id) === Number(id); } catch (_error) { return false; }
+  }).length;
+}
+
 async function formPost(route, cookie, token, fields = {}) {
   const headers = { accept: 'text/html', cookie, 'content-type': 'application/x-www-form-urlencoded' };
   if (token) headers['x-csrf-token'] = token;
@@ -137,6 +144,63 @@ test('vendor and reseller authenticated forms render CSRF tokens on every state-
     assert.equal(response.status, 200, `${route} renders for the authenticated fixture`);
     const html = await response.text();
     assert.match(html, /name="_csrf" value="[^"]+"/, `${route} includes a session CSRF token in its POST form`);
+  }
+});
+
+test('Reseller login rotates a client-supplied pre-authentication session ID', async () => {
+  const page = await fetch(`${baseUrl}/reseller/login`, { redirect: 'manual' });
+  const preAuthCookie = responseCookie(page);
+  const html = await page.text();
+  const token = html.match(/name="_csrf" value="([^"]+)"/);
+  assert.ok(token);
+  const login = await formPost('/reseller/login', preAuthCookie, token[1], {
+    identifier: '01755505002', password: 'ResellerCSRFFixturePass!2026',
+  });
+  assert.equal(login.status, 302);
+  const authenticatedCookie = responseCookie(login);
+  assert.ok(authenticatedCookie && authenticatedCookie !== preAuthCookie, 'login issues a new session cookie');
+  assert.equal((await fetch(`${baseUrl}/reseller/dashboard`, { headers: { cookie: preAuthCookie }, redirect: 'manual' })).status, 302, 'pre-authentication session cannot access the reseller portal');
+  assert.equal((await fetch(`${baseUrl}/reseller/dashboard`, { headers: { cookie: authenticatedCookie } })).status, 200);
+  const dashboard = await fetch(`${baseUrl}/reseller/dashboard`, { headers: { cookie: authenticatedCookie } });
+  const dashboardToken = (await dashboard.text()).match(/name="_csrf" value="([^"]+)"/);
+  assert.ok(dashboardToken);
+  await hiddenTokenPost('/reseller/logout', authenticatedCookie, dashboardToken[1]);
+});
+
+test('Vendor/Reseller login errors do not reveal whether an account exists', async () => {
+  const scenarios = [
+    ['vendor', 'vendor-csrf@example.test', 'wrong-password', /ভেন্ডর ইমেইল\/মোবাইল অথবা পাসওয়ার্ড সঠিক নয়/],
+    ['vendor', 'missing-vendor@example.test', 'wrong-password', /ভেন্ডর ইমেইল\/মোবাইল অথবা পাসওয়ার্ড সঠিক নয়/],
+    ['reseller', 'reseller-csrf@example.test', 'wrong-password', /রিসেলার ইমেইল\/মোবাইল অথবা পাসওয়ার্ড সঠিক নয়/],
+    ['reseller', 'missing-reseller@example.test', 'wrong-password', /রিসেলার ইমেইল\/মোবাইল অথবা পাসওয়ার্ড সঠিক নয়/],
+  ];
+  for (const [kind, identifier, password, expected] of scenarios) {
+    const page = await fetch(`${baseUrl}/${kind}/login`, { redirect: 'manual' });
+    const cookie = responseCookie(page);
+    const html = await page.text();
+    const token = html.match(/name="_csrf" value="([^"]+)"/);
+    assert.ok(token);
+    const result = await formPost(`/${kind}/login`, cookie, token[1], { identifier, password });
+    assert.equal(result.status, 200);
+    assert.match(await result.text(), expected);
+  }
+});
+
+test('vendor/reseller login throttles survive session rotation for a stable account identifier', async () => {
+  for (const kind of ['vendor', 'reseller']) {
+    const identifier = `${kind}-throttle-no-account@example.test`;
+    const statuses = [];
+    for (let attempt = 0; attempt < 9; attempt++) {
+      const page = await fetch(`${baseUrl}/${kind}/login`, { redirect: 'manual' });
+      const cookie = responseCookie(page);
+      const html = await page.text();
+      const token = html.match(/name="_csrf" value="([^"]+)"/);
+      assert.ok(token, `${kind} login form has a CSRF token`);
+      const response = await formPost(`/${kind}/login`, cookie, token[1], { identifier, password: 'incorrect-password' });
+      statuses.push(response.status);
+      if (attempt < 8) assert.notEqual(response.status, 429);
+    }
+    assert.equal(statuses[8], 429, `${kind} account/IP budget applies despite nine different session IDs`);
   }
 });
 
@@ -251,6 +315,60 @@ test('Vendor/Reseller profile and wallet writes ignore foreign IDs and remain bo
   assert.equal(Number(db.get('SELECT COUNT(*) AS n FROM reseller_transactions WHERE reseller_id=?', otherResellerId).n), otherTxBefore);
   assert.equal(Number(db.get('SELECT COUNT(*) AS n FROM reseller_transactions WHERE reseller_id=?', resellerId).n), 2);
   assert.equal(Number(db.get('SELECT balance FROM resellers WHERE id=?', otherResellerId).balance), Number(otherResellerBefore.balance));
+});
+
+test('Vendor/Reseller password changes require the current password and invalidate other SQLite sessions', async () => {
+  const vendorOther = await loginPartner('vendor', '01755505001', 'VendorCSRFFixturePass!2026');
+  const vendorSessionsBefore = fixtureActorSessions('vendor', vendorId);
+  assert.ok(vendorSessionsBefore >= 2, 'both existing vendor logins have persisted sessions');
+  const vendorPage = await fetch(`${baseUrl}/vendor/profile`, { headers: { cookie: vendorCookie } });
+  const vendorToken = (await vendorPage.text()).match(/name="_csrf" value="([^"]+)"/);
+  assert.ok(vendorToken);
+  const vendorRejected = await formPost('/vendor/profile', vendorCookie, vendorToken[1], {
+    shop_name: 'CSRF Fixture Vendor', owner_name: 'Fixture Vendor Owner', phone: '01755505001',
+    email: 'vendor-csrf@example.test', address: 'Fixture address', new_password: 'VendorReplacementPass!2026',
+  });
+  assert.equal(vendorRejected.status, 302, 'missing current password is rejected with a safe redirect');
+  assert.equal(fixtureActorSessions('vendor', vendorId), vendorSessionsBefore, 'failed reauthentication preserves existing sessions');
+  const vendorChanged = await formPost('/vendor/profile', vendorCookie, vendorToken[1], {
+    shop_name: 'CSRF Fixture Vendor', owner_name: 'Fixture Vendor Owner', phone: '01755505001',
+    email: 'vendor-csrf@example.test', address: 'Fixture address', current_password: 'VendorCSRFFixturePass!2026', new_password: 'VendorReplacementPass!2026',
+  });
+  assert.equal(vendorChanged.status, 302);
+  assert.equal(fixtureActorSessions('vendor', vendorId), 1);
+  assert.equal((await fetch(`${baseUrl}/vendor/dashboard`, { headers: { cookie: vendorOther.cookie }, redirect: 'manual' })).status, 302);
+  assert.equal((await fetch(`${baseUrl}/vendor/dashboard`, { headers: { cookie: vendorCookie } })).status, 200, 'current session survives credential change');
+  const vendorRestored = await formPost('/vendor/profile', vendorCookie, vendorToken[1], {
+    shop_name: 'CSRF Fixture Vendor', owner_name: 'Fixture Vendor Owner', phone: '01755505001',
+    email: 'vendor-csrf@example.test', address: 'Fixture address', current_password: 'VendorReplacementPass!2026', new_password: 'VendorCSRFFixturePass!2026',
+  });
+  assert.equal(vendorRestored.status, 302);
+
+  const resellerOther = await loginPartner('reseller', '01755505002', 'ResellerCSRFFixturePass!2026');
+  const resellerSessionsBefore = fixtureActorSessions('reseller', resellerId);
+  assert.ok(resellerSessionsBefore >= 2, 'both existing reseller logins have persisted sessions');
+  const resellerPage = await fetch(`${baseUrl}/reseller/profile`, { headers: { cookie: resellerCookie } });
+  const resellerToken = (await resellerPage.text()).match(/name="_csrf" value="([^"]+)"/);
+  assert.ok(resellerToken);
+  const resellerRejected = await formPost('/reseller/profile', resellerCookie, resellerToken[1], {
+    name: 'CSRF Fixture Reseller', shop_name: 'Fixture Reseller Shop', phone: '01755505002', email: 'reseller-csrf@example.test',
+    new_password: 'ResellerReplacementPass!2026',
+  });
+  assert.equal(resellerRejected.status, 302);
+  assert.equal(fixtureActorSessions('reseller', resellerId), resellerSessionsBefore, 'failed reauthentication preserves existing sessions');
+  const resellerChanged = await formPost('/reseller/profile', resellerCookie, resellerToken[1], {
+    name: 'CSRF Fixture Reseller', shop_name: 'Fixture Reseller Shop', phone: '01755505002', email: 'reseller-csrf@example.test',
+    current_password: 'ResellerCSRFFixturePass!2026', new_password: 'ResellerReplacementPass!2026',
+  });
+  assert.equal(resellerChanged.status, 302);
+  assert.equal(fixtureActorSessions('reseller', resellerId), 1);
+  assert.equal((await fetch(`${baseUrl}/reseller/dashboard`, { headers: { cookie: resellerOther.cookie }, redirect: 'manual' })).status, 302);
+  assert.equal((await fetch(`${baseUrl}/reseller/dashboard`, { headers: { cookie: resellerCookie } })).status, 200);
+  const resellerRestored = await formPost('/reseller/profile', resellerCookie, resellerToken[1], {
+    name: 'CSRF Fixture Reseller', shop_name: 'Fixture Reseller Shop', phone: '01755505002', email: 'reseller-csrf@example.test',
+    current_password: 'ResellerReplacementPass!2026', new_password: 'ResellerCSRFFixturePass!2026',
+  });
+  assert.equal(resellerRestored.status, 302);
 });
 
 test('session-bound hidden form tokens authorize the normal vendor and reseller logout flows', async () => {

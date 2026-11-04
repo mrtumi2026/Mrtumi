@@ -3,7 +3,8 @@ const bcrypt = require('bcryptjs');
 const db = require('../db/database');
 const { requireVendor } = require('../middleware/auth');
 const { requireCsrf } = require('../middleware/csrf');
-const { createRateLimiter } = require('../middleware/rateLimit');
+const { createRateLimiter, createLoginRateLimiters } = require('../middleware/rateLimit');
+const { revokeActorSessions } = require('../repositories/sessionRepository');
 const upload = require('../middleware/upload');
 const { env } = require('../config/env');
 const vendorPortal = require('../repositories/vendorPortalRepository');
@@ -12,7 +13,7 @@ const partnerWithdrawalRepository = require('../repositories/partnerWithdrawalRe
 const mysqlActive = () => env.db.client === 'mysql';
 
 const router = express.Router();
-const vendorAuthLimiter = createRateLimiter({ keyPrefix: 'vendor_auth', windowMs: 60_000, max: 8 });
+const vendorAuthLimiters = createLoginRateLimiters({ keyPrefix: 'vendor_auth', identifierFields: ['identifier'], windowMs: 15 * 60 * 1000, maxPerIp: 2000, maxPerAccount: 100, maxPerIpAccount: 8 });
 
 function establishVendorSession(req, vendor, callback) {
   const preserved = { cart: Array.isArray(req.session.cart) ? req.session.cart : [], locale: req.session.locale };
@@ -55,7 +56,7 @@ router.get('/vendor/login', (req, res) => {
   res.render('vendor/auth', { mode: 'login', error: null });
 });
 
-router.post('/vendor/login', vendorAuthLimiter, requireCsrf, async (req, res, next) => {
+router.post('/vendor/login', ...vendorAuthLimiters, requireCsrf, async (req, res, next) => {
   const identifier = String(req.body.identifier || '').trim();
   const password = String(req.body.password || '');
 
@@ -82,7 +83,7 @@ router.post('/vendor/login', vendorAuthLimiter, requireCsrf, async (req, res, ne
   if (!vendor || !vendor.status) {
     return res.render('vendor/auth', {
       mode: 'login',
-      error: 'ভেন্ডর ইমেইল/মোবাইল নম্বর খুঁজে পাওয়া যায়নি অথবা অ্যাকাউন্ট নিষ্ক্রিয়।',
+      error: 'ভেন্ডর ইমেইল/মোবাইল অথবা পাসওয়ার্ড সঠিক নয়। আবার চেষ্টা করুন.',
     });
   }
 
@@ -91,7 +92,7 @@ router.post('/vendor/login', vendorAuthLimiter, requireCsrf, async (req, res, ne
   if (!valid) {
     return res.render('vendor/auth', {
       mode: 'login',
-      error: 'পাসওয়ার্ড সঠিক নয়। আবার চেষ্টা করুন।',
+      error: 'ভেন্ডর ইমেইল/মোবাইল অথবা পাসওয়ার্ড সঠিক নয়। আবার চেষ্টা করুন.',
     });
   }
 
@@ -547,9 +548,14 @@ router.get('/vendor/profile', async (req, res, next) => {
 });
 
 router.post('/vendor/profile', requireCsrf, async (req, res,next) => {
-  if(mysqlActive()){try{await require('../repositories/vendorOnboardingRepository').updateVendorProfile(req.session.vendorUser.id,req.body,{type:'vendor',id:req.session.vendorUser.id,ip:req.ip,userAgent:req.get('user-agent')});req.flash('success','Vendor profile updated. Your verified mobile number was not changed.');return res.redirect('/vendor/profile');}catch(error){if(error.code==='VALIDATION_ERROR'||error.code==='CONFLICT'){req.flash('error',error.message);return res.redirect('/vendor/profile');}return next(error);}}
+  if(mysqlActive()){try{await require('../repositories/vendorOnboardingRepository').updateVendorProfile(req.session.vendorUser.id,req.body,{type:'vendor',id:req.session.vendorUser.id,sessionId:req.sessionID,currentPassword:req.body.current_password,ip:req.ip,userAgent:req.get('user-agent')});req.flash('success','Vendor profile updated. Your verified mobile number was not changed.');return res.redirect('/vendor/profile');}catch(error){if(error.code==='VALIDATION_ERROR'||error.code==='CONFLICT'){req.flash('error',error.message);return res.redirect('/vendor/profile');}return next(error);}}
   const { shop_name, owner_name, phone, email, address, new_password } = req.body;
   const vendorId = req.session.vendorUser.id;
+  const currentVendor = db.get('SELECT password_hash FROM vendors WHERE id=?', vendorId);
+  if (new_password && (!currentVendor || !currentVendor.password_hash || !req.body.current_password || !await bcrypt.compare(String(req.body.current_password), currentVendor.password_hash))) {
+    req.flash('error', 'বর্তমান পাসওয়ার্ড সঠিক নয়।');
+    return res.redirect('/vendor/profile');
+  }
   db.run(
     'UPDATE vendors SET shop_name = ?, owner_name = ?, phone = ?, email = ?, address = ? WHERE id = ?',
     shop_name.trim(),
@@ -562,6 +568,7 @@ router.post('/vendor/profile', requireCsrf, async (req, res,next) => {
   if (new_password && new_password.trim().length >= 6) {
     const hash = bcrypt.hashSync(new_password.trim(), 10);
     db.run('UPDATE vendors SET password_hash = ? WHERE id = ?', hash, vendorId);
+    await revokeActorSessions('vendor', vendorId, req.sessionID);
   }
   req.flash('success', 'শপ প্রোফাইল সফলভাবে আপডেট হয়েছে!');
   res.redirect('/vendor/profile');

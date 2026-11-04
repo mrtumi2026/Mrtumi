@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('node:crypto');
 const { RateLimitError } = require('../utils/errors');
 
 /**
@@ -88,7 +89,39 @@ function createRateLimiter(options = {}) {
   return middleware;
 }
 
+function normalizeLoginIdentifier(value) {
+  let normalized = String(value || '').trim().toLowerCase().replace(/[\s()-]/g, '');
+  if (/^(?:\+?880|0)1[3-9]\d{8}$/.test(normalized)) {
+    if (normalized.startsWith('+880')) normalized = `0${normalized.slice(4)}`;
+    else if (normalized.startsWith('880')) normalized = `0${normalized.slice(3)}`;
+  }
+  return normalized.slice(0, 191);
+}
+
+/**
+ * Three independent login budgets: a generous IP ceiling, an account ceiling
+ * shared across source IPs, and a tighter IP+account ceiling. Keys for account
+ * identifiers are hashed so limiter memory never retains raw email/phone values.
+ */
+function createLoginRateLimiters(options = {}) {
+  const prefix = String(options.keyPrefix || 'login');
+  const windowMs = Number(options.windowMs || 15 * 60 * 1000);
+  const fields = Array.isArray(options.identifierFields) ? options.identifierFields : ['identifier'];
+  const identityHash = (req) => {
+    const raw = fields.map((field) => req.body && req.body[field]).find((value) => value !== undefined && value !== null && String(value).trim());
+    const normalized = normalizeLoginIdentifier(raw);
+    return crypto.createHash('sha256').update(normalized || 'missing-identifier').digest('hex');
+  };
+  return [
+    createRateLimiter({ windowMs, max: Number(options.maxPerIp || 2000), keyPrefix: `${prefix}-ip`, keyGenerator: getClientIp }),
+    createRateLimiter({ windowMs, max: Number(options.maxPerAccount || 100), keyPrefix: `${prefix}-account`, keyGenerator: identityHash }),
+    createRateLimiter({ windowMs, max: Number(options.maxPerIpAccount || options.max || 12), keyPrefix: `${prefix}-ip-account`, keyGenerator: (req) => `${getClientIp(req)}:${identityHash(req)}` }),
+  ];
+}
+
 module.exports = {
   getClientIp,
   createRateLimiter,
+  normalizeLoginIdentifier,
+  createLoginRateLimiters,
 };

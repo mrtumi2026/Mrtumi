@@ -39,9 +39,18 @@ describe('Reseller portal canonical MySQL/MariaDB integration',()=>{
     const afterRollback=await repo.getProfile(a.insertId);assert.equal(afterRollback.name,profile.name,'MySQL transaction rolls profile update back after a subsequent failure');
     await repo.updateProfile(a.insertId,{name:'Updated A',shop_name:'Updated shop',email:`ra-${suffix}@example.invalid`});
     const profileAudit=await client.queryOne("SELECT before_json,after_json FROM audit_logs WHERE actor_type='reseller' AND actor_id=? AND action='reseller.profile.updated'",[a.insertId]);assert.ok(profileAudit);assert.match(profileAudit.after_json,/Updated A/);
+    const currentSid=`r-current-${suffix}`,stolenSid=`r-stolen-${suffix}`;
+    await client.execute("INSERT INTO web_sessions(sid,actor_type,actor_id,data_json,expires_at) VALUES(?,'reseller',?,'{}',DATE_ADD(UTC_TIMESTAMP(),INTERVAL 1 HOUR)),(?,'reseller',?,'{}',DATE_ADD(UTC_TIMESTAMP(),INTERVAL 1 HOUR))",[currentSid,a.insertId,stolenSid,a.insertId]);
+    await assert.rejects(()=>repo.updateProfile(a.insertId,{name:'No change',shop_name:'Shop',email:`ra-${suffix}@example.invalid`,new_password:'ResellerReplacementPassword!2026'},{sessionId:currentSid,currentPassword:'wrong-password'}),{code:'CONFLICT'});
+    assert.equal(Number((await client.queryOne('SELECT COUNT(*) AS n FROM web_sessions WHERE actor_type=\'reseller\' AND actor_id=?',[a.insertId])).n),2,'wrong current password does not change password or revoke sessions');
+    await repo.updateProfile(a.insertId,{name:'Updated A',shop_name:'Updated shop',email:`ra-${suffix}@example.invalid`,new_password:'ResellerReplacementPassword!2026'},{sessionId:currentSid,currentPassword:'ResellerIntegrationPassword!2026'});
+    const survivingSessions=await client.queryAll('SELECT sid FROM web_sessions WHERE actor_type=\'reseller\' AND actor_id=? ORDER BY sid',[a.insertId]);
+    assert.deepEqual(survivingSessions.map(row=>row.sid),[currentSid],'password change revokes other sessions but leaves the current request session intact');
+    assert.equal((await repo.authenticate(`ra-${suffix}@example.invalid`,'ResellerReplacementPassword!2026')).id,a.insertId);
    }finally{
     if(orderA){await client.execute('DELETE FROM order_items WHERE order_id=?',[orderA]);await client.execute('DELETE FROM orders WHERE id=?',[orderA]);}
     if(orderB)await client.execute('DELETE FROM orders WHERE id=?',[orderB]);
+    await client.execute("DELETE FROM web_sessions WHERE actor_type='reseller' AND actor_id IN (?,?)",[a.insertId,b.insertId]);
     await client.execute("DELETE FROM reseller_transactions WHERE reseller_id IN (?,?) AND trx_id=?",[a.insertId,b.insertId,`T-${suffix}`]);
     await client.execute('DELETE FROM resellers WHERE id IN (?,?,?)',[a.insertId,b.insertId,registered&&registered.id||0]);
     await client.execute('DELETE FROM products WHERE sku=?',[`RP-${suffix}`]);

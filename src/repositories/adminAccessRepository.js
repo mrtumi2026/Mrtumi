@@ -116,6 +116,7 @@ async function setRolePermissions(roleId, permissionKeys, actor, { pool = null }
     const role = await tx.queryOne('SELECT id,name,slug,status FROM roles WHERE id=? FOR UPDATE',[id]);
     if (!role) throw new NotFoundError('Role not found.');
     if (['super_admin','superadmin'].includes(role.slug)) throw new ConflictError('Super Admin grants cannot be edited through staff role management.');
+    if (Number(actor.roleId) === Number(role.id)) throw new ConflictError('You cannot change permissions for your own role.');
     const beforeRows = await tx.queryAll('SELECT p.name FROM role_permissions rp JOIN permissions p ON p.id=rp.permission_id WHERE rp.role_id=? ORDER BY p.name',[id]);
     if (keys.length) {
       const allowed = await tx.queryAll(`SELECT name,id FROM permissions WHERE name IN (${keys.map(() => '?').join(',')})`,keys);

@@ -2,7 +2,7 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const { asyncHandler } = require('../utils/asyncHandler');
-const { createRateLimiter } = require('../middleware/rateLimit');
+const { createRateLimiter, createLoginRateLimiters } = require('../middleware/rateLimit');
 const { requireCustomer } = require('../middleware/auth');
 const { requireCsrf } = require('../middleware/csrf');
 const customers = require('../repositories/customerRepository');
@@ -14,7 +14,7 @@ const d7 = require('../repositories/d7Repository');
 const upload = require('../middleware/upload');
 const phase08 = require('../repositories/phase08Repository');
 const router = express.Router();
-const loginLimiter = createRateLimiter({ keyPrefix: 'customer-login', windowMs: 15 * 60 * 1000, max: 10 });
+const customerLoginLimiters = createLoginRateLimiters({ keyPrefix: 'customer-login', identifierFields: ['phone'], windowMs: 15 * 60 * 1000, maxPerIp: 2000, maxPerAccount: 100, maxPerIpAccount: 10 });
 const registerLimiter = createRateLimiter({ keyPrefix: 'customer-register', windowMs: 60 * 60 * 1000, max: 5 });
 const isEn = (req) => req.locale === 'en';
 function formPage(req, res, title, error = '', extras = {}) { return res.status(error ? 400 : 200).render('customer/account-form', { title, error, isEn: isEn(req), customer: req.session.customerUser || null, ...extras }); }
@@ -45,7 +45,7 @@ router.post('/customer/register', registerLimiter, requireCsrf, asyncHandler(asy
   return res.redirect('/customer/account');
 }));
 router.get('/customer/login', (req, res) => formPage(req, res, isEn(req) ? 'Customer login' : 'কাস্টমার লগইন'));
-router.post('/customer/login', loginLimiter, requireCsrf, asyncHandler(async (req, res) => {
+router.post('/customer/login', ...customerLoginLimiters, requireCsrf, asyncHandler(async (req, res) => {
   let customer = null;
   try { customer = await customers.authenticateCustomer(req.body.phone, req.body.password); } catch (err) { if (err.code !== 'VALIDATION_ERROR') throw err; }
   if (!customer) return formPage(req, res, isEn(req) ? 'Customer login' : 'কাস্টমার লগইন', isEn(req) ? 'Phone or password is incorrect.' : 'ফোন নম্বর অথবা পাসওয়ার্ড সঠিক নয়।');

@@ -30,6 +30,10 @@
     <div class="col-md-6"><label class="form-label small fw-semibold" for="upazila">Upazila / Thana *</label><select id="upazila" name="upazila" class="form-select" required data-current="<%= vendor.upazila || '' %>" disabled><option value="">Select district first</option></select></div>
     <% } %>
     <div class="col-12">
+      <label class="form-label small fw-semibold">বর্তমান পাসওয়ার্ড (পাসওয়ার্ড পরিবর্তনের জন্য আবশ্যক)</label>
+      <input type="password" name="current_password" class="form-control" autocomplete="current-password" />
+    </div>
+    <div class="col-12">
       <label class="form-label small fw-semibold">নতুন পাসওয়ার্ড (পরিবর্তন করতে চাইলে লিখুন, নতুবা খালি রাখুন)</label>
       <input type="password" name="new_password" class="form-control" minlength="<%= mysqlMode ? 10 : 6 %>" maxlength="72" autocomplete="new-password" placeholder="<%= mysqlMode ? 'At least 10 characters' : 'কমপক্ষে ৬ অক্ষর' %>" />
     </div>
