@@ -5,6 +5,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const os = require('node:os');
 const nodeAssert = require('node:assert/strict');
 const bcrypt = require('bcryptjs');
 const { chromium } = require('playwright');
@@ -23,7 +24,8 @@ const phoneSuffix = crypto.randomBytes(4).readUInt32BE(0).toString().padStart(10
 const demoTag = `DEMO-E2E-${suffix}`;
 const demoPassword = `QaOnly-${crypto.randomBytes(12).toString('hex')}!`;
 let pool, db, server, browser, mysql;
-const ids = { customers: [], vendors: [], products: [], orders: [], category: null, uploadedFiles: [] };
+const ids = { customers: [], vendors: [], products: [], orders: [], category: null, uploadedFiles: [], testDataGroupId: null, cleanupCustomerId: null, adminUserId: null };
+let adminCredentials,restrictedAdminCredentials,tempEvidenceFile='';
 const customerPhones = [];
 let baseUrl = '';
 
@@ -43,15 +45,29 @@ async function main() {
   const { createQueryClient } = mysql;
   pool = mysql.getPool(); db = createQueryClient(pool);
   await resetDisposableMysqlDatabase(pool);
+  // Secure, random disposable-only admin fixture. This code is guarded by NODE_ENV=test and exact mrtumi_test DB assertions above.
+  const adminPassword=`E2eOnly-${crypto.randomBytes(20).toString('hex')}!`,adminEmail=`qa-admin-${suffix}@example.invalid`,adminHash=await bcrypt.hash(adminPassword,10);
+  let adminRole=await db.queryOne("SELECT id FROM roles WHERE slug='admin' LIMIT 1");
+  if(!adminRole){const r=await db.execute("INSERT INTO roles(name,slug,status) VALUES('Disposable QA Admin','admin',1)");adminRole={id:r.insertId};}
+  const user=await db.execute('INSERT INTO users(role_id,name,email,phone,password_hash,role_label,status) VALUES(?,?,?,?,?,?,1)',[adminRole.id,`Disposable QA ${suffix}`,adminEmail,`019${phoneSuffix}`,adminHash,'Admin']);ids.adminUserId=Number(user.insertId);adminCredentials={email:adminEmail,password:adminPassword};
+  const requiredPermissions=['test_data.manage','orders.manage','returns.review','dashboard.view'];
+  for(const key of requiredPermissions){const permission=await db.queryOne('SELECT id FROM permissions WHERE name=?',[key]);if(permission)await db.execute('INSERT IGNORE INTO role_permissions(role_id,permission_id) VALUES(?,?)',[adminRole.id,permission.id]);}
+  const restrictedRoleResult=await db.execute("INSERT INTO roles(name,slug,status) VALUES('Disposable QA Restricted','qa_restricted',1)");const restrictedPassword=`NoPrivileges-${crypto.randomBytes(16).toString('hex')}!`,restrictedEmail=`qa-restricted-${suffix}@example.invalid`;await db.execute('INSERT INTO users(role_id,name,email,phone,password_hash,role_label,status) VALUES(?,?,?,?,?,?,1)',[restrictedRoleResult.insertId,`Restricted QA ${suffix}`,restrictedEmail,`017${phoneSuffix}`,await bcrypt.hash(restrictedPassword,10),'Staff']);restrictedAdminCredentials={email:restrictedEmail,password:restrictedPassword};
+  const tdGroup=await db.execute("INSERT INTO test_data_groups(group_key,label,description,source,created_by_user_id) VALUES(?,?,?,'e2e',?)",[`e2e-${suffix}`,`${demoTag} Browser QA`, 'Generated only inside guarded disposable browser E2E database.',ids.adminUserId]);ids.testDataGroupId=Number(tdGroup.insertId);
+  // A deliberately synthetic, standalone record is used to exercise confirmed cleanup in the Admin UI.
+  const cleanupCustomer=await db.execute('INSERT INTO customers(name,phone,email,password_hash,status) VALUES(?,?,?,?,1)',[`${demoTag} cleanup-only`, `018${phoneSuffix}`,`cleanup-${suffix}@example.invalid`,'']);ids.cleanupCustomerId=Number(cleanupCustomer.insertId);
   const version = await db.queryOne('SELECT VERSION() AS version');
   results.serverVersion = version.version;
 
   const cat = await db.execute('INSERT INTO categories(name_bn,name_en,slug,status) VALUES(?,?,?,1)', ['DEMO মুদিখানা', 'DEMO Grocery', `demo-${suffix}`]);
   ids.category = Number(cat.insertId);
+  await db.execute('UPDATE categories SET test_data_group_id=? WHERE id=?',[ids.testDataGroupId,ids.category]);
+  await db.execute('INSERT INTO return_category_policies(category_id,eligible,window_days,updated_by_user_id) VALUES(?,1,7,?)',[ids.category,ids.adminUserId]);
   const vendorPasswordHash = await bcrypt.hash(demoPassword, 8);
   for (let i = 1; i <= 2; i++) {
     const r = await db.execute("INSERT INTO vendors(shop_name,owner_name,phone,email,password_hash,verified,status,lifecycle_status) VALUES(?,?,?,?,?,1,1,'active')", [`${demoTag} Vendor 0${i}`, `Demo Vendor 0${i}`, `013${suffix}${i}111`, `demo-vendor-${i}-${suffix}@example.invalid`, vendorPasswordHash]);
     ids.vendors.push(Number(r.insertId));
+    await db.execute('UPDATE vendors SET test_data_group_id=? WHERE id=?',[ids.testDataGroupId,r.insertId]);
   }
   const productNames = [
     ['ডেমো সুগন্ধি চাল', 'DEMO Aromatic Rice', 'বাংলাদেশি সুগন্ধি চালের পরীক্ষামূলক প্যাক।', 'A test pack of aromatic Bangladeshi rice.', 18500],
@@ -65,6 +81,7 @@ async function main() {
     const r = await db.execute(`INSERT INTO products(sku,slug,name_bn,name_en,category_id,vendor_id,regular_price_paisa,sale_price_paisa,stock_on_hand,vendor_stock_on_hand,short_desc_bn,short_desc_en,image_url,approval_status,status)
       VALUES(?,?,?,?,?,?,?, ?,0,20,?,?,?,'approved',1)`, [`${demoTag}-${i+1}`, `${demoTag.toLowerCase()}-${i+1}`, bn, en, ids.category, ids.vendors[i % 2], price, price, descBn, descEn, '/uploads/product/lychee-box.jpg']);
     ids.products.push(Number(r.insertId));
+    await db.execute('UPDATE products SET test_data_group_id=? WHERE id=?',[ids.testDataGroupId,r.insertId]);
   }
   const loc = await db.execute("INSERT INTO delivery_locations(division,district,upazila,delivery_charge_paisa,status) VALUES('QA','QA','QA',0,1)");
   const codGateway = await db.queryOne('SELECT id FROM payment_gateways WHERE code=? AND status=1', ['cod']);
@@ -125,6 +142,7 @@ async function main() {
     const row = await db.queryOne('SELECT id FROM customers WHERE phone=?', [phone]);
     assert(row, `registered customer ${index} missing from MySQL`);
     ids.customers.push(Number(row.id));
+    await db.execute('UPDATE customers SET test_data_group_id=? WHERE id=?',[ids.testDataGroupId,row.id]);
     return { phone, email };
   }
 
@@ -167,6 +185,7 @@ async function main() {
     nodeAssert.equal(order.payment_method, 'cod');
     nodeAssert.equal(Number(order.customer_id), ids.customers[index - 1]);
     ids.orders.push(Number(order.id));
+    await db.execute('UPDATE orders SET test_data_group_id=? WHERE id=?',[ids.testDataGroupId,order.id]);
     const stockAfter = await db.queryOne('SELECT vendor_stock_on_hand,vendor_stock_reserved FROM products WHERE id=?', [selectedProductId]);
     nodeAssert.equal(Number(stockAfter.vendor_stock_on_hand), Number(stockBefore.vendor_stock_on_hand), 'placing a pending COD order should reserve, not consume, vendor stock');
     nodeAssert.equal(Number(stockAfter.vendor_stock_reserved), Number(stockBefore.vendor_stock_reserved) + 1, 'pending order did not reserve exactly one unit from the assigned vendor pool');
@@ -210,12 +229,32 @@ async function main() {
     return { orderId, cancellationStatus: row.status };
   });
 
-  await journey('Admin order visibility and management', async () => {
-    const row = await db.queryOne("SELECT id FROM users WHERE status=1 ORDER BY id LIMIT 1");
-    if (!row) throw Object.assign(new Error('BLOCKED: freshly migrated disposable CI database has no existing admin user; task forbids creating another admin.'), { code: 'BLOCKED_NO_EXISTING_ADMIN' });
-    await page.goto(`${baseUrl}/admin/login`, { waitUntil: 'domcontentloaded' });
-    await page.screenshot({ path: path.join(outDir, 'admin-login.png'), fullPage: true });
-    throw Object.assign(new Error('BLOCKED: existing admin credentials are not provisioned in the disposable CI schema; no admin account was created.'), { code: 'BLOCKED_ADMIN_CREDENTIALS_UNAVAILABLE' });
+  await journey('Admin login, order management and explicit test-data cleanup', async () => {
+    assert(adminCredentials && ids.adminUserId,'disposable-only admin fixture was not provisioned');
+    await page.context().clearCookies();await page.goto(`${baseUrl}/admin/login`,{waitUntil:'domcontentloaded'});
+    const login=page.locator('form').first();await login.locator('input[name="email"]').fill(adminCredentials.email);await login.locator('input[name="password"]').fill(adminCredentials.password);let adminNav=page.waitForNavigation({waitUntil:'domcontentloaded'});await login.locator('button[type="submit"]').click();await adminNav;
+    assert(page.url().includes('/admin/dashboard'),'random disposable admin login failed');
+    const csrfDenied=await page.request.post(`${baseUrl}/admin/test-data/groups`,{form:{label:'missing CSRF must be rejected'}});assert(csrfDenied.status()===403,'Admin test-data write accepted a missing CSRF token');
+    await page.context().clearCookies();await page.goto(`${baseUrl}/admin/login`,{waitUntil:'domcontentloaded'});const restrictedLogin=page.locator('form').first();await restrictedLogin.locator('input[name="email"]').fill(restrictedAdminCredentials.email);await restrictedLogin.locator('input[name="password"]').fill(restrictedAdminCredentials.password);let restrictedNav=page.waitForNavigation({waitUntil:'domcontentloaded'});await restrictedLogin.locator('button[type="submit"]').click();await restrictedNav;const deniedPage=await page.goto(`${baseUrl}/admin/test-data`,{waitUntil:'domcontentloaded'});assert(deniedPage?.status()===403,'Admin without test_data.manage permission accessed the management page');
+    await page.context().clearCookies();await page.goto(`${baseUrl}/admin/login`,{waitUntil:'domcontentloaded'});const ownerLogin=page.locator('form').first();await ownerLogin.locator('input[name="email"]').fill(adminCredentials.email);await ownerLogin.locator('input[name="password"]').fill(adminCredentials.password);let ownerNav=page.waitForNavigation({waitUntil:'domcontentloaded'});await ownerLogin.locator('button[type="submit"]').click();await ownerNav;
+    await page.goto(`${baseUrl}/admin/phase08/orders?q=${encodeURIComponent((await db.queryOne('SELECT invoice_no FROM orders WHERE id=?',[ids.orders[1]])).invoice_no)}`,{waitUntil:'domcontentloaded'});
+    assert((await page.locator('body').innerText()).includes((await db.queryOne('SELECT invoice_no FROM orders WHERE id=?',[ids.orders[1]])).invoice_no),'admin cannot find the generated test order');
+    for(const status of ['confirmed','processing','shipped']){
+      const form=page.locator(`form[action="/admin/phase08/orders/${ids.orders[1]}/status"]`);await form.locator('select[name="status"]').selectOption(status);await form.locator('input[name="reason"]').fill(`${demoTag} disposable admin QA transition`);const nav=page.waitForNavigation({waitUntil:'domcontentloaded'});await form.locator('button').click();await nav;
+    }
+    const transitioned=await db.queryOne('SELECT order_status FROM orders WHERE id=?',[ids.orders[1]]);assert(transitioned.order_status==='shipped','admin order lifecycle did not reach shipped');
+    await page.goto(`${baseUrl}/admin/test-data`,{waitUntil:'domcontentloaded'});const testDataHeading=await page.locator('h1').innerText();assert(testDataHeading.includes('Test Data Management')||testDataHeading.includes('টেস্ট ডেটা ব্যবস্থাপনা'),'Admin Test Data Management page missing in both supported locales');
+    const create=page.locator('form[action="/admin/test-data/groups"]');await create.locator('input[name="label"]').fill(`${demoTag} UI cleanup group`);await create.locator('input[name="description"]').fill('E2E-only explicit cleanup confirmation.');const created=page.waitForNavigation({waitUntil:'domcontentloaded'});await create.locator('button').click();await created;
+    assert(page.url().includes('/admin/test-data/groups/'),'Admin group creation did not redirect to group inspection');const groupId=Number(page.url().split('/').pop());
+    await page.goto(`${baseUrl}/admin/test-data/groups/${groupId}?type=customers&q=${encodeURIComponent(`018${phoneSuffix}`)}`,{waitUntil:'domcontentloaded'});
+    const mark=page.locator(`form[action="/admin/test-data/groups/${groupId}/mark"]`).filter({has:page.locator(`input[name="entity_id"][value="${ids.cleanupCustomerId}"]`)});assert(await mark.count(),'standalone synthetic customer was not available as an explicit candidate');let nav=page.waitForNavigation({waitUntil:'domcontentloaded'});await mark.locator('button').click();await nav;
+    const confirmation=`CLEAN ${(await db.queryOne('SELECT group_key FROM test_data_groups WHERE id=?',[groupId])).group_key}`;
+    const clean=page.locator(`form[action="/admin/test-data/groups/${groupId}/cleanup"]`);assert(await clean.count(),'safe cleanup preview was not offered');await clean.locator('input[name="confirmation"]').fill(confirmation);nav=page.waitForNavigation({waitUntil:'domcontentloaded'});await clean.locator('button').click();await nav;
+    const customerAfter=await db.queryOne('SELECT id FROM customers WHERE id=?',[ids.cleanupCustomerId]);assert(!customerAfter,'confirmed Admin cleanup left the isolated synthetic record');
+    const cleanupBody=await page.locator('body').innerText();assert(cleanupBody.includes('Cleanup completed')||cleanupBody.includes('পরিষ্কার সম্পন্ন'),'cleanup result and audit status not shown in either locale');
+    const history=await db.queryOne('SELECT result FROM test_data_cleanup_runs WHERE group_id=? ORDER BY id DESC LIMIT 1',[groupId]);assert(history?.result==='completed','cleanup audit history missing');
+    await page.screenshot({path:path.join(outDir,'admin-test-data-cleanup.png'),fullPage:true});
+    return {adminUserId:ids.adminUserId,orderId:ids.orders[1],orderStatus:transitioned.order_status,cleanupGroupId:groupId,cleanedCustomerId:ids.cleanupCustomerId,cleanupAudit:history.result};
   });
 
   await journey('Vendor login, tenant isolation and assigned order visibility', async () => {
@@ -248,10 +287,17 @@ async function main() {
     return { vendorIds: ids.vendors, attempts };
   });
 
-  await journey('Return request, evidence upload, and policy-authorized review', async () => {
-    const eligible = await db.queryOne('SELECT COUNT(*) AS n FROM return_category_policies WHERE eligible=1');
-    if (!Number(eligible?.n || 0)) throw Object.assign(new Error('BLOCKED: no return-eligible category policy exists in the migrated disposable database; no policy was invented or changed.'), { code: 'BLOCKED_NO_RETURN_POLICY' });
-    throw Object.assign(new Error('BLOCKED: an eligible-category policy exists, but the preceding demo orders are pending/unfulfilled and cannot truthfully support a return request.'), { code: 'BLOCKED_NO_ELIGIBLE_DEMO_RETURN_ORDER' });
+  await journey('Return request, evidence upload and policy-authorized review', async () => {
+    const orderId=ids.orders[1],customerId=ids.customers[1];
+    const categoryPolicy=await db.queryOne('SELECT eligible FROM return_category_policies WHERE category_id=?',[ids.category]);assert(Number(categoryPolicy?.eligible)===1,'disposable-only eligible category policy was not configured');
+    const line=await db.queryOne('SELECT id FROM order_items WHERE order_id=? LIMIT 1',[orderId]);assert(line,'test order has no returnable order line');
+    await page.context().clearCookies();await page.goto(`${baseUrl}/customer/login`,{waitUntil:'domcontentloaded'});const login=page.locator('form[action="/customer/login"]');await login.locator('input[name="phone"]').fill(customerPhones[1]);await login.locator('input[name="password"]').fill(demoPassword);let nav=page.waitForNavigation({waitUntil:'domcontentloaded'});await login.locator('button[type="submit"],button:not([type])').first().click();await nav;assert(page.url().endsWith('/customer/account'),'return customer login failed');
+    await page.goto(`${baseUrl}/customer/account/orders/${orderId}`,{waitUntil:'domcontentloaded'});const form=page.locator(`form[action="/customer/account/orders/${orderId}/returns"]`);assert(await form.count(),'return form is not available for a dispatched order');await form.locator('.return-line').first().check();await form.locator('textarea[name="reason"]').fill(`${demoTag} return workflow test`);const evidenceFile=path.join(os.tmpdir(),`mrtumi-${suffix}-return-proof.png`);tempEvidenceFile=evidenceFile;fs.writeFileSync(evidenceFile,Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a,0x00,0x00,0x00,0x0d,0x49,0x48,0x44,0x52]));await form.locator('input[name="evidence"]').setInputFiles(evidenceFile);nav=page.waitForNavigation({waitUntil:'domcontentloaded'});await form.locator('button').click();await nav;
+    const returned=await db.queryOne('SELECT id,status,evidence_path FROM customer_return_requests WHERE order_id=? AND customer_id=? ORDER BY id DESC LIMIT 1',[orderId,customerId]);assert(returned?.status==='requested','customer return request not recorded');assert(returned.evidence_path.startsWith('/uploads/custom/'),'return evidence upload was not saved to the custom upload area');ids.uploadedFiles.push(returned.evidence_path);fs.unlinkSync(evidenceFile);tempEvidenceFile='';
+    await page.context().clearCookies();await page.goto(`${baseUrl}/admin/login`,{waitUntil:'domcontentloaded'});const adminLogin=page.locator('form').first();await adminLogin.locator('input[name="email"]').fill(adminCredentials.email);await adminLogin.locator('input[name="password"]').fill(adminCredentials.password);nav=page.waitForNavigation({waitUntil:'domcontentloaded'});await adminLogin.locator('button[type="submit"]').click();await nav;await page.goto(`${baseUrl}/admin/d7/returns?status=requested`,{waitUntil:'domcontentloaded'});assert((await page.locator('body').innerText()).includes(String(returned.id)),'admin return review cannot see the submitted return');
+    const decision=page.locator(`form[action="/admin/d7/returns/${returned.id}/decision"]`);assert(await decision.count(),'admin return decision form missing');await decision.locator('input[name="note"],textarea[name="note"]').fill(`${demoTag} reviewed in disposable E2E`);nav=page.waitForNavigation({waitUntil:'domcontentloaded'});await decision.locator('button[name="status"][value="approved"]').click();await nav;
+    const reviewed=await db.queryOne('SELECT status FROM customer_return_requests WHERE id=?',[returned.id]);assert(reviewed.status==='approved','Admin return decision was not saved');await page.screenshot({path:path.join(outDir,'return-admin-review.png'),fullPage:true});
+    return {orderId,returnId:Number(returned.id),categoryPolicy:'disposable-only eligible',customerRequest:'PASS',adminReview:reviewed.status};
   });
 
   for (const width of [360, 390, 768, 1366]) {
@@ -273,6 +319,8 @@ async function main() {
     results.stack = String(error.stack || '').split('\n').slice(0, 12).join('\n');
   } finally {
     try {
+      if(tempEvidenceFile&&fs.existsSync(tempEvidenceFile))fs.unlinkSync(tempEvidenceFile);
+      if(ids.uploadedFiles.length){const upload=require('../../src/middleware/upload');for(const file of ids.uploadedFiles){if(typeof file==='string'&&file.startsWith('/uploads/custom/'))upload.safeUnlink(path.join(upload.resolveUploadBase(),path.basename(file)));}}
       if (pool) {
         try {
           const auditRows = await db.queryAll('SELECT actor_type,actor_id,action,entity_type,entity_id,created_at FROM audit_logs WHERE (entity_type=\'customer\' AND entity_id IN (SELECT CAST(id AS CHAR) FROM customers WHERE phone LIKE ?)) OR entity_id IN (SELECT CAST(id AS CHAR) FROM orders WHERE customer_note LIKE ? OR invoice_no LIKE ?) ORDER BY id', [`%${suffix}%`, `%${demoTag}%`, `%${demoTag}%`]);

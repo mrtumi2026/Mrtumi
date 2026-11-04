@@ -231,6 +231,9 @@ jobs:
           npm run migrate:up
           npm run migrate:status
           npm run migrate:status
+          npm run migrate:down -- 2
+          npm run migrate:up
+          npm run migrate:status
 
       - name: Roll back MariaDB migration 0025
         env:

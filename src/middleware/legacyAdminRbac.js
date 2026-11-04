@@ -25,6 +25,7 @@ function policyForAdminRoute(method, pathname) {
   if (has(path,'/admin/privacy/requests')) return { key:'privacy.review', audit:false };
   if (has(path,'/admin/privacy')) return { key:'privacy.manage', audit:false };
   if (has(path,'/admin/audit-logs')) return { key:'audit_logs.view', audit:false };
+  if (has(path,'/admin/test-data')) return { key:'test_data.manage', audit:write };
   if (has(path,'/admin/phase09/access')) {
     if(path.includes('/staff')&&write&&verb!=='PATCH')return {key:'staff.manage',also:['staff.assign_role'],audit:false};
     if(/\/roles\/[^/]+\/permissions$/.test(path)&&write)return {key:'roles.manage',also:['roles.grants.manage'],audit:false};

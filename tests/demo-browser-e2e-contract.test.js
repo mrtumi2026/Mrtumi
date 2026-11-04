@@ -29,8 +29,13 @@ test('demo fixtures use tagged synthetic identities, browser journeys, and guara
   assert.match(runner, /Customer registration, login\/session, storefront cart, COD checkout and order history/);
   assert.match(runner, /Customer pre-dispatch cancellation/);
   assert.match(runner, /Public storefront: all five DEMO products render/);
-  assert.match(runner, /Return request, evidence upload, and policy-authorized review/);
+  assert.match(runner, /Return request, evidence upload and policy-authorized review/);
   assert.match(runner, /Vendor login, tenant isolation and assigned order visibility/);
+  assert.match(runner, /Disposable QA Admin/);
+  assert.match(runner, /test_data_groups/);
+  assert.match(runner, /return_category_policies/);
+  assert.match(runner, /Admin login, order management and explicit test-data cleanup/);
+  assert.match(runner, /Return request, evidence upload and policy-authorized review/);
   assert.match(runner, /resetDisposableMysqlDatabase\(pool\)/);
   assert.match(runner, /cleanupE2eResources\(/);
   assert.match(runner, /remainingTables !== 0 \|\| results\.cleanup\.remainingMigrationTables !== 0/);

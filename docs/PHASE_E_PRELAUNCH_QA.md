@@ -1,0 +1,25 @@
+# Phase E — pre-launch QA evidence and gaps
+
+Reviewed against the current repository and the Phase E test-data-management change. This is a code/CI review only; no production database, live payment, courier service, or deployment environment was accessed.
+
+| Area | Evidence / status | Remaining launch requirement |
+| --- | --- | --- |
+| Test-data identification | Implemented by nullable `test_data_group_id` markers and explicit test-data groups. Unmarked historical records remain unclassified. | Owner/admin must explicitly mark known test records; this is not automatic. |
+| Admin cleanup | Implemented with bilingual admin UI, search, marked-root inspection, related counts, preview blockers, typed confirmation, CSRF/RBAC, transactional deletion, retained cleanup-run and append-only audit entries. | Cleanup deliberately blocks order-bearing groups and many operational/financial dependencies. Owner-approved retention/anonymization policy is still needed for those. |
+| Customer journey | Existing disposable browser suite covers registration, session/login, cart, COD checkout, order history and pre-dispatch cancellation. Phase E makes a second order available for Admin-shipped and return journeys. | Rerun exact-SHA MySQL/MariaDB E2E and inspect both evidence artifacts after this change. |
+| Vendor fulfillment | Phase B repository/HTTP/browser coverage and tenant-isolation checks remain in the repository. | Review exact-SHA Phase B CI/E2E alongside this run; Phase C provider integration is assigned elsewhere and not included. |
+| Admin order management | Existing Phase 08 lifecycle and CSRF/RBAC tests; E2E now provisions a random-password Admin only in the exact disposable DB and drives pending → confirmed → processing → shipped. | Production Admin account provisioning and least-privilege role assignment remain operational setup. No default credential is added. |
+| Return workflow | D7 request/review path is exercised through customer and Admin HTTP journeys. E2E seeds one eligible category policy only in the disposable schema. | Business return policy/eligibility and actual operational handling remain owner-managed. No policy is added to production. |
+| Inventory correctness | Existing Phase 06/08 inventory tests cover purchase/stock ledger, reservation, release and consumption; E2E asserts pending COD reservation and shipment consumption. | Reconcile real opening quantities and all live inventory before launch. |
+| COD reconciliation | Existing suborder/COD collection reconciliation and settlement repository tests cover exact collections, discrepancies and eligibility gates. | Real courier remittance must be independently reconciled; no live COD funds were involved here. |
+| Commission / settlement | Existing financial reconciliation and vendor settlement snapshot tests are present; vendor settlement changes are not part of this task. | Verify owner-approved commercial rates, payout destination verification, and independent approval controls before real settlement. |
+| RBAC / vendor isolation / CSRF | Existing route-level RBAC, CSRF and tenant-isolation tests; Phase E adds a dedicated permission, global legacy route mapping, and tests that missing permission is denied. | Confirm production users/roles and DB grants on actual host. |
+| Migration safety / SQL compatibility | Additive migration `0028`; all five markers nullable, no backfill; paired rollback. CI matrix validates MySQL 8.0 and MariaDB 10.11. | Apply only via reviewed migration procedure on a non-production target first. |
+| Error handling / logging | Cleanup rechecks group state under lock; transaction failure rolls back, then best-effort failure history is written outside the failed transaction; audit log remains append-only. | Database outage can prevent the separate failure audit write; application error monitoring/alert routing is not verified here. |
+| Backup / recovery | `DEPLOYMENT.md` documents required backup/restore controls and known unknowns. | **Launch blocker:** no backup/restore tool, owner-approved retention/RPO/RTO, or isolated restore rehearsal is verified. |
+| Monitoring / operations | `/health` and `/api/v1/health` verify application/database reachability; deployment docs note they do not establish full readiness. | **Launch blocker:** host-specific monitoring, alert routing, cron and operational runbook remain unverified. |
+| Production / live providers | Not exercised. | No live payment/refund/payout, courier call, production DB operation, or deployment was made. |
+
+## Test data cleanup's conservative boundary
+
+Financial, audit, order-lifecycle, return, COD, payment, settlement, stock-movement, review, privacy/consent, and vendor verification/payout history are not purged by this UI. If these dependencies exist, the whole selected group is blocked; the preview states why. No legal retention rules are assumed, and no anonymization is attempted. The owner must approve any future archival/anonymization mechanism before it is implemented.
