@@ -129,7 +129,7 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
 
     const vendorHash = bcrypt.hashSync('VendorPass#2026', 8);
     const verifiedVendorRes = await client.execute(
-      "INSERT INTO `vendors` (`shop_name`, `owner_name`, `phone`, `password_hash`, `verified`, `status`) VALUES ('Dhaka Gift Craft', 'Karim', '01755000111', ?, 1, 1)",
+      "INSERT INTO `vendors` (`shop_name`, `owner_name`, `phone`, `password_hash`, `verified`, `status`, `lifecycle_status`) VALUES ('Dhaka Gift Craft', 'Karim', '01755000111', ?, 1, 1, 'active')",
       [vendorHash]
     );
     const verifiedVendorId = Number(verifiedVendorRes.insertId);
