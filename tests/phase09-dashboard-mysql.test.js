@@ -436,13 +436,21 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     assert.equal(Number((await db.queryOne('SELECT status FROM products WHERE id=?',[productId])).status),Number(before.status),'status toggle is reversible');
     assert.equal((await request(`/admin/products/delete/${productId}`,{method:'POST'})).status,409,'legacy product hard deletion is blocked');
     assert.ok(await db.queryOne('SELECT id FROM products WHERE id=?',[productId]),'blocked delete preserves product');
-    const vendor=await db.execute('INSERT INTO vendors(shop_name,owner_name,phone,password_hash,verified,status) VALUES(?,?,?,?,0,1)',[`P09 vendor ${suffix}`,'P09 Vendor',`016${String(suffix).slice(-8)}`,'fixture-hash']);
+    const vendor=await db.execute("INSERT INTO vendors(shop_name,owner_name,phone,password_hash,verified,status,lifecycle_status) VALUES(?,?,?,?,1,1,'active')",[`P09 vendor ${suffix}`,'P09 Vendor',`016${String(suffix).slice(-8)}`,'fixture-hash']);
     const pending=await db.execute("INSERT INTO products(sku,slug,name_bn,name_en,category_id,vendor_id,approval_status,status) VALUES(?,?,?,?,?,?,'pending',0)",[`P09-V-${suffix}`,`p09-pending-${suffix}`,'P09 Vendor Product','P09 Vendor Product',category.id,vendor.insertId]);
     assert.equal((await request(`/admin/products/approve/${pending.insertId}`,{method:'POST',cookie:noGrantCookie,token:noGrantToken})).status,403,'vendor product approval requires catalog.manage');
     assert.equal((await request(`/admin/products/approve/${pending.insertId}`,{method:'POST',token:''})).status,403,'vendor product approval requires CSRF');
     const approval=await request(`/admin/products/approve/${pending.insertId}`,{method:'POST'});assert.equal(approval.status,302,approval.text.slice(0,250));
     const approvedProduct=await db.queryOne('SELECT approval_status,status FROM products WHERE id=?',[pending.insertId]);assert.deepEqual([approvedProduct.approval_status,Number(approvedProduct.status)],['approved',1]);
     assert.ok(await db.queryOne("SELECT id FROM audit_logs WHERE action='product.vendor.approve' AND entity_id=?",[String(pending.insertId)]));
+
+    const inactiveVendor=await db.execute("INSERT INTO vendors(shop_name,owner_name,phone,password_hash,verified,status,lifecycle_status) VALUES(?,?,?,?,0,1,'pending')",[`P09 inactive vendor ${suffix}`,'P09 Inactive Vendor',`015${String(suffix).slice(-8)}`,'fixture-hash']);
+    const inactivePending=await db.execute("INSERT INTO products(sku,slug,name_bn,name_en,category_id,vendor_id,approval_status,status) VALUES(?,?,?,?,?,?,'pending',0)",[`P09-V-INACTIVE-${suffix}`,`p09-inactive-${suffix}`,'P09 Inactive Vendor Product','P09 Inactive Vendor Product',category.id,inactiveVendor.insertId]);
+    const inactiveApproval=await request(`/admin/products/approve/${inactivePending.insertId}`,{method:'POST'});
+    assert.equal(inactiveApproval.status,409,'pending-lifecycle vendor product approval is rejected');
+    const unchangedProduct=await db.queryOne('SELECT approval_status,status FROM products WHERE id=?',[inactivePending.insertId]);
+    assert.deepEqual([unchangedProduct.approval_status,Number(unchangedProduct.status)],['pending',0],'rejected approval leaves product state unchanged');
+    assert.equal(Number((await db.queryOne("SELECT COUNT(*) AS n FROM audit_logs WHERE action='product.vendor.approve' AND entity_id=?",[String(inactivePending.insertId)])).n),0,'rejected approval creates no approval audit event');
 
     const review=await db.execute("INSERT INTO reviews(product_id,customer_name,rating,comment,status) VALUES(?, 'P09 pending review',4,'Retained review fixture','pending')",[productId]);
     assert.equal((await request('/admin/reviews',{cookie:noGrantCookie,accept:'text/html'})).status,403,'review moderation requires catalog.view');
