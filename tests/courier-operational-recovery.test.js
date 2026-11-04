@@ -488,13 +488,14 @@ test('Operational Recovery & Monitoring: Reporting, vendor isolation, audit hist
   assert.ok(allListing.shipments.length >= 2, 'Should list all shipments when status=all');
 
   // Verify carrier and tracking codes synchronized onto vendor_sub_orders and orders
+  const shipmentId1 = shipment1.id;
   const subOrderRow = await db.queryOne('SELECT shipment_carrier, tracking_code FROM vendor_sub_orders WHERE id = ?', [subOrderId1]);
-  assert.equal(subOrderRow.shipment_carrier, 'steadfast');
-  assert.equal(subOrderRow.tracking_code, 'TRK-OVERRIDE-12345');
+  assert.equal(subOrderRow.shipment_carrier, 'mock_courier');
+  assert.equal(subOrderRow.tracking_code, 'SF-OVR-887766');
 
   const orderRow = await db.queryOne('SELECT courier_code, courier_tracking_id FROM orders WHERE id = ?', [orderId1]);
-  assert.ok(orderRow.courier_code);
-  assert.ok(orderRow.courier_tracking_id);
+  assert.equal(orderRow.courier_code, 'mock_courier');
+  assert.equal(orderRow.courier_tracking_id, 'SF-OVR-887766');
 
   // 6. Verify COD Remittance Collection & Reconciliation via courierCodRepository
   const codRepo = require('../src/repositories/courierCodRepository');
@@ -502,8 +503,8 @@ test('Operational Recovery & Monitoring: Reporting, vendor isolation, audit hist
     shipmentId: shipmentId1,
     collectedAmountPaisa: 150000,
     remittanceRef: 'REM-TEST-001',
-    courierName: 'Steadfast',
-    consignmentId: 'TRK-OVERRIDE-12345',
+    courierName: 'mock_courier',
+    consignmentId: 'SF-OVR-887766',
     courierFeePaisa: 6000,
     codFeePaisa: 1500,
     actor: { userId: adminUserId }
