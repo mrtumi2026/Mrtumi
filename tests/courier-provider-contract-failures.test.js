@@ -504,10 +504,16 @@ test('Database-backed Safety: Concurrent requests, idempotency replays, ambiguou
   );
 
   // Step C1: Explicit concurrent race test on fresh sub-order (two simultaneous requests)
+  const raceOrderRes = await db.execute(`
+    INSERT INTO orders (customer_id, invoice_no, customer_name, customer_phone, shipping_address, shipping_zone, payment_method, payment_status, total_paisa, created_at, updated_at)
+    VALUES (?, 'INV-SAFE-RACE-1', 'Recipient Race 1', '01722222222', 'House 1, Road 1, Dhanmondi', 'Inside Dhaka', 'cod', 'unpaid', 60000, UTC_TIMESTAMP(), UTC_TIMESTAMP())
+  `, [custId]);
+  const raceOrderId = raceOrderRes.insertId;
+
   const raceSubOrderRes = await db.execute(`
     INSERT INTO vendor_sub_orders (order_id, vendor_id, vendor_order_no, status, delivery_mode, vendor_entitlement_paisa, marketplace_fee_paisa, net_payable_paisa, created_at, updated_at)
     VALUES (?, ?, 'VSO-RACE-PARALLEL', 'ready_for_pickup', 'vendor_managed', 54000, 6000, 54000, UTC_TIMESTAMP(), UTC_TIMESTAMP())
-  `, [orderId, vendId]);
+  `, [raceOrderId, vendId]);
   const raceSubOrderId = raceSubOrderRes.insertId;
 
   const [raceRes1, raceRes2] = await Promise.allSettled([
@@ -541,10 +547,16 @@ test('Database-backed Safety: Concurrent requests, idempotency replays, ambiguou
   assert.equal(raceShipmentCheck[0].booking_status, 'succeeded');
 
   // Step C2: Explicit concurrent race with identical idempotency key
+  const raceOrderResSameKey = await db.execute(`
+    INSERT INTO orders (customer_id, invoice_no, customer_name, customer_phone, shipping_address, shipping_zone, payment_method, payment_status, total_paisa, created_at, updated_at)
+    VALUES (?, 'INV-SAFE-RACE-2', 'Recipient Race 2', '01733333333', 'House 2, Road 2, Dhanmondi', 'Inside Dhaka', 'cod', 'unpaid', 60000, UTC_TIMESTAMP(), UTC_TIMESTAMP())
+  `, [custId]);
+  const raceOrderIdSameKey = raceOrderResSameKey.insertId;
+
   const raceSubOrderResSameKey = await db.execute(`
     INSERT INTO vendor_sub_orders (order_id, vendor_id, vendor_order_no, status, delivery_mode, vendor_entitlement_paisa, marketplace_fee_paisa, net_payable_paisa, created_at, updated_at)
     VALUES (?, ?, 'VSO-RACE-SAMEKEY', 'ready_for_pickup', 'vendor_managed', 54000, 6000, 54000, UTC_TIMESTAMP(), UTC_TIMESTAMP())
-  `, [orderId, vendId]);
+  `, [raceOrderIdSameKey, vendId]);
   const raceSubOrderIdSameKey = raceSubOrderResSameKey.insertId;
   const sharedKey = `idemp-shared-${Date.now()}`;
 
