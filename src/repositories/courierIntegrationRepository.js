@@ -195,7 +195,8 @@ async function getShipmentQuotesAndRecommendation({ subOrderId, actor }) {
  * Executes one-click booking with chosen or recommended courier provider.
  */
 async function executeOneClickBooking({ subOrderId, courierCode, actor, idempotencyKey, note = '' }) {
-  return withTransaction(async (tx) => {
+  let postCommitError = null;
+  const result = await withTransaction(async (tx) => {
     // Lock suborder and shipment FOR UPDATE
     const subOrder = await tx.queryOne(
       `SELECT vso.id, vso.order_id, vso.vendor_id, vso.status, vso.delivery_mode,
@@ -378,13 +379,19 @@ async function executeOneClickBooking({ subOrderId, courierCode, actor, idempote
         ]
       );
 
-      throw new AppError(
+      postCommitError = new AppError(
         isTimeout ? 'COURIER_BOOKING_TIMEOUT' : 'COURIER_BOOKING_FAILED',
         bookingResult.error || 'Courier provider rejected booking.',
         isTimeout ? 504 : 422
       );
+      return null;
     }
   });
+
+  if (postCommitError) {
+    throw postCommitError;
+  }
+  return result;
 }
 
 /**
