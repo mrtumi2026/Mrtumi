@@ -137,7 +137,7 @@ async function getOrderDetails(customerId, orderId) {
     `SELECT id, invoice_no, order_status, payment_status, payment_method, customer_name, customer_phone,
             shipping_address, division, district, upazila, shipping_zone,
             subtotal_paisa, discount_paisa, shipping_paisa, total_paisa,
-            courier_name, courier_tracking_id, created_at
+            courier_code, courier_code AS courier_name, courier_tracking_id, created_at
      FROM orders WHERE id = ? AND customer_id = ? LIMIT 1`,
     [id, ownerId]
   );

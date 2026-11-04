@@ -1344,7 +1344,7 @@ router.get(['/track-order', '/order-track', '/site/order-track'], asyncHandler(a
     const customerId = req.session.customerUser.id;
     const found = await db.queryAll(
       `SELECT o.id, o.invoice_no AS invoice_id, o.order_status AS status,
-              o.customer_name, o.courier_name, o.courier_tracking_id,
+              o.customer_name, o.courier_code AS courier_name, o.courier_code, o.courier_tracking_id,
               o.total_paisa, o.payment_method, o.created_at
        FROM orders o
        WHERE o.customer_id = ? AND (o.invoice_no = ? OR o.courier_tracking_id = ?)

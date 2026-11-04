@@ -343,7 +343,7 @@ async function executeOneClickBooking({ subOrderId, courierCode, actor, idempote
       if (subOrder.order_id) {
         await tx.execute(
           `UPDATE orders
-           SET courier_name = CASE WHEN courier_name = '' OR courier_name IS NULL THEN ? ELSE courier_name END,
+           SET courier_code = CASE WHEN courier_code = '' OR courier_code IS NULL THEN ? ELSE courier_code END,
                courier_tracking_id = CASE WHEN courier_tracking_id = '' OR courier_tracking_id IS NULL THEN ? ELSE courier_tracking_id END
            WHERE id = ?`,
           [providerConfig.name || providerConfig.code, bookingResult.trackingId, subOrder.order_id]
@@ -492,7 +492,7 @@ async function reconcileBookingResult({ subOrderId, actor }) {
       if (subOrder.order_id) {
         await tx.execute(
           `UPDATE orders
-           SET courier_name = CASE WHEN courier_name = '' OR courier_name IS NULL THEN ? ELSE courier_name END,
+           SET courier_code = CASE WHEN courier_code = '' OR courier_code IS NULL THEN ? ELSE courier_code END,
                courier_tracking_id = CASE WHEN courier_tracking_id = '' OR courier_tracking_id IS NULL THEN ? ELSE courier_tracking_id END
            WHERE id = ?`,
           [subOrder.courier_code, recResult.trackingId, subOrder.order_id]
@@ -966,7 +966,7 @@ async function resolveAmbiguousBookingOverride({
       if (shipment.order_id) {
         await tx.execute(
           `UPDATE orders
-           SET courier_name = CASE WHEN courier_name = '' OR courier_name IS NULL THEN ? ELSE courier_name END,
+           SET courier_code = CASE WHEN courier_code = '' OR courier_code IS NULL THEN ? ELSE courier_code END,
                courier_tracking_id = CASE WHEN courier_tracking_id = '' OR courier_tracking_id IS NULL THEN ? ELSE courier_tracking_id END
            WHERE id = ?`,
           [shipment.courier_code || '', cleanTracking, shipment.order_id]

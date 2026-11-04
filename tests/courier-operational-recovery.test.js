@@ -492,8 +492,8 @@ test('Operational Recovery & Monitoring: Reporting, vendor isolation, audit hist
   assert.equal(subOrderRow.shipment_carrier, 'steadfast');
   assert.equal(subOrderRow.tracking_code, 'TRK-OVERRIDE-12345');
 
-  const orderRow = await db.queryOne('SELECT courier_name, courier_tracking_id FROM orders WHERE id = ?', [orderId1]);
-  assert.ok(orderRow.courier_name);
+  const orderRow = await db.queryOne('SELECT courier_code, courier_tracking_id FROM orders WHERE id = ?', [orderId1]);
+  assert.ok(orderRow.courier_code);
   assert.ok(orderRow.courier_tracking_id);
 
   // 6. Verify COD Remittance Collection & Reconciliation via courierCodRepository
