@@ -493,7 +493,7 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
       const checkoutPage = await httpRequest(baseUrl, '/customer/checkout?lang=en&utm_source=facebook&utm_medium=paid_social&utm_campaign=p14-ci', { headers: { Cookie: cookieHeader, Accept:'application/json' } });
       assert.equal(checkoutPage.statusCode, 200, `MySQL checkout GET failed: ${checkoutPage.body.slice(0,500)}`);
       assert.doesNotMatch(checkoutPage.body, /name="cart_backup_json"/,'MySQL checkout must not accept a client cart backup');
-      assert.match(checkoutPage.body, /Cash on delivery/);
+      assert.match(checkoutPage.body, /Cash on Delivery/);
       assert.match(checkoutPage.body, /Optional campaign attribution/);
       const csrf = checkoutPage.body.match(/name="_csrf" value="([^"]+)"/);
       assert.ok(csrf,'checkout form binds a CSRF token');
