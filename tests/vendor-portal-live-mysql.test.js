@@ -115,7 +115,9 @@ describe('Vendor portal live MySQL/MariaDB repository integration', () => {
     await assert.rejects(()=>repo.recordPhysicalHandover({subOrderId:one,actor:{vendorId:vendors[0]}}),{code:'CONFLICT'});
     await repo.recordBookingResult({subOrderId:one,courierCode:'TEST-COURIER',trackingReference:'TEST-REF-1',resultCode:'succeeded',actor:{vendorId:vendors[0]}});
     let shipment=await client.queryOne('SELECT status,picked_up_at,booking_status FROM fulfillment_shipments WHERE vendor_sub_order_id=?',[one]);
-    assert.deepEqual([shipment.status,shipment.picked_up_at,shipment.booking_status],['ready_for_pickup',null,'succeeded'],'booking alone must never signal physical pickup');
+    assert.equal(shipment.status,'ready_for_pickup','booking alone must leave shipment status ready for pickup');
+    assert.equal(shipment.picked_up_at,null,'booking alone must not create a physical pickup timestamp');
+    assert.equal(shipment.booking_status,'succeeded','booking outcome is persisted separately from physical pickup');
     await repo.recordPhysicalHandover({subOrderId:one,actor:{vendorId:vendors[0]}});
     await assert.rejects(()=>repo.transitionSubOrder({subOrderId:one,toStatus:'delivered',actor:{vendorId:vendors[0]}}),{code:'AUTHORIZATION_ERROR'});
     await repo.transitionSubOrder({subOrderId:one,toStatus:'delivered',actor:{userId:actorUserId,platformAdmin:true}});
