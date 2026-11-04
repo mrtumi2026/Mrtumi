@@ -3,6 +3,7 @@
 const { env } = require('../config/env');
 const { getPool } = require('../db/mysqlPool');
 const { AppError, NotFoundError, ValidationError, AuthorizationError } = require('../utils/errors');
+const CourierBaseAdapter = require('../services/courier/CourierBaseAdapter');
 const CourierProviderFactory = require('../services/courier/CourierProviderFactory');
 const CourierRecommendationEngine = require('../services/courier/CourierRecommendationEngine');
 
@@ -312,7 +313,7 @@ async function executeOneClickBooking({ subOrderId, courierCode, actor, idempote
           bookingResult.trackingId,
           bookingResult.consignmentId || bookingResult.trackingId,
           bookingPayload.idempotencyKey,
-          JSON.stringify(bookingResult.rawResponse || {}),
+          JSON.stringify(CourierBaseAdapter.sanitize(bookingResult.rawResponse || {})),
           shipment.id
         ]
       );
@@ -357,7 +358,7 @@ async function executeOneClickBooking({ subOrderId, courierCode, actor, idempote
          WHERE id = ?`,
         [
           failStatus,
-          JSON.stringify(bookingResult.rawResponse || { error: bookingResult.error, isTimeout }),
+          JSON.stringify(CourierBaseAdapter.sanitize(bookingResult.rawResponse || { error: bookingResult.error, isTimeout })),
           shipment.id
         ]
       );
@@ -448,7 +449,7 @@ async function reconcileBookingResult({ subOrderId, actor }) {
         [
           recResult.trackingId,
           recResult.consignmentId || recResult.trackingId,
-          JSON.stringify(recResult.rawResponse || { recovered: true }),
+          JSON.stringify(CourierBaseAdapter.sanitize(recResult.rawResponse || { recovered: true })),
           subOrder.shipment_id
         ]
       );
@@ -581,9 +582,47 @@ async function syncShipmentTracking({ subOrderId, actor }) {
   });
 }
 
+/**
+ * Data and reporting contract for tracking ambiguous/timeout shipments.
+ * Enables operational monitoring, manual reconciliation, and escalation workflows.
+ * NOTE: Alert thresholds (e.g. 15m vs 30m) and designated operational personnel are owner decisions.
+ */
+async function getAmbiguousShipmentsReport({ olderThanMinutes = 0, limit = 50, offset = 0, pool } = {}) {
+  assertMysql();
+  const p = pool || getPool();
+  const [rows] = await p.query(
+    `SELECT fs.id AS shipment_id,
+            fs.vendor_sub_order_id,
+            fs.courier_code,
+            fs.tracking_id,
+            fs.booking_status,
+            fs.booking_idempotency_key,
+            fs.created_at,
+            fs.updated_at,
+            TIMESTAMPDIFF(MINUTE, fs.updated_at, UTC_TIMESTAMP()) AS age_minutes,
+            vso.vendor_id,
+            vso.vendor_order_no,
+            vso.delivery_mode,
+            o.id AS order_id,
+            o.invoice_no,
+            o.customer_name,
+            o.customer_phone
+     FROM fulfillment_shipments fs
+     JOIN vendor_sub_orders vso ON vso.id = fs.vendor_sub_order_id
+     JOIN orders o ON o.id = vso.order_id
+     WHERE fs.booking_status IN ('unknown_timeout', 'in_review')
+       AND TIMESTAMPDIFF(MINUTE, fs.updated_at, UTC_TIMESTAMP()) >= ?
+     ORDER BY fs.updated_at ASC
+     LIMIT ? OFFSET ?`,
+    [Number(olderThanMinutes) || 0, Number(limit) || 50, Number(offset) || 0]
+  );
+  return rows;
+}
+
 module.exports = {
   getShipmentQuotesAndRecommendation,
   executeOneClickBooking,
   reconcileBookingResult,
-  syncShipmentTracking
+  syncShipmentTracking,
+  getAmbiguousShipmentsReport
 };

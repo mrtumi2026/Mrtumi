@@ -72,11 +72,6 @@ class RedxAdapter extends CourierBaseAdapter {
     return { serviceable: true, reason: null };
   }
 
-  async reconcileBooking({ invoiceNo }) {
-    // RedX tracking by merchant invoice ID if API supports
-    return { found: false, trackingId: null, consignmentId: null, status: null };
-  }
-
   async bookShipment({ shipmentId, subOrderId, invoiceNo, recipient, parcel, codAmountPaisa, idempotencyKey }) {
     if (!this.apiKey && !this.isSandbox) {
       return {
@@ -216,7 +211,7 @@ class RedxAdapter extends CourierBaseAdapter {
             trackingId: ref,
             consignmentId: ref,
             status: data.tracking.status || 'in_transit',
-            rawResponse: data,
+            rawResponse: CourierBaseAdapter.sanitize(data),
             error: null
           };
         }

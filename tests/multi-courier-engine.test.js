@@ -344,8 +344,8 @@ test('Live disposable MySQL/MariaDB: timeout persistence, duplicate booking prev
 
   // 1. Seed active mock courier in courier_apis
   await db.execute(`
-    INSERT INTO courier_apis (code, name, provider_type, base_url, api_key, secret_key, client_id, sandbox, supports_live_quotes, status, created_at, updated_at)
-    VALUES ('mock_courier', 'Mock Express Services', 'mock', 'http://localhost/mock', 'test_key', 'test_secret', 'cid', 1, 1, 1, UTC_TIMESTAMP(), UTC_TIMESTAMP())
+    INSERT INTO courier_apis (code, name, provider_type, base_url, api_key, secret_key, client_id, sandbox, supports_live_quotes, status, updated_at)
+    VALUES ('mock_courier', 'Mock Express Services', 'mock', 'http://localhost/mock', 'test_key', 'test_secret', 'cid', 1, 1, 1, UTC_TIMESTAMP())
     ON DUPLICATE KEY UPDATE status = 1, supports_live_quotes = 1
   `);
 

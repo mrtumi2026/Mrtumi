@@ -190,7 +190,7 @@ class PathaoAdapter extends CourierBaseAdapter {
               trackingId: String(data.data.consignment_id),
               consignmentId: String(data.data.consignment_id),
               status: data.data.order_status,
-              rawResponse: data,
+              rawResponse: CourierBaseAdapter.sanitize(data),
               error: null
             };
           }
@@ -218,7 +218,7 @@ class PathaoAdapter extends CourierBaseAdapter {
               trackingId: String(match.consignment_id),
               consignmentId: String(match.consignment_id),
               status: match.order_status,
-              rawResponse: altData,
+              rawResponse: CourierBaseAdapter.sanitize(altData),
               error: null
             };
           }

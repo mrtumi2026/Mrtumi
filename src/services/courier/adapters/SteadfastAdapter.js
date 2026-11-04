@@ -151,7 +151,7 @@ class SteadfastAdapter extends CourierBaseAdapter {
             trackingId: String(data.tracking_code || invoiceNo),
             consignmentId: String(data.consignment_id || ''),
             status: data.delivery_status || 'in_review',
-            rawResponse: data,
+            rawResponse: CourierBaseAdapter.sanitize(data),
             error: null
           };
         }

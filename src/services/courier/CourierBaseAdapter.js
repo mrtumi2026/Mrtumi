@@ -16,6 +16,7 @@ class CourierBaseAdapter {
     this.clientId = String(config.client_id || '').trim();
     this.isSandbox = Boolean(Number(config.sandbox || 0));
     this.supportsLiveQuotes = Boolean(Number(config.supports_live_quotes || 0));
+    this.fetchFn = config.fetchFn || null;
     this.serviceOptions = config.service_options_json
       ? (typeof config.service_options_json === 'string' ? JSON.parse(config.service_options_json) : config.service_options_json)
       : {};
@@ -26,7 +27,7 @@ class CourierBaseAdapter {
    * Ensures API credentials are never leaked in network errors.
    */
   async safeFetch(url, options = {}, timeoutMs = 8000) {
-    const fetchFn = globalThis.fetch || require('node-fetch');
+    const fetchFn = this.fetchFn || globalThis.fetch || require('node-fetch');
     const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
     const signal = controller ? controller.signal : undefined;
 
@@ -44,7 +45,7 @@ class CourierBaseAdapter {
       });
       return response;
     } catch (err) {
-      if (err.name === 'AbortError' || err.code === 'ABORT_ERR') {
+      if (err.name === 'AbortError' || err.name === 'TimeoutError' || err.code === 'ABORT_ERR') {
         const timeoutError = new Error(`Courier API request timed out after ${timeoutMs}ms`);
         timeoutError.code = 'COURIER_NETWORK_TIMEOUT';
         throw timeoutError;
@@ -65,10 +66,10 @@ class CourierBaseAdapter {
     if (Array.isArray(data)) return data.map(item => CourierBaseAdapter.sanitize(item));
 
     const sanitized = {};
-    const sensitivePatterns = /api[-_]?key|secret[-_]?key|secret|token|password|auth|authorization/i;
+    const sensitivePatterns = /api[-_]?key|secret[-_]?key|secret|token|bearer|password|auth|authorization|client[-_]?secret|access[-_]?token|refresh[-_]?token|credential/i;
 
     for (const [key, value] of Object.entries(data)) {
-      if (sensitivePatterns.test(key) && typeof value === 'string') {
+      if (sensitivePatterns.test(key)) {
         sanitized[key] = '[REDACTED]';
       } else if (value && typeof value === 'object') {
         sanitized[key] = CourierBaseAdapter.sanitize(value);
