@@ -12,6 +12,7 @@ data/*.db-shm
 data/*.db-wal
 data/vendor-private-documents/
 storage/vendor_docs/
+storage/customer_return_evidence/
 *.sqlite
 *.sqlite3
 *.db

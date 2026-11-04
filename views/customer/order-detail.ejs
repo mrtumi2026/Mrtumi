@@ -1,52 +1,105 @@
 <%- include('../store/partials/header', { title: (isEn ? 'Order ' : 'অর্ডার ') + order.invoice_no }) %>
-<main id="mainContent" class="container py-5">
+<main id="mainContent" class="container py-4 py-md-5">
   <p><a href="/customer/account/orders" class="text-decoration-none">← <%= isEn ? 'Back to order history' : 'অর্ডারের ইতিহাসে ফিরুন' %></a></p>
   <div class="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-4">
     <div><h1 class="h3"><%= isEn ? 'Order details' : 'অর্ডারের বিবরণ' %></h1><p class="text-muted mb-0"><%= isEn ? 'Invoice' : 'ইনভয়েস' %>: <strong><%= order.invoice_no %></strong></p></div>
-    <span class="badge text-bg-light border"><%= order.order_status %></span>
+    <div class="d-flex align-items-center gap-2 flex-wrap"><span class="badge text-bg-light border"><%= order.statusLabel %></span><a class="btn btn-sm btn-outline-success" href="/customer/account/orders/<%= order.id %>/invoice"><%= isEn ? 'View invoice' : 'ইনভয়েস দেখুন' %></a></div>
   </div>
-  <section class="card card-body mb-4">
+  <section class="card card-body mb-4" aria-labelledby="order-summary-title">
+    <h2 id="order-summary-title" class="h5"><%= isEn ? 'Order summary' : 'অর্ডার সারাংশ' %></h2>
     <dl class="row mb-0">
       <dt class="col-sm-3"><%= isEn ? 'Placed' : 'অর্ডারের সময়' %></dt><dd class="col-sm-9"><%= order.dateLabel %></dd>
       <dt class="col-sm-3"><%= isEn ? 'Payment' : 'পেমেন্ট' %></dt><dd class="col-sm-9"><%= order.payment_method %> · <%= order.payment_status %></dd>
       <dt class="col-sm-3"><%= isEn ? 'Delivery area' : 'ডেলিভারি এলাকা' %></dt><dd class="col-sm-9"><%= [order.shipping_address, order.upazila, order.district, order.division].filter(Boolean).join(', ') %></dd>
     </dl>
   </section>
+
+  <section class="card card-body mb-4" aria-labelledby="tracking-title">
+    <h2 id="tracking-title" class="h5"><%= isEn ? 'Shipment tracking' : 'শিপমেন্ট ট্র্যাকিং' %></h2>
+    <% if (tracking) { %>
+      <dl class="row mb-0">
+        <% if (tracking.courier_code) { %><dt class="col-sm-3"><%= isEn ? 'Courier' : 'কুরিয়ার' %></dt><dd class="col-sm-9"><%= tracking.courier_code %></dd><% } %>
+        <% if (tracking.tracking_code) { %><dt class="col-sm-3"><%= isEn ? 'Tracking code' : 'ট্র্যাকিং কোড' %></dt><dd class="col-sm-9"><code><%= tracking.tracking_code %></code></dd><% } %>
+        <% if (tracking.consignment_id) { %><dt class="col-sm-3"><%= isEn ? 'Consignment' : 'কনসাইনমেন্ট' %></dt><dd class="col-sm-9"><%= tracking.consignment_id %></dd><% } %>
+        <% if (tracking.courier_status) { %><dt class="col-sm-3"><%= isEn ? 'Courier status' : 'কুরিয়ার অবস্থা' %></dt><dd class="col-sm-9"><%= tracking.courier_status %></dd><% } %>
+      </dl>
+      <% if (!tracking.tracking_code && !tracking.consignment_id) { %><p class="text-muted mb-0"><%= isEn ? 'The current shipment record does not include a tracking reference.' : 'বর্তমান শিপমেন্ট রেকর্ডে ট্র্যাকিং রেফারেন্স নেই।' %></p><% } %>
+    <% } else { %><p class="text-muted mb-0"><%= isEn ? 'Courier tracking is not available for this order yet. No tracking details have been inferred.' : 'এই অর্ডারের কুরিয়ার ট্র্যাকিং এখনো পাওয়া যায়নি। কোনো তথ্য অনুমান করে দেখানো হচ্ছে না।' %></p><% } %>
+  </section>
+
+  <section class="mb-4" aria-labelledby="status-history-title">
+    <h2 id="status-history-title" class="h5"><%= isEn ? 'Order status history' : 'অর্ডারের অবস্থা-ইতিহাস' %></h2>
+    <% if (statusHistory.length) { %><ol class="list-group list-group-numbered">
+      <% statusHistory.forEach((event) => { %><li class="list-group-item d-flex justify-content-between flex-wrap gap-2"><strong><%= event.statusLabel %></strong><time datetime="<%= event.created_at instanceof Date ? event.created_at.toISOString() : event.created_at %>"><%= event.dateLabel %></time></li><% }) %>
+    </ol><% } else { %><p class="text-muted"><%= isEn ? 'No status history is available yet.' : 'এখনো কোনো অবস্থা-ইতিহাস নেই।' %></p><% } %>
+  </section>
+
   <h2 class="h5"><%= isEn ? 'Items' : 'পণ্যসমূহ' %></h2>
-  <div class="table-responsive" tabindex="0" role="region" aria-label="<%= isEn ? 'Order items' : 'অর্ডারের পণ্যসমূহ' %>">
+  <% if (items.length) { %><div class="table-responsive" tabindex="0" role="region" aria-label="<%= isEn ? 'Order items' : 'অর্ডারের পণ্যসমূহ' %>">
     <table class="table align-middle"><thead><tr><th><%= isEn ? 'Product' : 'পণ্য' %></th><th><%= isEn ? 'Options' : 'বিকল্প' %></th><th><%= isEn ? 'Quantity' : 'পরিমাণ' %></th><th><%= isEn ? 'Unit price' : 'একক মূল্য' %></th><th><%= isEn ? 'Line total' : 'সর্বমোট' %></th></tr></thead>
       <tbody><% items.forEach((item) => { %><tr><td><%= item.product_name %></td><td><%= [item.size_label, item.color_label].filter(Boolean).join(' / ') || '—' %></td><td><%= item.qty %></td><td><%= item.unitPriceLabel %></td><td><%= item.lineTotalLabel %></td></tr><% }) %></tbody>
     </table>
-  </div>
-  <section class="ms-auto mt-4" style="max-width: 360px"><dl class="row">
+  </div><% } else { %><p class="text-muted"><%= isEn ? 'No item rows are available for this legacy order.' : 'এই পুরোনো অর্ডারের পণ্যের সারি পাওয়া যায়নি।' %></p><% } %>
+  <section class="ms-auto mt-4" style="max-width:360px"><dl class="row">
     <dt class="col-7"><%= isEn ? 'Subtotal' : 'সাবটোটাল' %></dt><dd class="col-5 text-end"><%= order.subtotalLabel %></dd>
     <dt class="col-7"><%= isEn ? 'Discount' : 'ছাড়' %></dt><dd class="col-5 text-end"><%= order.discountLabel %></dd>
     <dt class="col-7"><%= isEn ? 'Delivery' : 'ডেলিভারি' %></dt><dd class="col-5 text-end"><%= order.shippingLabel %></dd>
     <dt class="col-7 border-top pt-2"><%= isEn ? 'Total' : 'সর্বমোট' %></dt><dd class="col-5 text-end border-top pt-2 fw-bold"><%= order.totalLabel %></dd>
   </dl></section>
-  <% if (['pending','confirmed','processing'].includes(order.order_status)) { %>
-  <form method="post" action="/customer/account/orders/<%= order.id %>/cancel" class="card card-body mt-4" data-testid="cancel-order-form">
-    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-    <h2 class="h5"><%= isEn ? 'Cancel before dispatch' : 'ডিসপ্যাচের আগে বাতিল' %></h2>
-    <label class="form-label" for="cancelReason"><%= isEn ? 'Reason' : 'কারণ' %></label><input id="cancelReason" class="form-control mb-3" name="reason" minlength="3" maxlength="255" required>
-    <button class="btn btn-outline-danger align-self-start"><%= isEn ? 'Request cancellation' : 'বাতিলের অনুরোধ' %></button>
-  </form>
+
+  <% if (cancellations.length) { %><section class="card card-body mt-4"><h2 class="h5"><%= isEn ? 'Cancellation requests' : 'বাতিলের অনুরোধ' %></h2><ul class="mb-0"><% cancellations.forEach((request) => { %><li><%= request.statusLabel %> · <%= request.dateLabel %> — <%= request.reason %></li><% }) %></ul></section><% } %>
+  <% if (canCancel) { %>
+    <form method="post" action="/customer/account/orders/<%= order.id %>/cancel" class="card card-body mt-4" data-testid="cancel-order-form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <h2 class="h5"><%= isEn ? 'Request cancellation' : 'বাতিলের অনুরোধ' %></h2>
+      <p class="small text-muted"><%= isEn ? 'Availability follows the current store cancellation settings. The request and order transition are recorded together.' : 'বর্তমান স্টোর বাতিল-সেটিং অনুযায়ী অনুরোধ গ্রহণযোগ্য হবে। অনুরোধ ও অর্ডারের অবস্থা একসঙ্গে সংরক্ষিত হয়।' %></p>
+      <label class="form-label" for="cancelReason"><%= isEn ? 'Reason' : 'কারণ' %></label><input id="cancelReason" class="form-control mb-3" name="reason" minlength="3" maxlength="255" required>
+      <button class="btn btn-outline-danger align-self-start" type="submit"><%= isEn ? 'Request cancellation' : 'বাতিলের অনুরোধ' %></button>
+    </form>
   <% } %>
+
   <% if (['shipped','delivered','return_requested'].includes(order.order_status)) { %>
-  <form method="post" enctype="multipart/form-data" action="/customer/account/orders/<%= order.id %>/returns" class="card card-body mt-4" id="returnRequestForm">
-    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-    <h2 class="h5"><%= isEn ? 'Return / delivery refusal' : 'রিটার্ন / ডেলিভারি প্রত্যাখ্যান' %></h2>
-    <p class="text-muted"><%= isEn ? 'Standard returns default to 7 days for categories explicitly enabled by the store. Wrong, damaged, expired, missing-item or refusal claims are reviewed individually.' : 'স্টোর কর্তৃক সক্রিয় ক্যাটাগরিতে সাধারণত ৭ দিনের মধ্যে রিটার্ন করা যায়। ভুল, ক্ষতিগ্রস্ত, মেয়াদোত্তীর্ণ, অনুপস্থিত পণ্য বা প্রত্যাখ্যানের দাবি আলাদাভাবে পর্যালোচনা হবে।' %></p>
-    <fieldset class="mb-3"><legend class="form-label"><%= isEn ? 'Select item(s)' : 'পণ্য নির্বাচন করুন' %></legend>
-      <% items.forEach((item) => { %><div class="form-check d-flex align-items-center gap-2 mb-2"><input class="form-check-input return-line" type="checkbox" value="<%= item.id %>" data-qty="<%= item.qty %>" id="returnItem<%= item.id %>"><label class="form-check-label flex-grow-1" for="returnItem<%= item.id %>"><%= item.product_name %> · <%= item.qty %></label><input class="form-control form-control-sm return-qty" type="number" min="1" max="<%= item.qty %>" value="1" aria-label="<%= isEn ? 'Return quantity' : 'রিটার্ন পরিমাণ' %>" style="width:6rem"></div><% }) %>
-    </fieldset>
-    <input type="hidden" name="items_json" id="returnItemsJson">
-    <label class="form-label" for="claimType"><%= isEn ? 'Claim type' : 'দাবির ধরন' %></label><select class="form-select mb-3" name="claim_type" id="claimType" required><option value="standard"><%= isEn ? 'Standard return' : 'সাধারণ রিটার্ন' %></option><option value="wrong"><%= isEn ? 'Wrong item' : 'ভুল পণ্য' %></option><option value="damaged"><%= isEn ? 'Damaged' : 'ক্ষতিগ্রস্ত' %></option><option value="expired"><%= isEn ? 'Expired' : 'মেয়াদোত্তীর্ণ' %></option><option value="missing"><%= isEn ? 'Missing item' : 'অনুপস্থিত পণ্য' %></option><option value="refusal"><%= isEn ? 'Delivery refusal' : 'ডেলিভারি প্রত্যাখ্যান' %></option></select>
-    <label class="form-label" for="returnReason"><%= isEn ? 'Reason' : 'কারণ' %></label><textarea class="form-control mb-3" name="reason" id="returnReason" minlength="5" maxlength="500" required></textarea>
-    <label class="form-label" for="returnEvidence"><%= isEn ? 'Evidence image (optional)' : 'প্রমাণের ছবি (ঐচ্ছিক)' %></label><input class="form-control mb-3" type="file" name="evidence" id="returnEvidence" accept="image/jpeg,image/png,image/webp,image/gif">
-    <button class="btn btn-primary align-self-start"><%= isEn ? 'Submit for review' : 'পর্যালোচনার জন্য জমা দিন' %></button>
-  </form>
-  <script>document.getElementById('returnRequestForm').addEventListener('submit',function(e){const selected=[...this.querySelectorAll('.return-line:checked')].map(x=>({orderItemId:Number(x.value),qty:Number(x.closest('.form-check').querySelector('.return-qty').value)}));if(!selected.length){e.preventDefault();alert('<%= isEn ? 'Select at least one item.' : 'কমপক্ষে একটি পণ্য নির্বাচন করুন।' %>');return;}document.getElementById('returnItemsJson').value=JSON.stringify(selected);});</script>
+    <form method="post" enctype="multipart/form-data" action="/customer/account/orders/<%= order.id %>/returns" class="card card-body mt-4" id="returnRequestForm">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <h2 class="h5"><%= isEn ? 'Return / delivery refusal' : 'রিটার্ন / ডেলিভারি প্রত্যাখ্যান' %></h2>
+      <p class="text-muted"><%= isEn ? 'Eligibility uses current store return settings and category policy. Wrong, damaged, expired, missing-item and refusal claims are reviewed under those settings.' : 'যোগ্যতা স্টোরের বর্তমান রিটার্ন সেটিং ও ক্যাটাগরি নীতি অনুসরণ করে। ভুল, ক্ষতিগ্রস্ত, মেয়াদোত্তীর্ণ, অনুপস্থিত পণ্য ও প্রত্যাখ্যানের দাবি সেই নীতি অনুযায়ী পর্যালোচনা হবে।' %></p>
+      <fieldset class="mb-3"><legend class="form-label"><%= isEn ? 'Select item(s)' : 'পণ্য নির্বাচন করুন' %></legend>
+        <% items.forEach((item) => { %><div class="form-check d-flex align-items-center gap-2 mb-2"><input class="form-check-input return-line" type="checkbox" value="<%= item.id %>" data-qty="<%= item.qty %>" id="returnItem<%= item.id %>"><label class="form-check-label flex-grow-1" for="returnItem<%= item.id %>"><%= item.product_name %> · <%= item.qty %></label><input class="form-control form-control-sm return-qty" type="number" min="1" max="<%= item.qty %>" value="1" aria-label="<%= isEn ? 'Return quantity' : 'রিটার্ন পরিমাণ' %>" style="width:6rem"></div><% }) %>
+      </fieldset>
+      <input type="hidden" name="items_json" id="returnItemsJson">
+      <label class="form-label" for="claimType"><%= isEn ? 'Claim type' : 'দাবির ধরন' %></label><select class="form-select mb-3" name="claim_type" id="claimType" required><option value="standard"><%= isEn ? 'Standard return' : 'সাধারণ রিটার্ন' %></option><option value="wrong"><%= isEn ? 'Wrong item' : 'ভুল পণ্য' %></option><option value="damaged"><%= isEn ? 'Damaged' : 'ক্ষতিগ্রস্ত' %></option><option value="expired"><%= isEn ? 'Expired' : 'মেয়াদোত্তীর্ণ' %></option><option value="missing"><%= isEn ? 'Missing item' : 'অনুপস্থিত পণ্য' %></option><option value="refusal"><%= isEn ? 'Delivery refusal' : 'ডেলিভারি প্রত্যাখ্যান' %></option></select>
+      <label class="form-label" for="returnReason"><%= isEn ? 'Reason' : 'কারণ' %></label><textarea class="form-control mb-3" name="reason" id="returnReason" minlength="5" maxlength="500" required></textarea>
+      <label class="form-label" for="returnEvidence"><%= isEn ? 'Private evidence image (optional)' : 'ব্যক্তিগত প্রমাণের ছবি (ঐচ্ছিক)' %></label><input class="form-control mb-3" type="file" name="evidence" id="returnEvidence" accept="image/jpeg,image/png,image/webp,image/gif">
+      <button class="btn btn-primary align-self-start" type="submit"><%= isEn ? 'Submit for review' : 'পর্যালোচনার জন্য জমা দিন' %></button>
+    </form>
+    <script>
+      document.getElementById('returnRequestForm').addEventListener('submit', function(event) {
+        const selected = [...this.querySelectorAll('.return-line:checked')].map((checkbox) => ({
+          orderItemId: Number(checkbox.value),
+          qty: Number(checkbox.closest('.form-check').querySelector('.return-qty').value)
+        }));
+        if (!selected.length) { event.preventDefault(); window.alert(<%- JSON.stringify(isEn ? 'Select at least one item.' : 'কমপক্ষে একটি পণ্য নির্বাচন করুন।') %>); return; }
+        document.getElementById('returnItemsJson').value = JSON.stringify(selected);
+      });
+    </script>
   <% } %>
+
+  <% if (returns.length) { %><section class="card card-body mt-4"><h2 class="h5"><%= isEn ? 'Return request status' : 'রিটার্ন অনুরোধের অবস্থা' %></h2><div class="table-responsive"><table class="table table-sm align-middle"><thead><tr><th>#</th><th><%= isEn ? 'Claim' : 'দাবি' %></th><th><%= isEn ? 'Status' : 'অবস্থা' %></th><th><%= isEn ? 'Submitted' : 'জমা' %></th><th><%= isEn ? 'Decision' : 'সিদ্ধান্ত' %></th><th><%= isEn ? 'Evidence' : 'প্রমাণ' %></th></tr></thead><tbody>
+    <% returns.forEach((request) => { %><tr><td><%= request.id %></td><td><%= request.claim_type %></td><td><%= request.statusLabel %></td><td><%= request.dateLabel %></td><td><%= request.decision_note || '—' %></td><td><% if (request.evidenceAvailable) { %><a href="/customer/account/returns/<%= request.id %>/evidence"><%= isEn ? 'Download' : 'ডাউনলোড' %></a><% } else if (request.evidence_path) { %><span class="text-muted"><%= isEn ? 'Stored legacy evidence' : 'পুরোনো সংরক্ষিত প্রমাণ' %></span><% } else { %>—<% } %></td></tr>
+      <% if (request.history.length) { %><tr><td colspan="6"><small><%= isEn ? 'Status history:' : 'অবস্থা-ইতিহাস:' %> <% request.history.forEach((event, index) => { %><%= index ? ' → ' : '' %><%= event.toLabel %> (<%= event.dateLabel %>)<% }) %></small></td></tr><% } %>
+    <% }) %>
+  </tbody></table></div></section><% } %>
+
+  <% if (refundable) { %><form method="post" action="/customer/account/orders/<%= order.id %>/refunds" class="card card-body mt-4" data-testid="refund-request-form">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>"><input type="hidden" name="request_key" value="<%= refundRequestKey %>">
+    <h2 class="h5"><%= isEn ? 'Request a refund' : 'রিফান্ড অনুরোধ' %></h2>
+    <p class="small text-muted"><%= isEn ? 'Only recorded paid balance may be requested. This submits a request for staff review; no money is moved.' : 'রেকর্ডকৃত পরিশোধিত অর্থের মধ্যেই অনুরোধ করা যাবে। এটি কর্মী পর্যালোচনার জন্য জমা হবে; কোনো অর্থ স্থানান্তর হবে না।' %> <%= isEn ? 'Remaining:' : 'অবশিষ্ট:' %> <%= refundRemainingLabel %></p>
+    <label class="form-label" for="refundAmount"><%= isEn ? 'Amount in paisa' : 'পরিমাণ (পয়সা)' %></label><input class="form-control mb-3" type="number" id="refundAmount" name="amount_paisa" min="1" max="<%= refundRemainingPaisa %>" step="1" required>
+    <label class="form-label" for="refundReason"><%= isEn ? 'Reason' : 'কারণ' %></label><textarea class="form-control mb-3" id="refundReason" name="reason" minlength="3" maxlength="255" required></textarea>
+    <button class="btn btn-outline-primary align-self-start" type="submit"><%= isEn ? 'Submit refund request' : 'রিফান্ড অনুরোধ জমা দিন' %></button>
+  </form><% } else if (String(order.payment_method || '').toLowerCase() === 'cod' && ['cancelled','delivered','returned'].includes(order.order_status)) { %><div class="alert alert-info mt-4"><%= isEn ? 'COD refunds are unavailable until a verified refund destination is configured. Contact support; no refund is automatic.' : 'যাচাইকৃত রিফান্ড গন্তব্য চালু না হওয়া পর্যন্ত COD রিফান্ড অনুপলব্ধ। সহায়তায় যোগাযোগ করুন; স্বয়ংক্রিয় রিফান্ড হবে না।' %></div><% } %>
+  <% if (refunds.length) { %><section class="card card-body mt-4"><h2 class="h5"><%= isEn ? 'Refund request status' : 'রিফান্ড অনুরোধের অবস্থা' %></h2><div class="table-responsive"><table class="table table-sm"><thead><tr><th>#</th><th><%= isEn ? 'Amount' : 'পরিমাণ' %></th><th><%= isEn ? 'Status' : 'অবস্থা' %></th><th><%= isEn ? 'Reason' : 'কারণ' %></th><th><%= isEn ? 'History' : 'ইতিহাস' %></th></tr></thead><tbody>
+    <% refunds.forEach((refund) => { %><tr><td><%= refund.id %></td><td><%= refund.amountLabel %></td><td><%= refund.statusLabel %></td><td><%= refund.reason %></td><td><% if (refund.history.length) { %><%= refund.history.map((event) => event.toLabel + ' (' + event.dateLabel + ')').join(' → ') %><% } else { %>—<% } %></td></tr><% }) %>
+  </tbody></table></div><p class="small text-muted mb-0"><%= isEn ? 'A status update is not a payment or a guarantee of transfer.' : 'অবস্থা আপডেট অর্থপ্রদান বা অর্থ স্থানান্তরের নিশ্চয়তা নয়।' %></p></section><% } %>
 </main>
 <%- include('../store/partials/footer') %>

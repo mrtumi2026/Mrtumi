@@ -77,6 +77,38 @@ test('customer order details return stable order-item IDs needed for exact retur
   assert.match(source, /SELECT id, product_name, qty, unit_price_paisa, line_total_paisa, size_label, color_label\s+FROM order_items WHERE order_id = \? ORDER BY id/);
 });
 
+test('customer return evidence uses a private directory and rejects arbitrary filesystem paths', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const evidence = require('../src/middleware/customerReturnEvidence');
+  const original = process.env.CUSTOMER_RETURN_EVIDENCE_DIR;
+  const privateDir = path.join(process.cwd(), 'tmp', `customer-return-evidence-${process.pid}-${Date.now()}`);
+  process.env.CUSTOMER_RETURN_EVIDENCE_DIR = privateDir;
+  try {
+    const resolved = evidence.resolveEvidencePath('return-evidence/1-abcd.jpg');
+    assert.equal(path.dirname(resolved), fs.realpathSync(privateDir));
+    const relativeToPublic = path.relative(fs.realpathSync(path.join(process.cwd(), 'public')), fs.realpathSync(privateDir));
+    assert.ok(relativeToPublic.startsWith('..') || path.isAbsolute(relativeToPublic), 'private evidence must remain outside the public tree');
+    for (const key of ['../secret.jpg', 'return-evidence/../../secret.jpg', '/etc/passwd', '']) {
+      assert.throws(() => evidence.resolveEvidencePath(key), { code: 'VALIDATION_ERROR' });
+    }
+  } finally {
+    if (original === undefined) delete process.env.CUSTOMER_RETURN_EVIDENCE_DIR;
+    else process.env.CUSTOMER_RETURN_EVIDENCE_DIR = original;
+    fs.rmSync(privateDir, { recursive: true, force: true });
+  }
+});
+
+test('legacy public return-evidence URLs are checked before public static serving', () => {
+  const fs = require('node:fs');
+  const server = fs.readFileSync(require.resolve('../server'), 'utf8');
+  const guard = server.indexOf("app.use('/uploads/custom', async (req, res, next)");
+  const publicStatic = server.indexOf("app.use(express.static(path.join(__dirname, 'public')))");
+  assert.ok(guard >= 0 && publicStatic > guard, 'evidence guard runs before the public static middleware');
+  assert.match(server, /SELECT id FROM customer_return_requests WHERE evidence_path IN \(\?, \?\) LIMIT 1/);
+  assert.match(server, /if \(legacyEvidence\) return res\.sendStatus\(404\)/);
+});
+
 test('Phase 07 enforces password bounds compatible with bcrypt', () => {
   assert.equal(validatePassword('correct horse battery'), 'correct horse battery');
   assert.throws(() => validatePassword('short'), { code: 'VALIDATION_ERROR' });

@@ -1,1 +1,11 @@
-<%- include('../store/partials/header', { title: isEn ? 'Return requests' : 'রিটার্ন অনুরোধ' }) %><main class="container py-5"><h1 class="h3"><%= isEn?'Return requests':'রিটার্ন অনুরোধ' %></h1><div class="table-responsive"><table class="table"><thead><tr><th>#</th><th><%= isEn?'Order':'অর্ডার' %></th><th><%= isEn?'Claim':'দাবি' %></th><th><%= isEn?'Reason':'কারণ' %></th><th><%= isEn?'Status':'অবস্থা' %></th></tr></thead><tbody><% returns.forEach(row=>{ %><tr><td><%= row.id %></td><td><%= row.invoice_no %></td><td><%= row.claim_type %></td><td><%= row.reason %></td><td><%= row.status %></td></tr><% }) %></tbody></table></div></main><%- include('../store/partials/footer') %>
+<%- include('../store/partials/header', { title: isEn ? 'Return requests' : 'রিটার্ন অনুরোধ' }) %>
+<main id="mainContent" class="container py-4 py-md-5">
+  <p><a href="/customer/account" class="text-decoration-none">← <%= isEn ? 'My account' : 'আমার অ্যাকাউন্ট' %></a></p>
+  <h1 class="h3"><%= isEn ? 'Return requests' : 'রিটার্ন অনুরোধ' %></h1>
+  <% if (!returns.length) { %><div class="alert alert-light border"><%= isEn ? 'You have not submitted a return request.' : 'আপনি কোনো রিটার্ন অনুরোধ জমা দেননি।' %></div><% } else { %>
+  <div class="table-responsive"><table class="table align-middle"><thead><tr><th>#</th><th><%= isEn ? 'Order' : 'অর্ডার' %></th><th><%= isEn ? 'Claim' : 'দাবি' %></th><th><%= isEn ? 'Reason' : 'কারণ' %></th><th><%= isEn ? 'Status' : 'অবস্থা' %></th><th><%= isEn ? 'Submitted' : 'জমা' %></th><th><%= isEn ? 'Evidence' : 'প্রমাণ' %></th></tr></thead><tbody>
+    <% returns.forEach((row) => { %><tr><td><%= row.id %></td><td><a href="/customer/account/orders/<%= row.order_id %>"><%= row.invoice_no %></a></td><td><%= row.claim_type %></td><td><%= row.reason %><% if (row.decision_note) { %><div class="small text-muted"><%= isEn ? 'Review note:' : 'পর্যালোচনা নোট:' %> <%= row.decision_note %></div><% } %></td><td><%= row.statusLabel %></td><td><%= row.dateLabel %></td><td><% if (row.evidenceAvailable) { %><a href="/customer/account/returns/<%= row.id %>/evidence"><%= isEn ? 'Download securely' : 'নিরাপদে ডাউনলোড' %></a><% } else if (row.evidence_path) { %><span class="text-muted"><%= isEn ? 'Legacy evidence is not served here' : 'পুরোনো প্রমাণ এখানে পরিবেশন করা হয় না' %></span><% } else { %>—<% } %></td></tr><% }) %>
+  </tbody></table></div>
+  <% } %>
+</main>
+<%- include('../store/partials/footer') %>

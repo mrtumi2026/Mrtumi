@@ -627,6 +627,20 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
     const registeredCustomer = await client.queryOne('SELECT id FROM customers WHERE phone=?', [registrationPhone]);
     assert.ok(registeredCustomer);
     assert.equal(Number((await client.queryOne('SELECT quantity FROM customer_cart_items WHERE customer_id=? AND product_id=? AND variant_id=?', [registeredCustomer.id, inhouseProdId, variant5KgId])).quantity), 1, 'registration preserves and merges the guest cart');
+    const duplicateRegistration = await httpRequest(baseUrl, '/customer/register', { method: 'POST', headers: { Cookie: registeredCookie, 'Content-Type': 'application/x-www-form-urlencoded', 'x-csrf-token': registrationCsrf }, body: new URLSearchParams({ name: 'Duplicate account', phone: registrationPhone, password: 'SecureCartPassword!2026', privacy_notice_acknowledged: 'yes', privacy_policy_version: '1.0' }).toString() });
+    assert.equal(duplicateRegistration.statusCode, 409, 'duplicate customer registration is rejected');
+    const registrationTokenResponse = await httpRequest(baseUrl, '/api/v1/csrf-token', { headers: { Cookie: registeredCookie } });
+    const registeredCsrf = JSON.parse(registrationTokenResponse.body).data.csrfToken;
+    const badProfileUpdate = await httpRequest(baseUrl, '/customer/account/profile', { method: 'POST', headers: { Cookie: registeredCookie, 'Content-Type': 'application/x-www-form-urlencoded', 'x-csrf-token': registeredCsrf }, body: new URLSearchParams({ _csrf: registeredCsrf, name: 'Changed without proof', email: 'valid@example.test', current_password: 'WrongPassword!2026' }).toString() });
+    assert.equal(badProfileUpdate.statusCode, 400, 'profile update requires the current password');
+    const profileUpdate = await httpRequest(baseUrl, '/customer/account/profile', { method: 'POST', headers: { Cookie: registeredCookie, 'Content-Type': 'application/x-www-form-urlencoded', 'x-csrf-token': registeredCsrf }, body: new URLSearchParams({ _csrf: registeredCsrf, name: 'Updated Registered Customer', email: 'owner@example.test', current_password: 'SecureCartPassword!2026' }).toString() });
+    assert.equal(profileUpdate.statusCode, 302, 'customer can update profile after current-password verification');
+    assert.equal((await client.queryOne('SELECT name,email FROM customers WHERE id=?', [registeredCustomer.id])).name, 'Updated Registered Customer');
+    const otherRegisteredSession = await login(registrationPhone);
+    const passwordChange = await httpRequest(baseUrl, '/customer/account/password', { method: 'POST', headers: { Cookie: registeredCookie, 'Content-Type': 'application/x-www-form-urlencoded', 'x-csrf-token': registeredCsrf }, body: new URLSearchParams({ _csrf: registeredCsrf, current_password: 'SecureCartPassword!2026', new_password: 'ChangedSecurePassword!2026', confirm_password: 'ChangedSecurePassword!2026' }).toString() });
+    assert.equal(passwordChange.statusCode, 302, 'customer can change password');
+    assert.equal((await httpRequest(baseUrl, '/customer/account', { headers: { Cookie: otherRegisteredSession.cookie } })).statusCode, 302, 'password change revokes other authenticated sessions');
+    assert.equal((await httpRequest(baseUrl, '/customer/account', { headers: { Cookie: registeredCookie } })).statusCode, 200, 'current session remains authenticated after its password change');
 
     const logout = await httpRequest(baseUrl, '/customer/logout', { method: 'POST', headers: { Cookie: guestSession.cookie, 'Content-Type': 'application/x-www-form-urlencoded', 'x-csrf-token': guestSession.csrf }, body: '' });
     assert.equal(logout.statusCode, 302, 'logout is a CSRF-protected POST');
@@ -849,11 +863,23 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
     const malformedField = await httpRequest(baseUrl, '/customer/account/addresses', { method: 'POST', headers: { Cookie: one.cookie, 'Content-Type': 'application/json', 'x-csrf-token': one.csrf }, body: JSON.stringify({ label: 'Home', recipient_name: 'Owner One', recipient_phone: firstPhone, division: 'Dhaka', district: 'Dhaka', upazila: 'Dhanmondi', street_address: { hidden: 'structured value' } }) });
     assert.equal(malformedField.statusCode, 400, 'structured text fields are rejected');
     assert.equal(Number((await client.queryOne('SELECT COUNT(*) AS n FROM customer_addresses WHERE customer_id=?', [first.id])).n), addressCountBeforeMalformedField, 'malformed field does not persist an address');
-    const unsupportedUpdate = await httpRequest(baseUrl, `/customer/account/addresses/${firstAddress.insertId}`, { method: 'POST', headers: { Cookie: one.cookie, 'Content-Type': 'application/x-www-form-urlencoded', 'x-csrf-token': one.csrf }, body: new URLSearchParams({ _csrf: one.csrf, recipient_name: 'Changed' }).toString() });
-    assert.equal(unsupportedUpdate.statusCode, 404, 'no address-update route exists, so an ID cannot be used to update another owner address');
+    const addressEdit = await httpRequest(baseUrl, `/customer/account/addresses/${firstAddress.insertId}`, { method: 'POST', headers: { Cookie: one.cookie, 'Content-Type': 'application/x-www-form-urlencoded', 'x-csrf-token': one.csrf }, body: new URLSearchParams({ _csrf: one.csrf, label: 'Edited Home', recipient_name: 'Owner One Updated', recipient_phone: firstPhone, division: 'Dhaka', district: 'Dhaka', upazila: 'Dhanmondi', street_address: 'House 13, Owner One Road', is_default: '1' }).toString() });
+    assert.equal(addressEdit.statusCode, 302, 'owner can edit their own saved address');
+    const updatedAddress = await client.queryOne('SELECT recipient_name,street_address,is_default FROM customer_addresses WHERE id=? AND customer_id=?', [firstAddress.insertId, first.id]);
+    assert.equal(updatedAddress.recipient_name, 'Owner One Updated');
+    assert.equal(updatedAddress.street_address, 'House 13, Owner One Road');
+    assert.equal(Number(updatedAddress.is_default), 1, 'address edit can atomically set the default');
+    const foreignUpdate = await httpRequest(baseUrl, `/customer/account/addresses/${secondAddress.insertId}`, { method: 'POST', headers: { Cookie: one.cookie, 'Content-Type': 'application/x-www-form-urlencoded', 'x-csrf-token': one.csrf }, body: new URLSearchParams({ _csrf: one.csrf, label: 'Bad', recipient_name: 'Owner Two', recipient_phone: secondPhone, division: 'Dhaka', district: 'Dhaka', upazila: 'Gulshan', street_address: 'Tampered foreign address' }).toString() });
+    assert.equal(foreignUpdate.statusCode, 404, 'foreign address update is hidden');
+    assert.equal(Number((await client.queryOne('SELECT COUNT(*) AS n FROM customer_addresses WHERE customer_id=? AND is_default=1', [first.id])).n), 1, 'only one default address per customer');
+    const setDefault = await httpRequest(baseUrl, `/customer/account/addresses/${createdAddress.id}/default`, { method: 'POST', headers: { Cookie: one.cookie, 'Content-Type': 'application/x-www-form-urlencoded', 'x-csrf-token': one.csrf }, body: '_csrf=' + encodeURIComponent(one.csrf) });
+    assert.equal(setDefault.statusCode, 302, 'owner can select another default');
+    assert.equal(Number((await client.queryOne('SELECT is_default FROM customer_addresses WHERE id=?', [createdAddress.id])).is_default), 1);
+    assert.equal(Number((await client.queryOne('SELECT COUNT(*) AS n FROM customer_addresses WHERE customer_id=? AND is_default=1', [first.id])).n), 1, 'setting default clears the prior default');
     const ownerDelete = await httpRequest(baseUrl, `/customer/account/addresses/${createdAddress.id}/delete`, { method: 'POST', headers: { Cookie: one.cookie, 'Content-Type': 'application/x-www-form-urlencoded', 'x-csrf-token': one.csrf }, body: '_csrf=' + encodeURIComponent(one.csrf) });
     assert.equal(ownerDelete.statusCode, 302, 'authenticated owner can delete their own saved address');
     assert.equal(Number((await client.queryOne('SELECT COUNT(*) AS n FROM customer_addresses WHERE id=? AND customer_id=?', [createdAddress.id, first.id])).n), 0, 'owner deletion persists');
+    assert.equal(Number((await client.queryOne('SELECT is_default FROM customer_addresses WHERE id=? AND customer_id=?', [firstAddress.insertId, first.id])).is_default), 1, 'deleting the default promotes the next owned address');
 
     const product = await client.queryOne('SELECT id FROM products WHERE slug=?', ['artisan-date-gift-box']);
     const cartAdd = await httpRequest(baseUrl, '/cart/add', { method: 'POST', headers: { Cookie: one.cookie, 'Content-Type': 'application/json', Accept: 'application/json', 'x-csrf-token': one.csrf }, body: JSON.stringify({ product_id: product.id, qty: 1 }) });
@@ -863,8 +889,15 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
     const requestKey = checkout.body.match(/name="checkout_request_key" value="([^"]+)"/);
     assert.ok(checkoutCsrf && requestKey);
     const foreignUse = await httpRequest(baseUrl, '/customer/checkout', { method: 'POST', headers: { Cookie: one.cookie, 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ _csrf: checkoutCsrf[1], checkout_request_key: requestKey[1], customer_name: first.name, phone: firstPhone, address_id: String(secondAddress.insertId), delivery_location_id: String(deliveryLocationId), payment_method: 'cod', confirm_order: 'yes' }).toString() });
-    assert.equal(foreignUse.statusCode, 400, 'a saved-address ID alone cannot supply another customer\'s shipping address');
+    assert.equal(foreignUse.statusCode, 404, 'a saved-address ID alone cannot supply another customer\'s shipping address and ownership is concealed');
     assert.equal(Number((await client.queryOne('SELECT COUNT(*) AS n FROM orders WHERE customer_id=?', [first.id])).n), 0, 'foreign ID did not create an order');
+    const savedAddressCheckout = await httpRequest(baseUrl, '/customer/checkout', { method: 'POST', headers: { Cookie: one.cookie, 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ _csrf: checkoutCsrf[1], checkout_request_key: requestKey[1], customer_name: 'Forged client name', phone: firstPhone, address: 'Forged client address', address_id: String(firstAddress.insertId), delivery_location_id: String(deliveryLocationId), payment_method: 'cod', confirm_order: 'yes' }).toString() });
+    assert.equal(savedAddressCheckout.statusCode, 302, 'owner can submit checkout using their selected saved address');
+    const checkedOutOrder = await client.queryOne('SELECT customer_name,customer_phone,shipping_address FROM orders WHERE customer_id=? ORDER BY id DESC LIMIT 1', [first.id]);
+    assert.equal(checkedOutOrder.customer_name, 'Owner One Updated', 'checkout uses the saved recipient, not client-supplied name');
+    assert.equal(checkedOutOrder.customer_phone, firstPhone);
+    assert.match(checkedOutOrder.shipping_address, /House 13, Owner One Road/);
+    assert.doesNotMatch(checkedOutOrder.shipping_address, /Forged client address/);
   });
 
   test('8. Phase 07 deterministic concurrent persistent-cart adds do not lose quantity updates', { skip: !MYSQL_HOST ? SKIP_REASON : false }, async () => {
@@ -1082,8 +1115,15 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
     assert.match(detail.body, /History item 0/);
     assert.match(detail.body, /House 18, History Road/);
     assert.match(detail.body, /৳12\.50/);
+    assert.match(detail.body, /Courier tracking is not available for this order yet/);
+    assert.match(detail.body, /data-testid="cancel-order-form"/);
+    const invoice = await httpRequest(baseUrl, `/customer/account/orders/${oldestOrderId}/invoice?lang=en`, { headers: { Cookie: cookie } });
+    assert.equal(invoice.statusCode, 200, 'owner can open their invoice');
+    assert.match(invoice.body, new RegExp(`P07-HIST-${suffix}-00`));
     const foreignDetail = await httpRequest(baseUrl, `/customer/account/orders/${foreignOrderId}`, { headers: { Cookie: cookie } });
     assert.equal(foreignDetail.statusCode, 404, 'a different customer cannot retrieve order details by guessing its numeric ID');
+    const foreignInvoice = await httpRequest(baseUrl, `/customer/account/orders/${foreignOrderId}/invoice`, { headers: { Cookie: cookie } });
+    assert.equal(foreignInvoice.statusCode, 404, 'a different customer cannot view an invoice by guessing its numeric ID');
     const invalidDetail = await httpRequest(baseUrl, '/customer/account/orders/not-an-id', { headers: { Cookie: cookie } });
     assert.equal(invalidDetail.statusCode, 404);
 

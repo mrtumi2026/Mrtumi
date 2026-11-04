@@ -106,6 +106,38 @@ async function getProfile(customerId) {
   if (!profile) throw new NotFoundError('Customer account not found.');
   return profile;
 }
+async function updateProfile(customerId, input = {}, evidence = {}) {
+  const owner = requirePositiveInt(customerId, 'customer ID');
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw new ValidationError('Enter valid profile details.');
+  const name = String(input.name || '').trim();
+  const email = String(input.email || '').trim().toLowerCase();
+  if (name.length < 2 || name.length > 191) throw new ValidationError('Name must contain 2–191 characters.');
+  if (email && (email.length > 191 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) throw new ValidationError('Enter a valid email address of at most 191 characters.');
+  return withTransaction(async (tx) => {
+    const customer = await tx.queryOne('SELECT id,name,email,password_hash,status,is_blocked FROM customers WHERE id=? FOR UPDATE', [owner]);
+    if (!customer || Number(customer.status) !== 1 || Number(customer.is_blocked) === 1) throw new NotFoundError('Customer account not found.');
+    if (!await bcrypt.compare(String(input.current_password || ''), customer.password_hash || '')) throw new ValidationError('Current password is incorrect.');
+    await tx.execute('UPDATE customers SET name=?,email=? WHERE id=?', [name, email || null, owner]);
+    await tx.execute("INSERT INTO audit_logs(actor_type,actor_id,action,entity_type,entity_id,before_json,after_json,ip_address,user_agent) VALUES('customer',?,'customer.profile.updated','customer',?,?,?, ?,?)", [owner, String(owner), JSON.stringify({ name: customer.name, email: customer.email || '' }), JSON.stringify({ name, email, phone_unchanged: true }), String(evidence.ip || '').slice(0,64), String(evidence.userAgent || '').slice(0,255)]);
+    return { id: owner, name, email };
+  });
+}
+async function changePassword(customerId, input = {}, sessionId, evidence = {}) {
+  const owner = requirePositiveInt(customerId, 'customer ID');
+  const currentPassword = String(input.current_password || '');
+  const newPassword = validatePassword(input.new_password);
+  if (!sessionId || String(sessionId).length > 128) throw new ValidationError('The active session is invalid. Sign in again.');
+  const newHash = await bcrypt.hash(newPassword, 12);
+  return withTransaction(async (tx) => {
+    const customer = await tx.queryOne('SELECT id,password_hash,status,is_blocked FROM customers WHERE id=? FOR UPDATE', [owner]);
+    if (!customer || Number(customer.status) !== 1 || Number(customer.is_blocked) === 1) throw new NotFoundError('Customer account not found.');
+    if (!await bcrypt.compare(currentPassword, customer.password_hash || '')) throw new ValidationError('Current password is incorrect.');
+    await tx.execute('UPDATE customers SET password_hash=? WHERE id=?', [newHash, owner]);
+    const revoked = await tx.execute("DELETE FROM web_sessions WHERE actor_type='customer' AND actor_id=? AND sid<>?", [owner, String(sessionId)]);
+    await tx.execute("INSERT INTO audit_logs(actor_type,actor_id,action,entity_type,entity_id,after_json,ip_address,user_agent) VALUES('customer',?,'customer.password.changed','customer',?,?,?,?)", [owner, String(owner), JSON.stringify({ password_changed: true, other_sessions_revoked: Number(revoked.affectedRows || 0) }), String(evidence.ip || '').slice(0,64), String(evidence.userAgent || '').slice(0,255)]);
+    return { customerId: owner, revokedSessions: Number(revoked.affectedRows || 0) };
+  });
+}
 async function listAddresses(customerId) {
   const id = requirePositiveInt(customerId, 'customer ID');
   return mysqlClient().queryAll('SELECT `id`, `label`, `recipient_name`, `recipient_phone`, `division`, `district`, `upazila`, `street_address`, `is_default` FROM `customer_addresses` WHERE `customer_id` = ? ORDER BY `is_default` DESC, `id` DESC', [id]);
@@ -135,8 +167,8 @@ async function getOrderDetails(customerId, orderId) {
   const db = mysqlClient();
   const order = await db.queryOne(
     `SELECT id, invoice_no, order_status, payment_status, payment_method, customer_name, customer_phone,
-            shipping_address, division, district, upazila, shipping_zone,
-            subtotal_paisa, discount_paisa, shipping_paisa, total_paisa, created_at
+            shipping_address, division, district, upazila, shipping_zone, courier_code, courier_tracking_id,
+            subtotal_paisa, discount_paisa, shipping_paisa, total_paisa, paid_paisa, cod_due_paisa, created_at
      FROM orders WHERE id = ? AND customer_id = ? LIMIT 1`,
     [id, ownerId]
   );
@@ -148,7 +180,7 @@ async function getOrderDetails(customerId, orderId) {
   );
   return { order, items };
 }
-async function saveAddress(customerId, input, evidence = {}) {
+function normalizeAddressInput(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new ValidationError('Enter a valid address.');
   const fields = ['label', 'recipient_name', 'recipient_phone', 'division', 'district', 'upazila', 'street_address'];
   const values = Object.fromEntries(fields.map((key) => {
@@ -159,27 +191,103 @@ async function saveAddress(customerId, input, evidence = {}) {
   if (!values.recipient_name || values.recipient_name.length > 191 || !values.street_address || values.street_address.length > 2000 || !values.division || !values.district) throw new ValidationError('Recipient, division, district and street address are required.');
   values.recipient_phone = normalizeBdPhone(values.recipient_phone);
   if (values.label.length > 64 || values.division.length > 80 || values.district.length > 80 || values.upazila.length > 80) throw new ValidationError('Address fields exceed their allowed length.');
-  const isDefault = input.is_default === '1' || input.is_default === true;
+  return { values, isDefault: input.is_default === '1' || input.is_default === true, fields };
+}
+async function saveAddress(customerId, input, evidence = {}) {
+  const normalized = normalizeAddressInput(input);
+  const { values, fields } = normalized;
+  let isDefault = normalized.isDefault;
   const owner = requirePositiveInt(customerId, 'customer ID');
   return withTransaction(async (tx) => {
     const customer = await tx.queryOne('SELECT `id` FROM `customers` WHERE `id` = ? FOR UPDATE', [owner]);
     if (!customer) throw new NotFoundError('Customer account not found.');
+    const currentDefault = await tx.queryOne('SELECT id FROM customer_addresses WHERE customer_id=? AND is_default=1 LIMIT 1 FOR UPDATE', [owner]);
+    if (isDefault || !currentDefault) isDefault = true;
     if (isDefault) await tx.execute('UPDATE `customer_addresses` SET `is_default` = 0 WHERE `customer_id` = ?', [owner]);
     const result = await tx.execute('INSERT INTO `customer_addresses` (`customer_id`, `label`, `recipient_name`, `recipient_phone`, `division`, `district`, `upazila`, `street_address`, `is_default`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', [owner, values.label || 'Home', values.recipient_name, values.recipient_phone, values.division, values.district, values.upazila, values.street_address, isDefault ? 1 : 0]);
-    await tx.execute("INSERT INTO audit_logs(actor_type,actor_id,action,entity_type,entity_id,after_json,ip_address,user_agent) VALUES('customer',?,'customer.address.created','customer_address',?,?,?,?)",[owner,String(result.insertId),JSON.stringify({changed_fields:fields,is_default:isDefault}),String(evidence.ip||'').slice(0,64),String(evidence.userAgent||'').slice(0,255)]);
-    return result.insertId;
+    await tx.execute("INSERT INTO audit_logs(actor_type,actor_id,action,entity_type,entity_id,after_json,ip_address,user_agent) VALUES('customer',?,'customer.address.created','customer_address',?,?,?,?)", [owner, String(result.insertId), JSON.stringify({ changed_fields: fields, is_default: isDefault }), String(evidence.ip || '').slice(0,64), String(evidence.userAgent || '').slice(0,255)]);
+    return Number(result.insertId);
   });
+}
+async function updateAddress(customerId, addressId, input, evidence = {}) {
+  const { values, isDefault, fields } = normalizeAddressInput(input);
+  const owner = requirePositiveInt(customerId, 'customer ID');
+  const id = requirePositiveInt(addressId, 'address ID');
+  return withTransaction(async (tx) => {
+    const customer = await tx.queryOne('SELECT id FROM customers WHERE id=? FOR UPDATE', [owner]);
+    if (!customer) throw new NotFoundError('Customer account not found.');
+    const prior = await tx.queryOne('SELECT id,is_default FROM customer_addresses WHERE id=? AND customer_id=? FOR UPDATE', [id, owner]);
+    if (!prior) throw new NotFoundError('Address not found.');
+    if (isDefault) await tx.execute('UPDATE customer_addresses SET is_default=0 WHERE customer_id=?', [owner]);
+    await tx.execute('UPDATE customer_addresses SET label=?,recipient_name=?,recipient_phone=?,division=?,district=?,upazila=?,street_address=?,is_default=? WHERE id=? AND customer_id=?', [values.label || 'Home', values.recipient_name, values.recipient_phone, values.division, values.district, values.upazila, values.street_address, isDefault ? 1 : 0, id, owner]);
+    await tx.execute("INSERT INTO audit_logs(actor_type,actor_id,action,entity_type,entity_id,before_json,after_json,ip_address,user_agent) VALUES('customer',?,'customer.address.updated','customer_address',?,?,?,?,?)", [owner, String(id), JSON.stringify({ is_default: Boolean(prior.is_default) }), JSON.stringify({ changed_fields: fields, is_default: isDefault }), String(evidence.ip || '').slice(0,64), String(evidence.userAgent || '').slice(0,255)]);
+    return id;
+  });
+}
+async function setDefaultAddress(customerId, addressId, evidence = {}) {
+  const owner = requirePositiveInt(customerId, 'customer ID');
+  const id = requirePositiveInt(addressId, 'address ID');
+  return withTransaction(async (tx) => {
+    const customer = await tx.queryOne('SELECT id FROM customers WHERE id=? FOR UPDATE', [owner]);
+    if (!customer) throw new NotFoundError('Customer account not found.');
+    const address = await tx.queryOne('SELECT id,is_default FROM customer_addresses WHERE id=? AND customer_id=? FOR UPDATE', [id, owner]);
+    if (!address) throw new NotFoundError('Address not found.');
+    if (Number(address.is_default) === 1) return id;
+    await tx.execute('UPDATE customer_addresses SET is_default=0 WHERE customer_id=?', [owner]);
+    await tx.execute('UPDATE customer_addresses SET is_default=1 WHERE id=? AND customer_id=?', [id, owner]);
+    await tx.execute("INSERT INTO audit_logs(actor_type,actor_id,action,entity_type,entity_id,after_json,ip_address,user_agent) VALUES('customer',?,'customer.address.default_changed','customer_address',?,?,?,?)", [owner, String(id), JSON.stringify({ is_default: true }), String(evidence.ip || '').slice(0,64), String(evidence.userAgent || '').slice(0,255)]);
+    return id;
+  });
+}
+async function getAddressForCheckout(customerId, addressId) {
+  const owner = requirePositiveInt(customerId, 'customer ID');
+  const id = requirePositiveInt(addressId, 'address ID');
+  return mysqlClient().queryOne('SELECT id,label,recipient_name,recipient_phone,division,district,upazila,street_address,is_default FROM customer_addresses WHERE id=? AND customer_id=? LIMIT 1', [id, owner]);
 }
 async function deleteAddress(customerId, addressId, evidence = {}) {
   const owner = requirePositiveInt(customerId, 'customer ID');
   const id = requirePositiveInt(addressId, 'address ID');
   return withTransaction(async (tx) => {
-    const address=await tx.queryOne('SELECT `id`,`is_default` FROM `customer_addresses` WHERE `id`=? AND `customer_id`=? FOR UPDATE',[id,owner]);
-    if(!address)throw new NotFoundError('Address not found.');
-    await tx.execute('DELETE FROM `customer_addresses` WHERE `id`=? AND `customer_id`=?',[id,owner]);
-    await tx.execute("INSERT INTO audit_logs(actor_type,actor_id,action,entity_type,entity_id,before_json,after_json,ip_address,user_agent) VALUES('customer',?,'customer.address.deleted','customer_address',?,?,NULL,?,?)",[owner,String(id),JSON.stringify({is_default:Boolean(address.is_default)}),String(evidence.ip||'').slice(0,64),String(evidence.userAgent||'').slice(0,255)]);
+    const customer = await tx.queryOne('SELECT id FROM customers WHERE id=? FOR UPDATE', [owner]);
+    if (!customer) throw new NotFoundError('Customer account not found.');
+    const address = await tx.queryOne('SELECT id,is_default FROM customer_addresses WHERE id=? AND customer_id=? FOR UPDATE', [id, owner]);
+    if (!address) throw new NotFoundError('Address not found.');
+    await tx.execute('DELETE FROM customer_addresses WHERE id=? AND customer_id=?', [id, owner]);
+    let promotedAddressId = null;
+    if (Number(address.is_default) === 1) {
+      const next = await tx.queryOne('SELECT id FROM customer_addresses WHERE customer_id=? ORDER BY id ASC LIMIT 1 FOR UPDATE', [owner]);
+      if (next) {
+        promotedAddressId = Number(next.id);
+        await tx.execute('UPDATE customer_addresses SET is_default=1 WHERE id=? AND customer_id=?', [promotedAddressId, owner]);
+      }
+    }
+    await tx.execute("INSERT INTO audit_logs(actor_type,actor_id,action,entity_type,entity_id,before_json,after_json,ip_address,user_agent) VALUES('customer',?,'customer.address.deleted','customer_address',?,?,?,?,?)", [owner, String(id), JSON.stringify({ is_default: Boolean(address.is_default) }), JSON.stringify({ promoted_address_id: promotedAddressId }), String(evidence.ip || '').slice(0,64), String(evidence.userAgent || '').slice(0,255)]);
   });
 }
+async function getOrderSelfServiceDetails(customerId, orderId) {
+  const owner = requirePositiveInt(customerId, 'customer ID');
+  const id = requirePositiveInt(orderId, 'order ID');
+  const details = await getOrderDetails(owner, id); // verifies ownership before any related-data read
+  const db = mysqlClient();
+  const [statusHistory, tracking, cancellations, returns, refundRows] = await Promise.all([
+    db.queryAll('SELECT h.to_status,h.created_at FROM order_status_history h JOIN orders o ON o.id=h.order_id WHERE h.order_id=? AND o.customer_id=? ORDER BY h.id ASC LIMIT 100', [id, owner]),
+    db.queryAll('SELECT s.courier_code,s.consignment_id,s.tracking_code,s.courier_status,s.created_at,s.updated_at FROM courier_shipments s JOIN orders o ON o.id=s.order_id WHERE s.order_id=? AND o.customer_id=? AND s.is_active=1 ORDER BY s.updated_at DESC,s.id DESC LIMIT 5', [id, owner]),
+    db.queryAll('SELECT id,status,reason,created_at FROM order_cancellation_requests WHERE order_id=? AND customer_id=? ORDER BY id DESC LIMIT 10', [id, owner]),
+    db.queryAll('SELECT id,claim_type,status,reason,decision_note,evidence_path,created_at,updated_at FROM customer_return_requests WHERE order_id=? AND customer_id=? ORDER BY id DESC LIMIT 20', [id, owner]),
+    db.queryAll('SELECT r.id,r.amount_paisa,r.reason,r.status,r.method,r.created_at FROM refunds r JOIN orders o ON o.id=r.order_id WHERE r.order_id=? AND o.customer_id=? ORDER BY r.id DESC LIMIT 20', [id, owner]),
+  ]);
+  const [returnEvents, refundEvents] = await Promise.all([
+    db.queryAll('SELECT e.return_request_id,e.from_status,e.to_status,e.created_at FROM customer_return_events e JOIN customer_return_requests r ON r.id=e.return_request_id WHERE r.order_id=? AND r.customer_id=? ORDER BY e.id ASC LIMIT 100', [id, owner]),
+    db.queryAll('SELECT h.refund_id,h.from_status,h.to_status,h.created_at FROM refund_status_history h JOIN refunds r ON r.id=h.refund_id JOIN orders o ON o.id=r.order_id WHERE o.id=? AND o.customer_id=? ORDER BY h.id ASC LIMIT 100', [id, owner]),
+  ]);
+  return { ...details, statusHistory, tracking, cancellations, returns, returnEvents, refunds: refundRows, refundEvents };
+}
+async function getReturnEvidence(customerId, returnId) {
+  const owner = requirePositiveInt(customerId, 'customer ID');
+  const id = requirePositiveInt(returnId, 'return ID');
+  return mysqlClient().queryOne('SELECT r.id,r.evidence_path FROM customer_return_requests r WHERE r.id=? AND r.customer_id=? LIMIT 1', [id, owner]);
+}
+
 function normalizeCartLines(sessionCart, { additive = false } = {}) {
   if (!Array.isArray(sessionCart)) return [];
   const normalized = new Map();
@@ -294,4 +402,4 @@ async function clearCart(customerId) {
     await tx.execute('DELETE FROM `customer_cart_items` WHERE `customer_id`=?', [customerId]);
   });
 }
-module.exports = { normalizeBdPhone, validatePassword, registerCustomer, issueCustomerRecovery, consumeCustomerRecoveryToken, authenticateCustomer, getProfile, listAddresses, listOrders, getOrderDetails, saveAddress, deleteAddress, mergeCart, listCart, addCartLine, setCartLine, removeCartLine, reconcileCart, replaceCart, clearCart };
+module.exports = { normalizeBdPhone, validatePassword, registerCustomer, issueCustomerRecovery, consumeCustomerRecoveryToken, authenticateCustomer, getProfile, updateProfile, changePassword, listAddresses, listOrders, getOrderDetails, getOrderSelfServiceDetails, getReturnEvidence, saveAddress, updateAddress, setDefaultAddress, getAddressForCheckout, deleteAddress, mergeCart, listCart, addCartLine, setCartLine, removeCartLine, reconcileCart, replaceCart, clearCart };

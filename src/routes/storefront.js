@@ -1095,11 +1095,16 @@ router.get('/customer/checkout', asyncHandler(async (req, res) => {
       catch (_err) { delete req.session.appliedCoupon; }
     }
     if (!req.session.checkoutRequestKey || req.session.checkoutLastRequestKey === req.session.checkoutRequestKey) req.session.checkoutRequestKey = crypto.randomBytes(24).toString('hex');
-    const [locations, methods] = await Promise.all([checkoutRepo.listDeliveryLocations(), checkoutRepo.listCheckoutMethods()]);
+    const [locations, methods, savedAddresses] = await Promise.all([
+      checkoutRepo.listDeliveryLocations(),
+      checkoutRepo.listCheckoutMethods(),
+      req.customerUser?.id ? customerRepo.listAddresses(req.customerUser.id).then((rows) => rows.map((row) => ({ ...row, checkoutPhoneMatches: customerRepo.normalizeBdPhone(row.recipient_phone) === customerRepo.normalizeBdPhone(req.customerUser.phone) }))) : Promise.resolve([]),
+    ]);
     return res.render('store/checkout', {
       cart, cartCount: quote.count, cartSubtotal: quote.subtotalPaisa / 100, discount,
       appliedCoupon: req.session.appliedCoupon || null, gateways: methods,
-      deliveryLocations: locations, checkoutAvailable: Boolean(locations.length && methods.length), canonicalMysqlCheckout: true, checkoutRequestKey: req.session.checkoutRequestKey,
+      deliveryLocations: locations, savedAddresses, checkoutCustomer: req.customerUser || null,
+      checkoutAvailable: Boolean(locations.length && methods.length), canonicalMysqlCheckout: true, checkoutRequestKey: req.session.checkoutRequestKey,
       csrfToken: req.csrfToken(), siteSettings: { free_shipping_min: 0 }, isEn: req.locale === 'en',
     });
   }
@@ -1121,9 +1126,24 @@ router.post('/customer/checkout', requireCsrf, asyncHandler(async (req, res) => 
     const sourceCart = isReplay ? (req.session.checkoutLastCart || []) : (req.session.cart || []);
     const incompleteOrderId = isReplay ? (req.session.checkoutLastRecoveryId || null) : (req.session.incompleteCheckoutId || null);
     if (!Array.isArray(sourceCart) || !sourceCart.length) throw new (require('../utils/errors').ValidationError)('Your server-side cart is empty.');
+    const checkoutInput = { ...req.body };
+    const savedAddressId = String(req.body.address_id || '').trim();
+    if (savedAddressId) {
+      if (!req.customerUser?.id || !/^[1-9][0-9]*$/.test(savedAddressId) || !Number.isSafeInteger(Number(savedAddressId))) {
+        throw new ValidationError('Select a saved address belonging to your signed-in customer account.');
+      }
+      const savedAddress = await customerRepo.getAddressForCheckout(req.customerUser.id, Number(savedAddressId));
+      if (!savedAddress) throw new (require('../utils/errors').NotFoundError)('Saved address not found.');
+      const selectedPhone = customerRepo.normalizeBdPhone(savedAddress.recipient_phone);
+      const accountPhone = customerRepo.normalizeBdPhone(req.customerUser.phone);
+      if (selectedPhone !== accountPhone) throw new ValidationError('To use a saved address, its recipient phone must match your signed-in account phone.');
+      checkoutInput.customer_name = savedAddress.recipient_name;
+      checkoutInput.phone = selectedPhone;
+      checkoutInput.address = [savedAddress.street_address, savedAddress.upazila, savedAddress.district, savedAddress.division].filter(Boolean).join(', ');
+    }
     const result = await checkoutRepo.createOrder({
-      customer_name: req.body.customer_name, phone: req.body.phone, address: req.body.address,
-      delivery_location_id: req.body.delivery_location_id, payment_method: req.body.payment_method,
+      customer_name: checkoutInput.customer_name, phone: checkoutInput.phone, address: checkoutInput.address,
+      delivery_location_id: checkoutInput.delivery_location_id, payment_method: checkoutInput.payment_method,
       trx_id: req.body.trx_id, sender_number: req.body.sender_number,
       note: req.body.note, coupon_code: matches(replayKey) ? String(req.body.coupon_code || '') : (req.session.appliedCoupon?.code || ''),
     }, { locale: req.locale, sessionCustomer: req.customerUser || null, ip: req.ip, requestKey: expected, cart: sourceCart, incompleteOrderId, sessionSid: req.sessionID, analyticsConsent: consentGranted(req.session, env.analyticsAttributionEnabled), attribution: req.session.analyticsAttribution || null });

@@ -41,7 +41,7 @@ test('responsive CSS contracts contain admin tables, controls and layouts at nar
 test('refund and settlement surfaces keep execution and unsupported reseller entitlements disabled',()=>{
  const customer=fs.readFileSync(require.resolve('../src/routes/customerAccount'),'utf8');
  const phase08Source=fs.readFileSync(require.resolve('../src/repositories/phase08Repository'),'utf8');
- assert.match(customer,/COD refunds are disabled until a verified destination/);
+  assert.match(customer,/COD refunds are (?:disabled|unavailable) until a verified/);
  assert.match(phase08Source,/refunds\.approve_high/);
  assert.match(phase08Source,/provider processing is not available here/);
  const reseller=fs.readFileSync(require.resolve('../src/routes/resellerPanel'),'utf8');

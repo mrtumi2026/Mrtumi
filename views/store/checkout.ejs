@@ -39,12 +39,24 @@
             <div class="row g-3">
               <div class="col-md-6">
                 <label for="ckName" class="form-label small fw-semibold"><%= t('store.fullName') %> *</label>
-                <input type="text" name="customer_name" id="ckName" class="form-control" placeholder="<%= t('store.fullNamePlaceholder') %>" required />
+                <input type="text" name="customer_name" id="ckName" class="form-control" placeholder="<%= t('store.fullNamePlaceholder') %>" required value="<%= checkoutCustomer ? checkoutCustomer.name : '' %>" />
               </div>
               <div class="col-md-6">
                 <label for="ckPhone" class="form-label small fw-semibold"><%= t('store.mobileNumber') %> *</label>
-                <input type="tel" name="phone" id="ckPhone" class="form-control" placeholder="<%= t('store.mobilePlaceholder') %>" minlength="11" required />
+                <input type="tel" name="phone" id="ckPhone" class="form-control" placeholder="<%= t('store.mobilePlaceholder') %>" minlength="11" required value="<%= checkoutCustomer ? checkoutCustomer.phone : '' %>" />
               </div>
+              <% if (canonicalMysqlCheckout && checkoutCustomer && savedAddresses && savedAddresses.length) { %>
+                <div class="col-12">
+                  <label for="savedAddressSelect" class="form-label small fw-semibold"><%= checkoutEnglish ? 'Use a saved address (optional)' : 'সংরক্ষিত ঠিকানা ব্যবহার করুন (ঐচ্ছিক)' %></label>
+                  <select class="form-select" id="savedAddressSelect" name="address_id">
+                    <option value=""><%= checkoutEnglish ? 'Enter a different address' : 'অন্য ঠিকানা লিখুন' %></option>
+                    <% savedAddresses.forEach(function(address) { %>
+                      <option value="<%= address.id %>" data-recipient="<%= address.recipient_name %>" data-phone="<%= address.recipient_phone %>" data-street="<%= address.street_address %>" data-upazila="<%= address.upazila || '' %>" data-district="<%= address.district %>" data-division="<%= address.division %>" <%= address.checkoutPhoneMatches ? '' : 'disabled' %> <%= address.is_default && address.checkoutPhoneMatches ? 'selected' : '' %>><%= address.label %> — <%= [address.street_address, address.district, address.division].filter(Boolean).join(', ') %><%= address.is_default ? (checkoutEnglish ? ' (Default)' : ' (ডিফল্ট)') : '' %><%= !address.checkoutPhoneMatches ? (checkoutEnglish ? ' (phone must match account)' : ' (ফোন অ্যাকাউন্টের সঙ্গে মিলতে হবে)') : '' %></option>
+                    <% }) %>
+                  </select>
+                  <p class="form-text"><%= checkoutEnglish ? 'The server reloads the selected address from your account; edits here cannot change the saved record. The recipient phone must match your account phone.' : 'সার্ভার আপনার অ্যাকাউন্ট থেকে নির্বাচিত ঠিকানা পুনরায় পড়বে; এখানে লেখা বদলে সংরক্ষিত ঠিকানা পাল্টানো যাবে না। প্রাপকের ফোন অ্যাকাউন্টের ফোনের সঙ্গে মিলতে হবে।' %></p>
+                </div>
+              <% } %>
               <div class="col-12">
                 <label for="ckAddress" class="form-label small fw-semibold"><%= t('store.fullAddress') %> *</label>
                 <textarea name="address" id="ckAddress" rows="2" class="form-control" placeholder="<%= t('store.addressPlaceholder') %>" required></textarea>
@@ -327,6 +339,32 @@
         }).then(function(r) { return r.json(); }).then(function(d) { if (d.ok && d.id) recoveryRecordId = d.id; }).catch(function() {});
       }
     });
+  }
+
+  var savedAddressSelect = document.getElementById('savedAddressSelect');
+  if (savedAddressSelect) {
+    var savedAddressFields = {
+      name: document.getElementById('ckName'),
+      phone: document.getElementById('ckPhone'),
+      address: document.getElementById('ckAddress')
+    };
+    var manualAddressValues = { name: savedAddressFields.name.value, phone: savedAddressFields.phone.value, address: savedAddressFields.address.value };
+    function applySavedAddress() {
+      var option = savedAddressSelect.options[savedAddressSelect.selectedIndex];
+      var useSaved = Boolean(savedAddressSelect.value && option);
+      if (useSaved) {
+        savedAddressFields.name.value = option.dataset.recipient || '';
+        savedAddressFields.phone.value = option.dataset.phone || '';
+        savedAddressFields.address.value = [option.dataset.street, option.dataset.upazila, option.dataset.district, option.dataset.division].filter(Boolean).join(', ');
+      } else {
+        savedAddressFields.name.value = manualAddressValues.name;
+        savedAddressFields.phone.value = manualAddressValues.phone;
+        savedAddressFields.address.value = manualAddressValues.address;
+      }
+      Object.keys(savedAddressFields).forEach(function(key) { savedAddressFields[key].readOnly = useSaved; });
+    }
+    savedAddressSelect.addEventListener('change', applySavedAddress);
+    applySavedAddress();
   }
 
   document.addEventListener('DOMContentLoaded', recalcCheckout);
