@@ -1,5 +1,19 @@
 'use strict';
 
+const MYSQL_HOST = String(process.env.MYSQL_TEST_HOST || '').trim();
+const REQUIRED = process.env.MYSQL_TEST_REQUIRED === 'true';
+const SKIP = 'SKIPPED locally: no disposable MySQL/MariaDB service; required in exact database CI.';
+if (REQUIRED && !MYSQL_HOST) throw new Error('MYSQL_TEST_REQUIRED=true but MYSQL_TEST_HOST was not provided.');
+if (MYSQL_HOST) {
+  process.env.NODE_ENV = 'test';
+  process.env.DB_CLIENT = 'mysql';
+  process.env.DB_HOST = MYSQL_HOST;
+  process.env.DB_PORT = String(process.env.MYSQL_TEST_PORT || 3306);
+  process.env.DB_NAME = process.env.MYSQL_TEST_DB || 'mrtumi_test';
+  process.env.DB_USER = process.env.MYSQL_TEST_USER || 'mrtumi_test';
+  process.env.DB_PASSWORD = process.env.MYSQL_TEST_PASSWORD || 'mrtumi_test_pw';
+}
+
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
@@ -16,24 +30,10 @@ const CourierRecommendationEngine = require('../src/services/courier/CourierReco
 const courierRepo = require('../src/repositories/courierIntegrationRepository');
 const bn = require('../src/i18n/locales/bn');
 const en = require('../src/i18n/locales/en');
-
-const root = path.join(__dirname, '..');
-
-const MYSQL_HOST = String(process.env.MYSQL_TEST_HOST || '').trim();
-const REQUIRED = process.env.MYSQL_TEST_REQUIRED === 'true';
-const SKIP = 'SKIPPED locally: no disposable MySQL/MariaDB service; required in exact database CI.';
-if (REQUIRED && !MYSQL_HOST) throw new Error('MYSQL_TEST_REQUIRED=true but MYSQL_TEST_HOST was not provided.');
-if (MYSQL_HOST) {
-  process.env.NODE_ENV = 'test';
-  process.env.DB_CLIENT = 'mysql';
-  process.env.DB_HOST = MYSQL_HOST;
-  process.env.DB_PORT = String(process.env.MYSQL_TEST_PORT || 3306);
-  process.env.DB_NAME = process.env.MYSQL_TEST_DB || 'mrtumi_test';
-  process.env.DB_USER = process.env.MYSQL_TEST_USER || 'mrtumi_test';
-  process.env.DB_PASSWORD = process.env.MYSQL_TEST_PASSWORD || 'mrtumi_test_pw';
-}
 const mysql = require('../src/db/mysqlPool');
 const { resetDisposableMysqlDatabase } = require('../scripts/qa/mysql-test-database');
+
+const root = path.join(__dirname, '..');
 
 test('Migration 0029 defines multi-courier provider and shipment quote tracking schema changes', () => {
   const pairs = loadMigrationPairs();

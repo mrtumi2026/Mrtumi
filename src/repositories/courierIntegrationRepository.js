@@ -7,7 +7,8 @@ const CourierProviderFactory = require('../services/courier/CourierProviderFacto
 const CourierRecommendationEngine = require('../services/courier/CourierRecommendationEngine');
 
 function assertMysql() {
-  if (env.db.client !== 'mysql') {
+  const isMysql = env.db.client === 'mysql' || process.env.DB_CLIENT === 'mysql' || Boolean(process.env.MYSQL_TEST_HOST);
+  if (!isMysql) {
     throw new Error('Multi-courier integration requires MySQL runtime.');
   }
 }
