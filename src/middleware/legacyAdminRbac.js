@@ -2,7 +2,7 @@
 
 const { hasPermission } = require('./rbac');
 const { requireCsrf } = require('./csrf');
-const { AuthorizationError } = require('../utils/errors');
+const { AuthenticationError, AuthorizationError } = require('../utils/errors');
 
 const SAFE_METHODS = new Set(['GET','HEAD','OPTIONS']);
 const has = (path, prefix) => path === prefix || path.startsWith(`${prefix}/`) || path.startsWith(`${prefix}?`);
@@ -84,10 +84,14 @@ function policyForAdminRoute(method, pathname) {
 }
 
 function legacyAdminRbac(req, _res, next) {
-  if (!req.path.startsWith('/admin') || !req.adminUser) return next();
+  if (!req.path.startsWith('/admin')) return next();
   const policy = policyForAdminRoute(req.method, req.path);
   req.adminRoutePolicy = policy;
   if (policy.exempt) return next();
+  // Require a fresh, active admin identity before applying per-route grants. Previously
+  // anonymous requests skipped this middleware, leaving legacy handlers without their
+  // own requireAdmin middleware reachable.
+  if (!req.adminUser) return next(new AuthenticationError());
   if (policy.unmapped) return next(new AuthorizationError('This admin route is blocked pending an explicit permission policy.'));
   const required=[policy.key,...(policy.also||[])].filter(Boolean);
   const allowed=(required.length > 0 && required.every(key=>hasPermission(req.adminUser,key))) ||

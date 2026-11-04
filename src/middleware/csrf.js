@@ -43,7 +43,8 @@ function verifyTokenConstantTime(expected, candidate) {
 
 /**
  * Enforces CSRF token validation on state-changing HTTP methods (POST, PUT, PATCH, DELETE).
- * Accepts token from `x-csrf-token` header, `req.body._csrf`, or `req.query._csrf`.
+ * Accepts tokens only from a request header or parsed body; query strings are logged and
+ * propagated too widely to safely carry bearer-like CSRF material.
  */
 function requireCsrf(req, _res, next) {
   if (SAFE_METHODS.has(req.method)) {
@@ -59,11 +60,7 @@ function requireCsrf(req, _res, next) {
     );
   }
   const expected = deriveCsrfToken(req.sessionID || 'anon', req.session._csrfNonce);
-  const candidate =
-    req.headers['x-csrf-token'] ||
-    (req.body && req.body._csrf) ||
-    (req.query && req.query._csrf) ||
-    '';
+  const candidate = req.headers['x-csrf-token'] || (req.body && req.body._csrf) || '';
 
   if (!verifyTokenConstantTime(expected, String(candidate))) {
     return next(new AppError('CSRF_INVALID', 'Invalid or missing CSRF token.', 403));

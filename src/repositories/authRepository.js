@@ -72,7 +72,7 @@ async function findActiveAdminById(id, poolOverride = null, config = env) {
   if (!id) return null;
 
   if (!isMysqlMode(config) && !poolOverride) {
-    const user = sqliteDb.get('SELECT * FROM users WHERE id = ? AND status = 1', id);
+    const user = sqliteDb.get('SELECT id,name,email,phone,role,status,avatar FROM users WHERE id = ? AND status = 1', id);
     if (!user) return null;
     const roleName = user.role || 'Super Admin';
     return {
@@ -87,7 +87,7 @@ async function findActiveAdminById(id, poolOverride = null, config = env) {
 
   const client = getClient(poolOverride);
   const user = await client.queryOne(
-    `SELECT u.*, r.\`name\` AS role_name, r.\`slug\` AS role_slug
+    `SELECT u.\`id\`,u.\`role_id\`,u.\`name\`,u.\`email\`,u.\`phone\`,u.\`role_label\`,u.\`status\`,u.\`avatar_url\`,r.\`name\` AS role_name,r.\`slug\` AS role_slug
      FROM \`users\` u
      LEFT JOIN \`roles\` r ON r.\`id\` = u.\`role_id\`
      WHERE u.\`id\` = ? AND u.\`status\` = 1
@@ -122,19 +122,19 @@ async function recordAdminLoginSuccess(userId, poolOverride = null, config = env
 async function findVendorById(id, poolOverride = null, config = env) {
   if (!id) return null;
   if (!isMysqlMode(config) && !poolOverride) {
-    return sqliteDb.get('SELECT * FROM vendors WHERE id = ?', id) || null;
+    return sqliteDb.get('SELECT id,shop_name,owner_name,phone,email,balance,verified,status FROM vendors WHERE id = ?', id) || null;
   }
   const client = getClient(poolOverride);
-  return client.queryOne('SELECT * FROM `vendors` WHERE `id` = ? LIMIT 1', [id]);
+  return client.queryOne('SELECT `id`,`shop_name`,`owner_name`,`phone`,`email`,`balance_paisa`/100 AS `balance`,`verified`,`status`,`lifecycle_status` FROM `vendors` WHERE `id` = ? LIMIT 1', [id]);
 }
 
 async function findResellerById(id, poolOverride = null, config = env) {
   if (!id) return null;
   if (!isMysqlMode(config) && !poolOverride) {
-    return sqliteDb.get('SELECT id,name,shop_name,phone,email,verified,status FROM resellers WHERE id = ? AND status = 1', id) || null;
+    return sqliteDb.get('SELECT id,name,shop_name,phone,email,balance,deposit_amount,verified,status FROM resellers WHERE id = ? AND status = 1', id) || null;
   }
   const client = getClient(poolOverride);
-  return client.queryOne('SELECT `id`,`name`,`shop_name`,`phone`,`email`,`verified`,`status` FROM `resellers` WHERE `id` = ? AND `status` = 1 LIMIT 1', [id]);
+  return client.queryOne('SELECT `id`,`name`,`shop_name`,`phone`,`email`,`balance_paisa`/100 AS `balance`,`deposit_paisa`/100 AS `deposit_amount`,`verified`,`status` FROM `resellers` WHERE `id` = ? AND `status` = 1 LIMIT 1', [id]);
 }
 
 async function findCustomerById(id, poolOverride = null, config = env) {

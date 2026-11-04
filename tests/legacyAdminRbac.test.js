@@ -15,6 +15,19 @@ function authorize(method, path, permissions = [], role = 'staff') {
   return error ? error.message : null;
 }
 
+test('Protected legacy admin paths fail closed without a fresh active admin; only explicit auth paths are public', () => {
+  for (const [method, path] of [['POST', '/admin/campaign/delete/42'], ['GET', '/admin/dashboard'], ['POST', '/admin/users/create']]) {
+    let error = null;
+    legacyAdminRbac({ method, path }, {}, (nextError) => { error = nextError || null; });
+    assert.equal(error?.statusCode, 401, `${method} ${path} must require an authenticated active admin`);
+  }
+  for (const path of ['/admin', '/admin/login', '/admin/logout']) {
+    let error = null;
+    legacyAdminRbac({ method: 'GET', path }, {}, (nextError) => { error = nextError || null; });
+    assert.equal(error, null, `${path} remains an explicit public auth/redirect route`);
+  }
+});
+
 test('D7 return routes are mapped to review permission and grant a super admin access', () => {
   assert.equal(policyForAdminRoute('GET', '/admin/d7/returns').key, 'returns.review');
   assert.equal(policyForAdminRoute('POST', '/admin/d7/returns/17/decision').key, 'returns.review');

@@ -1,6 +1,5 @@
 'use strict';
 
-const { env } = require('../config/env');
 const logger = require('../utils/logger');
 const { AppError } = require('../utils/errors');
 const { attachRequestId, sendError, wantsJson } = require('../utils/apiResponse');
@@ -20,15 +19,13 @@ function createErrorHandler({ persistErrorLog } = {}) {
         ? String(err.message || 'Request failed')
         : malformedBody
           ? 'Invalid request body.'
-          : !env.isProduction && err && err.message
-            ? String(err.message)
-            : 'An unexpected internal error occurred.';
+          : 'An unexpected internal error occurred.';
 
     if (statusCode >= 500) {
       logger.error('Unhandled request error', {
         requestId: req.requestId,
         method: req.method,
-        path: req.originalUrl || req.url,
+        path: req.path || req.url,
         code,
         err,
       });
@@ -37,7 +34,7 @@ function createErrorHandler({ persistErrorLog } = {}) {
           persistErrorLog({
             level: 'ERROR',
             code,
-            message: String(err?.message || 'Unhandled error').slice(0, 500),
+            message: String(err?.code || code).slice(0, 500),
             context: `${req.method} ${req.path || ''}`.slice(0, 120),
             requestId: req.requestId || '',
           })
@@ -47,7 +44,7 @@ function createErrorHandler({ persistErrorLog } = {}) {
       logger.warn('Operational request error', {
         requestId: req.requestId,
         method: req.method,
-        path: req.originalUrl || req.url,
+        path: req.path || req.url,
         statusCode,
         code,
       });
@@ -62,7 +59,7 @@ function createErrorHandler({ persistErrorLog } = {}) {
         statusCode,
         code,
         message: safeMessage,
-        details: isOperational ? err.details : null,
+        details: isOperational ? logger.redactValue(err.details, 0, true) : null,
         requestId: req.requestId,
       });
     }

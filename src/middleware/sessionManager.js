@@ -9,6 +9,7 @@ const {
   purgeExpiredSessions,
 } = require('../repositories/sessionRepository');
 const { getClientIp } = require('./rateLimit');
+const { visibleSessionToken } = require('../utils/sessionView');
 
 const COOKIE_NAME = 'pholbazar_sid';
 const MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
@@ -202,7 +203,7 @@ async function sessionManager(req, res, next) {
           const oldSid = sid;
           sid = crypto.randomBytes(20).toString('hex');
           req.sessionID = sid;
-          res.locals.sessionToken = sid;
+          res.locals.sessionToken = visibleSessionToken(sid, env.isProduction);
           lastPersistedSnapshot = null;
           if (!res.headersSent) {
             res.setHeader('Set-Cookie', buildCookieHeader(req, sid));

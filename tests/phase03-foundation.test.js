@@ -517,6 +517,11 @@ describe('Phase 03 — Existing Portal Regression & Health/Auth Integration', ()
     const loginCookieHeader=Array.isArray(csrfEndpoint.headers['set-cookie'])?csrfEndpoint.headers['set-cookie'][0]:csrfEndpoint.headers['set-cookie'];
     const loginCookie=loginCookieHeader.split(';')[0];
 
+    const anonymousAdminMutation = await httpRequest(baseUrl, '/admin/campaign/delete/999999', {
+      method: 'POST', headers: { Accept: 'application/json' }, body: { _csrf: loginCsrfToken },
+    });
+    assert.equal(anonymousAdminMutation.statusCode, 401, 'anonymous legacy Admin mutations must fail closed');
+
     const api404 = await httpRequest(baseUrl, '/api/v1/unknown-endpoint');
     assert.equal(api404.statusCode, 404);
     assert.equal(JSON.parse(api404.body).error.code, 'NOT_FOUND');
@@ -552,5 +557,31 @@ describe('Phase 03 — Existing Portal Regression & Health/Auth Integration', ()
       headers: { Cookie: cookiePair },
     });
     assert.equal(dashboard.statusCode, 200);
+
+    const authRepository = require('../src/repositories/authRepository');
+    const adminRow = sqliteDb.get('SELECT id FROM users WHERE LOWER(email) = ?', 'phase03admin@mrtumi.test');
+    const freshAdmin = await authRepository.findActiveAdminById(adminRow.id);
+    assert.equal(Object.hasOwn(freshAdmin, 'password_hash'), false, 'refreshed actor objects must not carry password hashes');
+
+    const currentCsrfResponse = await httpRequest(baseUrl, '/api/v1/csrf-token', { headers: { Cookie: cookiePair } });
+    const currentCsrf = JSON.parse(currentCsrfResponse.body).data.csrfToken;
+    const queryOnlyCsrf = await httpRequest(baseUrl, `/admin/dashboard/dismiss-new-orders-popup?_csrf=${encodeURIComponent(currentCsrf)}`, {
+      method: 'POST', headers: { Cookie: cookiePair, Accept: 'application/json' },
+    });
+    assert.equal(queryOnlyCsrf.statusCode, 403, 'query-string CSRF credentials must not authorize mutations');
+
+    sqliteDb.run('UPDATE users SET role = ? WHERE id = ?', 'Staff', adminRow.id);
+    const demoted = await httpRequest(baseUrl, '/admin/dashboard', { headers: { Cookie: cookiePair, Accept: 'application/json' } });
+    assert.equal(demoted.statusCode, 403, 'an existing session must immediately lose access after a role downgrade');
+    sqliteDb.run('UPDATE users SET role = ? WHERE id = ?', 'Super Admin', adminRow.id);
+    const restored = await httpRequest(baseUrl, '/admin/dashboard', { headers: { Cookie: cookiePair } });
+    assert.equal(restored.statusCode, 200, 'the fresh role should be reflected without requiring a new login');
+
+    sqliteDb.run('UPDATE users SET status = 0 WHERE id = ?', adminRow.id);
+    const deactivated = await httpRequest(baseUrl, '/admin/dashboard', { headers: { Cookie: cookiePair, Accept: 'application/json' } });
+    assert.equal(deactivated.statusCode, 401, 'an existing session must stop authenticating after Admin deactivation');
+    sqliteDb.run('UPDATE users SET status = 1 WHERE id = ?', adminRow.id);
+    const deactivatedSession = await httpRequest(baseUrl, '/admin/dashboard', { headers: { Cookie: cookiePair, Accept: 'application/json' } });
+    assert.equal(deactivatedSession.statusCode, 401, 'deactivation must clear the actor from the old session');
   });
 });

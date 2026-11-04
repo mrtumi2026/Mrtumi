@@ -28,15 +28,6 @@
         existing.value = token;
       }
 
-      // For multipart forms, also append _csrf query fallback if not present
-      var enc = (form.getAttribute('enctype') || '').toLowerCase();
-      if (enc === 'multipart/form-data') {
-        var act = form.getAttribute('action') || '';
-        if (act.indexOf('_csrf=') === -1) {
-          var sep = act.indexOf('?') === -1 ? '?' : '&';
-          form.setAttribute('action', act + sep + '_csrf=' + encodeURIComponent(token));
-        }
-      }
     });
   }
 

@@ -10,6 +10,7 @@ const {
   loadLayoutNavigationContext,
 } = require('../repositories/authRepository');
 const { hasPermission } = require('./rbac');
+const { visibleSessionToken } = require('../utils/sessionView');
 const { createI18nContext } = require('../i18n');
 const {
   resolveBrandContext,
@@ -53,7 +54,7 @@ async function attachGlobals(req, res, next) {
     res.locals.brand = brand;
     res.locals.requiresOwnerCopyReview = requiresOwnerCopyReview;
     res.locals.replaceLegacyBrandTokens = (val) => replaceLegacyBrandTokens(val, activeLocale);
-    res.locals.sessionToken = req.sessionID || '';
+    res.locals.sessionToken = visibleSessionToken(req.sessionID, env.isProduction);
     res.locals.currentPath = req.path;
     res.locals.currentUrl = req.originalUrl;
 

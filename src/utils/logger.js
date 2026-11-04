@@ -6,40 +6,46 @@
  */
 
 const SENSITIVE_KEY_REGEX =
-  /(password|pass|secret|token|api_?key|authorization|cookie|csrf|private_?key|trx_secret)/i;
+  /(password|pass|secret|token|api_?key|authorization|cookie|csrf|private_?key|trx_secret|e-?mail|address|street|customer_?name|recipient_?name|owner_?name)/i;
 
 const BD_PHONE_IN_TEXT_REGEX = /\b(\+?8801[3-9]\d{2}|01[3-9]\d{2})\d{4}(\d{2})\b/g;
+const EMAIL_IN_TEXT_REGEX = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
+const FINANCIAL_LOG_KEY_REGEX = /(amount|balance|paisa|price|payment|subtotal|total|commission|withdrawal|payout|transaction|financial)/i;
 
 function maskPhone(str) {
   return String(str).replace(BD_PHONE_IN_TEXT_REGEX, '$1****$2');
 }
 
-function redactValue(val, depth = 0) {
+function maskSensitiveText(str) {
+  return maskPhone(str).replace(EMAIL_IN_TEXT_REGEX, '[REDACTED_EMAIL]');
+}
+
+function redactValue(val, depth = 0, redactFinancial = false) {
   if (depth > 5) return '[MaxDepth]';
   if (val === null || val === undefined) return val;
   if (typeof val === 'string') {
-    return maskPhone(val);
+    return maskSensitiveText(val);
   }
   if (typeof val !== 'object') return val;
   if (val instanceof Error) {
     return {
       name: val.name,
       code: val.code || undefined,
-      message: maskPhone(val.message || ''),
+      message: redactFinancial ? '[REDACTED]' : maskSensitiveText(val.message || ''),
     };
   }
   if (Array.isArray(val)) {
-    return val.map((item) => redactValue(item, depth + 1));
+    return val.map((item) => redactValue(item, depth + 1, redactFinancial));
   }
 
   const clean = {};
   for (const [k, v] of Object.entries(val)) {
-    if (SENSITIVE_KEY_REGEX.test(k)) {
+    if (SENSITIVE_KEY_REGEX.test(k) || (redactFinancial && FINANCIAL_LOG_KEY_REGEX.test(k))) {
       clean[k] = '[REDACTED]';
     } else if (/phone|mobile|recipient|sender_number/i.test(k) && typeof v === 'string') {
       clean[k] = maskPhone(v);
     } else {
-      clean[k] = redactValue(v, depth + 1);
+      clean[k] = redactValue(v, depth + 1, redactFinancial);
     }
   }
   return clean;
@@ -49,8 +55,8 @@ function emit(level, message, meta = {}) {
   const entry = {
     ts: new Date().toISOString(),
     level,
-    msg: maskPhone(String(message)),
-    ...(meta && Object.keys(meta).length > 0 ? { meta: redactValue(meta) } : {}),
+    msg: maskSensitiveText(String(message)),
+    ...(meta && Object.keys(meta).length > 0 ? { meta: redactValue(meta, 0, true) } : {}),
   };
 
   if (process.env.LOG_SILENT === 'true') {
