@@ -56,6 +56,9 @@ jobs:
       - name: Verify production dependency audit
         run: npm audit --omit=dev --audit-level=high
 
+      - name: Install disposable backup/restore client tools
+        run: sudo apt-get update && sudo apt-get install -y default-mysql-client
+
       - name: Run foundation lint, EJS compile, migration SQL & secret scan
         run: npm run lint
 
@@ -124,6 +127,17 @@ jobs:
           run_and_report 'MySQL migration status after reapply' npm run migrate:status
           run_and_report 'MySQL rollback latest two reversible migrations (leave schema for test isolation)' npm run migrate:down -- 2
 
+      - name: Rehearse logical backup/restore on disposable MySQL 8.0 schema
+        env:
+          BACKUP_RESTORE_REHEARSAL: YES_I_AM_USING_A_DISPOSABLE_DATABASE
+          DB_CLIENT: mysql
+          DB_HOST: 127.0.0.1
+          DB_PORT: "3306"
+          DB_NAME: mrtumi_test
+          DB_USER: mrtumi_test
+          DB_PASSWORD: mrtumi_test_pw
+        run: npm run backup:restore:rehearsal
+
       - name: Run automated unit, portal regression & live MySQL 8.0 test suites
         run: |
           set -o pipefail
@@ -184,6 +198,9 @@ jobs:
 
       - name: Verify production dependency audit
         run: npm audit --omit=dev --audit-level=high
+
+      - name: Install disposable backup/restore client tools
+        run: sudo apt-get update && sudo apt-get install -y default-mysql-client
 
       - name: Run foundation lint, EJS compile, migration SQL & secret scan
         run: npm run lint
@@ -287,6 +304,17 @@ jobs:
           DB_USER: mrtumi_test
           DB_PASSWORD: mrtumi_test_pw
         run: npm run migrate:down -- 1
+
+      - name: Rehearse logical backup/restore on disposable MariaDB 10.11 schema
+        env:
+          BACKUP_RESTORE_REHEARSAL: YES_I_AM_USING_A_DISPOSABLE_DATABASE
+          DB_CLIENT: mysql
+          DB_HOST: 127.0.0.1
+          DB_PORT: "3306"
+          DB_NAME: mrtumi_test
+          DB_USER: mrtumi_test
+          DB_PASSWORD: mrtumi_test_pw
+        run: npm run backup:restore:rehearsal
 
       - name: Run automated unit, portal regression & live MariaDB 10.11 test suites
         run: |

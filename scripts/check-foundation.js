@@ -85,6 +85,7 @@ const requiredDocs = [
   'DECISIONS.md',
   'INTEGRATION_STATUS.md',
   'DEPLOYMENT.md',
+  'docs/PHASE_F_OPERATIONS.md',
   'docs/PHASE_01_REFERENCE_AUDIT.md',
   'docs/ARCHITECTURE.md',
   'docs/CPANEL_COMPATIBILITY.md',
