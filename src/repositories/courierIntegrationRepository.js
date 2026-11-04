@@ -199,9 +199,9 @@ async function executeOneClickBooking({ subOrderId, courierCode, actor, idempote
   const result = await withTransaction(async (tx) => {
     // Lock suborder and shipment FOR UPDATE
     const subOrder = await tx.queryOne(
-      `SELECT vso.id, vso.order_id, vso.vendor_id, vso.status, vso.delivery_mode,
+      `SELECT vso.id, vso.order_id, vso.vendor_id, vso.status, vso.delivery_mode, vso.cod_due_paisa,
               o.invoice_no AS invoice_id, o.customer_name, o.customer_phone AS phone, o.shipping_address AS address, o.shipping_zone AS shipping_area,
-              o.payment_method, o.payment_status
+              o.payment_method, o.payment_status, o.total_paisa, o.cod_due_paisa AS order_cod_due_paisa
        FROM vendor_sub_orders vso
        JOIN orders o ON o.id = vso.order_id
        WHERE vso.id = ? FOR UPDATE`,
@@ -228,10 +228,12 @@ async function executeOneClickBooking({ subOrderId, courierCode, actor, idempote
     );
 
     if (!shipment) {
+      const isCod = subOrder.payment_method === 'cod';
+      const codDue = isCod ? Number(subOrder.cod_due_paisa || subOrder.order_cod_due_paisa || subOrder.total_paisa || 0) : 0;
       const res = await tx.execute(
         `INSERT INTO fulfillment_shipments (vendor_sub_order_id, status, cod_due_paisa, created_at, updated_at)
-         VALUES (?, 'ready_for_pickup', 0, UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
-        [subOrderId]
+         VALUES (?, 'ready_for_pickup', ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
+        [subOrderId, codDue]
       );
       shipment = await tx.queryOne(`SELECT * FROM fulfillment_shipments WHERE id = ? FOR UPDATE`, [res.insertId]);
     }

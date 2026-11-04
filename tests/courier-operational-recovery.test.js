@@ -165,14 +165,14 @@ test('Operational Recovery & Monitoring: Reporting, vendor isolation, audit hist
 
   // 4. Create Order 1 & Sub-Order 1 (Vendor A) -> will trigger unknown_timeout
   const orderRes1 = await db.execute(`
-    INSERT INTO orders (customer_id, invoice_no, customer_name, customer_phone, shipping_address, shipping_zone, payment_method, payment_status, total_paisa, created_at, updated_at)
-    VALUES (?, 'INV-OP-001', 'Recipient 1', '01800000000', '101 Alpha Road, Dhaka', 'Inside Dhaka', 'cod', 'unpaid', 50000, UTC_TIMESTAMP(), UTC_TIMESTAMP())
+    INSERT INTO orders (customer_id, invoice_no, customer_name, customer_phone, shipping_address, shipping_zone, payment_method, payment_status, total_paisa, cod_due_paisa, created_at, updated_at)
+    VALUES (?, 'INV-OP-001', 'Recipient 1', '01800000000', '101 Alpha Road, Dhaka', 'Inside Dhaka', 'cod', 'unpaid', 50000, 50000, UTC_TIMESTAMP(), UTC_TIMESTAMP())
   `, [custId]);
   const orderId1 = orderRes1.insertId;
 
   const subOrderRes1 = await db.execute(`
-    INSERT INTO vendor_sub_orders (order_id, vendor_id, vendor_order_no, status, delivery_mode, vendor_entitlement_paisa, marketplace_fee_paisa, net_payable_paisa, created_at, updated_at)
-    VALUES (?, ?, 'VSO-OP-A1', 'ready_for_pickup', 'vendor_managed', 45000, 5000, 45000, UTC_TIMESTAMP(), UTC_TIMESTAMP())
+    INSERT INTO vendor_sub_orders (order_id, vendor_id, vendor_order_no, status, delivery_mode, cod_due_paisa, vendor_entitlement_paisa, marketplace_fee_paisa, net_payable_paisa, created_at, updated_at)
+    VALUES (?, ?, 'VSO-OP-A1', 'ready_for_pickup', 'vendor_managed', 50000, 45000, 5000, 45000, UTC_TIMESTAMP(), UTC_TIMESTAMP())
   `, [orderId1, vendIdA]);
   const subOrderId1 = subOrderRes1.insertId;
 
@@ -501,7 +501,7 @@ test('Operational Recovery & Monitoring: Reporting, vendor isolation, audit hist
   const codRepo = require('../src/repositories/courierCodRepository');
   const codResult = await codRepo.reconcileCourierCollection({
     shipmentId: shipmentId1,
-    collectedAmountPaisa: 150000,
+    collectedAmountPaisa: 50000,
     remittanceRef: 'REM-TEST-001',
     courierName: 'mock_courier',
     consignmentId: 'SF-OVR-887766',
@@ -511,7 +511,7 @@ test('Operational Recovery & Monitoring: Reporting, vendor isolation, audit hist
   });
   assert.equal(codResult.shipmentId, shipmentId1);
   assert.equal(codResult.status, 'reconciled');
-  assert.equal(codResult.netRemittedPaisa, 150000 - 6000 - 1500);
+  assert.equal(codResult.netRemittedPaisa, 50000 - 6000 - 1500);
 
   const codRow = await db.queryOne('SELECT * FROM courier_cod_collections WHERE shipment_id = ?', [shipmentId1]);
   assert.equal(codRow.reconciliation_status, 'reconciled');
