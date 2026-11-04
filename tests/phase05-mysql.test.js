@@ -1117,7 +1117,7 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
     assert.match(detail.body, /History item 0/);
     assert.match(detail.body, /House 18, History Road/);
     assert.match(detail.body, /৳12\.50/);
-    assert.match(detail.body, /Courier tracking is not available for this order yet/);
+    assert.match(detail.body, /No courier shipment or tracking reference is recorded for this order/);
     assert.match(detail.body, /data-testid="cancel-order-form"/);
     const invoice = await httpRequest(baseUrl, `/customer/account/orders/${oldestOrderId}/invoice?lang=en`, { headers: { Cookie: cookie } });
     assert.equal(invoice.statusCode, 200, 'owner can open their invoice');
