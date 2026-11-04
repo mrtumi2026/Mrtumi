@@ -395,6 +395,56 @@ router.get('/vendor/order-items/:itemId', async (req, res, next) => {
   try { return res.json({ item: await vendorPortal.getOrderItem(req.session.vendorUser.id, req.params.itemId) }); } catch (error) { return next(error); }
 });
 
+// Multi-courier quote comparison and recommendation for vendor
+router.get('/vendor/sub-orders/:subOrderId/courier-quotes', async (req, res, next) => {
+  if (!mysqlActive()) { return res.status(400).json({ error: 'Requires MySQL workflow' }); }
+  try {
+    const courierRepo = require('../repositories/courierIntegrationRepository');
+    const quotes = await courierRepo.getShipmentQuotesAndRecommendation({
+      subOrderId: req.params.subOrderId,
+      actor: { vendorId: req.session.vendorUser.id }
+    });
+    return res.json({ success: true, data: quotes });
+  } catch (error) { return next(error); }
+});
+
+// Multi-courier one-click booking for vendor
+router.post('/vendor/sub-orders/:subOrderId/one-click-book', requireCsrf, async (req, res, next) => {
+  if (!mysqlActive()) { req.flash('error', 'Requires MySQL workflow.'); return res.redirect('/vendor/orders'); }
+  try {
+    const courierRepo = require('../repositories/courierIntegrationRepository');
+    const result = await courierRepo.executeOneClickBooking({
+      subOrderId: req.params.subOrderId,
+      courierCode: req.body.courier_code,
+      idempotencyKey: req.body.idempotency_key,
+      note: req.body.note,
+      actor: { vendorId: req.session.vendorUser.id }
+    });
+    if (req.accepts('json') && !req.body.redirect) {
+      return res.json({ success: true, data: result });
+    }
+    req.flash('success', `কুরিয়ার বুকিং সফল হয়েছে (${result.courierName}, ট্র্যাকিং: ${result.trackingId})। পার্সেল কুরিয়ার রাইডারের কাছে হস্তান্তরের পর 'হস্তান্তর নিশ্চিত করুন' ক্লিক করুন।`);
+    return res.redirect('/vendor/orders');
+  } catch (error) { return next(error); }
+});
+
+// Multi-courier tracking sync for vendor
+router.post('/vendor/sub-orders/:subOrderId/track-sync', requireCsrf, async (req, res, next) => {
+  if (!mysqlActive()) { req.flash('error', 'Requires MySQL workflow.'); return res.redirect('/vendor/orders'); }
+  try {
+    const courierRepo = require('../repositories/courierIntegrationRepository');
+    const result = await courierRepo.syncShipmentTracking({
+      subOrderId: req.params.subOrderId,
+      actor: { vendorId: req.session.vendorUser.id }
+    });
+    if (req.accepts('json') && !req.body.redirect) {
+      return res.json({ success: true, data: result });
+    }
+    req.flash('success', 'কুরিয়ার ট্র্যাকিং স্ট্যাটাস আপডেট করা হয়েছে।');
+    return res.redirect('/vendor/orders');
+  } catch (error) { return next(error); }
+});
+
 // Independent vendor sub-order fulfillment; a vendor can only mutate its own sub-orders.
 router.post('/vendor/sub-orders/:subOrderId/booking-result', requireCsrf, async (req,res,next) => {
   if(!mysqlActive()){req.flash('error','Shipment booking records require the MySQL workflow.');return res.redirect('/vendor/orders');}

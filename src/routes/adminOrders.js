@@ -35,6 +35,47 @@ router.post('/admin/fulfillment/sub-orders/:subOrderId/status', requirePermissio
   return req.accepts('json')?res.json({data:result}):res.redirect('/admin/reseller-commerce');
 }));
 
+// Multi-courier quote comparison and recommendation
+router.get('/admin/fulfillment/sub-orders/:subOrderId/courier-quotes', requirePermission('orders.manage'), asyncHandler(async (req, res) => {
+  const courierRepo = require('../repositories/courierIntegrationRepository');
+  const quotes = await courierRepo.getShipmentQuotesAndRecommendation({
+    subOrderId: req.params.subOrderId,
+    actor: fulfillmentActor(req)
+  });
+  return res.json({ success: true, data: quotes });
+}));
+
+// Multi-courier one-click booking
+router.post('/admin/fulfillment/sub-orders/:subOrderId/one-click-book', requirePermission('orders.manage'), requireCsrf, asyncHandler(async (req, res) => {
+  const courierRepo = require('../repositories/courierIntegrationRepository');
+  const result = await courierRepo.executeOneClickBooking({
+    subOrderId: req.params.subOrderId,
+    courierCode: req.body.courier_code,
+    idempotencyKey: req.body.idempotency_key,
+    note: req.body.note,
+    actor: fulfillmentActor(req)
+  });
+  if (req.accepts('json') && !req.body.redirect) {
+    return res.json({ success: true, data: result });
+  }
+  req.flash('success', `Courier booked successfully with ${result.courierName} (Tracking: ${result.trackingId})`);
+  return res.redirect('/admin/reseller-commerce');
+}));
+
+// Multi-courier tracking status synchronization
+router.post('/admin/fulfillment/sub-orders/:subOrderId/track-sync', requirePermission('orders.manage'), requireCsrf, asyncHandler(async (req, res) => {
+  const courierRepo = require('../repositories/courierIntegrationRepository');
+  const result = await courierRepo.syncShipmentTracking({
+    subOrderId: req.params.subOrderId,
+    actor: fulfillmentActor(req)
+  });
+  if (req.accepts('json') && !req.body.redirect) {
+    return res.json({ success: true, data: result });
+  }
+  req.flash('success', 'Shipment tracking status updated.');
+  return res.redirect('/admin/reseller-commerce');
+}));
+
 function generateInvoiceId() {
   for (let i = 0; i < 10; i++) {
     const code = String(Math.floor(10000 + Math.random() * 90000));
