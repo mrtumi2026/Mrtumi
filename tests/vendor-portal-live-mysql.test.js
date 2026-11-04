@@ -119,7 +119,7 @@ describe('Vendor portal live MySQL/MariaDB repository integration', () => {
     assert.equal(shipment.picked_up_at,null,'booking alone must not create a physical pickup timestamp');
     assert.equal(shipment.booking_status,'succeeded','booking outcome is persisted separately from physical pickup');
     await repo.recordPhysicalHandover({subOrderId:one,actor:{vendorId:vendors[0]}});
-    await assert.rejects(()=>repo.transitionSubOrder({subOrderId:one,toStatus:'delivered',actor:{vendorId:vendors[0]}}),{code:'AUTHORIZATION_ERROR'});
+    await assert.rejects(()=>repo.transitionSubOrder({subOrderId:one,toStatus:'delivered',actor:{vendorId:vendors[0]}}),{code:'FORBIDDEN'});
     await repo.transitionSubOrder({subOrderId:one,toStatus:'delivered',actor:{userId:actorUserId,platformAdmin:true}});
     assert.equal((await client.queryOne('SELECT order_status FROM orders WHERE id=?',[oneOrder])).order_status,'delivered');
 
@@ -132,7 +132,7 @@ describe('Vendor portal live MySQL/MariaDB repository integration', () => {
     await repo.setDeliveryMode({subOrderId:b,deliveryMode:'vendor_managed',actor:{userId:actorUserId,platformAdmin:true}});
     await repo.recordBookingResult({subOrderId:a,courierCode:'TEST-PLATFORM',trackingReference:'TEST-REF-A',resultCode:'succeeded',actor:{userId:actorUserId,platformAdmin:true}});
     await repo.recordBookingResult({subOrderId:b,courierCode:'TEST-VENDOR',trackingReference:'TEST-REF-B',resultCode:'succeeded',actor:{vendorId:vendors[1]}});
-    await assert.rejects(()=>repo.recordPhysicalHandover({subOrderId:a,actor:{vendorId:vendors[0]}}),{code:'AUTHORIZATION_ERROR'});
+    await assert.rejects(()=>repo.recordPhysicalHandover({subOrderId:a,actor:{vendorId:vendors[0]}}),{code:'FORBIDDEN'});
     await repo.recordPhysicalHandover({subOrderId:a,actor:{userId:actorUserId,platformAdmin:true}});
     await repo.recordPhysicalHandover({subOrderId:b,actor:{vendorId:vendors[1]}});
     assert.equal((await client.queryOne('SELECT order_status FROM orders WHERE id=?',[multiOrder])).order_status,'shipped','cancelled siblings are excluded; all remaining vendors have a handover');
