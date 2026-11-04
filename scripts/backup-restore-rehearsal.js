@@ -90,6 +90,15 @@ async function snapshotDatabase(connection) {
     `SELECT TABLE_NAME, CONSTRAINT_NAME, CONSTRAINT_TYPE
      FROM information_schema.TABLE_CONSTRAINTS WHERE TABLE_SCHEMA = DATABASE() ORDER BY TABLE_NAME, CONSTRAINT_NAME`
   );
+  const [foreignKeys] = await connection.query(
+    `SELECT TABLE_NAME, CONSTRAINT_NAME, COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME, POSITION_IN_UNIQUE_CONSTRAINT
+     FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = DATABASE() AND REFERENCED_TABLE_NAME IS NOT NULL
+     ORDER BY TABLE_NAME, CONSTRAINT_NAME, ORDINAL_POSITION`
+  );
+  const [referentialRules] = await connection.query(
+    `SELECT CONSTRAINT_NAME, TABLE_NAME, REFERENCED_TABLE_NAME, UPDATE_RULE, DELETE_RULE
+     FROM information_schema.REFERENTIAL_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() ORDER BY TABLE_NAME, CONSTRAINT_NAME`
+  );
   const [triggers] = await connection.query(
     `SELECT TRIGGER_NAME, EVENT_MANIPULATION, EVENT_OBJECT_TABLE, ACTION_TIMING, ACTION_STATEMENT
      FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE() ORDER BY TRIGGER_NAME`
@@ -102,7 +111,7 @@ async function snapshotDatabase(connection) {
     tableNames: names,
     counts,
     rowHash: hash.digest('hex'),
-    schemaHash: crypto.createHash('sha256').update(JSON.stringify({ columnMetadata, indexMetadata, constraints, triggers, views })).digest('hex')
+    schemaHash: crypto.createHash('sha256').update(JSON.stringify({ columnMetadata, indexMetadata, constraints, foreignKeys, referentialRules, triggers, views })).digest('hex')
   };
 }
 
