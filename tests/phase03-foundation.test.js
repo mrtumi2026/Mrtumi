@@ -237,6 +237,23 @@ describe('Phase 03 — Production SQLite Prohibition & DB Connection Failure Han
     assert.equal(responseBody.error.code, 'SQLITE_PROHIBITED_IN_PRODUCTION');
   });
 
+  test('Clears the health-check timeout when a database ping fails quickly', async () => {
+    const { pingPool } = require('../src/db/mysqlPool');
+    const originalSetTimeout = global.setTimeout;
+    const originalClearTimeout = global.clearTimeout;
+    const timer = { cleared: false };
+    global.setTimeout = () => timer;
+    global.clearTimeout = (handle) => { if (handle === timer) timer.cleared = true; };
+    try {
+      const health = await pingPool({ query: async () => { throw Object.assign(new Error('offline'), { code: 'ECONNREFUSED' }); } }, 5000);
+      assert.equal(health.ok, false);
+      assert.equal(timer.cleared, true);
+    } finally {
+      global.setTimeout = originalSetTimeout;
+      global.clearTimeout = originalClearTimeout;
+    }
+  });
+
   test('Handles missing MySQL config and unreachable MySQL server cleanly without leaking secrets', async () => {
     assert.throws(
       () => validateMysqlConfig({ host: '127.0.0.1', port: 3306, name: '', user: '' }),

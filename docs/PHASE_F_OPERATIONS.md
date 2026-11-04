@@ -1,5 +1,7 @@
 # Phase F — Production Operations and Recovery Controls
 
+**Application observability source audit:** see [`PHASE_F_OBSERVABILITY_AUDIT.md`](PHASE_F_OBSERVABILITY_AUDIT.md) for evidence-classified job/queue, health, logging, shutdown, recovery and monitoring findings. The repository review does not verify host schedules, alerting, log retention, or production readiness.
+
 **Status:** implementation guidance and disposable-database rehearsal tooling. This document is not evidence of production readiness. No production database, host, credential, customer data, payment, courier, or deployment was used. Thresholds and policies marked **OWNER DECISION** are deliberately not invented.
 
 ## 1. Owner decisions required before launch

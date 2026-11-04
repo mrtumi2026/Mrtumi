@@ -203,9 +203,9 @@ async function closePool(targetPool = singletonPool) {
 async function pingPool(targetPool = null, timeoutMs = 5000) {
   const startedAt = Date.now();
   let poolToPing = targetPool;
+  let timer;
   try {
     poolToPing = poolToPing || getPool();
-    let timer;
     const timeoutPromise = new Promise((_, reject) => {
       timer = setTimeout(() => {
         const err = new Error('MySQL health check timed out.');
@@ -215,7 +215,6 @@ async function pingPool(targetPool = null, timeoutMs = 5000) {
     });
 
     await Promise.race([poolToPing.query('SELECT 1 AS ok'), timeoutPromise]);
-    clearTimeout(timer);
     return {
       ok: true,
       latencyMs: Date.now() - startedAt,
@@ -229,6 +228,8 @@ async function pingPool(targetPool = null, timeoutMs = 5000) {
       mysqlCode: safeErr.mysqlCode || 'UNKNOWN',
       message: safeErr.message,
     };
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 

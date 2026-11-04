@@ -123,6 +123,19 @@ test('Phase F docs disclose owner decisions, destructive restore scope, monitori
   }
 });
 
+test('Observability audit classifies source evidence and keeps host facts and owner policies unverified', () => {
+  const audit = fs.readFileSync(path.join(root, 'docs/PHASE_F_OBSERVABILITY_AUDIT.md'), 'utf8');
+  for (const status of ['Verified', 'Partial', 'Missing', 'Needs host verification']) assert.ok(audit.includes(status));
+  for (const topic of ['notification_queue', 'SIGTERM/SIGINT', 'error_logs', 'query parameters', 'No production database', 'returnWindowDays=7', 'five-second race timeout']) {
+    assert.ok(audit.includes(topic), `Observability audit must disclose ${topic}`);
+  }
+  const ops = fs.readFileSync(path.join(root, 'docs/PHASE_F_OPERATIONS.md'), 'utf8');
+  const decisions = fs.readFileSync(path.join(root, 'docs/PHASE_F_OWNER_DECISIONS.md'), 'utf8');
+  assert.match(ops, /PHASE_F_OBSERVABILITY_AUDIT\.md/);
+  assert.match(decisions, /OD-16 \| Job ownership/);
+  assert.match(decisions, /OD-17 \| Log and health monitoring/);
+});
+
 test('Phase F owner register covers required decisions with status, approval, evidence, and limitations', () => {
   const register = fs.readFileSync(path.join(root, 'docs/PHASE_F_OWNER_DECISIONS.md'), 'utf8');
   for (const topic of ['Backup cadence', 'Retention', 'RPO', 'RTO', 'Backup storage/provider', 'Restore-test frequency', 'Monitoring thresholds', 'Escalation and responsible teams', 'Scheduled job inventory/cadence', 'Scheduled job failures/retries', 'Production DB runtime role', 'Migration / backup / restore DB roles', 'COD reconciliation', 'Financial exceptions and settlement', 'Launch acceptance authority']) {
