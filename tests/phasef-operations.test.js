@@ -65,6 +65,13 @@ test('Backup command failures propagate as errors instead of yielding an empty/f
   assert.throws(() => run('mrtumi-no-such-backup-command'), /is unavailable/);
 });
 
+test('Backup drill bounds client processes and keeps the database connection handle for final cleanup', () => {
+  const source = fs.readFileSync(path.join(root, 'scripts/backup-restore-rehearsal.js'), 'utf8');
+  assert.match(source, /timeout:\s*5\s*\*\s*60\s*\*\s*1000/);
+  assert.match(source, /const restored = await restoreAndVerify/);
+  assert.doesNotMatch(source, /connection = await restoreAndVerify/);
+});
+
 test('Backup artifact integrity rejects empty and modified artifacts', () => {
   const expected = require('node:crypto').createHash('sha256').update('valid sql dump').digest('hex');
   assert.equal(verifyBackupArtifact(expected, Buffer.from('valid sql dump')), expected);

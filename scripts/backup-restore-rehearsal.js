@@ -41,8 +41,10 @@ function run(binary, args, { env, input } = {}) {
     input,
     encoding: 'utf8',
     maxBuffer: 16 * 1024 * 1024,
+    timeout: 5 * 60 * 1000,
     windowsHide: true
   });
+  if (result.error?.code === 'ETIMEDOUT') throw new Error(`${binary} exceeded the five-minute disposable rehearsal timeout.`);
   if (result.error) throw new Error(`${binary} is unavailable: ${result.error.message}`);
   if (result.status !== 0) {
     const details = String(result.stderr || '').replace(/password\s*=\s*\S+/ig, 'password=[REDACTED]').trim();
@@ -176,10 +178,12 @@ async function rehearse(env = process.env) {
     connection = await mysql.createConnection({ host: target.host, port: target.port, user: target.user, password: target.password, database: target.dbName, connectTimeout: 5000 });
     const [serverRows] = await connection.query('SELECT VERSION() AS version, @@version_comment AS version_comment');
     const serverInfo = serverRows[0];
+    console.log('Collecting disposable database pre-backup schema and row snapshot.');
     const before = await snapshotDatabase(connection);
     await connection.end();
     connection = null;
 
+    console.log('Creating the logical dump with the installed mysqldump client.');
     const dumpVersion = run('mysqldump', ['--version'], { env: passwordEnv });
     const dumpArgs = [
       '--host', target.host, '--port', String(target.port), '--user', target.user,
@@ -192,17 +196,22 @@ async function rehearse(env = process.env) {
     if (!dump.trim()) throw new Error('Backup artifact is empty.');
     const expectedBackupHash = crypto.createHash('sha256').update(dump).digest('hex');
     fs.writeFileSync(dumpPath, dump, { mode: 0o600 });
+    console.log(`Logical dump created (${Buffer.byteLength(dump)} bytes); verifying backup integrity before restore.`);
     const backupArtifact = fs.readFileSync(dumpPath);
     const backupHash = verifyBackupArtifact(expectedBackupHash, backupArtifact);
 
-    connection = await restoreAndVerify({
+    const restored = await restoreAndVerify({
       before,
       // Guarded import to the exact same loopback disposable schema; dump contains DROP TABLE IF EXISTS.
-      restore: async () => run('mysql', ['--host', target.host, '--port', String(target.port), '--user', target.user, '--default-character-set=utf8mb4', target.dbName], {
-        env: passwordEnv,
-        input: backupArtifact
-      }),
+      restore: async () => {
+        console.log('Importing the logical dump into the same guarded disposable schema.');
+        return run('mysql', ['--host', target.host, '--port', String(target.port), '--user', target.user, '--default-character-set=utf8mb4', target.dbName], {
+          env: passwordEnv,
+          input: backupArtifact
+        });
+      },
       snapshot: async () => {
+        console.log('Verifying restored database contents and schema.');
         connection = await mysql.createConnection({ host: target.host, port: target.port, user: target.user, password: target.password, database: target.dbName, connectTimeout: 5000 });
         return snapshotDatabase(connection);
       },
@@ -212,7 +221,7 @@ async function rehearse(env = process.env) {
         if (nonInnoDb.length) throw new Error(`Restore integrity check found non-InnoDB tables: ${nonInnoDb.map(row => row.TABLE_NAME).join(', ')}`);
       }
     });
-    console.log(JSON.stringify({ result: 'PASS', server: serverInfo.version, serverComment: serverInfo.version_comment, database: target.dbName, tables: before.tableNames.length, essentialTables: ESSENTIAL_TABLES, rowContentSha256: before.rowHash, schemaSha256: before.schemaHash, backupSha256: backupHash, dumpClient: dumpVersion.trim() }, null, 2));
+    console.log(JSON.stringify({ result: 'PASS', server: serverInfo.version, serverComment: serverInfo.version_comment, database: target.dbName, tables: restored.tableNames.length, essentialTables: ESSENTIAL_TABLES, rowContentSha256: before.rowHash, schemaSha256: before.schemaHash, backupSha256: backupHash, dumpClient: dumpVersion.trim() }, null, 2));
   } finally {
     if (connection) await connection.end().catch(() => {});
     fs.rmSync(tmpDir, { recursive: true, force: true });
