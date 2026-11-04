@@ -259,7 +259,7 @@ jobs:
           DB_PASSWORD: mrtumi_test_pw
         run: node scripts/diagnose-migrations.js
 
-      - name: Verify MariaDB CLI migrator up and status
+      - name: Verify MariaDB CLI migrator up/down/reapply through migrations 0028-0029
         id: mariadb_migration_cycle
         env:
           DB_CLIENT: mysql
@@ -277,7 +277,7 @@ jobs:
           npm run migrate:up
           npm run migrate:status
 
-      - name: Roll back MariaDB migration 0025
+      - name: Roll back MariaDB migrations 0029 through 0025
         id: mariadb_rollback_0025
         env:
           DB_CLIENT: mysql
@@ -286,7 +286,7 @@ jobs:
           DB_NAME: mrtumi_test
           DB_USER: mrtumi_test
           DB_PASSWORD: mrtumi_test_pw
-        run: npm run migrate:down -- 1
+        run: npm run migrate:down -- 5
 
       - name: Roll back MariaDB migration 0024
         id: mariadb_rollback_0024
@@ -299,7 +299,7 @@ jobs:
           DB_PASSWORD: mrtumi_test_pw
         run: npm run migrate:down -- 1
 
-      - name: Reapply migrations after MariaDB rollback
+      - name: Reapply all MariaDB migrations before integration tests
         id: mariadb_reapply_migrations
         env:
           DB_CLIENT: mysql
@@ -312,28 +312,6 @@ jobs:
           set -euo pipefail
           npm run migrate:up
           npm run migrate:status
-
-      - name: Roll back MariaDB migration 0025 before integration tests
-        id: mariadb_rollback_0025_before_tests
-        env:
-          DB_CLIENT: mysql
-          DB_HOST: 127.0.0.1
-          DB_PORT: "3306"
-          DB_NAME: mrtumi_test
-          DB_USER: mrtumi_test
-          DB_PASSWORD: mrtumi_test_pw
-        run: npm run migrate:down -- 1
-
-      - name: Roll back MariaDB migration 0024 before integration tests
-        id: mariadb_rollback_0024_before_tests
-        env:
-          DB_CLIENT: mysql
-          DB_HOST: 127.0.0.1
-          DB_PORT: "3306"
-          DB_NAME: mrtumi_test
-          DB_USER: mrtumi_test
-          DB_PASSWORD: mrtumi_test_pw
-        run: npm run migrate:down -- 1
 
       - name: Rehearse logical backup/restore on disposable MariaDB 10.11 schema
         id: mariadb_backup_restore
