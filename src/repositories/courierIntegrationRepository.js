@@ -592,13 +592,86 @@ async function syncShipmentTracking({ subOrderId, actor }) {
 }
 
 /**
- * Data and reporting contract for tracking ambiguous/timeout shipments.
- * Enables operational monitoring, manual reconciliation, and escalation workflows.
- * NOTE: Alert thresholds (e.g. 15m vs 30m) and designated operational personnel are owner decisions.
+ * Comprehensive ambiguous shipment monitoring and reporting query.
+ * Filters by age, provider, vendor, status, and keyword with pagination & vendor isolation checks.
  */
-async function getAmbiguousShipmentsReport({ olderThanMinutes = 0, limit = 50, offset = 0, pool } = {}) {
+async function listAmbiguousShipments({
+  olderThanMinutes = 0,
+  courierCode = null,
+  vendorId = null,
+  status = null,
+  search = null,
+  page = 1,
+  limit = 20,
+  actor = null,
+  pool = null
+} = {}) {
   assertMysql();
   const p = pool || getPool();
+
+  // Vendor isolation guard: Vendors can ONLY see their own shipments
+  let effectiveVendorId = vendorId ? Number(vendorId) : null;
+  if (actor?.vendorId) {
+    effectiveVendorId = Number(actor.vendorId);
+  }
+
+  const whereConditions = [];
+  const params = [];
+
+  // Filter ambiguous booking statuses
+  if (status && ['unknown_timeout', 'in_review'].includes(status)) {
+    whereConditions.push('fs.booking_status = ?');
+    params.push(status);
+  } else {
+    whereConditions.push("fs.booking_status IN ('unknown_timeout', 'in_review')");
+  }
+
+  // Filter age
+  if (Number(olderThanMinutes) > 0) {
+    whereConditions.push('TIMESTAMPDIFF(MINUTE, fs.updated_at, UTC_TIMESTAMP()) >= ?');
+    params.push(Number(olderThanMinutes));
+  }
+
+  // Filter courier code
+  if (courierCode && String(courierCode).trim()) {
+    whereConditions.push('LOWER(fs.courier_code) = LOWER(?)');
+    params.push(String(courierCode).trim());
+  }
+
+  // Filter vendor
+  if (effectiveVendorId) {
+    whereConditions.push('vso.vendor_id = ?');
+    params.push(effectiveVendorId);
+  }
+
+  // Search keyword (invoice, customer name, phone, vendor order no)
+  if (search && String(search).trim()) {
+    const s = `%${String(search).trim()}%`;
+    whereConditions.push('(o.invoice_no LIKE ? OR o.customer_name LIKE ? OR o.customer_phone LIKE ? OR vso.vendor_order_no LIKE ?)');
+    params.push(s, s, s, s);
+  }
+
+  const whereSql = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+  // Count total matching
+  const [countRows] = await p.query(
+    `SELECT COUNT(*) AS total
+     FROM fulfillment_shipments fs
+     JOIN vendor_sub_orders vso ON vso.id = fs.vendor_sub_order_id
+     JOIN orders o ON o.id = vso.order_id
+     ${whereSql}`,
+    params
+  );
+  const total = Number(countRows[0]?.total || 0);
+
+  // Pagination calculation
+  const safePage = Math.max(1, Number(page) || 1);
+  const safeLimit = Math.max(1, Math.min(100, Number(limit) || 20));
+  const offset = (safePage - 1) * safeLimit;
+  const totalPages = Math.ceil(total / safeLimit) || 1;
+
+  // Query paginated items
+  const queryParams = [...params, safeLimit, offset];
   const [rows] = await p.query(
     `SELECT fs.id AS shipment_id,
             fs.vendor_sub_order_id,
@@ -606,26 +679,284 @@ async function getAmbiguousShipmentsReport({ olderThanMinutes = 0, limit = 50, o
             fs.tracking_id,
             fs.booking_status,
             fs.booking_idempotency_key,
+            fs.quoted_charge_paisa,
             fs.created_at,
             fs.updated_at,
             TIMESTAMPDIFF(MINUTE, fs.updated_at, UTC_TIMESTAMP()) AS age_minutes,
             vso.vendor_id,
             vso.vendor_order_no,
             vso.delivery_mode,
+            v.shop_name AS vendor_shop_name,
+            v.owner_name AS vendor_owner_name,
+            v.phone AS vendor_phone,
             o.id AS order_id,
             o.invoice_no,
             o.customer_name,
-            o.customer_phone
+            o.customer_phone,
+            o.shipping_address,
+            o.shipping_zone,
+            COALESCE(rec.reconciliation_count, 0) AS reconciliation_attempts,
+            rec.last_reconciled_at
      FROM fulfillment_shipments fs
      JOIN vendor_sub_orders vso ON vso.id = fs.vendor_sub_order_id
      JOIN orders o ON o.id = vso.order_id
-     WHERE fs.booking_status IN ('unknown_timeout', 'in_review')
-       AND TIMESTAMPDIFF(MINUTE, fs.updated_at, UTC_TIMESTAMP()) >= ?
+     LEFT JOIN vendors v ON v.id = vso.vendor_id
+     LEFT JOIN (
+       SELECT shipment_id,
+              COUNT(*) AS reconciliation_count,
+              MAX(created_at) AS last_reconciled_at
+       FROM fulfillment_shipment_events
+       WHERE event_type = 'booking_reconciled'
+       GROUP BY shipment_id
+     ) rec ON rec.shipment_id = fs.id
+     ${whereSql}
      ORDER BY fs.updated_at ASC
      LIMIT ? OFFSET ?`,
-    [Number(olderThanMinutes) || 0, Number(limit) || 50, Number(offset) || 0]
+    queryParams
   );
-  return rows;
+
+  return {
+    shipments: rows.map(r => ({
+      ...r,
+      age_minutes: Number(r.age_minutes || 0),
+      reconciliation_attempts: Number(r.reconciliation_attempts || 0),
+      is_stalled: Number(r.age_minutes || 0) >= 30
+    })),
+    pagination: {
+      page: safePage,
+      limit: safeLimit,
+      total,
+      totalPages
+    }
+  };
+}
+
+/**
+ * Detailed audit trail and history for an individual shipment.
+ * Returns shipment record, provider recommendation/response snapshots, and chronological event trail.
+ */
+async function getShipmentAuditTrail({ shipmentId, subOrderId, actor, pool = null } = {}) {
+  assertMysql();
+  const p = pool || getPool();
+
+  let shipmentQuery = 'SELECT fs.*, vso.id AS vso_id, vso.order_id, vso.vendor_id, vso.vendor_order_no, vso.delivery_mode, o.invoice_no, o.customer_name, o.customer_phone, v.shop_name AS vendor_shop_name FROM fulfillment_shipments fs JOIN vendor_sub_orders vso ON vso.id = fs.vendor_sub_order_id JOIN orders o ON o.id = vso.order_id LEFT JOIN vendors v ON v.id = vso.vendor_id ';
+  let shipmentParam = null;
+
+  if (shipmentId) {
+    shipmentQuery += 'WHERE fs.id = ? LIMIT 1';
+    shipmentParam = shipmentId;
+  } else if (subOrderId) {
+    shipmentQuery += 'WHERE fs.vendor_sub_order_id = ? ORDER BY fs.id DESC LIMIT 1';
+    shipmentParam = subOrderId;
+  } else {
+    throw new ValidationError('Either shipmentId or subOrderId must be provided.');
+  }
+
+  const [shipmentRows] = await p.query(shipmentQuery, [shipmentParam]);
+  const shipment = shipmentRows[0] || null;
+  if (!shipment) {
+    throw new NotFoundError('Shipment not found.');
+  }
+
+  // Vendor isolation check
+  if (actor?.vendorId && Number(shipment.vendor_id) !== Number(actor.vendorId)) {
+    throw new AuthorizationError('You do not have permission to view audit history for this shipment.');
+  }
+
+  // Fetch full event history
+  const [events] = await p.query(
+    `SELECT fse.id, fse.shipment_id, fse.event_type, fse.actor_type, fse.vendor_id, fse.user_id,
+            fse.courier_code, fse.tracking_reference, fse.result_code, fse.note, fse.created_at,
+            u.name AS user_name, u.email AS user_email
+     FROM fulfillment_shipment_events fse
+     LEFT JOIN users u ON u.id = fse.user_id
+     WHERE fse.shipment_id = ?
+     ORDER BY fse.id ASC`,
+    [shipment.id]
+  );
+
+  let parsedBookingResponse = null;
+  if (shipment.booking_response_json) {
+    try {
+      parsedBookingResponse = JSON.parse(shipment.booking_response_json);
+    } catch {
+      parsedBookingResponse = shipment.booking_response_json;
+    }
+  }
+
+  let parsedRecommendation = null;
+  if (shipment.recommendation_snapshot_json) {
+    try {
+      parsedRecommendation = JSON.parse(shipment.recommendation_snapshot_json);
+    } catch {
+      parsedRecommendation = shipment.recommendation_snapshot_json;
+    }
+  }
+
+  return {
+    shipment: {
+      id: shipment.id,
+      vendorSubOrderId: shipment.vendor_sub_order_id,
+      vendorId: shipment.vendor_id,
+      vendorShopName: shipment.vendor_shop_name,
+      vendorOrderNo: shipment.vendor_order_no,
+      invoiceNo: shipment.invoice_no,
+      customerName: shipment.customer_name,
+      customerPhone: shipment.customer_phone,
+      courierCode: shipment.courier_code,
+      trackingId: shipment.tracking_id,
+      externalConsignmentId: shipment.external_consignment_id,
+      bookingStatus: shipment.booking_status,
+      bookingIdempotencyKey: shipment.booking_idempotency_key,
+      bookingResponseJson: parsedBookingResponse,
+      recommendationSnapshotJson: parsedRecommendation,
+      ageMinutes: Math.floor((Date.now() - new Date(shipment.updated_at).getTime()) / 60000),
+      createdAt: shipment.created_at,
+      updatedAt: shipment.updated_at
+    },
+    events: events.map(e => ({
+      id: e.id,
+      eventType: e.event_type,
+      actorType: e.actor_type,
+      userId: e.user_id,
+      userName: e.user_name || (e.actor_type === 'vendor' ? 'Vendor' : 'System'),
+      userEmail: e.user_email || null,
+      courierCode: e.courier_code,
+      trackingReference: e.tracking_reference,
+      resultCode: e.result_code,
+      note: e.note,
+      createdAt: e.created_at
+    }))
+  };
+}
+
+/**
+ * Super Admin manual resolution of ambiguous shipment.
+ * Requires verified provider evidence and audit note.
+ * Prohibits status override without owner/Super Admin authorization.
+ */
+async function resolveAmbiguousBookingOverride({
+  shipmentId,
+  subOrderId,
+  resolution,
+  providerEvidence,
+  trackingReference = '',
+  note = '',
+  actor
+}) {
+  if (!actor || (!actor.isSuperAdmin && !actor.platformAdmin)) {
+    throw new AuthorizationError('Manual override of ambiguous courier booking requires Super Admin authorization.');
+  }
+
+  // Validate resolution action
+  const cleanRes = String(resolution || '').trim().toLowerCase();
+  if (!['confirm_parcel_exists', 'confirm_parcel_absent'].includes(cleanRes)) {
+    throw new ValidationError("Resolution must be either 'confirm_parcel_exists' or 'confirm_parcel_absent'.");
+  }
+
+  // Provider evidence is MANDATORY
+  const cleanEvidence = String(providerEvidence || '').trim();
+  if (cleanEvidence.length < 5) {
+    throw new ValidationError('Provider evidence is mandatory for manual resolution (minimum 5 characters, e.g. carrier ticket # or confirmation ref).');
+  }
+
+  const cleanTracking = String(trackingReference || '').trim();
+  if (cleanRes === 'confirm_parcel_exists' && !cleanTracking) {
+    throw new ValidationError("Tracking reference is mandatory when resolving as 'confirm_parcel_exists'.");
+  }
+
+  assertMysql();
+
+  return withTransaction(async (tx) => {
+    let shipment = null;
+    if (shipmentId) {
+      shipment = await tx.queryOne(
+        `SELECT fs.*, vso.vendor_id, vso.order_id FROM fulfillment_shipments fs JOIN vendor_sub_orders vso ON vso.id = fs.vendor_sub_order_id WHERE fs.id = ? FOR UPDATE`,
+        [shipmentId]
+      );
+    } else if (subOrderId) {
+      shipment = await tx.queryOne(
+        `SELECT fs.*, vso.vendor_id, vso.order_id FROM fulfillment_shipments fs JOIN vendor_sub_orders vso ON vso.id = fs.vendor_sub_order_id WHERE fs.vendor_sub_order_id = ? ORDER BY fs.id DESC LIMIT 1 FOR UPDATE`,
+        [subOrderId]
+      );
+    }
+
+    if (!shipment) {
+      throw new NotFoundError('Shipment not found.');
+    }
+
+    if (shipment.picked_up_at) {
+      throw new ValidationError('Cannot override shipment that has already been physically picked up.');
+    }
+
+    const auditNote = `[Super Admin Manual Override] Evidence: ${cleanEvidence}${note ? ` | Note: ${note.trim()}` : ''}`;
+    const actorUserId = actor.userId || null;
+
+    if (cleanRes === 'confirm_parcel_exists') {
+      await tx.execute(
+        `UPDATE fulfillment_shipments
+         SET booking_status = 'succeeded',
+             tracking_id = ?,
+             external_consignment_id = ?,
+             updated_at = UTC_TIMESTAMP()
+         WHERE id = ?`,
+        [cleanTracking, cleanTracking, shipment.id]
+      );
+
+      await tx.execute(
+        `INSERT INTO fulfillment_shipment_events
+         (shipment_id, event_type, actor_type, vendor_id, user_id, courier_code, tracking_reference, result_code, note, created_at)
+         VALUES (?, 'manual_override', 'admin', ?, ?, ?, ?, 'succeeded', ?, UTC_TIMESTAMP())`,
+        [shipment.id, shipment.vendor_id, actorUserId, shipment.courier_code || '', cleanTracking, auditNote]
+      );
+
+      return {
+        success: true,
+        resolution: 'confirm_parcel_exists',
+        bookingStatus: 'succeeded',
+        trackingId: cleanTracking,
+        message: 'Ambiguous shipment resolved: carrier parcel existence verified by Super Admin with provider evidence.'
+      };
+    } else {
+      // confirm_parcel_absent: clears the ambiguous state to failed, allowing a safe fresh booking
+      await tx.execute(
+        `UPDATE fulfillment_shipments
+         SET booking_status = 'failed',
+             updated_at = UTC_TIMESTAMP()
+         WHERE id = ?`,
+        [shipment.id]
+      );
+
+      await tx.execute(
+        `INSERT INTO fulfillment_shipment_events
+         (shipment_id, event_type, actor_type, vendor_id, user_id, courier_code, tracking_reference, result_code, note, created_at)
+         VALUES (?, 'manual_override', 'admin', ?, ?, ?, '', 'failed', ?, UTC_TIMESTAMP())`,
+        [shipment.id, shipment.vendor_id, actorUserId, shipment.courier_code || '', auditNote]
+      );
+
+      return {
+        success: true,
+        resolution: 'confirm_parcel_absent',
+        bookingStatus: 'failed',
+        message: 'Ambiguous shipment resolved: carrier parcel absence verified by Super Admin with provider evidence. Safe re-booking is now authorized.'
+      };
+    }
+  });
+}
+
+/**
+ * Data and reporting contract for tracking ambiguous/timeout shipments.
+ * Enables operational monitoring, manual reconciliation, and escalation workflows.
+ * NOTE: Alert thresholds (e.g. 15m vs 30m) and designated operational personnel are owner decisions.
+ */
+async function getAmbiguousShipmentsReport({ olderThanMinutes = 0, limit = 50, offset = 0, pool } = {}) {
+  const result = await listAmbiguousShipments({
+    olderThanMinutes,
+    limit,
+    page: Math.floor(Number(offset) / Number(limit)) + 1,
+    pool
+  });
+  return result.shipments;
 }
 
 module.exports = {
@@ -633,5 +964,8 @@ module.exports = {
   executeOneClickBooking,
   reconcileBookingResult,
   syncShipmentTracking,
+  listAmbiguousShipments,
+  getShipmentAuditTrail,
+  resolveAmbiguousBookingOverride,
   getAmbiguousShipmentsReport
 };
