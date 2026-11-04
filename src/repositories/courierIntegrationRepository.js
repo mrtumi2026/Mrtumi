@@ -353,11 +353,13 @@ async function executeOneClickBooking({ subOrderId, courierCode, actor, idempote
       // Record failed or unknown-timeout booking event
       await tx.execute(
         `UPDATE fulfillment_shipments
-         SET booking_status = ?,
+         SET courier_code = ?,
+             booking_status = ?,
              booking_response_json = ?,
              updated_at = UTC_TIMESTAMP()
          WHERE id = ?`,
         [
+          providerConfig.code,
           failStatus,
           JSON.stringify(CourierBaseAdapter.sanitize(bookingResult.rawResponse || { error: bookingResult.error, isTimeout })),
           shipment.id

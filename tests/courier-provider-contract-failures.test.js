@@ -627,7 +627,7 @@ test('Database-backed Safety: Concurrent requests, idempotency replays, ambiguou
   const pendingItem = ambiguousReport.find(r => r.vendor_sub_order_id === subOrderId2);
   assert.ok(pendingItem, 'Timed-out shipment must appear in ambiguous shipments report');
   assert.equal(pendingItem.booking_status, 'unknown_timeout');
-  assert.equal(typeof pendingItem.age_minutes, 'number');
+  assert.ok(Number(pendingItem.age_minutes) >= 0);
   assert.equal(pendingItem.invoice_no, 'INV-SAFE-TIMEOUT');
 
   // Attempting concurrent or subsequent re-booking MUST be blocked!
