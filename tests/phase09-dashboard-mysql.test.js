@@ -192,7 +192,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     if(!MYSQL_HOST)return t.skip(SKIP);
     const path=`/admin/phase06/products/${productId}/edit`;
     const anonymousEdit=await request(path,{cookie:'',accept:'text/html'});
-    assert.equal(anonymousEdit.status,302,`unauthenticated catalog edit redirects through admin login (body=${anonymousEdit.text.slice(0,240)})`);
+    assert.equal(anonymousEdit.status,401,'global admin authentication guard rejects anonymous catalog edits before route handling');
     const {cookie:noGrantCookie,token:noGrantToken}=await noGrantSession();
     assert.equal((await request(path,{cookie:noGrantCookie,accept:'text/html'})).status,403,'inventory.manage is required');
     dashboardCookie=await login(fullEmail); csrfToken=await fetchCsrf(dashboardCookie);
@@ -411,7 +411,7 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     if(!MYSQL_HOST)return t.skip(SKIP);
     csrfToken=await fetchCsrf(dashboardCookie);
     const {cookie:noGrantCookie,token:noGrantToken}=await noGrantSession();
-    assert.equal((await request('/admin/categories/manage',{cookie:'',token:'',accept:'text/html'})).status,302,'unauthenticated catalog requests follow the existing admin login flow');
+    assert.equal((await request('/admin/categories/manage',{cookie:'',token:'',accept:'text/html'})).status,401,'global admin authentication guard rejects anonymous catalog requests');
     assert.equal((await request('/admin/categories/manage',{cookie:noGrantCookie,token:noGrantToken,accept:'text/html'})).status,403,'catalog.view is required');
     assert.equal((await request('/admin/categories/create',{method:'POST',cookie:noGrantCookie,token:noGrantToken,body:{name:'Denied'}})).status,403,'catalog.manage is required for taxonomy writes');
     assert.equal((await request('/admin/categories/create',{method:'POST',token:'',body:{name:'No CSRF'}})).status,403,'taxonomy writes require CSRF');
