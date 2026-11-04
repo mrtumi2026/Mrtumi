@@ -553,6 +553,7 @@ router.post('/admin/courierapi/create', requirePermission('settings.manage'), re
   }
 
   if (integrationsMysql()) {
+    // INSERT INTO courier_apis (name,code,base_url,api_key,secret_key,client_id,status,sandbox)
     await integrationsClient().execute(
       'INSERT INTO courier_apis (name,code,base_url,api_key,secret_key,client_id,status,sandbox,supports_live_quotes,service_options_json) VALUES (?,?,?,?,?,?,0,?,?,?)',
       [name, code, baseUrl, apiKey, secretKey, clientId, sandbox, liveQuotes, serviceOptions]

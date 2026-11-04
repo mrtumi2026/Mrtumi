@@ -1338,6 +1338,7 @@ router.post('/order/:invoiceId/cancel', requireCsrf, asyncHandler(async (req, re
 
 router.get(['/track-order', '/order-track', '/site/order-track'], asyncHandler(async (req, res) => {
   const query = String(req.query.q || '').trim().replace(/^#/, '');
+  // Order details are available only in the authenticated, ownership-scoped customer account.
   let orders = [];
   if (query && req.session?.customerUser?.id && storefrontRepo.isMysqlMode()) {
     const db = require('../db/mysqlPool').createQueryClient(require('../db/mysqlPool').getPool());
