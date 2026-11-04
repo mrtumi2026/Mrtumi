@@ -142,7 +142,7 @@ router.get('/customer/account/orders/:id', requireCustomer, asyncHandler(async (
   const details = await customers.getOrderDetails(req.session.customerUser.id, id);
   const order = { ...details.order, subtotalLabel: moneyLabel(details.order.subtotal_paisa, req.locale), discountLabel: moneyLabel(details.order.discount_paisa, req.locale), shippingLabel: moneyLabel(details.order.shipping_paisa, req.locale), totalLabel: moneyLabel(details.order.total_paisa, req.locale), dateLabel: dateLabel(details.order.created_at, req.locale) };
   const items = details.items.map((item) => ({ ...item, unitPriceLabel: moneyLabel(item.unit_price_paisa, req.locale), lineTotalLabel: moneyLabel(item.line_total_paisa, req.locale) }));
-  return res.render('customer/order-detail', { order, items, isEn: isEn(req) });
+  return res.render('customer/order-detail', { order, items, shipments: details.shipments || [], isEn: isEn(req) });
 }));
 router.post('/customer/account/addresses', requireCustomer, requireCsrf, asyncHandler(async (req, res) => {
   await customers.saveAddress(req.session.customerUser.id, req.body, { ip:req.ip||'', userAgent:req.get('user-agent')||'' });

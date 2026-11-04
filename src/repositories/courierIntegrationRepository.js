@@ -335,6 +335,21 @@ async function executeOneClickBooking({ subOrderId, courierCode, actor, idempote
         ]
       );
 
+      // Keep vendor_sub_orders and orders synchronized with courier and tracking details
+      await tx.execute(
+        `UPDATE vendor_sub_orders SET shipment_carrier = ?, tracking_code = ? WHERE id = ?`,
+        [providerConfig.code, bookingResult.trackingId, subOrder.id]
+      );
+      if (subOrder.order_id) {
+        await tx.execute(
+          `UPDATE orders
+           SET courier_name = CASE WHEN courier_name = '' OR courier_name IS NULL THEN ? ELSE courier_name END,
+               courier_tracking_id = CASE WHEN courier_tracking_id = '' OR courier_tracking_id IS NULL THEN ? ELSE courier_tracking_id END
+           WHERE id = ?`,
+          [providerConfig.name || providerConfig.code, bookingResult.trackingId, subOrder.order_id]
+        );
+      }
+
       // NOTE: We deliberately DO NOT set picked_up_at or change suborder status to in_transit!
       // Physical handover remains a separate operational step per Phase B contract.
 
@@ -470,6 +485,20 @@ async function reconcileBookingResult({ subOrderId, actor }) {
         [subOrder.shipment_id, actorType, actorVendorId, actorUserId, subOrder.courier_code, recResult.trackingId]
       );
 
+      await tx.execute(
+        `UPDATE vendor_sub_orders SET shipment_carrier = ?, tracking_code = ? WHERE id = ?`,
+        [subOrder.courier_code, recResult.trackingId, subOrder.id]
+      );
+      if (subOrder.order_id) {
+        await tx.execute(
+          `UPDATE orders
+           SET courier_name = CASE WHEN courier_name = '' OR courier_name IS NULL THEN ? ELSE courier_name END,
+               courier_tracking_id = CASE WHEN courier_tracking_id = '' OR courier_tracking_id IS NULL THEN ? ELSE courier_tracking_id END
+           WHERE id = ?`,
+          [subOrder.courier_code, recResult.trackingId, subOrder.order_id]
+        );
+      }
+
       return {
         reconciled: true,
         outcome: 'found',
@@ -533,8 +562,10 @@ async function reconcileBookingResult({ subOrderId, actor }) {
 async function syncShipmentTracking({ subOrderId, actor }) {
   return withTransaction(async (tx) => {
     const subOrder = await tx.queryOne(
-      `SELECT vso.id, vso.vendor_id, vso.status, fs.id AS shipment_id, fs.courier_code, fs.tracking_id, fs.picked_up_at
+      `SELECT vso.id, vso.order_id, vso.vendor_id, vso.status, o.order_status AS parent_status,
+              fs.id AS shipment_id, fs.courier_code, fs.tracking_id, fs.picked_up_at
        FROM vendor_sub_orders vso
+       JOIN orders o ON o.id = vso.order_id
        JOIN fulfillment_shipments fs ON fs.vendor_sub_order_id = vso.id
        WHERE vso.id = ? FOR UPDATE`,
       [subOrderId]
@@ -585,6 +616,9 @@ async function syncShipmentTracking({ subOrderId, actor }) {
         `UPDATE vendor_sub_orders SET status = 'delivered' WHERE id = ? AND status IN ('ready_for_pickup', 'in_transit')`,
         [subOrder.id]
       );
+      if (subOrder.order_id) {
+        await require('./vendorOrderRepository').syncParentStatus(tx, subOrder.order_id, subOrder.parent_status, actor.userId || null);
+      }
     }
 
     return trackingData;
@@ -618,8 +652,10 @@ async function listAmbiguousShipments({
   const whereConditions = [];
   const params = [];
 
-  // Filter ambiguous booking statuses
-  if (status && ['unknown_timeout', 'in_review'].includes(status)) {
+  // Filter booking statuses
+  if (status === 'all') {
+    // No booking_status condition: view all shipments
+  } else if (status && ['unknown_timeout', 'in_review', 'failed', 'succeeded'].includes(status)) {
     whereConditions.push('fs.booking_status = ?');
     params.push(status);
   } else {
@@ -727,7 +763,20 @@ async function listAmbiguousShipments({
       limit: safeLimit,
       total,
       totalPages
-    }
+    },
+    summary: (await p.query(
+      `SELECT
+         COUNT(CASE WHEN fs.booking_status IN ('unknown_timeout', 'in_review') THEN 1 END) AS ambiguous_count,
+         COUNT(CASE WHEN fs.booking_status IN ('unknown_timeout', 'in_review') AND TIMESTAMPDIFF(MINUTE, fs.updated_at, UTC_TIMESTAMP()) >= 60 THEN 1 END) AS stalled_count,
+         COUNT(CASE WHEN fs.booking_status = 'failed' THEN 1 END) AS failed_count,
+         COUNT(CASE WHEN fs.booking_status = 'succeeded' THEN 1 END) AS succeeded_count,
+         COUNT(CASE WHEN fs.status = 'in_transit' THEN 1 END) AS in_transit_count,
+         COUNT(CASE WHEN fs.status = 'delivered' THEN 1 END) AS delivered_count
+       FROM fulfillment_shipments fs
+       JOIN vendor_sub_orders vso ON vso.id = fs.vendor_sub_order_id
+       ${effectiveVendorId ? 'WHERE vso.vendor_id = ?' : ''}`,
+      effectiveVendorId ? [effectiveVendorId] : []
+    ))[0]?.[0] || {}
   };
 }
 
@@ -909,6 +958,20 @@ async function resolveAmbiguousBookingOverride({
          VALUES (?, 'manual_override', 'admin', ?, ?, ?, ?, 'succeeded', ?, UTC_TIMESTAMP())`,
         [shipment.id, shipment.vendor_id, actorUserId, shipment.courier_code || '', cleanTracking, auditNote]
       );
+
+      await tx.execute(
+        `UPDATE vendor_sub_orders SET shipment_carrier = ?, tracking_code = ? WHERE id = ?`,
+        [shipment.courier_code || '', cleanTracking, shipment.vendor_sub_order_id]
+      );
+      if (shipment.order_id) {
+        await tx.execute(
+          `UPDATE orders
+           SET courier_name = CASE WHEN courier_name = '' OR courier_name IS NULL THEN ? ELSE courier_name END,
+               courier_tracking_id = CASE WHEN courier_tracking_id = '' OR courier_tracking_id IS NULL THEN ? ELSE courier_tracking_id END
+           WHERE id = ?`,
+          [shipment.courier_code || '', cleanTracking, shipment.order_id]
+        );
+      }
 
       return {
         success: true,

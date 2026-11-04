@@ -113,10 +113,11 @@ router.get('/admin/fulfillment/ambiguous-shipments', requirePermission('orders.m
   const flash = successMsg ? { type: 'success', message: successMsg } : (errorMsg ? { type: 'danger', message: errorMsg } : null);
 
   return res.render('admin/ambiguous-courier-shipments', {
-    pageTitle: 'Ambiguous Courier Shipments Monitoring',
-    subtitle: 'সমস্যাযুক্ত ও অমীমাংসিত পার্সেল বুকিং মনিটরিং ও সমাধান',
+    pageTitle: 'Courier Operations & Monitoring Center',
+    subtitle: 'কুরিয়ার বুকিং, অমীমাংসিত পার্সেল ও ডেলিভারি ট্র্যাকিং অপারেশন্স',
     shipments: result.shipments,
     pagination: result.pagination,
+    summary: result.summary || {},
     filters: req.query,
     csrfToken: req.csrfToken(),
     locale: req.locale || 'bn',
@@ -160,6 +161,29 @@ router.post('/admin/fulfillment/shipments/:shipmentId/manual-override', requireP
 
   req.flash('success', result.message);
   return res.redirect('/admin/fulfillment/ambiguous-shipments');
+}));
+
+// Multi-courier COD remittance recording & reconciliation
+router.post('/admin/fulfillment/shipments/:shipmentId/reconcile-cod', requirePermission('orders.manage'), requireCsrf, asyncHandler(async (req, res) => {
+  const codRepo = require('../repositories/courierCodRepository');
+  const result = await codRepo.reconcileCourierCollection({
+    shipmentId: req.params.shipmentId,
+    collectedAmountPaisa: req.body.collected_amount_paisa,
+    remittanceRef: req.body.remittance_ref,
+    bankTransRef: req.body.bank_trans_ref,
+    courierName: req.body.courier_name,
+    consignmentId: req.body.consignment_id,
+    courierFeePaisa: req.body.courier_fee_paisa || 0,
+    codFeePaisa: req.body.cod_fee_paisa || 0,
+    actor: fulfillmentActor(req)
+  });
+
+  if (req.accepts('json') && !req.body.redirect) {
+    return res.json({ success: true, data: result });
+  }
+
+  req.flash('success', result.orderPaid ? 'Courier COD collection reconciled. All order shipments verified; order payment marked as PAID.' : `Courier COD collection reconciled with status: ${result.status}.`);
+  return res.redirect('/admin/fulfillment/ambiguous-shipments?status=all');
 }));
 
 function generateInvoiceId() {

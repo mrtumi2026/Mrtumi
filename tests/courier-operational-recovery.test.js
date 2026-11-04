@@ -26,6 +26,34 @@ const { ValidationError, AuthorizationError, NotFoundError } = require('../src/u
 // 1. UNIT & INPUT VALIDATION TESTS
 // ─────────────────────────────────────────────────────────────────────────────
 
+test('Admin Courier Management & Operations Security: RBAC, CSRF, and Customer Privacy', () => {
+  const fsMod = require('fs');
+  const pathMod = require('path');
+  const root = pathMod.join(__dirname, '..');
+
+  // A. Admin Settings courier routes protection
+  const adminSettings = fsMod.readFileSync(pathMod.join(root, 'src/routes/adminSettings.js'), 'utf8');
+  assert.ok(adminSettings.includes("router.get('/admin/courierapi/manage', requirePermission('settings.manage')"));
+  assert.ok(adminSettings.includes("router.post('/admin/courierapi/create', requirePermission('settings.manage'), requireCsrf"));
+  assert.ok(adminSettings.includes("router.post('/admin/courierapi/update/:id', requirePermission('settings.manage'), requireCsrf"));
+  assert.ok(adminSettings.includes("router.post('/admin/courierapi/toggle/:id', requirePermission('settings.manage'), requireCsrf"));
+  assert.ok(adminSettings.includes("router.post('/admin/courierapi/delete/:id', requirePermission('settings.manage'), requireCsrf"));
+
+  // B. Admin Orders COD reconciliation route protection
+  const adminOrders = fsMod.readFileSync(pathMod.join(root, 'src/routes/adminOrders.js'), 'utf8');
+  assert.ok(adminOrders.includes("router.post('/admin/fulfillment/shipments/:shipmentId/reconcile-cod', requirePermission('orders.manage'), requireCsrf"));
+
+  // C. Customer tracking view privacy & security
+  const customerDetail = fsMod.readFileSync(pathMod.join(root, 'views/customer/order-detail.ejs'), 'utf8');
+  assert.ok(customerDetail.includes('Delivery & Shipment Tracking'));
+  assert.ok(customerDetail.includes('Tracking Number'));
+  assert.doesNotMatch(customerDetail, /api_key|secret_key|client_id|rawResponse|booking_response_json/i);
+
+  // D. Storefront tracking route is scoped to authenticated customer
+  const storefrontRoutes = fsMod.readFileSync(pathMod.join(root, 'src/routes/storefront.js'), 'utf8');
+  assert.ok(storefrontRoutes.includes('customer_id = ?'));
+});
+
 test('Operational Override: Input validation and Super Admin authorization guards', async () => {
   // A. Non-admin or missing actor throws AuthorizationError
   await assert.rejects(
@@ -441,4 +469,45 @@ test('Operational Recovery & Monitoring: Reporting, vendor isolation, audit hist
   });
   assert.equal(emptyListing.pagination.total, 0);
   assert.equal(emptyListing.shipments.length, 0);
+
+  // 5. Verify Operations Center KPI Summary Metrics & Multi-Status Filtering
+  assert.ok(emptyListing.summary, 'Summary metrics must be returned');
+  assert.equal(Number(emptyListing.summary.ambiguous_count), 0);
+  assert.ok(Number(emptyListing.summary.succeeded_count) >= 2);
+
+  // Multi-status filtering with status='all'
+  const allListing = await courierRepo.listAmbiguousShipments({
+    status: 'all',
+    actor: superAdminActor
+  });
+  assert.ok(allListing.shipments.length >= 2, 'Should list all shipments when status=all');
+
+  // Verify carrier and tracking codes synchronized onto vendor_sub_orders and orders
+  const subOrderRow = await db.queryOne('SELECT shipment_carrier, tracking_code FROM vendor_sub_orders WHERE id = ?', [subOrderId1]);
+  assert.equal(subOrderRow.shipment_carrier, 'steadfast');
+  assert.equal(subOrderRow.tracking_code, 'TRK-OVERRIDE-12345');
+
+  const orderRow = await db.queryOne('SELECT courier_name, courier_tracking_id FROM orders WHERE id = ?', [orderId1]);
+  assert.ok(orderRow.courier_name);
+  assert.ok(orderRow.courier_tracking_id);
+
+  // 6. Verify COD Remittance Collection & Reconciliation via courierCodRepository
+  const codRepo = require('../src/repositories/courierCodRepository');
+  const codResult = await codRepo.reconcileCourierCollection({
+    shipmentId: shipmentId1,
+    collectedAmountPaisa: 150000,
+    remittanceRef: 'REM-TEST-001',
+    courierName: 'Steadfast',
+    consignmentId: 'TRK-OVERRIDE-12345',
+    courierFeePaisa: 6000,
+    codFeePaisa: 1500,
+    actor: { userId: 1 }
+  });
+  assert.equal(codResult.shipmentId, shipmentId1);
+  assert.equal(codResult.status, 'reconciled');
+  assert.equal(codResult.netRemittedPaisa, 150000 - 6000 - 1500);
+
+  const codRow = await db.queryOne('SELECT * FROM courier_cod_collections WHERE shipment_id = ?', [shipmentId1]);
+  assert.equal(codRow.reconciliation_status, 'reconciled');
+  assert.equal(codRow.remittance_reference, 'REM-TEST-001');
 });

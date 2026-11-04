@@ -24,6 +24,59 @@
       </div>
     <% } %>
 
+    <!-- Operations KPI Metrics -->
+    <% const sum = summary || {}; %>
+    <div class="row g-2 mb-3">
+      <div class="col-xl-2 col-md-4 col-6">
+        <div class="card shadow-sm border-0 border-start border-warning border-4">
+          <div class="card-body p-2 px-3">
+            <span class="text-muted small d-block"><%= locale === 'bn' ? 'অমীমাংসিত' : 'Ambiguous' %></span>
+            <span class="fs-5 fw-bold text-warning"><%= sum.ambiguous_count || 0 %></span>
+          </div>
+        </div>
+      </div>
+      <div class="col-xl-2 col-md-4 col-6">
+        <div class="card shadow-sm border-0 border-start border-danger border-4">
+          <div class="card-body p-2 px-3">
+            <span class="text-muted small d-block"><%= locale === 'bn' ? 'স্থগিত (৬০+ মিনিট)' : 'Stalled (60m+)' %></span>
+            <span class="fs-5 fw-bold text-danger"><%= sum.stalled_count || 0 %></span>
+          </div>
+        </div>
+      </div>
+      <div class="col-xl-2 col-md-4 col-6">
+        <div class="card shadow-sm border-0 border-start border-danger-subtle border-4">
+          <div class="card-body p-2 px-3">
+            <span class="text-muted small d-block"><%= locale === 'bn' ? 'ব্যর্থ বুকিং' : 'Failed Bookings' %></span>
+            <span class="fs-5 fw-bold text-danger"><%= sum.failed_count || 0 %></span>
+          </div>
+        </div>
+      </div>
+      <div class="col-xl-2 col-md-4 col-6">
+        <div class="card shadow-sm border-0 border-start border-success border-4">
+          <div class="card-body p-2 px-3">
+            <span class="text-muted small d-block"><%= locale === 'bn' ? 'সফল বুকিং' : 'Booked Succeeded' %></span>
+            <span class="fs-5 fw-bold text-success"><%= sum.succeeded_count || 0 %></span>
+          </div>
+        </div>
+      </div>
+      <div class="col-xl-2 col-md-4 col-6">
+        <div class="card shadow-sm border-0 border-start border-info border-4">
+          <div class="card-body p-2 px-3">
+            <span class="text-muted small d-block"><%= locale === 'bn' ? 'পথে আছে' : 'In Transit' %></span>
+            <span class="fs-5 fw-bold text-info"><%= sum.in_transit_count || 0 %></span>
+          </div>
+        </div>
+      </div>
+      <div class="col-xl-2 col-md-4 col-6">
+        <div class="card shadow-sm border-0 border-start border-primary border-4">
+          <div class="card-body p-2 px-3">
+            <span class="text-muted small d-block"><%= locale === 'bn' ? 'ডেলিভার্ড' : 'Delivered' %></span>
+            <span class="fs-5 fw-bold text-primary"><%= sum.delivered_count || 0 %></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Filter Bar -->
     <div class="card mb-3 shadow-sm border-0">
       <div class="card-body p-3">
@@ -31,9 +84,12 @@
           <div class="col-md-2 col-sm-6">
             <label class="form-label small fw-semibold" for="filterStatus"><%= locale === 'bn' ? 'স্ট্যাটাস' : 'Status' %></label>
             <select class="form-select form-select-sm" id="filterStatus" name="status">
-              <option value=""><%= locale === 'bn' ? 'সকল অমীমাংসিত' : 'All Ambiguous' %></option>
+              <option value=""><%= locale === 'bn' ? 'সকল অমীমাংসিত (ডিফল্ট)' : 'All Ambiguous (Default)' %></option>
+              <option value="all" <%= (filters && filters.status === 'all') ? 'selected' : '' %>><%= locale === 'bn' ? 'সকল শিপমেন্ট' : 'All Shipments' %></option>
               <option value="unknown_timeout" <%= (filters && filters.status === 'unknown_timeout') ? 'selected' : '' %>>unknown_timeout</option>
               <option value="in_review" <%= (filters && filters.status === 'in_review') ? 'selected' : '' %>>in_review</option>
+              <option value="failed" <%= (filters && filters.status === 'failed') ? 'selected' : '' %>>failed</option>
+              <option value="succeeded" <%= (filters && filters.status === 'succeeded') ? 'selected' : '' %>>succeeded</option>
             </select>
           </div>
           <div class="col-md-2 col-sm-6">
@@ -140,6 +196,7 @@
                     </td>
                     <td class="text-end">
                       <div class="d-inline-flex gap-1">
+                        <% if (['unknown_timeout', 'in_review'].includes(s.booking_status)) { %>
                         <!-- Reconcile Now -->
                         <form method="post" action="/admin/fulfillment/sub-orders/<%= s.vendor_sub_order_id %>/reconcile-booking" class="d-inline">
                           <input type="hidden" name="_csrf" value="<%= csrfToken %>">
@@ -148,6 +205,25 @@
                             <i class="bi bi-arrow-repeat"></i> <%= locale === 'bn' ? 'রিকনসাইল' : 'Reconcile' %>
                           </button>
                         </form>
+                        <% } %>
+
+                        <% if (s.tracking_id) { %>
+                        <!-- Sync Tracking -->
+                        <form method="post" action="/admin/fulfillment/sub-orders/<%= s.vendor_sub_order_id %>/track-sync" class="d-inline">
+                          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                          <input type="hidden" name="redirect" value="/admin/fulfillment/ambiguous-shipments">
+                          <button type="submit" class="btn btn-sm btn-outline-success" title="Sync Tracking Status">
+                            <i class="bi bi-geo-alt"></i>
+                          </button>
+                        </form>
+                        <% } %>
+
+                        <% if (s.cod_due_paisa > 0) { %>
+                        <!-- Reconcile COD -->
+                        <button type="button" class="btn btn-sm btn-outline-success" onclick="openCodModal(<%= s.shipment_id %>, '<%= s.invoice_no %>', '<%= s.courier_code %>', '<%= s.tracking_id %>', <%= s.cod_due_paisa %>)" title="Reconcile COD Remittance">
+                          <i class="bi bi-cash-stack"></i>
+                        </button>
+                        <% } %>
 
                         <!-- Audit History Modal Trigger -->
                         <button type="button" class="btn btn-sm btn-outline-info" onclick="openAuditModal(<%= s.shipment_id %>)" title="View Audit Trail">
@@ -350,5 +426,80 @@ async function openAuditModal(shipmentId) {
   }
 }
 </script>
+
+  <!-- COD Reconciliation Modal -->
+  <div class="modal fade" id="codModal" tabindex="-1" aria-labelledby="codModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content shadow">
+        <form method="post" id="codReconcileForm" action="">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <div class="modal-header bg-success text-white">
+            <h5 class="modal-title fs-6" id="codModalLabel">
+              <i class="bi bi-cash-stack me-1"></i> <%= locale === 'bn' ? 'কুরিয়ার COD কালেকশন রিকনসিলিয়েশন' : 'Reconcile Courier COD Remittance' %>
+            </h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-3">
+              <label class="form-label small fw-semibold">Shipment / Invoice</label>
+              <input type="text" class="form-control form-control-sm bg-light" id="codModalInvoice" readonly>
+            </div>
+            <div class="row g-2 mb-3">
+              <div class="col-6">
+                <label class="form-label small fw-semibold" for="codCourierName">Courier Name</label>
+                <input type="text" class="form-control form-control-sm" id="codCourierName" name="courier_name" required>
+              </div>
+              <div class="col-6">
+                <label class="form-label small fw-semibold" for="codConsignmentId">Tracking / Consignment ID</label>
+                <input type="text" class="form-control form-control-sm" id="codConsignmentId" name="consignment_id">
+              </div>
+            </div>
+            <div class="row g-2 mb-3">
+              <div class="col-6">
+                <label class="form-label small fw-semibold" for="codCollectedPaisa">Collected Amount (Paisa)</label>
+                <input type="number" class="form-control form-control-sm" id="codCollectedPaisa" name="collected_amount_paisa" required min="0">
+              </div>
+              <div class="col-6">
+                <label class="form-label small fw-semibold" for="codCourierFeePaisa">Courier Fee (Paisa)</label>
+                <input type="number" class="form-control form-control-sm" id="codCourierFeePaisa" name="courier_fee_paisa" min="0" value="0">
+              </div>
+            </div>
+            <div class="row g-2 mb-3">
+              <div class="col-6">
+                <label class="form-label small fw-semibold" for="codFeePaisa">COD Service Fee (Paisa)</label>
+                <input type="number" class="form-control form-control-sm" id="codFeePaisa" name="cod_fee_paisa" min="0" value="0">
+              </div>
+              <div class="col-6">
+                <label class="form-label small fw-semibold" for="codRemittanceRef">Remittance Reference *</label>
+                <input type="text" class="form-control form-control-sm" id="codRemittanceRef" name="remittance_ref" required placeholder="e.g. REM-2026-001">
+              </div>
+            </div>
+            <div class="mb-2">
+              <label class="form-label small fw-semibold" for="codBankRef">Bank Transaction Ref (Optional)</label>
+              <input type="text" class="form-control form-control-sm" id="codBankRef" name="bank_trans_ref" placeholder="e.g. TR-BB-9921">
+            </div>
+          </div>
+          <div class="modal-footer bg-light py-2">
+            <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-sm btn-success">
+              <i class="bi bi-check-circle me-1"></i> <%= locale === 'bn' ? 'কালেকশন নিশ্চিত করুন' : 'Confirm COD Remittance' %>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  function openCodModal(shipmentId, invoiceNo, courierCode, trackingId, duePaisa) {
+    document.getElementById('codReconcileForm').action = '/admin/fulfillment/shipments/' + encodeURIComponent(shipmentId) + '/reconcile-cod';
+    document.getElementById('codModalInvoice').value = '#' + shipmentId + ' (' + invoiceNo + ')';
+    document.getElementById('codCourierName').value = courierCode || '';
+    document.getElementById('codConsignmentId').value = trackingId || '';
+    document.getElementById('codCollectedPaisa').value = duePaisa || 0;
+    const modal = new bootstrap.Modal(document.getElementById('codModal'));
+    modal.show();
+  }
+  </script>
 
 <%- include('partials/footer') %>

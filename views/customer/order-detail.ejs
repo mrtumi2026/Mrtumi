@@ -11,7 +11,66 @@
       <dt class="col-sm-3"><%= isEn ? 'Payment' : 'পেমেন্ট' %></dt><dd class="col-sm-9"><%= order.payment_method %> · <%= order.payment_status %></dd>
       <dt class="col-sm-3"><%= isEn ? 'Delivery area' : 'ডেলিভারি এলাকা' %></dt><dd class="col-sm-9"><%= [order.shipping_address, order.upazila, order.district, order.division].filter(Boolean).join(', ') %></dd>
     </dl>
+    </section>
+
+  <!-- Shipment & Delivery Tracking Section -->
+  <section class="card card-body mb-4 border-0 shadow-sm bg-light bg-opacity-50">
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+      <h2 class="h5 mb-0">🚚 <%= isEn ? 'Delivery & Shipment Tracking' : 'ডেলিভারি ও শিপমেন্ট ট্র্যাকিং' %></h2>
+      <% const isDelivered = order.order_status === 'delivered'; %>
+      <span class="badge <%= isDelivered ? 'bg-success' : 'bg-primary' %> px-3 py-2">
+        <%= isEn ? (isDelivered ? 'Delivered' : (order.order_status === 'shipped' ? 'In Courier / On the Way' : 'In Preparation')) : (isDelivered ? 'ডেলিভারি সম্পন্ন' : (order.order_status === 'shipped' ? 'কুরিয়ারে পথে আছে' : 'প্রস্তুত করা হচ্ছে')) %>
+      </span>
+    </div>
+
+    <% if (typeof shipments !== 'undefined' && shipments && shipments.length > 0) { %>
+      <div class="row g-3">
+        <% shipments.forEach(function(shipment, idx) { %>
+          <div class="col-md-<%= shipments.length > 1 ? '6' : '12' %>">
+            <div class="p-3 bg-white rounded-3 border">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="fw-bold small text-muted"><%= isEn ? 'Package' : 'পার্সেল' %> <%= shipments.length > 1 ? '#' + (idx + 1) : '' %></span>
+                <span class="badge text-bg-light border font-monospace text-uppercase"><%= shipment.courier_name || shipment.courier_code || 'Steadfast' %></span>
+              </div>
+              <% if (shipment.tracking_id) { %>
+                <div class="mb-2">
+                  <span class="text-muted small"><%= isEn ? 'Tracking Number' : 'ট্র্যাকিং নম্বর' %>:</span>
+                  <span class="font-monospace fw-bold text-primary ms-1"><%= shipment.tracking_id %></span>
+                </div>
+              <% } %>
+              <div class="small text-secondary">
+                <% if (shipment.delivery_status === 'delivered') { %>
+                  <span class="text-success fw-semibold"><i class="bi bi-check-circle me-1"></i><%= isEn ? 'Successfully delivered to recipient' : 'গ্রাহকের নিকট সফলভাবে ডেলিভারি সম্পন্ন হয়েছে' %></span>
+                <% } else if (shipment.picked_up_at || shipment.delivery_status === 'in_transit') { %>
+                  <span class="text-primary"><i class="bi bi-truck me-1"></i><%= isEn ? 'Handed over to courier; on the way' : 'কুরিয়ারে হস্তান্তর করা হয়েছে; আপনার ঠিকানায় পথে আছে' %></span>
+                <% } else if (shipment.booking_status === 'succeeded') { %>
+                  <span class="text-info"><i class="bi bi-box-seam me-1"></i><%= isEn ? 'Parcel booked with courier; awaiting rider pickup' : 'কুরিয়ার বুকিং নিশ্চিত হয়েছে; রাইডার পিকআপের অপেক্ষায়' %></span>
+                <% } else { %>
+                  <span class="text-muted"><i class="bi bi-hourglass-split me-1"></i><%= isEn ? 'Vendor is preparing items for dispatch' : 'সেলার পণ্য প্যাকেজিং ও প্রেরণের প্রস্তুতি নিচ্ছেন' %></span>
+                <% } %>
+              </div>
+            </div>
+          </div>
+        <% }); %>
+      </div>
+    <% } else if (order.courier_name || order.courier_tracking_id) { %>
+      <div class="p-3 bg-white rounded-3 border">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <span class="fw-bold small"><%= isEn ? 'Courier Service' : 'কুরিয়ার সার্ভিস' %>: <%= order.courier_name %></span>
+          <% if (order.courier_tracking_id) { %>
+            <span class="badge bg-light text-primary border font-monospace"><%= order.courier_tracking_id %></span>
+          <% } %>
+        </div>
+        <p class="small text-muted mb-0"><%= isEn ? 'Package is being handled by our official delivery network.' : 'পার্সেলটি আমাদের অনুমোদিত ডেলিভারি নেটওয়ার্কের মাধ্যমে পরিচালিত হচ্ছে।' %></p>
+      </div>
+    <% } else { %>
+      <div class="p-3 bg-white rounded-3 border text-center text-muted small">
+        <i class="bi bi-box-seam fs-4 text-secondary d-block mb-1"></i>
+        <%= isEn ? 'Your order is being reviewed and packed by our team. Live tracking reference will appear here once dispatched.' : 'আপনার অর্ডারটি যাচাই ও প্যাকেজিং করা হচ্ছে। কুরিয়ারে প্রেরণের পরপরই এখানে ট্র্যাকিং নম্বর দৃশ্যমান হবে।' %>
+      </div>
+    <% } %>
   </section>
+
   <h2 class="h5"><%= isEn ? 'Items' : 'পণ্যসমূহ' %></h2>
   <div class="table-responsive" tabindex="0" role="region" aria-label="<%= isEn ? 'Order items' : 'অর্ডারের পণ্যসমূহ' %>">
     <table class="table align-middle"><thead><tr><th><%= isEn ? 'Product' : 'পণ্য' %></th><th><%= isEn ? 'Options' : 'বিকল্প' %></th><th><%= isEn ? 'Quantity' : 'পরিমাণ' %></th><th><%= isEn ? 'Unit price' : 'একক মূল্য' %></th><th><%= isEn ? 'Line total' : 'সর্বমোট' %></th></tr></thead>
