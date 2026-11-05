@@ -249,6 +249,8 @@ test('Pathao OAuth Cross-Process Simulation: CAS token adoption prevents duplica
   const workerA = new PathaoAdapter({
     id: 42,
     code: 'pathao',
+    useDbLock: false,
+    persistToDb: false,
     api_key: 'old_shared_access_token',
     client_id: 'cid',
     client_secret: 'csec',
@@ -271,6 +273,8 @@ test('Pathao OAuth Cross-Process Simulation: CAS token adoption prevents duplica
   const workerB = new PathaoAdapter({
     id: 42,
     code: 'pathao',
+    useDbLock: false,
+    persistToDb: false,
     api_key: 'old_shared_access_token',
     client_id: 'cid',
     client_secret: 'csec',
@@ -469,6 +473,128 @@ test('Pathao OAuth Database Persistence: real disposable MySQL/MariaDB integrati
 
   } finally {
     await mysqlPool.execute('DELETE FROM courier_apis WHERE id = ?', [providerId]);
-    await mysqlPool.closePool();
+  }
+});
+
+test('Pathao OAuth: genuine cross-process locking with two separate Node.js processes', async () => {
+  const MYSQL_HOST = String(process.env.MYSQL_TEST_HOST || '').trim();
+  if (!MYSQL_HOST) {
+    // Expected in local Windows dev environment without local mysqld
+    return;
+  }
+
+  const http = require('http');
+  const { spawn } = require('child_process');
+  const path = require('path');
+
+  let issueTokenNetworkCallCount = 0;
+
+  // 1. Create a local mock server on an ephemeral port
+  const server = http.createServer(async (req, res) => {
+    if (req.url.includes('/issue-token') && req.method === 'POST') {
+      issueTokenNetworkCallCount++;
+      // Delay response slightly (80ms) so worker 2 is guaranteed to encounter the active row lock
+      await new Promise((r) => setTimeout(r, 80));
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        token_type: 'Bearer',
+        expires_in: 3600,
+        access_token: 'cross_proc_rotated_access_123',
+        refresh_token: 'cross_proc_rotated_refresh_456'
+      }));
+      return;
+    }
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'not_found' }));
+  });
+
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const port = server.address().port;
+
+  const testCode = `pth_cross_${Date.now()}`;
+  const initialEncryptedRefresh = encryptProviderToken('initial_cross_proc_refresh_token');
+  const initialEncryptedAccess = encryptProviderToken('initial_cross_proc_access_token');
+
+  // Insert test row into real MySQL
+  const insertRes = await mysqlPool.execute(
+    `INSERT INTO courier_apis (name, code, provider_type, base_url, api_key, secret_key, client_id, status, sandbox, supports_live_quotes, service_options_json)
+     VALUES (?, ?, 'pathao', ?, ?, 'test_sec', 'test_cid', 1, 0, 0, ?)`,
+    [
+      'Pathao Cross-Process Concurrency Test',
+      testCode,
+      `http://127.0.0.1:${port}`,
+      initialEncryptedAccess,
+      JSON.stringify({ encrypted_refresh_token: initialEncryptedRefresh, store_id: 1 })
+    ]
+  );
+  const providerId = insertRes.insertId;
+
+  try {
+    const workerScript = path.join(__dirname, 'helpers', 'pathao-worker.js');
+
+    function spawnWorker() {
+      return new Promise((resolve, reject) => {
+        const child = spawn(
+          process.execPath,
+          [workerScript, String(providerId), String(port), initialEncryptedRefresh],
+          { env: process.env }
+        );
+        let stdout = '';
+        let stderr = '';
+        child.stdout.on('data', (d) => { stdout += d.toString(); });
+        child.stderr.on('data', (d) => { stderr += d.toString(); });
+        child.on('close', (code) => {
+          try {
+            const lines = stdout.trim().split('\n').filter(Boolean);
+            const parsed = JSON.parse(lines[lines.length - 1]);
+            resolve({ code, parsed, stdout, stderr });
+          } catch (e) {
+            reject(new Error(`Worker exited with code ${code}. stdout: "${stdout}", stderr: "${stderr}"`));
+          }
+        });
+        child.on('error', reject);
+      });
+    }
+
+    // Launch both separate OS processes concurrently
+    const [w1, w2] = await Promise.all([spawnWorker(), spawnWorker()]);
+
+    assert.equal(w1.code, 0, `Worker 1 failed: ${w1.stderr}`);
+    assert.equal(w2.code, 0, `Worker 2 failed: ${w2.stderr}`);
+    assert.equal(w1.parsed.success, true, 'Worker 1 must report success');
+    assert.equal(w2.parsed.success, true, 'Worker 2 must report success');
+
+    // CRITICAL: Exactly one worker rotated against the mock HTTP server!
+    assert.equal(
+      issueTokenNetworkCallCount,
+      1,
+      'Exactly ONE HTTP call must be made to Pathao across separate worker processes'
+    );
+
+    // One worker must be the rotator (adopted === false) and the other worker adopted (adopted === true)
+    const adoptedFlags = [w1.parsed.adopted, w2.parsed.adopted].sort();
+    assert.deepEqual(
+      adoptedFlags,
+      [false, true],
+      'One worker must rotate and the second worker must adopt via CAS'
+    );
+
+    // Both workers received the new access token
+    assert.equal(w1.parsed.accessToken, 'cross_proc_rotated_access_123');
+    assert.equal(w2.parsed.accessToken, 'cross_proc_rotated_access_123');
+
+    // Confirm database row was updated in real MySQL with encrypted tokens
+    const dbRow = await mysqlPool.queryOne(
+      'SELECT api_key, service_options_json FROM courier_apis WHERE id = ?',
+      [providerId]
+    );
+    assert.ok(dbRow, 'Database record must exist after cross-process update');
+    assert.equal(decryptProviderToken(dbRow.api_key), 'cross_proc_rotated_access_123');
+    const opts = JSON.parse(dbRow.service_options_json);
+    assert.equal(decryptProviderToken(opts.encrypted_refresh_token), 'cross_proc_rotated_refresh_456');
+
+  } finally {
+    server.close();
+    await mysqlPool.execute('DELETE FROM courier_apis WHERE id = ?', [providerId]);
   }
 });

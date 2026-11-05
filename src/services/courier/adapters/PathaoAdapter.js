@@ -52,8 +52,11 @@ class PathaoAdapter extends CourierBaseAdapter {
       let mysqlPool = null;
       try {
         const hasDbHost = Boolean(process.env.DB_HOST || process.env.MYSQL_TEST_HOST);
-        const hasIdOrCode = Boolean(this.config.id || this.providerCode || this.config.code);
-        if (hasDbHost && hasIdOrCode) {
+        const hasRecordId = Boolean(this.config.id);
+        const isExplicitLock = Boolean(this.config.requireDbLock);
+        const isNotMock = typeof this.config.mockDbExecute !== 'function';
+
+        if (hasDbHost && (hasRecordId || isExplicitLock) && isNotMock && this.config.useDbLock !== false) {
           mysqlPool = require('../../../db/mysqlPool');
           isDbAvailable = true;
         }
@@ -120,18 +123,24 @@ class PathaoAdapter extends CourierBaseAdapter {
       const localEncryptedRefresh = this.serviceOptions?.encrypted_refresh_token;
       const dbEncryptedRefresh = dbOptions.encrypted_refresh_token;
 
-      if (dbEncryptedRefresh && localEncryptedRefresh && dbEncryptedRefresh !== localEncryptedRefresh) {
-        let decryptedApiKey = row.api_key;
+      let decryptedApiKey = row.api_key;
+      try {
+        decryptedApiKey = decryptProviderToken(row.api_key);
+      } catch (_e) {
+        decryptedApiKey = row.api_key;
+      }
+
+      const isRefreshTokenUpdated = Boolean(dbEncryptedRefresh && localEncryptedRefresh && dbEncryptedRefresh !== localEncryptedRefresh);
+      const isApiKeyUpdated = Boolean(this.apiKey && decryptedApiKey && decryptedApiKey !== this.apiKey);
+
+      if (isRefreshTokenUpdated || isApiKeyUpdated) {
         let decryptedRefreshToken = null;
-        try {
-          decryptedApiKey = decryptProviderToken(row.api_key);
-        } catch (_e) {
-          decryptedApiKey = row.api_key;
-        }
-        try {
-          decryptedRefreshToken = decryptProviderToken(dbEncryptedRefresh);
-        } catch (_e) {
-          decryptedRefreshToken = null;
+        if (dbEncryptedRefresh) {
+          try {
+            decryptedRefreshToken = decryptProviderToken(dbEncryptedRefresh);
+          } catch (_e) {
+            decryptedRefreshToken = null;
+          }
         }
 
         this.apiKey = decryptedApiKey;
@@ -145,6 +154,7 @@ class PathaoAdapter extends CourierBaseAdapter {
           accessToken: decryptedApiKey,
           refreshToken: decryptedRefreshToken,
           recovered: false,
+          adopted: true,
           adoptedFromConcurrentProcess: true
         };
       }
@@ -202,7 +212,8 @@ class PathaoAdapter extends CourierBaseAdapter {
         success: true,
         accessToken: newAccessToken,
         refreshToken: newRefreshToken,
-        recovered: refreshResult.recovered || false
+        recovered: refreshResult.recovered || false,
+        adopted: false
       };
     });
   }
@@ -409,6 +420,17 @@ class PathaoAdapter extends CourierBaseAdapter {
       };
     }
 
+    // Update in-memory state ONLY AFTER verified durable persistence
+    this.apiKey = netResult.accessToken;
+    if (netResult.refreshToken) {
+      this.refreshToken = netResult.refreshToken;
+    }
+    const encryptedRefreshToken = netResult.refreshToken ? encryptProviderToken(netResult.refreshToken) : null;
+    if (encryptedRefreshToken) {
+      this.serviceOptions.encrypted_refresh_token = encryptedRefreshToken;
+    }
+    delete this.serviceOptions.refresh_token;
+
     return netResult;
   }
 
@@ -449,6 +471,7 @@ class PathaoAdapter extends CourierBaseAdapter {
           `Database persistence failure: zero rows updated for courier record (id: ${providerId || 'none'}, code: ${providerCode || 'none'}). Record may not exist or has been deleted.`
         );
       }
+      return;
     }
 
     // If an onTokenRotated callback is registered (e.g. for mock/test hooks):
@@ -463,29 +486,19 @@ class PathaoAdapter extends CourierBaseAdapter {
     }
 
     const isDbConfigured = Boolean((process.env.DB_NAME && process.env.DB_USER) || (process.env.MYSQL_TEST_DB && process.env.MYSQL_TEST_USER));
-    if (isDbConfigured && (providerId || providerCode)) {
+    if (isDbConfigured && providerId && this.config.persistToDb !== false) {
       const mysqlPool = require('../../../db/mysqlPool');
-      let result = null;
-      if (providerId) {
-        result = await mysqlPool.execute(
-          `UPDATE courier_apis
-           SET api_key = ?, service_options_json = ?, updated_at = CURRENT_TIMESTAMP
-           WHERE id = ?`,
-          [encryptedApiKey, updatedOptionsJson, providerId]
-        );
-      } else {
-        result = await mysqlPool.execute(
-          `UPDATE courier_apis
-           SET api_key = ?, service_options_json = ?, updated_at = CURRENT_TIMESTAMP
-           WHERE code = ? OR provider_type = ?`,
-          [encryptedApiKey, updatedOptionsJson, providerCode, providerCode]
-        );
-      }
+      const result = await mysqlPool.execute(
+        `UPDATE courier_apis
+         SET api_key = ?, service_options_json = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+        [encryptedApiKey, updatedOptionsJson, providerId]
+      );
 
       // Proof of persistence: zero-row SQL update MUST fail closed!
       if (!result || typeof result.affectedRows !== 'number' || result.affectedRows < 1) {
         throw new Error(
-          `Database persistence failure: zero rows updated for courier record (id: ${providerId || 'none'}, code: ${providerCode || 'none'}). Record may not exist or has been deleted.`
+          `Database persistence failure: zero rows updated for courier record (id: ${providerId || 'none'}). Record may not exist or has been deleted.`
         );
       }
     }
