@@ -5,6 +5,7 @@ const { after } = require('node:test');
 const assert = require('node:assert/strict');
 const PathaoAdapter = require('../src/services/courier/adapters/PathaoAdapter');
 const { encryptProviderToken, decryptProviderToken } = require('../src/utils/providerTokenSecurity');
+const { env } = require('../src/config/env');
 const mysqlPool = require('../src/db/mysqlPool');
 
 // Always clean up connection pool when test runner finishes
@@ -511,6 +512,10 @@ test('Pathao OAuth: genuine cross-process locking with two separate Node.js proc
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const port = server.address().port;
 
+  const sharedSecret = String(env.sessionSecret || process.env.SESSION_SECRET || 'mrtumi-courier-default-secret-salt-key-32b');
+  process.env.SESSION_SECRET = sharedSecret;
+  const workerEnv = Object.assign({}, process.env, { SESSION_SECRET: sharedSecret });
+
   const testCode = `pth_cross_${Date.now()}`;
   const initialEncryptedRefresh = encryptProviderToken('initial_cross_proc_refresh_token');
   const initialEncryptedAccess = encryptProviderToken('initial_cross_proc_access_token');
@@ -537,7 +542,7 @@ test('Pathao OAuth: genuine cross-process locking with two separate Node.js proc
         const child = spawn(
           process.execPath,
           [workerScript, String(providerId), String(port), initialEncryptedRefresh],
-          { env: process.env }
+          { env: workerEnv }
         );
         let stdout = '';
         let stderr = '';
