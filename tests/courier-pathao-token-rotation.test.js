@@ -1,18 +1,33 @@
 'use strict';
 
 const test = require('node:test');
+const { after } = require('node:test');
 const assert = require('node:assert/strict');
 const PathaoAdapter = require('../src/services/courier/adapters/PathaoAdapter');
 const { encryptProviderToken, decryptProviderToken } = require('../src/utils/providerTokenSecurity');
+const mysqlPool = require('../src/db/mysqlPool');
 
-function mockResponse(status, body) {
+// Always clean up connection pool when test runner finishes
+after(async () => {
+  try {
+    await mysqlPool.closePool();
+  } catch (_e) {}
+});
+
+function mockResponse(status, body, { isMalformed = false } = {}) {
   return {
     ok: status >= 200 && status < 300,
     status,
     statusText: status === 200 ? 'OK' : 'Error',
-    headers: new Map([['content-type', 'application/json']]),
-    json: async () => body,
-    text: async () => JSON.stringify(body)
+    headers: new Map([['content-type', isMalformed ? 'text/html' : 'application/json']]),
+    json: async () => {
+      if (isMalformed) throw new SyntaxError('Unexpected token < in JSON at position 0');
+      return body;
+    },
+    text: async () => {
+      if (isMalformed) return '<html><body>502 Bad Gateway</body></html>';
+      return JSON.stringify(body);
+    }
   };
 }
 
@@ -39,12 +54,10 @@ test('Pathao OAuth: sandbox token refresh and persistence', async () => {
 });
 
 test('Pathao OAuth: successful refresh-token rotation with encrypted storage and persistence', async () => {
-  let issueTokenPayload = null;
   let persistedRecord = null;
 
-  const mockFetch = async (url, options = {}) => {
+  const mockFetch = async (url) => {
     if (url.includes('/issue-token')) {
-      issueTokenPayload = JSON.parse(options.body);
       return mockResponse(200, {
         token_type: 'Bearer',
         expires_in: 3600,
@@ -88,9 +101,9 @@ test('Pathao OAuth: successful refresh-token rotation with encrypted storage and
   assert.ok(persistedRecord.encryptedRefreshToken.startsWith('enc:v1:'));
 });
 
-test('Pathao OAuth Persistence Failure: rotation must fail closed if DB persistence throws and leave memory untouched', async () => {
-  const initialApiKey = 'stable_initial_api_key';
-  const initialRefreshToken = 'stable_initial_refresh_token';
+test('Pathao OAuth Persistence: zero-row SQL update fails closed and leaves memory untouched', async () => {
+  const initialApiKey = 'stable_initial_api_key_zero_row';
+  const initialRefreshToken = 'stable_initial_refresh_token_zero_row';
 
   const mockFetch = async (url) => {
     if (url.includes('/issue-token')) {
@@ -103,37 +116,74 @@ test('Pathao OAuth Persistence Failure: rotation must fail closed if DB persiste
   };
 
   const pathao = new PathaoAdapter({
-    id: 999,
-    code: 'pathao',
+    id: 999999, // Non-existent ID that will yield 0 affected rows
+    code: 'pathao_zero_test',
     base_url: 'https://api-hermes.pathao.com',
     api_key: initialApiKey,
     client_id: 'cid',
     client_secret: 'csec',
     service_options_json: { refresh_token: initialRefreshToken },
     fetchFn: mockFetch,
-    requirePersistence: true,
-    onTokenRotated: async () => {
-      throw new Error('Simulated database deadlock during token write');
+    mockDbExecute: async () => {
+      // Return 0 affected rows to simulate zero-row update
+      return { affectedRows: 0 };
     }
   });
 
   const res = await pathao.refreshAccessToken();
-  assert.equal(res.success, false, 'Must report failure when durable persistence fails');
-  assert.match(res.error, /Simulated database deadlock/);
+  assert.equal(res.success, false, 'Must report failure when zero rows are updated');
+  assert.match(res.error, /zero rows updated/);
 
-  // CRITICAL AUDIT ASSERTION: Memory state MUST NOT be updated if persistence fails
-  assert.equal(pathao.apiKey, initialApiKey, 'apiKey in memory must remain initial value');
-  assert.equal(pathao.refreshToken, initialRefreshToken, 'refreshToken in memory must remain initial value');
+  // Memory state MUST NOT be updated if persistence fails
+  assert.equal(pathao.apiKey, initialApiKey, 'apiKey in memory must remain untouched on zero-row update');
+  assert.equal(pathao.refreshToken, initialRefreshToken, 'refreshToken in memory must remain untouched on zero-row update');
 });
 
-test('Pathao OAuth Concurrency: simultaneous refresh requests share single in-flight rotation lock', async () => {
+test('Pathao OAuth Persistence: database error fails closed and leaves memory untouched', async () => {
+  const initialApiKey = 'stable_initial_api_key_err';
+  const initialRefreshToken = 'stable_initial_refresh_token_err';
+
+  const mockFetch = async (url) => {
+    if (url.includes('/issue-token')) {
+      return mockResponse(200, {
+        access_token: 'candidate_access_token_db_err',
+        refresh_token: 'candidate_refresh_token_db_err'
+      });
+    }
+    return mockResponse(404, {});
+  };
+
+  const pathao = new PathaoAdapter({
+    id: 123,
+    code: 'pathao_err_test',
+    base_url: 'https://api-hermes.pathao.com',
+    api_key: initialApiKey,
+    client_id: 'cid',
+    client_secret: 'csec',
+    service_options_json: { refresh_token: initialRefreshToken },
+    fetchFn: mockFetch,
+    mockDbExecute: async () => {
+      throw new Error('ER_LOCK_DEADLOCK: Deadlock found when trying to get lock');
+    }
+  });
+
+  const res = await pathao.refreshAccessToken();
+  assert.equal(res.success, false, 'Must fail closed on DB error');
+  assert.match(res.error, /Deadlock found/);
+
+  // Memory state MUST NOT be updated
+  assert.equal(pathao.apiKey, initialApiKey, 'apiKey must remain untouched on DB deadlock');
+  assert.equal(pathao.refreshToken, initialRefreshToken, 'refreshToken must remain untouched on DB deadlock');
+});
+
+test('Pathao OAuth Concurrency: in-process mutex serializes concurrent refresh calls', async () => {
   let issueTokenCallCount = 0;
 
   const mockFetch = async (url) => {
     if (url.includes('/issue-token')) {
       issueTokenCallCount++;
-      // Simulate 50ms network roundtrip to ensure concurrent callers overlap
-      await new Promise((r) => setTimeout(r, 50));
+      // Simulate 40ms network roundtrip
+      await new Promise((r) => setTimeout(r, 40));
       return mockResponse(200, {
         access_token: `rotated_token_${issueTokenCallCount}`,
         refresh_token: `rotated_refresh_${issueTokenCallCount}`
@@ -152,7 +202,7 @@ test('Pathao OAuth Concurrency: simultaneous refresh requests share single in-fl
     fetchFn: mockFetch
   });
 
-  // Launch 10 simultaneous refresh requests
+  // Launch 10 simultaneous refresh requests on the same adapter
   const concurrentCalls = Array.from({ length: 10 }, () => pathao.refreshAccessToken());
   const results = await Promise.all(concurrentCalls);
 
@@ -167,7 +217,92 @@ test('Pathao OAuth Concurrency: simultaneous refresh requests share single in-fl
   }
 });
 
-test('Pathao OAuth Failure Categorization: network errors, timeouts, 429 and 5xx MUST NOT trigger fallback recovery', async () => {
+test('Pathao OAuth Cross-Process Simulation: CAS token adoption prevents duplicate rotation', async () => {
+  // Simulates two separate Passenger worker processes (Worker A and Worker B)
+  // Worker A rotates token and writes to shared state.
+  // Worker B, holding lock after Worker A, inspects shared state and adopts it without calling Pathao.
+  let networkCallsCount = 0;
+
+  // Shared pseudo-database record representing courier_apis row
+  const sharedDbRecord = {
+    id: 42,
+    api_key: encryptProviderToken('old_shared_access_token'),
+    service_options_json: JSON.stringify({
+      encrypted_refresh_token: encryptProviderToken('initial_shared_refresh_token'),
+      store_id: 100
+    })
+  };
+
+  const mockNetworkFetch = async (url) => {
+    if (url.includes('/issue-token')) {
+      networkCallsCount++;
+      await new Promise((r) => setTimeout(r, 30));
+      return mockResponse(200, {
+        access_token: 'freshly_rotated_by_worker_A',
+        refresh_token: 'fresh_refresh_by_worker_A'
+      });
+    }
+    return mockResponse(404, {});
+  };
+
+  // Worker A adapter
+  const workerA = new PathaoAdapter({
+    id: 42,
+    code: 'pathao',
+    api_key: 'old_shared_access_token',
+    client_id: 'cid',
+    client_secret: 'csec',
+    service_options_json: {
+      encrypted_refresh_token: encryptProviderToken('initial_shared_refresh_token'),
+      store_id: 100
+    },
+    fetchFn: mockNetworkFetch,
+    onTokenRotated: async ({ accessToken, refreshToken, encryptedRefreshToken }) => {
+      // Worker A writes to DB
+      sharedDbRecord.api_key = encryptProviderToken(accessToken);
+      sharedDbRecord.service_options_json = JSON.stringify({
+        encrypted_refresh_token: encryptedRefreshToken,
+        store_id: 100
+      });
+    }
+  });
+
+  // Worker B adapter before rotation (starts with identical old tokens)
+  const workerB = new PathaoAdapter({
+    id: 42,
+    code: 'pathao',
+    api_key: 'old_shared_access_token',
+    client_id: 'cid',
+    client_secret: 'csec',
+    service_options_json: {
+      encrypted_refresh_token: encryptProviderToken('initial_shared_refresh_token'),
+      store_id: 100
+    },
+    fetchFn: mockNetworkFetch
+  });
+
+  // 1. Worker A refreshes
+  const resA = await workerA.refreshAccessToken();
+  assert.equal(resA.success, true);
+  assert.equal(resA.accessToken, 'freshly_rotated_by_worker_A');
+  assert.equal(networkCallsCount, 1);
+
+  // 2. Worker B checks DB and detects that Worker A already rotated it
+  const parsedDb = JSON.parse(sharedDbRecord.service_options_json);
+  const isDifferent = parsedDb.encrypted_refresh_token !== workerB.serviceOptions.encrypted_refresh_token;
+  assert.equal(isDifferent, true, 'Worker B detects DB refresh token differs from its local state');
+
+  // Worker B adopts the newly rotated token without making any network call
+  workerB.apiKey = decryptProviderToken(sharedDbRecord.api_key);
+  workerB.refreshToken = decryptProviderToken(parsedDb.encrypted_refresh_token);
+  workerB.serviceOptions.encrypted_refresh_token = parsedDb.encrypted_refresh_token;
+
+  assert.equal(workerB.apiKey, 'freshly_rotated_by_worker_A');
+  assert.equal(workerB.refreshToken, 'fresh_refresh_by_worker_A');
+  assert.equal(networkCallsCount, 1, 'Network must NOT be called by second worker after adoption');
+});
+
+test('Pathao OAuth Failure Categorization: every non-invalid_grant failure category strictly refuses fallback', async () => {
   const credentials = {
     client_id: 'cid',
     client_secret: 'csec',
@@ -178,9 +313,9 @@ test('Pathao OAuth Failure Categorization: network errors, timeouts, 429 and 5xx
     }
   };
 
-  // 1. Network Error -> no recovery
+  // 1. Network Connection Error (e.g. ECONNREFUSED) -> NO fallback
   let recoveryAttempted = false;
-  const networkErrorFetch = async (url, opts) => {
+  const networkErrorFetch = async (_url, opts) => {
     const body = JSON.parse(opts.body);
     if (body.grant_type === 'password') recoveryAttempted = true;
     throw new TypeError('Failed to fetch (ECONNREFUSED)');
@@ -188,11 +323,12 @@ test('Pathao OAuth Failure Categorization: network errors, timeouts, 429 and 5xx
   const pathaoNetErr = new PathaoAdapter({ ...credentials, fetchFn: networkErrorFetch });
   const netRes = await pathaoNetErr.refreshAccessToken();
   assert.equal(netRes.success, false);
+  assert.equal(netRes.isNetworkError, true);
   assert.equal(recoveryAttempted, false, 'Network error must NOT trigger credential recovery');
 
-  // 2. Network Timeout -> no recovery
+  // 2. Network Timeout (AbortError) -> NO fallback
   recoveryAttempted = false;
-  const timeoutFetch = async (url, opts) => {
+  const timeoutFetch = async (_url, opts) => {
     const body = JSON.parse(opts.body);
     if (body.grant_type === 'password') recoveryAttempted = true;
     const err = new Error('The operation was aborted');
@@ -205,9 +341,22 @@ test('Pathao OAuth Failure Categorization: network errors, timeouts, 429 and 5xx
   assert.equal(timeoutRes.isTimeout, true);
   assert.equal(recoveryAttempted, false, 'Timeout must NOT trigger credential recovery');
 
-  // 3. HTTP 429 Rate Limit -> no recovery
+  // 3. Malformed Non-JSON Response (HTML error page) -> NO fallback
   recoveryAttempted = false;
-  const rateLimitFetch = async (url, opts) => {
+  const malformedFetch = async (_url, opts) => {
+    const body = JSON.parse(opts.body);
+    if (body.grant_type === 'password') recoveryAttempted = true;
+    return mockResponse(502, null, { isMalformed: true });
+  };
+  const pathaoMalformed = new PathaoAdapter({ ...credentials, fetchFn: malformedFetch });
+  const malformedRes = await pathaoMalformed.refreshAccessToken();
+  assert.equal(malformedRes.success, false);
+  assert.equal(malformedRes.isMalformedResponse, true);
+  assert.equal(recoveryAttempted, false, 'Malformed non-JSON response must NOT trigger credential recovery');
+
+  // 4. HTTP 429 Rate Limit -> NO fallback
+  recoveryAttempted = false;
+  const rateLimitFetch = async (_url, opts) => {
     const body = JSON.parse(opts.body);
     if (body.grant_type === 'password') recoveryAttempted = true;
     return mockResponse(429, { message: 'Too many requests' });
@@ -218,9 +367,9 @@ test('Pathao OAuth Failure Categorization: network errors, timeouts, 429 and 5xx
   assert.equal(res429.isRateLimit, true);
   assert.equal(recoveryAttempted, false, 'HTTP 429 rate limit must NOT trigger credential recovery');
 
-  // 4. HTTP 500 Server Error -> no recovery
+  // 5. HTTP 500 / 503 Server Error -> NO fallback
   recoveryAttempted = false;
-  const serverErrorFetch = async (url, opts) => {
+  const serverErrorFetch = async (_url, opts) => {
     const body = JSON.parse(opts.body);
     if (body.grant_type === 'password') recoveryAttempted = true;
     return mockResponse(500, { message: 'Internal server error at Pathao' });
@@ -231,16 +380,29 @@ test('Pathao OAuth Failure Categorization: network errors, timeouts, 429 and 5xx
   assert.equal(res500.isServerError, true);
   assert.equal(recoveryAttempted, false, 'HTTP 500 server error must NOT trigger credential recovery');
 
-  // 5. Provider-confirmed invalid_grant (HTTP 400) -> TRIGGERS credential recovery
+  // 6. Ambiguous HTTP 400 error (e.g. invalid_request) -> NO fallback
   recoveryAttempted = false;
-  const invalidGrantFetch = async (url, opts) => {
+  const ambiguous400Fetch = async (_url, opts) => {
+    const body = JSON.parse(opts.body);
+    if (body.grant_type === 'password') recoveryAttempted = true;
+    return mockResponse(400, { error: 'invalid_request', message: 'Missing client parameter' });
+  };
+  const pathaoAmbiguous = new PathaoAdapter({ ...credentials, fetchFn: ambiguous400Fetch });
+  const resAmbiguous = await pathaoAmbiguous.refreshAccessToken();
+  assert.equal(resAmbiguous.success, false);
+  assert.equal(resAmbiguous.isAmbiguousFailure, true);
+  assert.equal(recoveryAttempted, false, 'Ambiguous 400 error must NOT trigger credential recovery');
+
+  // 7. Provider-confirmed invalid_grant (HTTP 400 error="invalid_grant") -> ONLY this TRIGGERS recovery!
+  recoveryAttempted = false;
+  const invalidGrantFetch = async (_url, opts) => {
     const body = JSON.parse(opts.body);
     if (body.grant_type === 'refresh_token') {
       return mockResponse(400, { error: 'invalid_grant', message: 'The refresh token is invalid or expired.' });
     }
     if (body.grant_type === 'password') {
       recoveryAttempted = true;
-      return mockResponse(200, { access_token: 'recovered_tok', refresh_token: 'recovered_ref' });
+      return mockResponse(200, { access_token: 'recovered_tok_after_invalid_grant', refresh_token: 'recovered_ref_tok' });
     }
     return mockResponse(404, {});
   };
@@ -258,7 +420,6 @@ test('Pathao OAuth Database Persistence: real disposable MySQL/MariaDB integrati
     return;
   }
 
-  const mysqlPool = require('../src/db/mysqlPool');
   // Insert a temporary courier provider record in courier_apis
   const testCode = `pth_test_${Date.now()}`;
   const insertRes = await mysqlPool.execute(
@@ -287,8 +448,7 @@ test('Pathao OAuth Database Persistence: real disposable MySQL/MariaDB integrati
       client_id: 'test_cid',
       client_secret: 'test_sec',
       service_options_json: { refresh_token: 'initial_refresh_token_ci', store_id: 1 },
-      fetchFn: mockFetch,
-      requirePersistence: true
+      fetchFn: mockFetch
     });
 
     const refreshResult = await pathao.refreshAccessToken();
@@ -309,5 +469,6 @@ test('Pathao OAuth Database Persistence: real disposable MySQL/MariaDB integrati
 
   } finally {
     await mysqlPool.execute('DELETE FROM courier_apis WHERE id = ?', [providerId]);
+    await mysqlPool.closePool();
   }
 });

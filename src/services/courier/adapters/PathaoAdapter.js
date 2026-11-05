@@ -35,34 +35,190 @@ class PathaoAdapter extends CourierBaseAdapter {
    * If a refresh is already in-flight on this instance, returns the existing active promise
    * so simultaneous requests share the single rotation safely.
    */
+  /**
+   * Refreshes the OAuth access token.
+   *
+   * Implements cross-process atomic locking via MySQL InnoDB `FOR UPDATE` transaction,
+   * in-process mutex serialization, compare-and-swap token adoption across Passenger workers,
+   * strict failure categorization, and verified durable persistence.
+   */
   async refreshAccessToken() {
     if (this._refreshLockPromise) {
       return this._refreshLockPromise;
     }
+
     this._refreshLockPromise = (async () => {
+      let isDbAvailable = false;
+      let mysqlPool = null;
       try {
-        return await this._executeTokenRefresh();
-      } finally {
-        this._refreshLockPromise = null;
+        const hasDbHost = Boolean(process.env.DB_HOST || process.env.MYSQL_TEST_HOST);
+        const hasIdOrCode = Boolean(this.config.id || this.providerCode || this.config.code);
+        if (hasDbHost && hasIdOrCode) {
+          mysqlPool = require('../../../db/mysqlPool');
+          isDbAvailable = true;
+        }
+      } catch (_e) {
+        isDbAvailable = false;
       }
+
+      if (isDbAvailable && mysqlPool) {
+        return await this._refreshWithCrossProcessDbLock(mysqlPool);
+      }
+
+      return await this._executeTokenRefresh();
     })();
-    return this._refreshLockPromise;
+
+    try {
+      return await this._refreshLockPromise;
+    } finally {
+      this._refreshLockPromise = null;
+    }
   }
 
   /**
-   * Internal implementation of OAuth token refresh, failure categorization,
-   * conditional recovery, and durable persistence.
+   * Cross-process distributed lock using MySQL InnoDB row-level FOR UPDATE.
+   * Multiple Passenger processes/workers serialize on this row.
+   * If a prior process already rotated the single-use token, subsequent processes
+   * detect the updated token and adopt it without calling Pathao.
    */
-  async _executeTokenRefresh() {
-    if (this.isSandbox) {
-      const newApiKey = 'pathao_sandbox_refreshed_token';
-      const newRefreshToken = 'pathao_sandbox_refresh_token';
-      try {
-        await this.persistTokenRotation(newApiKey, newRefreshToken);
-      } catch (err) {
-        return { success: false, error: `Sandbox token persistence failed: ${err.message}` };
+  async _refreshWithCrossProcessDbLock(mysqlPool) {
+    const providerId = this.config.id;
+    const providerCode = this.providerCode || this.config.code || 'pathao';
+
+    return await mysqlPool.withTransaction(async (tx) => {
+      // 1. Acquire exclusive row lock on courier_apis record
+      let row = null;
+      if (providerId) {
+        row = await tx.queryOne(
+          'SELECT id, name, code, api_key, service_options_json, updated_at FROM courier_apis WHERE id = ? FOR UPDATE',
+          [providerId]
+        );
+      } else {
+        row = await tx.queryOne(
+          'SELECT id, name, code, api_key, service_options_json, updated_at FROM courier_apis WHERE code = ? OR provider_type = ? FOR UPDATE',
+          [providerCode, providerCode]
+        );
       }
-      return { success: true, accessToken: newApiKey, refreshToken: newRefreshToken, recovered: false };
+
+      if (!row) {
+        throw new Error(
+          `Database persistence failure: courier record not found in courier_apis (id: ${providerId || 'none'}, code: ${providerCode || 'none'}).`
+        );
+      }
+
+      // 2. Compare-and-Swap / Adoption Check:
+      // If another process completed refresh while we were waiting on the lock, adopt its token!
+      let dbOptions = {};
+      try {
+        dbOptions = typeof row.service_options_json === 'string'
+          ? JSON.parse(row.service_options_json)
+          : (row.service_options_json || {});
+      } catch (_e) {
+        dbOptions = {};
+      }
+
+      const localEncryptedRefresh = this.serviceOptions?.encrypted_refresh_token;
+      const dbEncryptedRefresh = dbOptions.encrypted_refresh_token;
+
+      if (dbEncryptedRefresh && localEncryptedRefresh && dbEncryptedRefresh !== localEncryptedRefresh) {
+        let decryptedApiKey = row.api_key;
+        let decryptedRefreshToken = null;
+        try {
+          decryptedApiKey = decryptProviderToken(row.api_key);
+        } catch (_e) {
+          decryptedApiKey = row.api_key;
+        }
+        try {
+          decryptedRefreshToken = decryptProviderToken(dbEncryptedRefresh);
+        } catch (_e) {
+          decryptedRefreshToken = null;
+        }
+
+        this.apiKey = decryptedApiKey;
+        if (decryptedRefreshToken) {
+          this.refreshToken = decryptedRefreshToken;
+        }
+        this.serviceOptions = Object.assign({}, this.serviceOptions, dbOptions);
+
+        return {
+          success: true,
+          accessToken: decryptedApiKey,
+          refreshToken: decryptedRefreshToken,
+          recovered: false,
+          adoptedFromConcurrentProcess: true
+        };
+      }
+
+      // 3. We hold the lock and perform the refresh
+      const refreshResult = await this._executeTokenRefreshNetworkOnly();
+      if (!refreshResult.success) {
+        return refreshResult;
+      }
+
+      const newAccessToken = refreshResult.accessToken;
+      const newRefreshToken = refreshResult.refreshToken;
+
+      // 4. Encrypt and persist atomically inside this transaction
+      const encryptedApiKey = encryptProviderToken(newAccessToken);
+      const encryptedRefreshToken = newRefreshToken ? encryptProviderToken(newRefreshToken) : null;
+
+      const updatedOptions = Object.assign({}, dbOptions);
+      if (encryptedRefreshToken) {
+        updatedOptions.encrypted_refresh_token = encryptedRefreshToken;
+      }
+      delete updatedOptions.refresh_token;
+      const updatedOptionsJson = JSON.stringify(updatedOptions);
+
+      const updateRes = await tx.execute(
+        `UPDATE courier_apis
+         SET api_key = ?, service_options_json = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+        [encryptedApiKey, updatedOptionsJson, row.id]
+      );
+
+      // Require proof that the intended courier record was updated. Zero-row update must fail closed!
+      if (!updateRes || typeof updateRes.affectedRows !== 'number' || updateRes.affectedRows < 1) {
+        throw new Error(`Database persistence failure: zero rows updated for courier record ID ${row.id}.`);
+      }
+
+      // 5. Update in-memory state ONLY AFTER verified durable persistence
+      this.apiKey = newAccessToken;
+      if (newRefreshToken) {
+        this.refreshToken = newRefreshToken;
+      }
+      this.serviceOptions = Object.assign({}, this.serviceOptions, updatedOptions);
+
+      if (typeof this.config.onTokenRotated === 'function') {
+        await this.config.onTokenRotated({
+          providerId: row.id,
+          providerCode: row.code || providerCode,
+          accessToken: newAccessToken,
+          refreshToken: newRefreshToken,
+          encryptedRefreshToken
+        });
+      }
+
+      return {
+        success: true,
+        accessToken: newAccessToken,
+        refreshToken: newRefreshToken,
+        recovered: refreshResult.recovered || false
+      };
+    });
+  }
+
+  /**
+   * Performs the network token refresh with strict OAuth failure classification.
+   * Restricts credential fallback strictly to provider-confirmed invalid_grant.
+   */
+  async _executeTokenRefreshNetworkOnly() {
+    if (this.isSandbox) {
+      return {
+        success: true,
+        accessToken: 'pathao_sandbox_refreshed_token',
+        refreshToken: 'pathao_sandbox_refresh_token',
+        recovered: false
+      };
     }
 
     const clientId = this.clientId || this.serviceOptions.client_id || (this.config && this.config.client_id);
@@ -75,96 +231,114 @@ class PathaoAdapter extends CourierBaseAdapter {
       return { success: false, error: 'Pathao OAuth credentials (client_id/client_secret) not configured for token refresh' };
     }
 
-    const executeTokenRequest = async (payload) => {
-      const response = await this.safeFetch(`${this.baseUrl}/aladdin/api/v1/issue-token`, {
+    if (!refreshToken) {
+      return { success: false, error: 'No refresh token available to refresh. Fallback recovery is strictly prohibited without provider-confirmed invalid_grant.' };
+    }
+
+    // 1. Primary path: attempt refresh_token grant
+    let response;
+    try {
+      response = await this.safeFetch(`${this.baseUrl}/aladdin/api/v1/issue-token`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json'
         },
-        body: JSON.stringify(payload)
-      }, 5000);
-      let data = null;
-      try {
-        data = await response.json();
-      } catch (_e) {
-        data = null;
-      }
-      return { response, data };
-    };
-
-    // 1. Primary path: attempt refresh_token grant if refresh_token is present
-    let isProviderConfirmedInvalidRefreshToken = false;
-    if (refreshToken) {
-      try {
-        const { response, data } = await executeTokenRequest({
+        body: JSON.stringify({
           client_id: clientId,
           client_secret: clientSecret,
           grant_type: 'refresh_token',
           refresh_token: refreshToken
-        });
+        })
+      }, 5000);
+    } catch (networkErr) {
+      return {
+        success: false,
+        isNetworkError: true,
+        isTimeout: networkErr.code === 'COURIER_NETWORK_TIMEOUT',
+        error: `Pathao token refresh network failure: ${networkErr.message}. Fallback recovery is strictly prohibited.`
+      };
+    }
 
-        if (response.ok && data && (data.access_token || data.token)) {
-          const newAccessToken = data.access_token || data.token;
-          const newRefreshToken = data.refresh_token || refreshToken;
-          try {
-            await this.persistTokenRotation(newAccessToken, newRefreshToken);
-          } catch (persistErr) {
-            return {
-              success: false,
-              error: `Token rotation succeeded at provider but database persistence failed: ${persistErr.message}`
-            };
-          }
-          return { success: true, accessToken: newAccessToken, refreshToken: newRefreshToken, recovered: false };
-        }
+    // Check for network errors returned as safe responses
+    if (!response || !response.status || response.isTimeout) {
+      return {
+        success: false,
+        isNetworkError: true,
+        isTimeout: Boolean(response?.isTimeout),
+        error: response?.error || 'Pathao network request failed. Fallback recovery is strictly prohibited.'
+      };
+    }
 
-        // STRICT FAILURE CATEGORIZATION (Arena Audit Item 5):
-        // Network timeout/error, rate limit (429), or server error (5xx) MUST NEVER trigger fallback recovery!
-        if (response.status === 429) {
-          return {
-            success: false,
-            isRateLimit: true,
-            error: data?.message || 'Pathao token refresh rate limited (HTTP 429). Will not trigger credential recovery.'
-          };
-        }
-        if (response.status >= 500) {
-          return {
-            success: false,
-            isServerError: true,
-            error: `Pathao token endpoint returned server error HTTP ${response.status}. Will not trigger credential recovery.`
-          };
-        }
-
-        // Check if provider explicitly confirmed invalid or expired refresh token
-        const errMsg = String(data?.error || data?.message || data?.error_description || '').toLowerCase();
-        if (
-          (response.status === 400 || response.status === 401) &&
-          (errMsg.includes('invalid_grant') || errMsg.includes('invalid') || errMsg.includes('expired') || errMsg.includes('refresh token'))
-        ) {
-          isProviderConfirmedInvalidRefreshToken = true;
-        } else {
-          return {
-            success: false,
-            error: data?.message || `Pathao refresh token rejected with HTTP ${response.status}`
-          };
-        }
-      } catch (err) {
-        // Network errors and timeouts MUST NEVER trigger credential recovery!
-        return {
-          success: false,
-          isTimeout: err.code === 'COURIER_NETWORK_TIMEOUT',
-          error: `Pathao token refresh network failure: ${err.message}. Will not trigger credential recovery.`
-        };
+    // Parse JSON body safely to detect malformed responses
+    let data = null;
+    let isMalformed = false;
+    try {
+      data = await response.json();
+      if (!data || typeof data !== 'object') {
+        isMalformed = true;
       }
-    } else {
-      isProviderConfirmedInvalidRefreshToken = true;
+    } catch (_e) {
+      isMalformed = true;
+      data = null;
     }
 
-    // 2. Recovery path: ONLY triggered if refresh token was confirmed invalid/expired by provider
-    if (!isProviderConfirmedInvalidRefreshToken) {
-      return { success: false, error: 'Token refresh failed and recovery conditions not met.' };
+    // Success response
+    if (response.ok && data && (data.access_token || data.token)) {
+      return {
+        success: true,
+        accessToken: data.access_token || data.token,
+        refreshToken: data.refresh_token || refreshToken,
+        recovered: false
+      };
     }
 
+    // STRICT FAILURE CATEGORIZATION (Arena Finding 4):
+    // 1. Malformed responses (non-JSON, empty body, HTML error) MUST NEVER trigger fallback
+    if (isMalformed) {
+      return {
+        success: false,
+        isMalformedResponse: true,
+        error: `Pathao token endpoint returned malformed non-JSON response (HTTP ${response.status}). Fallback recovery is strictly prohibited.`
+      };
+    }
+
+    // 2. HTTP 429 Rate Limit MUST NEVER trigger fallback
+    if (response.status === 429) {
+      return {
+        success: false,
+        isRateLimit: true,
+        error: data?.message || 'Pathao token refresh rate limited (HTTP 429). Fallback recovery is strictly prohibited.'
+      };
+    }
+
+    // 3. HTTP 5xx Server Error MUST NEVER trigger fallback
+    if (response.status >= 500) {
+      return {
+        success: false,
+        isServerError: true,
+        error: `Pathao token endpoint returned server error HTTP ${response.status}. Fallback recovery is strictly prohibited.`
+      };
+    }
+
+    // 4. Provider-confirmed invalid_grant check (HTTP 400 or 401 with explicit invalid_grant)
+    const errCode = String(data?.error || '').toLowerCase().trim();
+    const errDesc = String(data?.error_description || data?.message || '').toLowerCase().trim();
+    const isConfirmedInvalidGrant = (
+      (response.status === 400 || response.status === 401) &&
+      (errCode === 'invalid_grant' || errDesc.includes('invalid_grant'))
+    );
+
+    // Any other ambiguous client error (e.g. invalid_request, unauthorized_client, 403, 404) MUST NOT trigger fallback
+    if (!isConfirmedInvalidGrant) {
+      return {
+        success: false,
+        isAmbiguousFailure: true,
+        error: data?.message || data?.error_description || `Pathao refresh token rejected with HTTP ${response.status} (${errCode || 'unspecified_error'}). Fallback recovery is strictly prohibited.`
+      };
+    }
+
+    // 2. Recovery path: ONLY triggered if refresh token was explicitly confirmed invalid_grant by provider
     let recoveryPayload = null;
     if (username && password) {
       recoveryPayload = {
@@ -183,35 +357,72 @@ class PathaoAdapter extends CourierBaseAdapter {
     }
 
     try {
-      const { response, data } = await executeTokenRequest(recoveryPayload);
-      if (response.ok && data && (data.access_token || data.token)) {
-        const newAccessToken = data.access_token || data.token;
-        const newRefreshToken = data.refresh_token || null;
-        try {
-          await this.persistTokenRotation(newAccessToken, newRefreshToken);
-        } catch (persistErr) {
-          return {
-            success: false,
-            error: `Token recovery succeeded at provider but database persistence failed: ${persistErr.message}`
-          };
-        }
-        return { success: true, accessToken: newAccessToken, refreshToken: newRefreshToken, recovered: true };
+      const recResp = await this.safeFetch(`${this.baseUrl}/aladdin/api/v1/issue-token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify(recoveryPayload)
+      }, 5000);
+
+      let recData = null;
+      try {
+        recData = await recResp.json();
+      } catch (_e) {
+        recData = null;
       }
+
+      if (recResp.ok && recData && (recData.access_token || recData.token)) {
+        return {
+          success: true,
+          accessToken: recData.access_token || recData.token,
+          refreshToken: recData.refresh_token || null,
+          recovered: true
+        };
+      }
+
       return {
         success: false,
-        error: data?.message || data?.error_description || `OAuth token recovery failed with HTTP ${response.status}`
+        error: recData?.message || recData?.error_description || `OAuth credential recovery failed with HTTP ${recResp.status}`
       };
-    } catch (err) {
-      return { success: false, error: `Pathao token recovery network error: ${err.message}` };
+    } catch (recErr) {
+      return { success: false, error: `Pathao credential recovery network error: ${recErr.message}` };
     }
+  }
+
+  /**
+   * Standalone refresh method for unit tests and direct execution without live DB pool.
+   */
+  async _executeTokenRefresh() {
+    const netResult = await this._executeTokenRefreshNetworkOnly();
+    if (!netResult.success) {
+      return netResult;
+    }
+
+    try {
+      await this.persistTokenRotation(netResult.accessToken, netResult.refreshToken);
+    } catch (persistErr) {
+      return {
+        success: false,
+        error: `Token refresh succeeded at provider but database persistence failed: ${persistErr.message}`
+      };
+    }
+
+    return netResult;
   }
 
   /**
    * Securely persists rotated OAuth access and refresh tokens.
    * Encrypts tokens before writing to courier_apis.
-   * If database write fails, throws error so memory is NOT treated as rotated.
+   * Requires proof that the intended courier record was updated.
+   * A zero-row SQL update fails closed and leaves memory state untouched.
    */
   async persistTokenRotation(accessToken, refreshToken) {
+    if (!accessToken) {
+      throw new Error('persistTokenRotation requires a valid access token');
+    }
+
     const encryptedRefreshToken = refreshToken ? encryptProviderToken(refreshToken) : null;
     const encryptedApiKey = encryptProviderToken(accessToken);
 
@@ -221,6 +432,24 @@ class PathaoAdapter extends CourierBaseAdapter {
     }
     delete updatedServiceOptions.refresh_token; // Never keep plaintext in JSON
     const updatedOptionsJson = JSON.stringify(updatedServiceOptions);
+
+    const providerId = this.config.id;
+    const providerCode = this.providerCode || this.config.code || 'pathao';
+
+    // Mock DB executor support for isolated testing of SQL failure and zero-row rejection
+    if (typeof this.config.mockDbExecute === 'function') {
+      const mockResult = await this.config.mockDbExecute({
+        id: providerId,
+        code: providerCode,
+        encryptedApiKey,
+        updatedOptionsJson
+      });
+      if (!mockResult || typeof mockResult.affectedRows !== 'number' || mockResult.affectedRows < 1) {
+        throw new Error(
+          `Database persistence failure: zero rows updated for courier record (id: ${providerId || 'none'}, code: ${providerCode || 'none'}). Record may not exist or has been deleted.`
+        );
+      }
+    }
 
     // If an onTokenRotated callback is registered (e.g. for mock/test hooks):
     if (typeof this.config.onTokenRotated === 'function') {
@@ -233,42 +462,40 @@ class PathaoAdapter extends CourierBaseAdapter {
       });
     }
 
-    // Persist to MySQL database if ID or code is configured and mysqlPool is active
-    try {
+    const isDbConfigured = Boolean((process.env.DB_NAME && process.env.DB_USER) || (process.env.MYSQL_TEST_DB && process.env.MYSQL_TEST_USER));
+    if (isDbConfigured && (providerId || providerCode)) {
       const mysqlPool = require('../../../db/mysqlPool');
-      const providerId = this.config.id;
-      const providerCode = this.providerCode || this.config.code || 'pathao';
-
+      let result = null;
       if (providerId) {
-        const result = await mysqlPool.execute(
+        result = await mysqlPool.execute(
           `UPDATE courier_apis
            SET api_key = ?, service_options_json = ?, updated_at = CURRENT_TIMESTAMP
            WHERE id = ?`,
           [encryptedApiKey, updatedOptionsJson, providerId]
         );
-        if (result && result.affectedRows === 0 && this.config.requirePersistence) {
-          throw new Error(`courier_apis row with id ${providerId} not found`);
-        }
-      } else if (providerCode && this.config.requirePersistence) {
-        await mysqlPool.execute(
+      } else {
+        result = await mysqlPool.execute(
           `UPDATE courier_apis
            SET api_key = ?, service_options_json = ?, updated_at = CURRENT_TIMESTAMP
            WHERE code = ? OR provider_type = ?`,
           [encryptedApiKey, updatedOptionsJson, providerCode, providerCode]
         );
       }
-    } catch (err) {
-      if (this.config.requirePersistence || (this.config.id && !this.config.allowMissingDbRow)) {
-        throw new Error(`Database persistence failure: ${err.message}`);
+
+      // Proof of persistence: zero-row SQL update MUST fail closed!
+      if (!result || typeof result.affectedRows !== 'number' || result.affectedRows < 1) {
+        throw new Error(
+          `Database persistence failure: zero rows updated for courier record (id: ${providerId || 'none'}, code: ${providerCode || 'none'}). Record may not exist or has been deleted.`
+        );
       }
     }
 
-    // ONLY update memory state after durable persistence or callback execution
+    // ONLY update memory state after verified durable persistence
     this.apiKey = accessToken;
     if (refreshToken) {
       this.refreshToken = refreshToken;
-      this.serviceOptions = updatedServiceOptions;
     }
+    this.serviceOptions = updatedServiceOptions;
   }
 
   /**

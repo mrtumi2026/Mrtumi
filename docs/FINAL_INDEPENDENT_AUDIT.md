@@ -8,112 +8,142 @@
 
 ## 1. Master Audit Remediation Matrix
 
-| # | Finding Topic | Arena Audit Focus | Status | File(s) Remediated | Regression Test Evidence |
+| # | Finding Topic | Arena Audit Focus | Status | File(s) Remediated | Verification & Test Evidence |
 |---|---|---|:---:|---|---|
-| **1** | **Git Integration & Ancestry** | Remote commit ancestry & preservation | **FIXED** | Git repository DAG | `git merge-base --is-ancestor 53ba67f HEAD` -> True; `61a9ef1` -> True; `317adb6` -> True; `3ef8911` -> True. Zero force-pushes; Arena branch untouched. |
+| **1** | **Git Integration & Ancestry** | Remote commit ancestry & preservation | **FIXED** | Git repository DAG | `git merge-base --is-ancestor 53ba67f HEAD` -> True; `61a9ef1` -> True; `317adb6` -> True; `3ef8911` -> True; `a65ff5a` -> True. Zero force-pushes; Arena branch untouched. |
 | **2** | **Open Redirect Prevention** | Same-host absolute URL path `//` bypass & form redirects | **FIXED** | `src/utils/urlSecurity.js`, `src/routes/storefront.js`, `src/routes/customerAccount.js` | `tests/security-open-redirect.test.js` (2 test suites, 9 edge-case assertions across newsletter, contact, review, wishlist) |
-| **3** | **Pathao Token Persistence & Fail-Closed Memory** | Durable MySQL write before memory update on token rotation | **FIXED** | `src/services/courier/adapters/PathaoAdapter.js` | `tests/courier-pathao-token-rotation.test.js` (assertions for DB write first, memory untouched on DB error) |
-| **4** | **Concurrent Refresh Protection** | Single-use refresh token double-rotation under concurrent load | **FIXED** | `src/services/courier/adapters/PathaoAdapter.js` | `tests/courier-pathao-token-rotation.test.js` (10 concurrent requests share single in-flight refresh mutex) |
-| **5** | **Secure Token Storage & Restricted Fallback** | AES-256-GCM encryption & failure categorization | **FIXED** | `src/utils/providerTokenSecurity.js`, `src/services/courier/adapters/PathaoAdapter.js` | `tests/courier-pathao-token-rotation.test.js` (AES-256-GCM `enc:v1:`; 5 failure classes: network, timeout, 429, 5xx refuse fallback; only `invalid_grant` recovers) |
-| **6** | **Admin Credential Exposure Sanitization** | Secrets & refresh tokens in HTML & `data-record` edit buttons | **FIXED** | `src/routes/adminSettings.js` | `tests/admin-courier-credential-exposure.test.js` (rendered HTML & `data-record` JSON verified free of secrets) |
-| **7** | **Production Startup & Test Reconciliation** | Entrypoint conflict (`server.js` vs `app.js`), Passenger, & check-foundation arithmetic | **FIXED** | `package.json`, `app.js`, `DEPLOYMENT.md`, `docs/PRODUCTION_CONFIGURATION_CHECKLIST.md` | `tests/production-startup-entry.test.js` (4 passing tests); `scripts/check-foundation.js` (1419 checks passed, 0 failures) |
+| **3** | **Pathao Database Persistence & Fail-Closed Memory** | Durable MySQL write before memory update; zero-row SQL update fails closed | **FIXED** | `src/services/courier/adapters/PathaoAdapter.js` | `tests/courier-pathao-token-rotation.test.js` (tests for zero-row update, missing record, DB deadlock, and successful update with memory unchanged on failure) |
+| **4** | **Cross-Process Refresh Locking & CAS Adoption** | Distributed locking across separate Passenger worker processes | **FIXED** | `src/services/courier/adapters/PathaoAdapter.js` | `tests/courier-pathao-token-rotation.test.js` (InnoDB `FOR UPDATE` transaction lock; CAS adoption prevents duplicate network rotation when concurrent worker already rotated) |
+| **5** | **Admin Credential Sanitization (Allowlist-Only)** | Explicit safe allowlist dropping unknown and nested fields from DOM & `data-record` | **FIXED** | `src/utils/adminSanitization.js`, `src/routes/adminSettings.js`, `src/routes/adminOrders.js` | `tests/admin-courier-credential-exposure.test.js` (allowlist filtering, nested credential dropping, rendered template & edit button `data-record` verification) |
+| **6** | **Strict Credential Recovery (invalid_grant Only)** | Restrict fallback strictly to provider `invalid_grant`; refuse fallback on network, timeout, malformed, 429, 5xx, ambiguous | **FIXED** | `src/services/courier/adapters/PathaoAdapter.js` | `tests/courier-pathao-token-rotation.test.js` (7 distinct failure categories tested: network error, timeout, malformed non-JSON, 429, 500, ambiguous 400 all refuse fallback; only `invalid_grant` recovers) |
+| **7** | **Production Startup Entrypoint Reconciliation** | Canonical entrypoint `app.js` across codebase & checklists; Passenger simulation | **FIXED** | `package.json`, `app.js`, `DEPLOYMENT.md`, `docs/PRODUCTION_CONFIGURATION_CHECKLIST.md` | `tests/production-startup-entry.test.js` (4 passing tests verifying `app.js` main, exports, fail-closed guards, and simulated Passenger detection) |
+| **8** | **CI & Connection Pool Drainage** | Unclosed DB connection pool hanging `node --test` runner in Actions run `42012548927` | **FIXED** | `tests/courier-pathao-token-rotation.test.js` | Explicit `after(async () => { await mysqlPool.closePool(); })` added to test teardown; event loop drains cleanly; check-foundation: 1,423 checks passed (0 failed). |
 
 ---
 
-## 2. Deep Dive: Open Redirect Vulnerability & Remediation (Finding 2)
+## 2. Deep Dive: Pathao Database Persistence & Fail-Closed Memory (Finding 3)
 
 ### Defect Identified
-If a malicious redirect target was supplied as `https://mrtumi.com//evil.com` or `https://mrtumi.com/\evil.com`, standard URL parsing matched the hostname `mrtumi.com`, but the extracted pathname began with `//` or `\`. When passed to Express `res.redirect(target)`, Express or modern browsers treat `//evil.com` as a protocol-relative URL pointing directly to an external host.
+Under previous logic:
+1. `mysqlPool.execute()` could return `affectedRows === 0` (e.g. if the courier ID was missing or deleted), but execution did not fail closed unless a flag was explicitly set.
+2. In-memory tokens could desynchronize from persistent storage if persistence failed or updated zero rows.
 
-### Technical Remediation (`src/utils/urlSecurity.js`)
-1. **CRLF & Backslash Sanitization:** Any URL containing `\r`, `\n`, null bytes, or backslashes (`\`) is immediately rejected and redirected to the safe fallback.
-2. **Protocol-Relative Check:** Any path starting with `//` is rejected.
-3. **Same-Host Path Extraction Guard:**
+### Technical Remediation (`src/services/courier/adapters/PathaoAdapter.js`)
+1. **Zero-Row Update Guard:**
    ```javascript
-   if (parsed.host.toLowerCase() === host.toLowerCase()) {
-     const safePath = parsed.pathname + (parsed.search || '');
-     if (safePath.startsWith('//') || safePath.startsWith('/\\') || safePath.includes('\\')) {
-       return fallback;
-     }
-     return safePath.startsWith('/') ? safePath : fallback;
+   if (!result || typeof result.affectedRows !== 'number' || result.affectedRows < 1) {
+     throw new Error(
+       `Database persistence failure: zero rows updated for courier record (id: ${providerId || 'none'}, code: ${providerCode || 'none'}). Record may not exist or has been deleted.`
+     );
    }
    ```
-4. **Route Harmonization:** Applied `safeReferrer(req, fallback)` across:
-   - `POST /api/newsletter` (`src/routes/storefront.js`)
-   - `POST /api/contact` (`src/routes/storefront.js`)
-   - `POST /api/review` (`src/routes/storefront.js`)
-   - `POST /customer/account/wishlist/remove` (`src/routes/customerAccount.js`)
+2. **Guaranteed Post-Persistence Memory Mutation:**
+   In `persistTokenRotation(accessToken, refreshToken)`, `this.apiKey = accessToken`, `this.refreshToken = refreshToken`, and `this.serviceOptions = updatedServiceOptions` are placed at the very end of the function. If `mysqlPool.execute()` throws or returns `affectedRows < 1`, execution halts immediately; internal memory fields remain strictly identical to their pre-rotation values.
+3. **Comprehensive Regression Tests:**
+   `tests/courier-pathao-token-rotation.test.js` tests:
+   - Zero-row SQL update (`affectedRows === 0`) -> throws `zero rows updated`, memory untouched.
+   - Database deadlock / SQL error -> throws error, memory untouched.
+   - Successful update -> persists encrypted token, updates memory.
 
 ---
 
-## 3. Deep Dive: Pathao Token Security, Persistence & Concurrency (Findings 3, 4, 5)
-
-### Defects Identified
-1. **Memory Desynchronization:** If database write threw an error during token rotation, in-memory tokens had already been updated, causing transient desynchronization and data loss on restart.
-2. **Race Conditions on Refresh:** Simultaneous incoming unauthorized requests could invoke `refreshAccessToken()` concurrently, attempting to exchange the single-use refresh token multiple times and causing `invalid_grant` revocation.
-3. **Plaintext Secret Persistence:** Refresh tokens were stored unencrypted in `service_options_json`.
-4. **Improper Fallback Triggering:** Non-auth errors (network drop, DNS timeout, 429 rate limit, 502 Bad Gateway) were triggering password/client_credentials fallback instead of failing closed and preserving credentials.
-
-### Technical Remediation (`src/services/courier/adapters/PathaoAdapter.js` & `src/utils/providerTokenSecurity.js`)
-1. **Authenticated AES-256-GCM Encryption:**
-   - Tokens are encrypted with AES-256-GCM format `enc:v1:<iv_hex>:<tag_hex>:<cipher_hex>`.
-   - Encryption key derived via HKDF from `VENDOR_PII_KEY` or `SESSION_SECRET`.
-   - Plaintext `refresh_token` is deleted from options JSON and stored as `encrypted_refresh_token`.
-2. **Durable Persistence Before Memory Mutation:**
-   - `persistTokenRotation()` executes `mysqlPool.execute()` to persist the new encrypted tokens to the database first.
-   - Only after durable write confirmation (`result.affectedRows >= 0`) does the adapter update its in-memory `this.apiKey`, `this.refreshToken`, and `this.serviceOptions`.
-   - If database write fails, memory state remains untouched and rotation fails closed.
-3. **In-Flight Refresh Mutex / Serialization:**
-   - Added `this._refreshLockPromise` on `PathaoAdapter`.
-   - Simultaneous refresh invocations attach to the existing promise, preventing redundant network calls and token race conditions.
-4. **Strict Error Classification:**
-   - Network errors, timeouts, 429 rate limits, and 5xx server errors NEVER trigger credential fallback; they reject immediately with classified error codes (`COURIER_NETWORK_TIMEOUT`, `COURIER_RATE_LIMIT`, `COURIER_PROVIDER_5XX`).
-   - Only provider-confirmed 400/401 `invalid_grant` responses trigger fallback recovery via password/client credentials.
-
----
-
-## 4. Deep Dive: Admin Credential Exposure Sanitization (Finding 6)
+## 3. Deep Dive: Cross-Process Refresh Locking & CAS Adoption (Finding 4)
 
 ### Defect Identified
-In `src/routes/adminSettings.js` (`GET /admin/courierapi/manage`), courier API records from `courier_apis` were passed to `views/admin/crud-module.ejs`. Line 83 rendered `data-record='<%- JSON.stringify(r) %>'` on each row's edit button, exposing raw `service_options_json` (including refresh tokens and credentials) in the client DOM.
+A process-local in-flight promise lock (`this._refreshLockPromise`) only serializes requests inside a single Node.js worker process. In Phusion Passenger or cluster mode with multiple operating-system processes, simultaneous requests handled by separate workers could both call Pathao's OAuth endpoint, rotating the single-use refresh token twice and revoking active sessions.
 
-### Technical Remediation
-In `src/routes/adminSettings.js`:
-1. Parsed and sanitized `service_options_json`: deleted `refresh_token`, `encrypted_refresh_token`, `password`, and `client_secret`.
-2. Masked sensitive credentials: `api_key` masked to `••••••••<last4>` and `secret_key` masked to `••••••••`.
-3. Verified with `tests/admin-courier-credential-exposure.test.js`: rendered HTML and `data-record` JSON contains zero secrets.
+### Technical Remediation (`src/services/courier/adapters/PathaoAdapter.js`)
+1. **InnoDB Row-Level Locking:**
+   When MySQL is active, `refreshAccessToken()` wraps the refresh lifecycle in `mysqlPool.withTransaction` and issues:
+   ```sql
+   SELECT id, name, code, api_key, service_options_json, updated_at
+   FROM courier_apis
+   WHERE id = ? FOR UPDATE
+   ```
+   This acquires an exclusive row-level lock on the database record across all Passenger processes.
+2. **Compare-and-Swap (CAS) Token Adoption:**
+   When a waiting worker process acquires the row lock, it checks whether another worker has already completed the refresh:
+   ```javascript
+   const localEncryptedRefresh = this.serviceOptions?.encrypted_refresh_token;
+   const dbEncryptedRefresh = dbOptions.encrypted_refresh_token;
+
+   if (dbEncryptedRefresh && localEncryptedRefresh && dbEncryptedRefresh !== localEncryptedRefresh) {
+     // Another process already rotated the single-use token!
+     // Adopt the new tokens from the database without calling Pathao:
+     this.apiKey = decryptProviderToken(row.api_key);
+     this.refreshToken = decryptProviderToken(dbEncryptedRefresh);
+     this.serviceOptions = Object.assign({}, this.serviceOptions, dbOptions);
+     return { success: true, adoptedFromConcurrentProcess: true };
+   }
+   ```
+3. **Atomic Persistence:**
+   The holding worker executes the external refresh, writes the encrypted tokens to `courier_apis`, verifies `affectedRows >= 1`, updates its memory state, and commits the transaction, releasing the lock for waiting workers.
 
 ---
 
-## 5. Deep Dive: Production Startup Entrypoint Reconciliation (Finding 7)
+## 4. Deep Dive: Allowlist-Only Admin Credential Sanitization (Finding 5)
 
 ### Defect Identified
-Documentation inconsistency:
-- `package.json` had `"main": "app.js"` and `"start": "node --no-warnings app.js"`.
-- `docs/PRODUCTION_CONFIGURATION_CHECKLIST.md` and `docs/FINAL_LAUNCH_READINESS.md` specified `Application startup file: server.js`.
-- `DEPLOYMENT.md` had legacy references to `main: server.js`.
+A blacklist approach (`delete sanitized.password`, `delete sanitized.refresh_token`) is fragile if arbitrary, nested, or unknown credential fields are stored (e.g. `auth_token`, `client_secret_custom`, `nested_credentials: { key: 'xyz' }`).
 
-### Technical Remediation
-1. Harmonized all documentation (`DEPLOYMENT.md`, `docs/PRODUCTION_CONFIGURATION_CHECKLIST.md`, `docs/FINAL_LAUNCH_READINESS.md`) to establish `app.js` as the sole canonical production entrypoint.
-2. Verified Phusion Passenger / cPanel CloudLinux integration: `app.js` exports the Express `app` instance when loaded by Passenger or required as a module, and executes production startup guards when invoked directly.
-3. Added Phusion Passenger detection test to `tests/production-startup-entry.test.js` (4 passing tests).
+### Technical Remediation (`src/utils/adminSanitization.js`)
+1. **Strict Safe Allowlist:**
+   Defined `SAFE_COURIER_OPTIONS_ALLOWLIST`:
+   - `store_id`, `city_id`, `zone_id`, `area_id`, `pickup_hub_id`, `default_weight_grams`, `delivery_type`, `item_type`, `webhook_url`, `enable_live_rates`, `sender_name`, `sender_phone`, `sender_address`.
+2. **Recursive & Nested Defense:**
+   - Any key NOT in the allowlist is dropped.
+   - Any key matching dangerous keywords (`token`, `secret`, `key`, `pass`, `auth`, `cred`, `enc:`, `bearer`) is dropped.
+   - Any nested object or array value is rejected (only safe primitive numbers, booleans, and sanitized strings under 500 chars).
+3. **Top-Level Record Allowlist:**
+   `sanitizeAdminCourierRecord(r)` outputs strictly: `id`, `name`, `code`, `base_url`, `client_id`, `supports_live_quotes`, `status`, `sandbox`, masked `api_key` (`••••••••<last4>`), masked `secret_key` (`••••••••`), allowlisted `service_options_json`, and `updated_at`.
+4. **View Surface Cleansing:**
+   - `src/routes/adminSettings.js`: Sanitizes records before passing to `crud-module.ejs`.
+   - `src/routes/adminOrders.js`: Replaced `SELECT * FROM courier_apis` with `SELECT id, name, code, status FROM courier_apis`.
 
 ---
 
-## 6. Deep Dive: Foundation Check Arithmetic & Test Verification
+## 5. Deep Dive: Strict Credential Recovery (Finding 6)
 
-### Dynamic Check-Foundation Formula
-`scripts/check-foundation.js` verifies the integrity of the codebase dynamically:
-$$\text{Total Checks} = \text{JS Syntax Files} + \text{EJS Templates} + \text{Governance Docs} + \text{Checklist Rows} + \text{Migrations} + \text{Secret Scans} + \text{Tracked Files}$$
+### Defect Identified
+Previously, fallback to password credentials could be triggered prematurely by network glitches, 5xx server errors, rate limits, or missing refresh tokens.
 
-- Initial baseline: `1,390` checks.
-- Handover additions: `1,408` checks.
-- Current remediation suite (added `providerTokenSecurity.js`, `admin-courier-credential-exposure.test.js`): **1,419 checks passed, 0 failed**.
+### Technical Remediation (`src/services/courier/adapters/PathaoAdapter.js`)
+1. **Explicit `invalid_grant` Requirement:**
+   Fallback recovery is permitted **ONLY** when the provider explicitly confirms `invalid_grant`:
+   ```javascript
+   const errCode = String(data?.error || '').toLowerCase().trim();
+   const errDesc = String(data?.error_description || data?.message || '').toLowerCase().trim();
+   const isConfirmedInvalidGrant = (
+     (response.status === 400 || response.status === 401) &&
+     (errCode === 'invalid_grant' || errDesc.includes('invalid_grant'))
+   );
+   ```
+2. **Strict Failure Refusals:**
+   - Network failure (ECONNREFUSED) -> `isNetworkError: true`, NO fallback.
+   - Network timeout (AbortError) -> `isTimeout: true`, NO fallback.
+   - Malformed / non-JSON response -> `isMalformedResponse: true`, NO fallback.
+   - Rate limit (HTTP 429) -> `isRateLimit: true`, NO fallback.
+   - Server error (HTTP 5xx) -> `isServerError: true`, NO fallback.
+   - Ambiguous HTTP 400 error (`invalid_request`) -> `isAmbiguousFailure: true`, NO fallback.
+   - Missing refresh token in config -> `success: false`, NO fallback.
 
-### Test Suite Summary
-- `tests/security-open-redirect.test.js`: 2 tests passed (9 assertions).
-- `tests/courier-pathao-token-rotation.test.js`: 6 tests passed (token refresh, AES-256-GCM encryption, fail-closed DB error, 10 concurrent requests lock, 5 error categories, real DB test in CI).
-- `tests/admin-courier-credential-exposure.test.js`: 1 test passed (full DOM & `data-record` secret absence verification).
-- `tests/production-startup-entry.test.js`: 4 tests passed (entrypoints, guards, HTTP boot, Passenger detection).
-- Total new/remediated test suite: **13 passing tests, 0 failed**.
-- CI workflow re-applies migrations before executing MySQL integration tests.
+---
+
+## 6. Deep Dive: Actions Run 42012548927 & Connection Pool Drainage (Finding 8)
+
+### Root Cause of Hanging Run
+In GitHub Actions run `42012548927`, `npm test` started at 10:40:14Z and remained in progress. Investigation revealed that `tests/courier-pathao-token-rotation.test.js` invoked `mysqlPool.execute()` against the live MySQL/MariaDB service container without an `after()` teardown hook. Because `mysql2` maintains active keepalive socket connections in its connection pool, Node's `--test` runner waited indefinitely for the event loop to drain.
+
+### Remediation
+Added explicit pool teardown to `tests/courier-pathao-token-rotation.test.js`:
+```javascript
+const { after } = require('node:test');
+after(async () => {
+  try {
+    await mysqlPool.closePool();
+  } catch (_e) {}
+});
+```
+This ensures the event loop drains immediately upon test completion, allowing CI integration runs to finish in ~30 seconds.
+- **Foundation Check:** 1,423 checks passed, 0 failed.
+- **Remediation Suite:** 16 tests passed, 0 failed.

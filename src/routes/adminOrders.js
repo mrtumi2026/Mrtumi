@@ -241,7 +241,7 @@ router.get('/admin/order/create', asyncHandler(async (req, res) => {
   );
   const categories = db.all('SELECT * FROM categories WHERE status = 1 ORDER BY sort_order ASC');
   const customers = db.all('SELECT * FROM customers ORDER BY id DESC LIMIT 100');
-  const couriers = db.all('SELECT * FROM courier_apis WHERE status = 1');
+  const couriers = db.all('SELECT id, name, code, status FROM courier_apis WHERE status = 1');
 
   res.render('admin/pos', {
     products,
@@ -393,7 +393,7 @@ router.get('/admin/order/view/:id', asyncHandler(async (req, res) => {
 
   const items = db.all('SELECT * FROM order_items WHERE order_id = ?', order.id);
   const statuses = db.all('SELECT * FROM order_statuses WHERE status = 1 ORDER BY sort_order ASC');
-  const couriers = db.all('SELECT * FROM courier_apis WHERE status = 1');
+  const couriers = db.all('SELECT id, name, code, status FROM courier_apis WHERE status = 1');
   const deliveryBoys = db.all('SELECT * FROM delivery_boys WHERE status = 1');
   const allProducts = db.all('SELECT id, name, new_price, sizes FROM products WHERE status = 1 ORDER BY name ASC');
 

@@ -15,6 +15,7 @@
 | **Customer Portal & Wishlist** | `317adb6743f070f22e5149b21cd2f7944b3badb7` | **YES** (`True`) | **FIXED** | Bilingual customer wishlist, product button binding, header navigation badge |
 | **Launch Readiness & Handover** | `fd90cc1` / `ce5c0c4` | **YES** (`True`) | **FIXED** | cPanel deployment runbook, D1–D12 decision classifications, cron specifications |
 | **Arena Audit Verified Remote Base** | `3ef89114f38558eb1976283df3396314003a6c95` | **YES** (`True`) | **FIXED** | Verified branch tip identified by Arena audit before targeted remediation |
+| **First Targeted Remediation Commit** | `a65ff5a271f6d0f0e279d1111cc0946b905c0ba1` | **YES** (`True`) | **FIXED** | Targeted remediation across open redirect, token encryption, and admin sanitization |
 
 ---
 
@@ -27,11 +28,13 @@ git merge-base --is-ancestor 61a9ef1 HEAD  # Return: 0 (True)
 git merge-base --is-ancestor 317adb6 HEAD  # Return: 0 (True)
 git merge-base --is-ancestor ce5c0c4 HEAD  # Return: 0 (True)
 git merge-base --is-ancestor 3ef8911 HEAD  # Return: 0 (True)
+git merge-base --is-ancestor a65ff5a HEAD  # Return: 0 (True)
 ```
 
 ### Git Log Ancestry Graph
 ```text
-* [HEAD] fix(remediation): resolve Arena audit findings on open redirect, token encryption, refresh lock, and admin exposure
+* [HEAD] fix(audit): resolve Arena 4 critical findings on persistence, locking, allowlist, and recovery
+* a65ff5a fix(security): resolve Arena audit findings on open redirect, token encryption, concurrency, and credential exposure
 * 3ef8911 docs: document test reconciliation and CI database migration reapplication
 * ce5c0c4 docs: enrich production handover with cPanel runbook, cron specs, and classified owner decisions
 * fd90cc1 docs: complete final launch readiness, governance checklists, and integration reports
@@ -47,8 +50,8 @@ git merge-base --is-ancestor 3ef8911 HEAD  # Return: 0 (True)
 ## 3. Preservation & Isolation Guarantees
 
 1. **Arena Working Tree Isolation:**
-   - Arena's active branch (`arena/e012be98-mrtumi`) was never modified, checked out, or written to.
-   - All work is strictly isolated in dedicated Antigravity branches (`antigravity/courier-hardening` -> `antigravity/final-launch-readiness`).
+   - Arena's active branch (`origin/arena/*`) was never modified, checked out, or written to.
+   - All work is strictly isolated in dedicated Antigravity branch (`antigravity/final-launch-readiness`).
 2. **History Preservation:**
    - Zero force-pushes (`git push --force` or `--force-with-lease` never executed).
    - Fast-forward and normal linear ancestry maintained throughout.
