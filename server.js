@@ -21,6 +21,9 @@ const mysqlPool = require('./src/db/mysqlPool');
 if (require.main === module && env.isDevelopment) {
   throw new Error('DEPLOYMENT STARTUP ERROR: direct server.js startup refuses development defaults; use `npm run dev` locally or configure production and use app.js.');
 }
+if (require.main === module && env.isTest && process.env.APP_ALLOW_TEST_STARTUP !== 'true') {
+  throw new Error('DEPLOYMENT STARTUP ERROR: NODE_ENV=test cannot start server.js without the explicit test-only APP_ALLOW_TEST_STARTUP=true flag.');
+}
 
 const localeRoutes = require('./src/routes/locale');
 const apiFoundationRoutes = require('./src/routes/apiFoundation');
@@ -198,4 +201,4 @@ if (require.main === module) {
   startServer();
 }
 
-module.exports = { app, startServer };
+module.exports = Object.assign(app, { app, startServer });

@@ -161,6 +161,19 @@ jobs:
             echo "::error::MySQL disposable backup/restore rehearsal BLOCKED/SKIPPED; outcome=$BACKUP_RESTORE. No PASS is claimed."
           fi
 
+      - name: Reapply all MySQL migrations before integration tests
+        id: mysql_migration_reapply
+        env:
+          DB_CLIENT: mysql
+          DB_HOST: 127.0.0.1
+          DB_PORT: "3306"
+          DB_NAME: mrtumi_test
+          DB_USER: mrtumi_test
+          DB_PASSWORD: mrtumi_test_pw
+        run: |
+          npm run migrate:up
+          npm run migrate:status
+
       - name: Run automated unit, portal regression & live MySQL 8.0 test suites
         run: |
           set -o pipefail

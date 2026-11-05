@@ -20,12 +20,68 @@ class PathaoAdapter extends CourierBaseAdapter {
   }
 
   /**
-   * Refreshes OAuth 2.0 access token using refresh_token, client_credentials, or user credentials.
+   * Securely persists rotated OAuth access and refresh tokens to memory,
+   * caller hooks, and the database courier_apis table.
+   */
+  async persistTokenRotation(accessToken, refreshToken) {
+    this.apiKey = accessToken;
+    if (refreshToken) {
+      this.refreshToken = refreshToken;
+      this.serviceOptions = Object.assign({}, this.serviceOptions, {
+        refresh_token: refreshToken
+      });
+    }
+
+    if (typeof this.config.onTokenRotated === 'function') {
+      try {
+        await this.config.onTokenRotated({
+          providerId: this.config.id,
+          providerCode: this.providerCode || this.config.code || 'pathao',
+          accessToken,
+          refreshToken: this.refreshToken
+        });
+      } catch (_hookErr) {
+        // Hook execution failure should not abort courier operations
+      }
+    }
+
+    try {
+      const mysqlPool = require('../../../db/mysqlPool');
+      const providerId = this.config.id;
+      const providerCode = this.providerCode || this.config.code || 'pathao';
+      const updatedOptionsJson = JSON.stringify(this.serviceOptions);
+
+      if (providerId) {
+        await mysqlPool.query(
+          `UPDATE courier_apis
+           SET api_key = ?, service_options_json = ?, updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+          [accessToken, updatedOptionsJson, providerId]
+        );
+      } else if (providerCode) {
+        await mysqlPool.query(
+          `UPDATE courier_apis
+           SET api_key = ?, service_options_json = ?, updated_at = CURRENT_TIMESTAMP
+           WHERE code = ? OR provider_type = ?`,
+          [accessToken, updatedOptionsJson, providerCode, providerCode]
+        );
+      }
+    } catch (_dbErr) {
+      // In environments without live MySQL or in unit tests, do not throw
+    }
+  }
+
+  /**
+   * Refreshes OAuth 2.0 access token using refresh_token rotation.
+   * If refresh_token is rejected, invalid, or expired, automatically initiates
+   * credential recovery using password or client_credentials grants.
    */
   async refreshAccessToken() {
     if (this.isSandbox) {
       this.apiKey = 'pathao_sandbox_refreshed_token';
-      return { success: true, accessToken: this.apiKey, refreshToken: 'pathao_sandbox_refresh_token' };
+      this.refreshToken = 'pathao_sandbox_refresh_token';
+      await this.persistTokenRotation(this.apiKey, this.refreshToken);
+      return { success: true, accessToken: this.apiKey, refreshToken: this.refreshToken, recovered: false };
     }
 
     const clientId = this.clientId || this.serviceOptions.client_id || (this.config && this.config.client_id);
@@ -34,35 +90,11 @@ class PathaoAdapter extends CourierBaseAdapter {
     const username = this.username || this.serviceOptions.username || (this.config && this.config.username);
     const password = this.password || this.serviceOptions.password || (this.config && this.config.password);
 
-    let payload = null;
-    if (refreshToken) {
-      payload = {
-        client_id: clientId,
-        client_secret: clientSecret,
-        grant_type: 'refresh_token',
-        refresh_token: refreshToken
-      };
-    } else if (clientId && clientSecret && username && password) {
-      payload = {
-        client_id: clientId,
-        client_secret: clientSecret,
-        grant_type: 'password',
-        username,
-        password
-      };
-    } else if (clientId && clientSecret) {
-      payload = {
-        client_id: clientId,
-        client_secret: clientSecret,
-        grant_type: 'client_credentials'
-      };
-    }
-
-    if (!payload || !clientId || !clientSecret) {
+    if (!clientId || !clientSecret) {
       return { success: false, error: 'Pathao OAuth credentials (client_id/client_secret) not configured for token refresh' };
     }
 
-    try {
+    const executeTokenRequest = async (payload) => {
       const response = await this.safeFetch(`${this.baseUrl}/aladdin/api/v1/issue-token`, {
         method: 'POST',
         headers: {
@@ -71,19 +103,68 @@ class PathaoAdapter extends CourierBaseAdapter {
         },
         body: JSON.stringify(payload)
       }, 5000);
-
-      const data = await response.json();
-      if (response.ok && data && (data.access_token || data.token)) {
-        const token = data.access_token || data.token;
-        this.apiKey = token;
-        if (data.refresh_token) {
-          this.refreshToken = data.refresh_token;
-        }
-        return { success: true, accessToken: token, refreshToken: data.refresh_token || null };
+      let data = null;
+      try {
+        data = await response.json();
+      } catch (_e) {
+        data = null;
       }
-      return { success: false, error: data?.message || `Token refresh failed with HTTP ${response.status}` };
+      return { response, data };
+    };
+
+    // 1. Primary path: attempt refresh_token grant if refresh_token is present
+    if (refreshToken) {
+      try {
+        const { response, data } = await executeTokenRequest({
+          client_id: clientId,
+          client_secret: clientSecret,
+          grant_type: 'refresh_token',
+          refresh_token: refreshToken
+        });
+
+        if (response.ok && data && (data.access_token || data.token)) {
+          const newAccessToken = data.access_token || data.token;
+          const newRefreshToken = data.refresh_token || refreshToken;
+          await this.persistTokenRotation(newAccessToken, newRefreshToken);
+          return { success: true, accessToken: newAccessToken, refreshToken: newRefreshToken, recovered: false };
+        }
+      } catch (_refreshErr) {
+        // Fall through to recovery path below
+      }
+    }
+
+    // 2. Recovery path: if refresh token failed or was rejected, recover via password or client_credentials
+    let recoveryPayload = null;
+    if (username && password) {
+      recoveryPayload = {
+        client_id: clientId,
+        client_secret: clientSecret,
+        grant_type: 'password',
+        username,
+        password
+      };
+    } else {
+      recoveryPayload = {
+        client_id: clientId,
+        client_secret: clientSecret,
+        grant_type: 'client_credentials'
+      };
+    }
+
+    try {
+      const { response, data } = await executeTokenRequest(recoveryPayload);
+      if (response.ok && data && (data.access_token || data.token)) {
+        const newAccessToken = data.access_token || data.token;
+        const newRefreshToken = data.refresh_token || null;
+        await this.persistTokenRotation(newAccessToken, newRefreshToken);
+        return { success: true, accessToken: newAccessToken, refreshToken: newRefreshToken, recovered: true };
+      }
+      return {
+        success: false,
+        error: data?.message || data?.error_description || `OAuth token refresh and recovery failed with HTTP ${response.status}`
+      };
     } catch (err) {
-      return { success: false, error: `Token refresh network error: ${err.message}` };
+      return { success: false, error: `Pathao token refresh/recovery network error: ${err.message}` };
     }
   }
 

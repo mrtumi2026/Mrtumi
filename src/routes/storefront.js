@@ -14,6 +14,7 @@ const customerPrivacyRepo = require('../repositories/privacyRepository');
 const { env } = require('../config/env');
 const { ValidationError } = require('../utils/errors');
 const { captureAttribution, consentGranted } = require('../analytics/attribution');
+const { safeReferrer } = require('../utils/urlSecurity');
 
 const router = express.Router();
 
@@ -612,7 +613,7 @@ router.post(
         return res.status(400).json({ success: false, message: msg });
       }
       req.flash('error', msg);
-      return res.redirect(req.get('Referrer') || safeProductPath(prod));
+      return res.redirect(safeReferrer(req, safeProductPath(prod)));
     }
 
     const chosenSize = String(
@@ -691,7 +692,7 @@ router.post(
       return res.redirect('/customer/checkout');
     }
     req.flash('success', addedMsg);
-    return res.redirect(req.get('Referrer') || '/cart');
+    return res.redirect(safeReferrer(req, '/cart'));
   })
 );
 
@@ -751,7 +752,7 @@ router.post(
         sessionToken: req.sessionID,
       });
     }
-    return res.redirect(req.get('Referrer') || '/customer/checkout');
+    return res.redirect(safeReferrer(req, '/customer/checkout'));
   })
 );
 
@@ -776,7 +777,7 @@ router.post('/cart/remove', requireCsrf, asyncHandler(async (req, res) => {
       sessionToken: req.sessionID,
     });
   }
-  return res.redirect(req.get('Referrer') || '/customer/checkout');
+  return res.redirect(safeReferrer(req, '/customer/checkout'));
 }));
 
 router.post('/cart/clear', requireCsrf, asyncHandler(async (req, res) => {
@@ -891,7 +892,7 @@ router.post('/order/quick-submit', publicFormLimiter, requireCsrf, asyncHandler(
       return res.status(400).json({ success: false, message: errMsg });
     }
     req.flash('error', errMsg);
-    return res.redirect(req.get('Referrer') || safeProductPath(prod));
+    return res.redirect(safeReferrer(req, safeProductPath(prod)));
   }
 
   const clientIp = req.ip || '';
@@ -1699,13 +1700,13 @@ router.post(
         return res.status(400).json({ success: false, message: t('store.contactValidationError') });
       }
       req.flash('error', t('store.contactValidationError'));
-      return res.redirect(req.get('Referrer') || '/contact');
+      return res.redirect(safeReferrer(req, '/contact'));
     }
     if (wantsJson(req)) {
       return res.json({ success: true, message: t('store.contactSuccessMsg') });
     }
     req.flash('success', t('store.contactSuccessMsg'));
-    return res.redirect(req.get('Referrer') || '/contact');
+    return res.redirect(safeReferrer(req, '/contact'));
   })
 );
 
@@ -1719,7 +1720,7 @@ router.post(
       return res.json({ success: true, message: t('store.newsletterSuccessMsg') });
     }
     req.flash('success', t('store.newsletterSuccessMsg'));
-    return res.redirect(req.get('Referrer') || '/');
+    return res.redirect(safeReferrer(req, '/'));
   })
 );
 
@@ -1741,13 +1742,13 @@ router.post(
         return res.status(400).json({ success: false, message: t('store.reviewValidationError') });
       }
       req.flash('error', t('store.reviewValidationError'));
-      return res.redirect(req.get('Referrer') || '/all-products');
+      return res.redirect(safeReferrer(req, '/all-products'));
     }
     if (wantsJson(req)) {
       return res.json({ success: true, status: 'pending', message: t('store.reviewSubmittedPending') });
     }
     req.flash('success', t('store.reviewSubmittedPending'));
-    return res.redirect(req.get('Referrer') || '/');
+    return res.redirect(safeReferrer(req, '/'));
   })
 );
 

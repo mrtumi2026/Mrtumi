@@ -2,6 +2,7 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const { asyncHandler } = require('../utils/asyncHandler');
+const { safeReferrer } = require('../utils/urlSecurity');
 const { createRateLimiter, createLoginRateLimiters } = require('../middleware/rateLimit');
 const { requireCustomer } = require('../middleware/auth');
 const { requireCsrf } = require('../middleware/csrf');
@@ -344,7 +345,7 @@ router.post("/customer/account/wishlist/add", requireCsrf, asyncHandler(async (r
   if (!productId || isNaN(productId)) {
     if (wantsJson(req)) return res.status(400).json({ success: false, message: "Invalid product ID" });
     req.flash("error", isEn(req) ? "Invalid product" : "???????? ????");
-    return res.redirect(req.get("Referrer") || "/customer/account/wishlist");
+    return res.redirect(safeReferrer(req, "/customer/account/wishlist"));
   }
   if (!Array.isArray(req.session.wishlist)) {
     req.session.wishlist = [];
@@ -356,7 +357,7 @@ router.post("/customer/account/wishlist/add", requireCsrf, asyncHandler(async (r
     return res.json({ success: true, count: req.session.wishlist.length, inWishlist: true });
   }
   req.flash("success", isEn(req) ? "Added to wishlist" : "??????? ???????? ??? ??? ??????");
-  return res.redirect(req.get("Referrer") || "/customer/account/wishlist");
+  return res.redirect(safeReferrer(req, "/customer/account/wishlist"));
 }));
 
 router.post("/customer/account/wishlist/remove", requireCsrf, asyncHandler(async (req, res) => {
@@ -368,7 +369,7 @@ router.post("/customer/account/wishlist/remove", requireCsrf, asyncHandler(async
     return res.json({ success: true, count: (req.session.wishlist || []).length, inWishlist: false });
   }
   req.flash("success", isEn(req) ? "Removed from wishlist" : "??????? ?????? ???? ????? ??????");
-  return res.redirect(req.get("Referrer") || "/customer/account/wishlist");
+  return res.redirect(safeReferrer(req, "/customer/account/wishlist"));
 }));
 
 module.exports = router;

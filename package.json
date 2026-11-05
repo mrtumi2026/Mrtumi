@@ -3,7 +3,7 @@
   "version": "0.3.0",
   "private": true,
   "description": "Mr. Tumi Grocery & Gift — Bilingual (Bangla/English) E-Commerce, Multi-Vendor, Reseller & POS Platform for Bangladesh",
-  "main": "server.js",
+  "main": "app.js",
   "engines": {
     "node": ">=22.5.0"
   },
