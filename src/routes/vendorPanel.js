@@ -486,6 +486,26 @@ router.get('/vendor/fulfillment/ambiguous-shipments', async (req, res, next) => 
   } catch (error) { return next(error); }
 });
 
+// Multi-courier delivery & fulfillment analytics for vendor (strictly isolated to vendor)
+router.get('/vendor/fulfillment/analytics', async (req, res, next) => {
+  if (!req.session?.vendorUser?.id) {
+    return res.status(401).json({ error: 'UNAUTHENTICATED', message: 'Vendor login required.' });
+  }
+  if (!mysqlActive()) {
+    return res.status(503).json({ error: 'MYSQL_REQUIRED', message: 'Fulfillment operations require MySQL.' });
+  }
+  try {
+    const courierRepo = require('../repositories/courierIntegrationRepository');
+    const analytics = await courierRepo.getDeliveryAnalytics({
+      vendorId: req.session.vendorUser.id,
+      fromDate: req.query.from_date || null,
+      toDate: req.query.to_date || null,
+      actor: { vendorId: req.session.vendorUser.id }
+    });
+    return res.json({ success: true, analytics });
+  } catch (error) { return next(error); }
+});
+
 // Independent vendor sub-order fulfillment; a vendor can only mutate its own sub-orders.
 router.post('/vendor/sub-orders/:subOrderId/booking-result', requireCsrf, async (req,res,next) => {
   if(!mysqlActive()){req.flash('error','Shipment booking records require the MySQL workflow.');return res.redirect('/vendor/orders');}

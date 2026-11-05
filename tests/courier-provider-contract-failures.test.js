@@ -217,6 +217,81 @@ test('Pathao Contract: verifies payload format, 200 response parsing, 401 auth f
   const tracking = await pathao.trackShipment('PTH-CONS-12345');
   assert.equal(tracking.trackingId, 'PTH-CONS-12345');
   assert.equal(tracking.normalizedStatus, 'in_transit');
+
+  // D. Token Refresh on 401 Unauthorized
+  let refreshCalled = false;
+  let retriedWithNewToken = false;
+  const mockOAuthFetch = async (url, options) => {
+    if (url.includes('/issue-token')) {
+      refreshCalled = true;
+      return mockHttpResponse({
+        status: 200,
+        json: {
+          access_token: 'new_refreshed_jwt',
+          token_type: 'Bearer',
+          expires_in: 3600
+        }
+      });
+    }
+    if (options.headers['Authorization'] === 'Bearer expired_jwt') {
+      return mockHttpResponse({ status: 401, json: { message: 'Token expired.' } });
+    }
+    if (options.headers['Authorization'] === 'Bearer new_refreshed_jwt') {
+      retriedWithNewToken = true;
+      return mockHttpResponse({
+        status: 200,
+        json: {
+          data: {
+            consignment_id: 'PTH-REFRESHED-101',
+            merchant_order_id: 'INV-3003',
+            order_status: 'Pickup Requested'
+          }
+        }
+      });
+    }
+    return mockHttpResponse({ status: 404 });
+  };
+
+  const pathaoWithOAuth = new PathaoAdapter({
+    code: 'pathao',
+    base_url: 'https://api-hermes.pathao.com',
+    api_key: 'expired_jwt',
+    sandbox: 0,
+    client_id: 'test_client_id',
+    client_secret: 'test_client_secret',
+    service_options_json: { refresh_token: 'valid_refresh_token' },
+    fetchFn: mockOAuthFetch
+  });
+
+  const refreshedBooking = await pathaoWithOAuth.bookShipment({
+    subOrderId: 3,
+    invoiceNo: 'INV-3003',
+    recipient: { name: 'Rahim Ali', phone: '01812345678', address: 'House 12, Road 4, Sector 7, Uttara, Dhaka' }
+  });
+  assert.equal(refreshCalled, true);
+  assert.equal(retriedWithNewToken, true);
+  assert.equal(refreshedBooking.success, true);
+  assert.equal(refreshedBooking.trackingId, 'PTH-REFRESHED-101');
+});
+
+test('Mock Courier Lifecycle: verifies delivered, failed_delivery, returned, and cancelled transitions', async () => {
+  const MockCourierAdapter = require('../src/services/courier/adapters/MockCourierAdapter');
+  const mock = new MockCourierAdapter({ code: 'mock_courier', sandbox: 1 });
+
+  const delivered = await mock.trackShipment('MCK-DEL-1001');
+  assert.equal(delivered.normalizedStatus, 'delivered');
+
+  const failed = await mock.trackShipment('MCK-FAIL-1002');
+  assert.equal(failed.normalizedStatus, 'failed_delivery');
+
+  const returned = await mock.trackShipment('MCK-RET-1003');
+  assert.equal(returned.normalizedStatus, 'returned');
+
+  const cancelled = await mock.trackShipment('MCK-CAN-1004');
+  assert.equal(cancelled.normalizedStatus, 'cancelled');
+
+  const inTransit = await mock.trackShipment('MCK-9999');
+  assert.equal(inTransit.normalizedStatus, 'in_transit');
 });
 
 test('RedX Contract: verifies payload format, 200 response parsing, 401 auth failure, and tracking', async () => {

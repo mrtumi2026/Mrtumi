@@ -48,7 +48,7 @@ async function reconcileCourierCollection({
 
   return mysql.withTransaction(async (tx) => {
     const shipmentRow = await tx.queryOne(
-      `SELECT fs.id,fs.vendor_sub_order_id,fs.cod_due_paisa,fs.courier_code,fs.tracking_id,
+      `SELECT fs.id,fs.vendor_sub_order_id,fs.cod_due_paisa,fs.quoted_charge_paisa,fs.courier_code,fs.tracking_id,
               so.order_id,o.total_paisa,o.cod_due_paisa AS order_cod_due_paisa,o.payment_method,o.payment_status
        FROM fulfillment_shipments fs
        JOIN vendor_sub_orders so ON so.id=fs.vendor_sub_order_id
@@ -58,6 +58,8 @@ async function reconcileCourierCollection({
     );
     if (!shipmentRow) throw new NotFoundError('Fulfillment shipment not found.');
     const expected = nonNegativePaisa(shipmentRow.cod_due_paisa, 'Shipment COD due');
+    const quotedChargePaisa = Number(shipmentRow.quoted_charge_paisa || 0);
+    const feeVariancePaisa = quotedChargePaisa > 0 ? (courierFee - quotedChargePaisa) : 0;
     const status = collected === expected ? 'reconciled' : 'discrepancy';
     const existing = await tx.queryOne(
       'SELECT id,reconciliation_status,collected_amount_paisa,courier_fee_paisa,cod_fee_paisa,remittance_reference,bank_trans_ref FROM courier_cod_collections WHERE shipment_id=? ORDER BY id DESC LIMIT 1 FOR UPDATE',
@@ -70,7 +72,7 @@ async function reconcileCourierCollection({
         throw new ConflictError('A reconciled courier collection is immutable and cannot be overwritten.');
       }
       return { shipmentId: shipment, status: 'reconciled', collectedAmountPaisa: collected, netRemittedPaisa: netRemitted,
-        orderPaid: shipmentRow.payment_status === 'paid', replayed: true };
+        quotedChargePaisa, feeVariancePaisa, orderPaid: shipmentRow.payment_status === 'paid', replayed: true };
     }
     const idempotencyKey = `courier-cod:shipment:${shipment}`;
     if (existing) {
@@ -130,7 +132,7 @@ async function reconcileCourierCollection({
         orderPaid = true;
       }
     }
-    return { shipmentId: shipment, status, collectedAmountPaisa: collected, netRemittedPaisa: netRemitted, orderPaid };
+    return { shipmentId: shipment, status, collectedAmountPaisa: collected, netRemittedPaisa: netRemitted, quotedChargePaisa, feeVariancePaisa, orderPaid };
   });
 }
 

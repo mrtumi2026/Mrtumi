@@ -187,6 +187,18 @@ router.post('/admin/fulfillment/shipments/:shipmentId/reconcile-cod', requirePer
   return res.redirect('/admin/fulfillment/ambiguous-shipments?status=all');
 }));
 
+// Multi-courier delivery & fulfillment performance analytics for admin
+router.get('/admin/fulfillment/analytics', requirePermission('orders.manage'), asyncHandler(async (req, res) => {
+  const courierRepo = require('../repositories/courierIntegrationRepository');
+  const analytics = await courierRepo.getDeliveryAnalytics({
+    vendorId: req.query.vendor_id || null,
+    fromDate: req.query.from_date || null,
+    toDate: req.query.to_date || null,
+    actor: fulfillmentActor(req)
+  });
+  return res.json({ success: true, analytics });
+}));
+
 function generateInvoiceId() {
   for (let i = 0; i < 10; i++) {
     const code = String(Math.floor(10000 + Math.random() * 90000));

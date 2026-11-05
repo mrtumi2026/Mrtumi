@@ -52,6 +52,17 @@ test('Admin Courier Management & Operations Security: RBAC, CSRF, and Customer P
   // D. Storefront tracking route is scoped to authenticated customer
   const storefrontRoutes = fsMod.readFileSync(pathMod.join(root, 'src/routes/storefront.js'), 'utf8');
   assert.ok(storefrontRoutes.includes('customer_id = ?'));
+
+  // E. Analytics endpoints protection
+  assert.ok(adminOrders.includes("router.get('/admin/fulfillment/analytics', requirePermission('orders.manage')"));
+  const vendorPanel = fsMod.readFileSync(pathMod.join(root, 'src/routes/vendorPanel.js'), 'utf8');
+  assert.ok(vendorPanel.includes("router.get('/vendor/fulfillment/analytics'"));
+
+  // F. Scheduled tracking runner module check
+  const syncRunner = require('../scripts/sync-courier-tracking');
+  assert.equal(typeof syncRunner.run, 'function');
+  const pkg = JSON.parse(fsMod.readFileSync(pathMod.join(root, 'package.json'), 'utf8'));
+  assert.equal(pkg.scripts['courier:sync-tracking'], 'node scripts/sync-courier-tracking.js');
 });
 
 test('Operational Override: Input validation and Super Admin authorization guards', async () => {
@@ -516,4 +527,38 @@ test('Operational Recovery & Monitoring: Reporting, vendor isolation, audit hist
   const codRow = await db.queryOne('SELECT * FROM courier_cod_collections WHERE shipment_id = ?', [shipmentId1]);
   assert.equal(codRow.reconciliation_status, 'reconciled');
   assert.equal(codRow.remittance_reference, 'REM-TEST-001');
+  assert.equal(typeof codResult.quotedChargePaisa, 'number');
+  assert.equal(typeof codResult.feeVariancePaisa, 'number');
+
+  // 7. Verify Delivery & Fulfillment Analytics (getDeliveryAnalytics)
+  const analyticsAdmin = await courierRepo.getDeliveryAnalytics({
+    actor: superAdminActor
+  });
+  assert.ok(analyticsAdmin.totals);
+  assert.ok(analyticsAdmin.totals.totalShipments >= 2);
+  assert.ok(Array.isArray(analyticsAdmin.providerBreakdown));
+
+  // Vendor isolation on analytics
+  const analyticsVendorA = await courierRepo.getDeliveryAnalytics({
+    actor: vendorActorA
+  });
+  assert.equal(analyticsVendorA.vendorId, vendIdA);
+
+  // 8. Verify Tracking Sync Lifecycle & Transitions
+  await db.execute("UPDATE fulfillment_shipments SET tracking_id = 'MCK-DEL-2002' WHERE id = ?", [shipmentId2]);
+  await db.execute("UPDATE vendor_sub_orders SET tracking_code = 'MCK-DEL-2002' WHERE id = ?", [subOrderId2]);
+  const syncDelivered = await courierRepo.syncShipmentTracking({
+    subOrderId: subOrderId2,
+    actor: superAdminActor
+  });
+  assert.equal(syncDelivered.normalizedStatus, 'delivered');
+  const deliveredShipment = await db.queryOne("SELECT status, delivered_at FROM fulfillment_shipments WHERE id = ?", [shipmentId2]);
+  assert.equal(deliveredShipment.status, 'delivered');
+  assert.ok(deliveredShipment.delivered_at);
+
+  // 9. Verify Scheduled Courier Tracking Sync Runner
+  const syncModule = require('../scripts/sync-courier-tracking');
+  const runnerResult = await syncModule.run();
+  assert.ok(runnerResult);
+  assert.equal(typeof runnerResult.synchronized, 'number');
 });

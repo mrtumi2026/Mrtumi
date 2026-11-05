@@ -9,8 +9,108 @@ const CourierBaseAdapter = require('../CourierBaseAdapter');
 class PathaoAdapter extends CourierBaseAdapter {
   constructor(config = {}) {
     super(config);
+    this.config = config;
     this.baseUrl = this.baseUrl || 'https://courier-api.pathao.com';
     this.storeId = this.serviceOptions.store_id || 1;
+    this.refreshToken = this.serviceOptions.refresh_token || config.refresh_token || null;
+    this.clientId = this.serviceOptions.client_id || config.client_id || this.clientId || null;
+    this.clientSecret = this.serviceOptions.client_secret || config.client_secret || this.secretKey || null;
+    this.username = this.serviceOptions.username || config.username || null;
+    this.password = this.serviceOptions.password || config.password || null;
+  }
+
+  /**
+   * Refreshes OAuth 2.0 access token using refresh_token, client_credentials, or user credentials.
+   */
+  async refreshAccessToken() {
+    if (this.isSandbox) {
+      this.apiKey = 'pathao_sandbox_refreshed_token';
+      return { success: true, accessToken: this.apiKey, refreshToken: 'pathao_sandbox_refresh_token' };
+    }
+
+    const clientId = this.clientId || this.serviceOptions.client_id || (this.config && this.config.client_id);
+    const clientSecret = this.clientSecret || this.serviceOptions.client_secret || (this.config && this.config.client_secret) || this.secretKey;
+    const refreshToken = this.refreshToken || this.serviceOptions.refresh_token;
+    const username = this.username || this.serviceOptions.username || (this.config && this.config.username);
+    const password = this.password || this.serviceOptions.password || (this.config && this.config.password);
+
+    let payload = null;
+    if (refreshToken) {
+      payload = {
+        client_id: clientId,
+        client_secret: clientSecret,
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken
+      };
+    } else if (clientId && clientSecret && username && password) {
+      payload = {
+        client_id: clientId,
+        client_secret: clientSecret,
+        grant_type: 'password',
+        username,
+        password
+      };
+    } else if (clientId && clientSecret) {
+      payload = {
+        client_id: clientId,
+        client_secret: clientSecret,
+        grant_type: 'client_credentials'
+      };
+    }
+
+    if (!payload || !clientId || !clientSecret) {
+      return { success: false, error: 'Pathao OAuth credentials (client_id/client_secret) not configured for token refresh' };
+    }
+
+    try {
+      const response = await this.safeFetch(`${this.baseUrl}/aladdin/api/v1/issue-token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      }, 5000);
+
+      const data = await response.json();
+      if (response.ok && data && (data.access_token || data.token)) {
+        const token = data.access_token || data.token;
+        this.apiKey = token;
+        if (data.refresh_token) {
+          this.refreshToken = data.refresh_token;
+        }
+        return { success: true, accessToken: token, refreshToken: data.refresh_token || null };
+      }
+      return { success: false, error: data?.message || `Token refresh failed with HTTP ${response.status}` };
+    } catch (err) {
+      return { success: false, error: `Token refresh network error: ${err.message}` };
+    }
+  }
+
+  /**
+   * Performs an authenticated HTTP fetch. Automatically handles 401 Unauthorized
+   * by refreshing the OAuth token and retrying the request once.
+   */
+  async authenticatedFetch(url, options = {}, timeoutMs = 8000) {
+    const headers = Object.assign({}, options.headers || {}, {
+      'Authorization': `Bearer ${this.apiKey}`,
+      'Accept': 'application/json'
+    });
+    const opts = Object.assign({}, options, { headers });
+
+    let response = await this.safeFetch(url, opts, timeoutMs);
+
+    // If 401 Unauthorized and OAuth credentials exist, attempt token refresh and retry once
+    const hasOAuth = Boolean((this.clientId || this.serviceOptions.client_id) && (this.clientSecret || this.serviceOptions.client_secret || this.secretKey));
+    if (response.status === 401 && hasOAuth) {
+      const refreshed = await this.refreshAccessToken();
+      if (refreshed.success) {
+        headers['Authorization'] = `Bearer ${this.apiKey}`;
+        response = await this.safeFetch(url, Object.assign({}, options, { headers }), timeoutMs);
+      }
+    }
+
+    return response;
   }
 
   async getQuote({ origin, destination, weightGrams = 1000, codAmountPaisa = 0 }) {
@@ -38,12 +138,10 @@ class PathaoAdapter extends CourierBaseAdapter {
     // If live API is configured and live quotes are supported
     if (this.supportsLiveQuotes && this.apiKey && !this.isSandbox) {
       try {
-        const response = await this.safeFetch(`${this.baseUrl}/aladdin/api/v1/merchant/price-plan`, {
+        const response = await this.authenticatedFetch(`${this.baseUrl}/aladdin/api/v1/merchant/price-plan`, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${this.apiKey}`,
-            'Accept': 'application/json'
+            'Content-Type': 'application/json'
           },
           body: JSON.stringify({
             store_id: this.storeId,
@@ -172,12 +270,8 @@ class PathaoAdapter extends CourierBaseAdapter {
     try {
       // 1. Primary lookup by consignment_id if available
       if (queryConsignment) {
-        const response = await this.safeFetch(`${this.baseUrl}/aladdin/api/v1/orders/${encodeURIComponent(queryConsignment)}/info`, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${this.apiKey}`,
-            'Accept': 'application/json'
-          }
+        const response = await this.authenticatedFetch(`${this.baseUrl}/aladdin/api/v1/orders/${encodeURIComponent(queryConsignment)}/info`, {
+          method: 'GET'
         }, 5000);
 
         if (response.ok) {
@@ -199,12 +293,8 @@ class PathaoAdapter extends CourierBaseAdapter {
 
       // 2. Alternative lookup by merchant_order_id (provider-supported fallback)
       if (queryMerchantOrder) {
-        const altResponse = await this.safeFetch(`${this.baseUrl}/aladdin/api/v1/orders?merchant_order_id=${encodeURIComponent(queryMerchantOrder)}`, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${this.apiKey}`,
-            'Accept': 'application/json'
-          }
+        const altResponse = await this.authenticatedFetch(`${this.baseUrl}/aladdin/api/v1/orders?merchant_order_id=${encodeURIComponent(queryMerchantOrder)}`, {
+          method: 'GET'
         }, 5000);
 
         if (altResponse.ok) {
@@ -310,12 +400,10 @@ class PathaoAdapter extends CourierBaseAdapter {
     }
 
     try {
-      const response = await this.safeFetch(`${this.baseUrl}/aladdin/api/v1/orders`, {
+      const response = await this.authenticatedFetch(`${this.baseUrl}/aladdin/api/v1/orders`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`,
-          'Accept': 'application/json'
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           store_id: this.storeId,
@@ -380,12 +468,8 @@ class PathaoAdapter extends CourierBaseAdapter {
     }
 
     try {
-      const response = await this.safeFetch(`${this.baseUrl}/aladdin/api/v1/orders/${encodeURIComponent(trackingReference)}/info`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
-          'Accept': 'application/json'
-        }
+      const response = await this.authenticatedFetch(`${this.baseUrl}/aladdin/api/v1/orders/${encodeURIComponent(trackingReference)}/info`, {
+        method: 'GET'
       }, 8000);
 
       const data = await response.json();

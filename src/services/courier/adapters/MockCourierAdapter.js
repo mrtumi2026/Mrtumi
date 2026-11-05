@@ -195,13 +195,31 @@ class MockCourierAdapter extends CourierBaseAdapter {
   }
 
   async trackShipment(trackingReference) {
+    const ref = String(trackingReference || '');
+    let status = 'in_transit';
+    let note = 'Parcel dispatched from hub';
+
+    if (ref.includes('MCK-DEL')) {
+      status = 'delivered';
+      note = 'Parcel delivered to recipient';
+    } else if (ref.includes('MCK-FAIL')) {
+      status = 'failed_delivery';
+      note = 'Delivery attempt failed: recipient unreachable';
+    } else if (ref.includes('MCK-RET')) {
+      status = 'returned';
+      note = 'Parcel returned to origin / vendor';
+    } else if (ref.includes('MCK-CAN')) {
+      status = 'cancelled';
+      note = 'Delivery cancelled by courier';
+    }
+
     return {
       trackingId: trackingReference,
-      normalizedStatus: 'in_transit',
-      rawStatus: 'in_transit',
+      normalizedStatus: status,
+      rawStatus: status,
       events: [
         { status: 'booked', note: 'Consignment booked with mock courier', timestamp: new Date(Date.now() - 3600000).toISOString() },
-        { status: 'in_transit', note: 'Parcel dispatched from hub', timestamp: new Date().toISOString() }
+        { status, note, timestamp: new Date().toISOString() }
       ]
     };
   }

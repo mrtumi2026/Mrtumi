@@ -194,7 +194,7 @@ async function getShipmentQuotesAndRecommendation({ subOrderId, actor }) {
 /**
  * Executes one-click booking with chosen or recommended courier provider.
  */
-async function executeOneClickBooking({ subOrderId, courierCode, actor, idempotencyKey, note = '' }) {
+async function executeOneClickBooking({ subOrderId, courierCode, actor, idempotencyKey, quotedChargePaisa, note = '' }) {
   let postCommitError = null;
   const result = await withTransaction(async (tx) => {
     // Lock suborder and shipment FOR UPDATE
@@ -292,6 +292,24 @@ async function executeOneClickBooking({ subOrderId, courierCode, actor, idempote
       idempotencyKey: idempotencyKey || `book-${subOrderId}-${Date.now()}`
     };
 
+    let finalQuotedChargePaisa = Number(quotedChargePaisa || 0);
+    if (!finalQuotedChargePaisa && Number(shipment.quoted_charge_paisa || 0) > 0) {
+      finalQuotedChargePaisa = Number(shipment.quoted_charge_paisa);
+    } else if (!finalQuotedChargePaisa) {
+      try {
+        const quote = await adapter.getQuote({
+          destination: { district: subOrder.shipping_area || 'Dhaka' },
+          weightGrams: 1000,
+          codAmountPaisa: bookingPayload.codAmountPaisa
+        });
+        if (quote && quote.available) {
+          finalQuotedChargePaisa = Number(quote.chargePaisa || 0) + Number(quote.codFeePaisa || 0);
+        }
+      } catch (_quoteErr) {
+        finalQuotedChargePaisa = 0;
+      }
+    }
+
     // Execute booking via provider adapter
     const bookingResult = await adapter.bookShipment(bookingPayload);
 
@@ -308,6 +326,7 @@ async function executeOneClickBooking({ subOrderId, courierCode, actor, idempote
              external_consignment_id = ?,
              booking_status = 'succeeded',
              booking_idempotency_key = ?,
+             quoted_charge_paisa = ?,
              booking_response_json = ?,
              updated_at = UTC_TIMESTAMP()
          WHERE id = ?`,
@@ -316,6 +335,7 @@ async function executeOneClickBooking({ subOrderId, courierCode, actor, idempote
           bookingResult.trackingId,
           bookingResult.consignmentId || bookingResult.trackingId,
           bookingPayload.idempotencyKey,
+          finalQuotedChargePaisa,
           JSON.stringify(CourierBaseAdapter.sanitize(bookingResult.rawResponse || {})),
           shipment.id
         ]
@@ -360,7 +380,8 @@ async function executeOneClickBooking({ subOrderId, courierCode, actor, idempote
         trackingId: bookingResult.trackingId,
         consignmentId: bookingResult.consignmentId,
         courierCode: providerConfig.code,
-        courierName: providerConfig.name
+        courierName: providerConfig.name,
+        quotedChargePaisa: finalQuotedChargePaisa
       };
     } else {
       const isTimeout = Boolean(bookingResult.isTimeout || bookingResult.isUnknownOutcome);
@@ -615,12 +636,66 @@ async function syncShipmentTracking({ subOrderId, actor }) {
         [subOrder.shipment_id]
       );
       await tx.execute(
-        `UPDATE vendor_sub_orders SET status = 'delivered' WHERE id = ? AND status IN ('ready_for_pickup', 'in_transit')`,
+        `UPDATE vendor_sub_orders SET status = 'delivered', delivered_at = UTC_TIMESTAMP() WHERE id = ? AND status IN ('ready_for_pickup', 'in_transit')`,
         [subOrder.id]
+      );
+      await tx.execute(
+        `INSERT INTO fulfillment_shipment_events
+         (shipment_id, event_type, actor_type, vendor_id, user_id, courier_code, tracking_reference, result_code, note, created_at)
+         VALUES (?, 'status_sync', ?, ?, ?, ?, ?, 'delivered', 'Carrier confirmed package delivered', UTC_TIMESTAMP())`,
+        [subOrder.shipment_id, actorType, actor.vendorId || null, actor.userId || null, subOrder.courier_code, subOrder.tracking_id]
       );
       if (subOrder.order_id) {
         await require('./vendorOrderRepository').syncParentStatus(tx, subOrder.order_id, subOrder.parent_status, actor.userId || null);
       }
+    } else if (trackingData.normalizedStatus === 'failed_delivery') {
+      await tx.execute(
+        `UPDATE fulfillment_shipments SET status = 'failed_delivery', updated_at = UTC_TIMESTAMP() WHERE id = ?`,
+        [subOrder.shipment_id]
+      );
+      await tx.execute(
+        `UPDATE vendor_sub_orders SET status = 'failed_delivery', failed_delivery_at = UTC_TIMESTAMP() WHERE id = ? AND status = 'in_transit'`,
+        [subOrder.id]
+      );
+      await tx.execute(
+        `INSERT INTO fulfillment_shipment_events
+         (shipment_id, event_type, actor_type, vendor_id, user_id, courier_code, tracking_reference, result_code, note, created_at)
+         VALUES (?, 'status_sync', ?, ?, ?, ?, ?, 'failed_delivery', 'Carrier reported delivery attempt failed', UTC_TIMESTAMP())`,
+        [subOrder.shipment_id, actorType, actor.vendorId || null, actor.userId || null, subOrder.courier_code, subOrder.tracking_id]
+      );
+    } else if (trackingData.normalizedStatus === 'returned') {
+      await tx.execute(
+        `UPDATE fulfillment_shipments SET status = 'returned', updated_at = UTC_TIMESTAMP() WHERE id = ?`,
+        [subOrder.shipment_id]
+      );
+      await tx.execute(
+        `UPDATE vendor_sub_orders SET status = 'returned', returned_at = UTC_TIMESTAMP() WHERE id = ? AND status IN ('in_transit', 'failed_delivery', 'ready_for_pickup', 'return_requested')`,
+        [subOrder.id]
+      );
+      await tx.execute(
+        `INSERT INTO fulfillment_shipment_events
+         (shipment_id, event_type, actor_type, vendor_id, user_id, courier_code, tracking_reference, result_code, note, created_at)
+         VALUES (?, 'status_sync', ?, ?, ?, ?, ?, 'returned', 'Carrier confirmed parcel returned to vendor / origin', UTC_TIMESTAMP())`,
+        [subOrder.shipment_id, actorType, actor.vendorId || null, actor.userId || null, subOrder.courier_code, subOrder.tracking_id]
+      );
+      if (subOrder.order_id) {
+        await require('./vendorOrderRepository').syncParentStatus(tx, subOrder.order_id, subOrder.parent_status, actor.userId || null);
+      }
+    } else if (trackingData.normalizedStatus === 'cancelled') {
+      await tx.execute(
+        `UPDATE fulfillment_shipments SET status = 'cancelled', updated_at = UTC_TIMESTAMP() WHERE id = ?`,
+        [subOrder.shipment_id]
+      );
+      await tx.execute(
+        `UPDATE vendor_sub_orders SET status = 'cancelled', cancelled_at = UTC_TIMESTAMP() WHERE id = ? AND status IN ('ready_for_pickup', 'in_transit')`,
+        [subOrder.id]
+      );
+      await tx.execute(
+        `INSERT INTO fulfillment_shipment_events
+         (shipment_id, event_type, actor_type, vendor_id, user_id, courier_code, tracking_reference, result_code, note, created_at)
+         VALUES (?, 'status_sync', ?, ?, ?, ?, ?, 'cancelled', 'Carrier reported shipment cancelled', UTC_TIMESTAMP())`,
+        [subOrder.shipment_id, actorType, actor.vendorId || null, actor.userId || null, subOrder.courier_code, subOrder.tracking_id]
+      );
     }
 
     return trackingData;
@@ -1024,6 +1099,124 @@ async function getAmbiguousShipmentsReport({ olderThanMinutes = 0, limit = 50, o
   return result.shipments;
 }
 
+/**
+ * Retrieves delivery and fulfillment performance analytics.
+ * Supports date range filtering, vendor tenancy isolation, delivery success rate,
+ * return-to-origin (RTO) rate, average transit duration, and courier provider breakdown.
+ */
+async function getDeliveryAnalytics({ vendorId = null, fromDate = null, toDate = null, actor = null, pool = null } = {}) {
+  assertMysql();
+  const p = pool || getPool();
+
+  let effectiveVendorId = vendorId ? Number(vendorId) : null;
+  if (actor?.vendorId) {
+    effectiveVendorId = Number(actor.vendorId);
+  }
+
+  const where = [];
+  const params = [];
+
+  if (effectiveVendorId) {
+    where.push('so.vendor_id = ?');
+    params.push(effectiveVendorId);
+  }
+  if (fromDate) {
+    where.push('fs.created_at >= ?');
+    params.push(new Date(fromDate));
+  }
+  if (toDate) {
+    where.push('fs.created_at <= ?');
+    params.push(new Date(toDate));
+  }
+
+  const whereClause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+
+  const summarySql = `
+    SELECT
+      COUNT(fs.id) AS total_shipments,
+      SUM(CASE WHEN fs.status = 'delivered' THEN 1 ELSE 0 END) AS delivered_count,
+      SUM(CASE WHEN fs.status = 'failed_delivery' THEN 1 ELSE 0 END) AS failed_count,
+      SUM(CASE WHEN fs.status = 'returned' THEN 1 ELSE 0 END) AS returned_count,
+      SUM(CASE WHEN fs.status = 'in_transit' THEN 1 ELSE 0 END) AS in_transit_count,
+      SUM(CASE WHEN fs.status = 'ready_for_pickup' THEN 1 ELSE 0 END) AS ready_count,
+      COALESCE(SUM(fs.cod_due_paisa), 0) AS total_cod_due_paisa,
+      COALESCE(SUM(fs.quoted_charge_paisa), 0) AS total_quoted_charge_paisa,
+      AVG(CASE WHEN fs.delivered_at IS NOT NULL AND fs.picked_up_at IS NOT NULL
+               THEN TIMESTAMPDIFF(HOUR, fs.picked_up_at, fs.delivered_at)
+               ELSE NULL END) AS avg_delivery_hours
+    FROM fulfillment_shipments fs
+    JOIN vendor_sub_orders so ON so.id = fs.vendor_sub_order_id
+    ${whereClause}
+  `;
+
+  const [summaryRows] = await p.query(summarySql, params);
+  const summary = summaryRows[0] || {};
+
+  const total = Number(summary.total_shipments || 0);
+  const delivered = Number(summary.delivered_count || 0);
+  const failed = Number(summary.failed_count || 0);
+  const returned = Number(summary.returned_count || 0);
+  const inTransit = Number(summary.in_transit_count || 0);
+  const ready = Number(summary.ready_count || 0);
+  const successRate = total > 0 ? Math.round((delivered / total) * 10000) / 100 : 0;
+  const rtoRate = total > 0 ? Math.round(((failed + returned) / total) * 10000) / 100 : 0;
+  const avgHours = summary.avg_delivery_hours !== null && summary.avg_delivery_hours !== undefined
+    ? Math.round(Number(summary.avg_delivery_hours) * 10) / 10
+    : null;
+
+  // Courier provider breakdown
+  const providerSql = `
+    SELECT
+      COALESCE(NULLIF(fs.courier_code, ''), 'unassigned') AS courier_code,
+      COUNT(fs.id) AS total,
+      SUM(CASE WHEN fs.status = 'delivered' THEN 1 ELSE 0 END) AS delivered,
+      SUM(CASE WHEN fs.status = 'failed_delivery' THEN 1 ELSE 0 END) AS failed,
+      SUM(CASE WHEN fs.status = 'returned' THEN 1 ELSE 0 END) AS returned,
+      SUM(CASE WHEN fs.status = 'in_transit' THEN 1 ELSE 0 END) AS in_transit,
+      COALESCE(SUM(fs.cod_due_paisa), 0) AS cod_due_paisa,
+      COALESCE(SUM(fs.quoted_charge_paisa), 0) AS quoted_charge_paisa
+    FROM fulfillment_shipments fs
+    JOIN vendor_sub_orders so ON so.id = fs.vendor_sub_order_id
+    ${whereClause}
+    GROUP BY COALESCE(NULLIF(fs.courier_code, ''), 'unassigned')
+    ORDER BY total DESC
+  `;
+
+  const [providerRows] = await p.query(providerSql, params);
+
+  return {
+    period: {
+      fromDate: fromDate || null,
+      toDate: toDate || null
+    },
+    vendorId: effectiveVendorId,
+    totals: {
+      totalShipments: total,
+      delivered,
+      failedDelivery: failed,
+      returned,
+      inTransit,
+      readyForPickup: ready,
+      successRatePercent: successRate,
+      rtoRatePercent: rtoRate,
+      avgDeliveryHours: avgHours,
+      totalCodDuePaisa: Number(summary.total_cod_due_paisa || 0),
+      totalQuotedChargePaisa: Number(summary.total_quoted_charge_paisa || 0)
+    },
+    providerBreakdown: (providerRows || []).map((row) => ({
+      courierCode: row.courier_code,
+      totalShipments: Number(row.total || 0),
+      delivered: Number(row.delivered || 0),
+      failedDelivery: Number(row.failed || 0),
+      returned: Number(row.returned || 0),
+      inTransit: Number(row.in_transit || 0),
+      successRatePercent: Number(row.total) > 0 ? Math.round((Number(row.delivered) / Number(row.total)) * 10000) / 100 : 0,
+      codDuePaisa: Number(row.cod_due_paisa || 0),
+      quotedChargePaisa: Number(row.quoted_charge_paisa || 0)
+    }))
+  };
+}
+
 module.exports = {
   getShipmentQuotesAndRecommendation,
   executeOneClickBooking,
@@ -1032,5 +1225,6 @@ module.exports = {
   listAmbiguousShipments,
   getShipmentAuditTrail,
   resolveAmbiguousBookingOverride,
-  getAmbiguousShipmentsReport
+  getAmbiguousShipmentsReport,
+  getDeliveryAnalytics
 };
