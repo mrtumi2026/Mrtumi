@@ -21,7 +21,8 @@ async function withTransaction(fn) {
   await conn.beginTransaction();
   const tx = {
     query: (sql, params) => conn.query(sql, params).then(([rows]) => rows),
-    queryOne: (sql, params) => conn.query(sql, params).then(([rows]) => rows[0] || null),
+    queryAll: (sql, params) => conn.query(sql, params).then(([rows]) => (Array.isArray(rows) ? rows : [])),
+    queryOne: (sql, params) => conn.query(sql, params).then(([rows]) => (Array.isArray(rows) && rows.length > 0 ? rows[0] : null)),
     execute: (sql, params) => conn.execute(sql, params).then(([res]) => res)
   };
 
