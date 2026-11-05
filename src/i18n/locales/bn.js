@@ -77,6 +77,10 @@ module.exports = {
     confirmDeleteTitle: 'আপনি কি নিশ্চিত?',
     confirmDeleteText: 'এই রেকর্ডটি মুছে ফেলা হলে পূর্বাবস্থায় ফেরানো যাবে না।',
     confirmDeleteYes: 'হ্যাঁ, মুছে ফেলুন',
+    wishlist: 'পছন্দের তালিকা',
+    addToWishlist: 'পছন্দে যোগ করুন',
+    removeFromWishlist: 'পছন্দ থেকে মুছুন',
+    emptyWishlist: 'আপনার পছন্দের তালিকা খালি',
   },
   copyReview: {
     badge: 'মালিকের অনুমোদন প্রয়োজন',

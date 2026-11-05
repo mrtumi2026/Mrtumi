@@ -1,0 +1,93 @@
+<%- include('../store/partials/header', { title: isEn ? 'My Wishlist' : 'আমার পছন্দের তালিকা' }) %>
+<main id="mainContent" class="container py-4 py-md-5">
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-4">
+    <div>
+      <a href="/customer/account" class="text-decoration-none">← <%= isEn ? 'Back to my account' : 'আমার অ্যাকাউন্টে ফিরুন' %></a>
+      <h1 class="h3 mt-2 mb-0"><%= isEn ? 'My Wishlist' : 'আমার পছন্দের তালিকা' %></h1>
+    </div>
+    <div>
+      <a href="/all-products" class="btn btn-outline-success btn-sm"><%= isEn ? 'Continue Shopping' : 'কেনাকাটা চালিয়ে যান' %></a>
+    </div>
+  </div>
+
+  <% if (!items || !items.length) { %>
+    <div class="bg-white rounded-4 border p-5 text-center shadow-sm my-4">
+      <div class="display-4 text-muted mb-3" aria-hidden="true">❤️</div>
+      <h2 class="h5 fw-bold"><%= isEn ? 'Your wishlist is empty' : 'আপনার পছন্দের তালিকা খালি' %></h2>
+      <p class="text-muted small mb-4" style="max-width: 480px; margin: 0 auto;">
+        <%= isEn ? 'Explore our fresh grocery and unique gifts to save items you love for later.' : 'আমাদের তাজা গ্রোসারি ও বিশেষ উপহার সংগ্রহ থেকে পছন্দের পণ্য সংরক্ষণ করুন।' %>
+      </p>
+      <a href="/all-products" class="btn btn-success px-4 py-2 rounded-pill" style="background:#0d3b26;border-color:#0d3b26;">
+        <%= isEn ? 'Browse Products' : 'পণ্য দেখুন' %> →
+      </a>
+    </div>
+  <% } else { %>
+    <div class="table-responsive rounded-4 border bg-white shadow-sm" tabindex="0" role="region" aria-label="<%= isEn ? 'Wishlist items' : 'পছন্দের পণ্যের তালিকা' %>">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th style="min-width: 220px;"><%= isEn ? 'Product' : 'পণ্য' %></th>
+            <th><%= isEn ? 'Price' : 'মূল্য' %></th>
+            <th><%= isEn ? 'Stock' : 'স্টক' %></th>
+            <th class="text-end" style="min-width: 180px;"><%= isEn ? 'Actions' : 'অ্যাকশন' %></th>
+          </tr>
+        </thead>
+        <tbody>
+          <% items.forEach((item) => { %>
+            <tr>
+              <td>
+                <div class="d-flex align-items-center gap-3">
+                  <a href="/product/<%= item.slug || item.id %>">
+                    <img src="<%= item.image || '/uploads/brand/mrtumi-placeholder-logo.svg' %>" alt="<%= item.name %>" class="rounded-3 border object-fit-cover" width="60" height="60">
+                  </a>
+                  <div>
+                    <a href="/product/<%= item.slug || item.id %>" class="fw-bold text-dark text-decoration-none d-block">
+                      <%= item.name %>
+                    </a>
+                    <% if (item.sku) { %>
+                      <small class="text-muted">SKU: <%= item.sku %></small>
+                    <% } %>
+                  </div>
+                </div>
+              </td>
+              <td>
+                <span class="fw-bold text-success">৳<%= Number(item.price || 0).toLocaleString('en-IN') %></span>
+              </td>
+              <td>
+                <% if (item.inStock) { %>
+                  <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2.5 py-1">
+                    ✓ <%= isEn ? 'In Stock' : 'স্টকে আছে' %>
+                  </span>
+                <% } else { %>
+                  <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle rounded-pill px-2.5 py-1">
+                    <%= isEn ? 'Out of Stock' : 'স্টক আউট' %>
+                  </span>
+                <% } %>
+              </td>
+              <td class="text-end">
+                <div class="d-inline-flex align-items-center gap-2">
+                  <form method="post" action="/cart/add" class="d-inline">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <input type="hidden" name="product_id" value="<%= item.id %>">
+                    <input type="hidden" name="qty" value="1">
+                    <button type="submit" class="btn btn-sm btn-success rounded-pill px-3" <%= !item.inStock ? 'disabled' : '' %> style="background:#0d3b26;border-color:#0d3b26;">
+                      🛒 <%= isEn ? 'Add to Cart' : 'কার্টে যোগ' %>
+                    </button>
+                  </form>
+                  <form method="post" action="/customer/account/wishlist/remove" class="d-inline">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <input type="hidden" name="product_id" value="<%= item.id %>">
+                    <button type="submit" class="btn btn-sm btn-outline-danger rounded-pill px-2.5" title="<%= isEn ? 'Remove' : 'মুছুন' %>" aria-label="<%= isEn ? 'Remove from wishlist' : 'তালিকা থেকে মুছুন' %>">
+                      <i class="far fa-trash-alt" aria-hidden="true"></i>
+                    </button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  <% } %>
+</main>
+<%- include('../store/partials/footer') %>

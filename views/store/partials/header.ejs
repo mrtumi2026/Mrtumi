@@ -66,6 +66,7 @@
         <a class="store-utility-hotline" href="tel:<%= siteSettings.site_phone %>"><i class="fas fa-headset" aria-hidden="true"></i> <%= locale === 'en' ? 'Customer care' : 'কাস্টমার কেয়ার' %>: <strong><%= siteSettings.site_phone %></strong></a>
         <div class="d-flex align-items-center gap-3">
           <a href="/track-order"><i class="fas fa-truck-fast" aria-hidden="true"></i> <%= t('common.trackOrder') %></a>
+          <a href="/customer/account/wishlist"><i class="far fa-heart" aria-hidden="true"></i> <%= t('common.wishlist') %></a>
           <a href="/customer/login"><i class="far fa-user" aria-hidden="true"></i> <%= locale === 'en' ? 'My account' : 'আমার অ্যাকাউন্ট' %></a>
           <%- include('../../partials/lang-switch', { variant: 'light' }) %>
         </div>
@@ -118,6 +119,7 @@
 
           <!-- Language Switcher + Support + Cart + Checkout + Portals -->
           <div class="d-flex align-items-center gap-1 gap-sm-2 order-2 order-lg-3">
+            <a href="/customer/account/wishlist" class="store-account-button store-wishlist-button" aria-label="<%= t('common.wishlist') %>" title="<%= t('common.wishlist') %>"><i class="far fa-heart" aria-hidden="true"></i><span class="d-none d-xl-inline"><%= t('common.wishlist') %></span></a>
             <a href="/customer/login" class="store-account-button" aria-label="<%= locale === 'en' ? 'Customer account' : 'গ্রাহক অ্যাকাউন্ট' %>"><i class="far fa-user" aria-hidden="true"></i><span class="d-none d-xl-inline"><%= locale === 'en' ? 'Account' : 'অ্যাকাউন্ট' %></span></a>
 
             <a href="/track-order" class="btn btn-outline-success btn-sm rounded-pill px-3 d-none d-xl-inline-flex align-items-center gap-1">

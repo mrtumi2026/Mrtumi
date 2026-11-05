@@ -3,6 +3,7 @@
   <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
     <h1 class="h3 mb-0"><%= isEn ? 'My account' : 'আমার অ্যাকাউন্ট' %></h1>
     <nav class="d-flex gap-2 flex-wrap" aria-label="<%= isEn ? 'Customer account' : 'কাস্টমার অ্যাকাউন্ট' %>">
+      <a class="btn btn-outline-danger" href="/customer/account/wishlist"><i class="far fa-heart" aria-hidden="true"></i> <%= isEn ? 'Wishlist' : '??????? ??????' %></a>
       <a class="btn btn-outline-success" href="/customer/account/orders"><%= isEn ? 'Order history' : 'অর্ডারের ইতিহাস' %></a>
       <a class="btn btn-outline-info" href="/customer/account/returns"><%= isEn ? 'Return requests' : 'রিটার্ন অনুরোধ' %></a>
       <a class="btn btn-outline-primary" href="/customer/account/privacy-requests"><%= isEn ? 'Privacy & data rights' : 'গোপনীয়তা ও তথ্য অধিকার' %></a>

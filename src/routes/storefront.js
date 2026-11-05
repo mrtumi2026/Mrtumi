@@ -1824,4 +1824,6 @@ ${urls.map((u) => `  <url><loc>${escapeXml(u)}</loc></url>`).join('\n')}
   })
 );
 
+router.get('/wishlist', (req, res) => res.redirect('/customer/account/wishlist'));
+
 module.exports = router;

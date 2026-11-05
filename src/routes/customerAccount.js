@@ -281,4 +281,94 @@ router.post('/customer/account/orders/:id/refunds', requireCustomer, requireCsrf
   req.flash('success', isEn(req) ? `Refund request #${result.id} ${result.replayed ? 'was already received' : 'was submitted'}. No payment was sent.` : `রিফান্ড অনুরোধ #${result.id} ${result.replayed ? 'আগেই জমা হয়েছে' : 'জমা হয়েছে'}। কোনো অর্থ পাঠানো হয়নি।`);
   return res.redirect(`/customer/account/orders/${encodeURIComponent(id)}`);
 }));
+function wantsJson(req) {
+  return req.xhr || (req.headers.accept && req.headers.accept.includes("application/json")) || req.is("application/json");
+}
+
+router.get("/customer/account/wishlist", requireCustomer, asyncHandler(async (req, res) => {
+  const ids = Array.isArray(req.session.wishlist) ? req.session.wishlist.map(Number).filter((n) => Number.isSafeInteger(n) && n > 0) : [];
+  let wishlistItems = [];
+  if (ids.length) {
+    if (env.db.client === "mysql") {
+      const mysql = require("../db/mysqlPool");
+      const db = mysql.createQueryClient(mysql.getPool());
+      const placeholders = ids.map(() => "?").join(",");
+      const rows = await db.queryAll(
+        `SELECT p.id, p.sku, p.slug, p.name_bn, p.name_en, p.image_url,
+                p.regular_price_paisa, p.sale_price_paisa, p.stock_on_hand, p.stock_reserved,
+                p.status, p.is_archived
+         FROM products p
+         WHERE p.id IN (${placeholders}) AND p.status = 'active' AND p.is_archived = 0`,
+        ids
+      );
+      wishlistItems = rows.map((p) => {
+        const price = (Number(p.sale_price_paisa) > 0 ? Number(p.sale_price_paisa) : Number(p.regular_price_paisa)) / 100;
+        const available = Math.max(0, Number(p.stock_on_hand || 0) - Number(p.stock_reserved || 0));
+        return {
+          id: p.id,
+          sku: p.sku,
+          slug: p.slug,
+          name: isEn(req) ? (p.name_en || p.name_bn) : (p.name_bn || p.name_en),
+          image: p.image_url || "/uploads/brand/mrtumi-placeholder-logo.svg",
+          price,
+          inStock: available > 0,
+          stockQty: available,
+        };
+      });
+    } else {
+      const sqlite = require("../db/sqlite");
+      const placeholders = ids.map(() => "?").join(",");
+      const rows = sqlite.prepare(`SELECT * FROM products WHERE id IN (${placeholders}) AND status = 'active'`).all(...ids);
+      wishlistItems = rows.map((p) => ({
+        id: p.id,
+        sku: p.sku || "",
+        slug: p.slug || p.id,
+        name: p.name || p.name_bn || "",
+        image: p.image || "/uploads/brand/mrtumi-placeholder-logo.svg",
+        price: Number(p.new_price || p.price || 0),
+        inStock: Number(p.stock || 0) > 0,
+        stockQty: Number(p.stock || 0),
+      }));
+    }
+  }
+  return res.render("customer/wishlist", {
+    title: isEn(req) ? "My Wishlist" : "???? ??????? ??????",
+    isEn: isEn(req),
+    items: wishlistItems,
+    csrfToken: req.csrfToken(),
+  });
+}));
+
+router.post("/customer/account/wishlist/add", requireCsrf, asyncHandler(async (req, res) => {
+  const productId = parseInt(req.body.product_id, 10);
+  if (!productId || isNaN(productId)) {
+    if (wantsJson(req)) return res.status(400).json({ success: false, message: "Invalid product ID" });
+    req.flash("error", isEn(req) ? "Invalid product" : "???????? ????");
+    return res.redirect(req.get("Referrer") || "/customer/account/wishlist");
+  }
+  if (!Array.isArray(req.session.wishlist)) {
+    req.session.wishlist = [];
+  }
+  if (!req.session.wishlist.includes(productId)) {
+    req.session.wishlist.push(productId);
+  }
+  if (wantsJson(req)) {
+    return res.json({ success: true, count: req.session.wishlist.length, inWishlist: true });
+  }
+  req.flash("success", isEn(req) ? "Added to wishlist" : "??????? ???????? ??? ??? ??????");
+  return res.redirect(req.get("Referrer") || "/customer/account/wishlist");
+}));
+
+router.post("/customer/account/wishlist/remove", requireCsrf, asyncHandler(async (req, res) => {
+  const productId = parseInt(req.body.product_id, 10);
+  if (Array.isArray(req.session.wishlist) && productId) {
+    req.session.wishlist = req.session.wishlist.filter((id) => Number(id) !== Number(productId));
+  }
+  if (wantsJson(req)) {
+    return res.json({ success: true, count: (req.session.wishlist || []).length, inWishlist: false });
+  }
+  req.flash("success", isEn(req) ? "Removed from wishlist" : "??????? ?????? ???? ????? ??????");
+  return res.redirect(req.get("Referrer") || "/customer/account/wishlist");
+}));
+
 module.exports = router;

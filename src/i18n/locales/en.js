@@ -78,6 +78,10 @@ module.exports = {
     confirmDeleteTitle: 'Are you sure?',
     confirmDeleteText: 'This record will be permanently removed and cannot be undone.',
     confirmDeleteYes: 'Yes, delete it',
+    wishlist: 'Wishlist',
+    addToWishlist: 'Add to Wishlist',
+    removeFromWishlist: 'Remove from Wishlist',
+    emptyWishlist: 'Your wishlist is empty',
   },
   copyReview: {
     badge: 'Owner Review Required',
