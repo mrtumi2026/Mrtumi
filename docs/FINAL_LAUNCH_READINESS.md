@@ -118,8 +118,8 @@ Set up the scheduled courier tracking synchronization in cPanel Cron Jobs:
 
 ### Step 4: Passenger / Process Manager Start
 1. In cPanel **Setup Node.js App**, set:
-   - Application root: `/home/username/public_html`
-   - Application startup file: `server.js`
+   - Application root: `/home/username/mrtumi` (or documented release directory outside `public_html`)
+   - Application startup file: `app.js`
    - Node.js version: `22.x`
 2. Click **Restart Application**.
 3. Verify public health check:

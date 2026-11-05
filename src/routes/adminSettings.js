@@ -492,12 +492,38 @@ router.get('/admin/courierapi/manage', requirePermission('settings.manage'), asy
     ? await integrationsClient().queryAll('SELECT id,name,code,api_key,secret_key,client_id,base_url,status,sandbox,supports_live_quotes,service_options_json,updated_at FROM courier_apis ORDER BY id ASC')
     : db.all('SELECT * FROM courier_apis ORDER BY id ASC');
 
-  // Mask credentials so raw secret keys are never exposed in UI HTML
-  const rows = rawRows.map(r => ({
-    ...r,
-    api_key: r.api_key ? '••••••••' + String(r.api_key).slice(-4) : '',
-    secret_key: r.secret_key ? '••••••••' : ''
-  }));
+  // Mask credentials and sanitize service_options_json so secrets are NEVER exposed in UI HTML or serialized data-record attributes
+  const rows = rawRows.map(r => {
+    let safeServiceOptions = '';
+    if (r.service_options_json) {
+      try {
+        const parsed = typeof r.service_options_json === 'string' ? JSON.parse(r.service_options_json) : r.service_options_json;
+        const sanitized = Object.assign({}, parsed);
+        delete sanitized.refresh_token;
+        delete sanitized.encrypted_refresh_token;
+        delete sanitized.password;
+        delete sanitized.client_secret;
+        safeServiceOptions = Object.keys(sanitized).length > 0 ? JSON.stringify(sanitized) : '';
+      } catch (_e) {
+        safeServiceOptions = '';
+      }
+    }
+
+    return {
+      id: r.id,
+      name: r.name,
+      code: r.code,
+      base_url: r.base_url,
+      client_id: r.client_id,
+      supports_live_quotes: r.supports_live_quotes,
+      status: r.status,
+      sandbox: r.sandbox,
+      api_key: r.api_key ? '••••••••' + String(r.api_key).slice(-4) : '',
+      secret_key: r.secret_key ? '••••••••' : '',
+      service_options_json: safeServiceOptions,
+      updated_at: r.updated_at
+    };
+  });
 
   res.render('admin/crud-module', {
     pageTitle: 'Courier API Integration (Steadfast / Pathao / RedX)',

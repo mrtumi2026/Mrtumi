@@ -1,6 +1,7 @@
 'use strict';
 
 const CourierBaseAdapter = require('../CourierBaseAdapter');
+const { encryptProviderToken, decryptProviderToken } = require('../../../utils/providerTokenSecurity');
 
 /**
  * Pathao Courier Service Adapter.
@@ -12,76 +13,56 @@ class PathaoAdapter extends CourierBaseAdapter {
     this.config = config;
     this.baseUrl = this.baseUrl || 'https://courier-api.pathao.com';
     this.storeId = this.serviceOptions.store_id || 1;
-    this.refreshToken = this.serviceOptions.refresh_token || config.refresh_token || null;
+
+    // Decrypt credentials if stored as application-level encrypted tokens
+    this.apiKey = decryptProviderToken(this.apiKey);
+    const rawRefreshToken = this.serviceOptions.encrypted_refresh_token
+      ? decryptProviderToken(this.serviceOptions.encrypted_refresh_token)
+      : (this.serviceOptions.refresh_token || config.refresh_token || null);
+    this.refreshToken = rawRefreshToken;
+
     this.clientId = this.serviceOptions.client_id || config.client_id || this.clientId || null;
     this.clientSecret = this.serviceOptions.client_secret || config.client_secret || this.secretKey || null;
     this.username = this.serviceOptions.username || config.username || null;
     this.password = this.serviceOptions.password || config.password || null;
+
+    // Concurrency control: in-flight promise deduplication to prevent simultaneous double rotations
+    this._refreshLockPromise = null;
   }
 
   /**
-   * Securely persists rotated OAuth access and refresh tokens to memory,
-   * caller hooks, and the database courier_apis table.
-   */
-  async persistTokenRotation(accessToken, refreshToken) {
-    this.apiKey = accessToken;
-    if (refreshToken) {
-      this.refreshToken = refreshToken;
-      this.serviceOptions = Object.assign({}, this.serviceOptions, {
-        refresh_token: refreshToken
-      });
-    }
-
-    if (typeof this.config.onTokenRotated === 'function') {
-      try {
-        await this.config.onTokenRotated({
-          providerId: this.config.id,
-          providerCode: this.providerCode || this.config.code || 'pathao',
-          accessToken,
-          refreshToken: this.refreshToken
-        });
-      } catch (_hookErr) {
-        // Hook execution failure should not abort courier operations
-      }
-    }
-
-    try {
-      const mysqlPool = require('../../../db/mysqlPool');
-      const providerId = this.config.id;
-      const providerCode = this.providerCode || this.config.code || 'pathao';
-      const updatedOptionsJson = JSON.stringify(this.serviceOptions);
-
-      if (providerId) {
-        await mysqlPool.query(
-          `UPDATE courier_apis
-           SET api_key = ?, service_options_json = ?, updated_at = CURRENT_TIMESTAMP
-           WHERE id = ?`,
-          [accessToken, updatedOptionsJson, providerId]
-        );
-      } else if (providerCode) {
-        await mysqlPool.query(
-          `UPDATE courier_apis
-           SET api_key = ?, service_options_json = ?, updated_at = CURRENT_TIMESTAMP
-           WHERE code = ? OR provider_type = ?`,
-          [accessToken, updatedOptionsJson, providerCode, providerCode]
-        );
-      }
-    } catch (_dbErr) {
-      // In environments without live MySQL or in unit tests, do not throw
-    }
-  }
-
-  /**
-   * Refreshes OAuth 2.0 access token using refresh_token rotation.
-   * If refresh_token is rejected, invalid, or expired, automatically initiates
-   * credential recovery using password or client_credentials grants.
+   * Concurrency-guarded entry point for token refresh.
+   * If a refresh is already in-flight on this instance, returns the existing active promise
+   * so simultaneous requests share the single rotation safely.
    */
   async refreshAccessToken() {
+    if (this._refreshLockPromise) {
+      return this._refreshLockPromise;
+    }
+    this._refreshLockPromise = (async () => {
+      try {
+        return await this._executeTokenRefresh();
+      } finally {
+        this._refreshLockPromise = null;
+      }
+    })();
+    return this._refreshLockPromise;
+  }
+
+  /**
+   * Internal implementation of OAuth token refresh, failure categorization,
+   * conditional recovery, and durable persistence.
+   */
+  async _executeTokenRefresh() {
     if (this.isSandbox) {
-      this.apiKey = 'pathao_sandbox_refreshed_token';
-      this.refreshToken = 'pathao_sandbox_refresh_token';
-      await this.persistTokenRotation(this.apiKey, this.refreshToken);
-      return { success: true, accessToken: this.apiKey, refreshToken: this.refreshToken, recovered: false };
+      const newApiKey = 'pathao_sandbox_refreshed_token';
+      const newRefreshToken = 'pathao_sandbox_refresh_token';
+      try {
+        await this.persistTokenRotation(newApiKey, newRefreshToken);
+      } catch (err) {
+        return { success: false, error: `Sandbox token persistence failed: ${err.message}` };
+      }
+      return { success: true, accessToken: newApiKey, refreshToken: newRefreshToken, recovered: false };
     }
 
     const clientId = this.clientId || this.serviceOptions.client_id || (this.config && this.config.client_id);
@@ -113,6 +94,7 @@ class PathaoAdapter extends CourierBaseAdapter {
     };
 
     // 1. Primary path: attempt refresh_token grant if refresh_token is present
+    let isProviderConfirmedInvalidRefreshToken = false;
     if (refreshToken) {
       try {
         const { response, data } = await executeTokenRequest({
@@ -125,15 +107,64 @@ class PathaoAdapter extends CourierBaseAdapter {
         if (response.ok && data && (data.access_token || data.token)) {
           const newAccessToken = data.access_token || data.token;
           const newRefreshToken = data.refresh_token || refreshToken;
-          await this.persistTokenRotation(newAccessToken, newRefreshToken);
+          try {
+            await this.persistTokenRotation(newAccessToken, newRefreshToken);
+          } catch (persistErr) {
+            return {
+              success: false,
+              error: `Token rotation succeeded at provider but database persistence failed: ${persistErr.message}`
+            };
+          }
           return { success: true, accessToken: newAccessToken, refreshToken: newRefreshToken, recovered: false };
         }
-      } catch (_refreshErr) {
-        // Fall through to recovery path below
+
+        // STRICT FAILURE CATEGORIZATION (Arena Audit Item 5):
+        // Network timeout/error, rate limit (429), or server error (5xx) MUST NEVER trigger fallback recovery!
+        if (response.status === 429) {
+          return {
+            success: false,
+            isRateLimit: true,
+            error: data?.message || 'Pathao token refresh rate limited (HTTP 429). Will not trigger credential recovery.'
+          };
+        }
+        if (response.status >= 500) {
+          return {
+            success: false,
+            isServerError: true,
+            error: `Pathao token endpoint returned server error HTTP ${response.status}. Will not trigger credential recovery.`
+          };
+        }
+
+        // Check if provider explicitly confirmed invalid or expired refresh token
+        const errMsg = String(data?.error || data?.message || data?.error_description || '').toLowerCase();
+        if (
+          (response.status === 400 || response.status === 401) &&
+          (errMsg.includes('invalid_grant') || errMsg.includes('invalid') || errMsg.includes('expired') || errMsg.includes('refresh token'))
+        ) {
+          isProviderConfirmedInvalidRefreshToken = true;
+        } else {
+          return {
+            success: false,
+            error: data?.message || `Pathao refresh token rejected with HTTP ${response.status}`
+          };
+        }
+      } catch (err) {
+        // Network errors and timeouts MUST NEVER trigger credential recovery!
+        return {
+          success: false,
+          isTimeout: err.code === 'COURIER_NETWORK_TIMEOUT',
+          error: `Pathao token refresh network failure: ${err.message}. Will not trigger credential recovery.`
+        };
       }
+    } else {
+      isProviderConfirmedInvalidRefreshToken = true;
     }
 
-    // 2. Recovery path: if refresh token failed or was rejected, recover via password or client_credentials
+    // 2. Recovery path: ONLY triggered if refresh token was confirmed invalid/expired by provider
+    if (!isProviderConfirmedInvalidRefreshToken) {
+      return { success: false, error: 'Token refresh failed and recovery conditions not met.' };
+    }
+
     let recoveryPayload = null;
     if (username && password) {
       recoveryPayload = {
@@ -156,15 +187,87 @@ class PathaoAdapter extends CourierBaseAdapter {
       if (response.ok && data && (data.access_token || data.token)) {
         const newAccessToken = data.access_token || data.token;
         const newRefreshToken = data.refresh_token || null;
-        await this.persistTokenRotation(newAccessToken, newRefreshToken);
+        try {
+          await this.persistTokenRotation(newAccessToken, newRefreshToken);
+        } catch (persistErr) {
+          return {
+            success: false,
+            error: `Token recovery succeeded at provider but database persistence failed: ${persistErr.message}`
+          };
+        }
         return { success: true, accessToken: newAccessToken, refreshToken: newRefreshToken, recovered: true };
       }
       return {
         success: false,
-        error: data?.message || data?.error_description || `OAuth token refresh and recovery failed with HTTP ${response.status}`
+        error: data?.message || data?.error_description || `OAuth token recovery failed with HTTP ${response.status}`
       };
     } catch (err) {
-      return { success: false, error: `Pathao token refresh/recovery network error: ${err.message}` };
+      return { success: false, error: `Pathao token recovery network error: ${err.message}` };
+    }
+  }
+
+  /**
+   * Securely persists rotated OAuth access and refresh tokens.
+   * Encrypts tokens before writing to courier_apis.
+   * If database write fails, throws error so memory is NOT treated as rotated.
+   */
+  async persistTokenRotation(accessToken, refreshToken) {
+    const encryptedRefreshToken = refreshToken ? encryptProviderToken(refreshToken) : null;
+    const encryptedApiKey = encryptProviderToken(accessToken);
+
+    const updatedServiceOptions = Object.assign({}, this.serviceOptions);
+    if (encryptedRefreshToken) {
+      updatedServiceOptions.encrypted_refresh_token = encryptedRefreshToken;
+    }
+    delete updatedServiceOptions.refresh_token; // Never keep plaintext in JSON
+    const updatedOptionsJson = JSON.stringify(updatedServiceOptions);
+
+    // If an onTokenRotated callback is registered (e.g. for mock/test hooks):
+    if (typeof this.config.onTokenRotated === 'function') {
+      await this.config.onTokenRotated({
+        providerId: this.config.id,
+        providerCode: this.providerCode || this.config.code || 'pathao',
+        accessToken,
+        refreshToken,
+        encryptedRefreshToken
+      });
+    }
+
+    // Persist to MySQL database if ID or code is configured and mysqlPool is active
+    try {
+      const mysqlPool = require('../../../db/mysqlPool');
+      const providerId = this.config.id;
+      const providerCode = this.providerCode || this.config.code || 'pathao';
+
+      if (providerId) {
+        const result = await mysqlPool.execute(
+          `UPDATE courier_apis
+           SET api_key = ?, service_options_json = ?, updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+          [encryptedApiKey, updatedOptionsJson, providerId]
+        );
+        if (result && result.affectedRows === 0 && this.config.requirePersistence) {
+          throw new Error(`courier_apis row with id ${providerId} not found`);
+        }
+      } else if (providerCode && this.config.requirePersistence) {
+        await mysqlPool.execute(
+          `UPDATE courier_apis
+           SET api_key = ?, service_options_json = ?, updated_at = CURRENT_TIMESTAMP
+           WHERE code = ? OR provider_type = ?`,
+          [encryptedApiKey, updatedOptionsJson, providerCode, providerCode]
+        );
+      }
+    } catch (err) {
+      if (this.config.requirePersistence || (this.config.id && !this.config.allowMissingDbRow)) {
+        throw new Error(`Database persistence failure: ${err.message}`);
+      }
+    }
+
+    // ONLY update memory state after durable persistence or callback execution
+    this.apiKey = accessToken;
+    if (refreshToken) {
+      this.refreshToken = refreshToken;
+      this.serviceOptions = updatedServiceOptions;
     }
   }
 

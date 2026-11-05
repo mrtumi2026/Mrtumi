@@ -18,7 +18,7 @@
    - **Application mode:** `Production`.
    - **Application root:** `/home/username/mrtumi` (Recommended: keep application root outside `public_html`).
    - **Application URL:** `mrtumi.com` (maps to `public_html`).
-   - **Application startup file:** `server.js`.
+   - **Application startup file:** `app.js` (canonical production entry point; exports Express app for Phusion Passenger and executes production startup guards).
 4. Click **Create**.
 5. Once created, copy the virtual environment activation command displayed at the top of the cPanel page (e.g. `source /home/username/nodevenv/mrtumi/22/bin/activate && cd /home/username/mrtumi`).
 

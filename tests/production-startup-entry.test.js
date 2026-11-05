@@ -142,3 +142,19 @@ test('Production Startup Execution: authorized test startup boots on assigned po
     try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch (_e) {}
   }
 });
+
+test('Phusion Passenger Detection: app.js detects PhusionPassenger global and enforces startup guards', () => {
+  const root = path.join(__dirname, '..');
+
+  // Passenger present in test mode without explicit flag must fail-closed
+  const passengerGuarded = spawnSync(process.execPath, [
+    '-e',
+    'global.PhusionPassenger = {}; require("./app.js");'
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+    env: { ...process.env, NODE_ENV: 'test', APP_ALLOW_TEST_STARTUP: '' }
+  });
+  assert.notEqual(passengerGuarded.status, 0);
+  assert.match(passengerGuarded.stderr, /NODE_ENV=test cannot start app\.js without the explicit test-only APP_ALLOW_TEST_STARTUP=true flag/);
+});

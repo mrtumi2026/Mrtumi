@@ -11,12 +11,12 @@
 
 | Subsystem | Scope & Functionality | Verification Level | Acceptance Disposition |
 |---|---|:---:|:---:|
-| **Storefront & Catalog** | Homepage, categories, search suggestions, product details, stock display, bilingual Bangla/English copy | CI & Playwright Browser E2E | **ACCEPTED** |
-| **Customer Portal & Wishlist** | Account registration, profile, wishlist add/remove/view, cart, checkout, order history | CI & Unit Tests | **ACCEPTED** |
-| **Admin Operations** | Dashboard, products, categories, orders, POS, inventory ledger, HR, returns, settings | CI & Playwright Browser E2E | **ACCEPTED** |
-| **Vendor & Reseller Portals** | Multi-vendor onboarding, shop profile, products, sub-orders, withdrawals, reseller margin tracking | CI & Database Integration | **ACCEPTED** |
-| **Courier & Delivery Platform** | Steadfast, Pathao (with token rotation & recovery), RedX, Mock Courier, quote comparison, booking, tracking sync cron | CI & Contract Tests | **ACCEPTED** |
-| **Security & Hardening** | Open redirect prevention (`safeReferrer`), CSRF tokens on all mutations, PII masking, integer paisa math | CI & Security Suites | **ACCEPTED** |
+| **Storefront & Catalog** | Homepage, categories, search suggestions, product details, stock display, bilingual Bangla/English copy | CI & Playwright Browser E2E | **ACCEPTED (Ready for Arena Audit)** |
+| **Customer Portal & Wishlist** | Account registration, profile, wishlist add/remove/view, cart, checkout, order history | CI & Unit Tests | **ACCEPTED (Ready for Arena Audit)** |
+| **Admin Operations** | Dashboard, products, categories, orders, POS, inventory ledger, HR, returns, settings | CI & Playwright Browser E2E | **ACCEPTED (Ready for Arena Audit)** |
+| **Vendor & Reseller Portals** | Multi-vendor onboarding, shop profile, products, sub-orders, withdrawals, reseller margin tracking | CI & Database Integration | **ACCEPTED (Ready for Arena Audit)** |
+| **Courier & Delivery Platform** | Steadfast, Pathao (with AES-256-GCM token rotation, lock mutex & restricted recovery), RedX, Mock Courier, quote comparison, booking, tracking sync cron | CI & Contract Tests | **ACCEPTED (Ready for Arena Audit)** |
+| **Security & Hardening** | Open redirect prevention (`safeReferrer` with same-host `//` reject), CSRF tokens on all mutations, admin credential sanitization, PII masking, integer paisa math | CI & Security Suites | **ACCEPTED (Ready for Arena Audit)** |
 
 ---
 
@@ -41,4 +41,5 @@
 ## 3. Launch Verification Gate
 
 > [!IMPORTANT]
-> In accordance with project instructions, **production deployment remains paused** until Arena independently audits and verifies the remediation on commit HEAD. No live money, production host modifications, or third-party live dispatches have been executed.
+> **Production deployment remains ON HOLD.**
+> All 7 targeted remediation items from Arena's independent audit have been implemented, tested, and verified on branch `antigravity/final-launch-readiness`. In accordance with governance instructions, **production deployment is withheld pending Arena's independent verification**. No live money, production host modifications, live provider API credentials, or third-party live dispatches have been executed.

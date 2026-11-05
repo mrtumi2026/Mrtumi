@@ -8,6 +8,7 @@
 /**
  * Validates and extracts a safe local relative redirect path from a Referer header or returnTo parameter.
  * Strictly blocks external origins, scheme-relative URLs ('//evil.com'), control characters, and backslashes.
+ * Rejects same-host absolute URLs whose extracted pathname begins with '//' or contains protocol-relative evasion.
  *
  * @param {import('express').Request} req - Express request object
  * @param {string} fallback - Safe fallback relative path (e.g. '/contact' or '/')
@@ -30,7 +31,7 @@ function safeReferrer(req, fallback = '/') {
     return safeFallback;
   }
 
-  // Reject protocol-relative URLs (e.g. '//evil.com')
+  // Reject protocol-relative URLs (e.g. '//evil.com' or '///evil.com')
   if (trimmed.startsWith('//')) {
     return safeFallback;
   }
@@ -44,7 +45,11 @@ function safeReferrer(req, fallback = '/') {
       if (parsed.origin !== dummyOrigin) {
         return safeFallback;
       }
-      return `${parsed.pathname}${parsed.search}`;
+      const extractedPath = parsed.pathname;
+      if (!extractedPath || !extractedPath.startsWith('/') || extractedPath.startsWith('//')) {
+        return safeFallback;
+      }
+      return `${extractedPath}${parsed.search}`;
     } catch (_err) {
       return safeFallback;
     }
@@ -60,8 +65,18 @@ function safeReferrer(req, fallback = '/') {
 
     const parsedHost = parsed.host.toLowerCase().trim();
     if (parsedHost === host) {
-      // Same host: strip protocol, credentials, and host, returning only pathname and search query
-      return `${parsed.pathname}${parsed.search}`;
+      const extractedPath = parsed.pathname;
+      // CRITICAL: Reject if extracted path begins with '//' (e.g. 'https://mrtumi.com//evil.com')
+      // as Express res.redirect('//evil.com') treats it as a protocol-relative external redirect.
+      if (
+        !extractedPath ||
+        !extractedPath.startsWith('/') ||
+        extractedPath.startsWith('//') ||
+        /[\r\n\x00-\x1f\\]/.test(extractedPath)
+      ) {
+        return safeFallback;
+      }
+      return `${extractedPath}${parsed.search}`;
     }
   } catch (_err) {
     return safeFallback;
