@@ -55,6 +55,7 @@ test('Admin Courier Management & Operations Security: RBAC, CSRF, and Customer P
 
   // E. Analytics endpoints protection
   assert.ok(adminOrders.includes("router.get('/admin/fulfillment/analytics', requirePermission('orders.manage')"));
+  assert.ok(adminOrders.includes("router.post('/admin/fulfillment/sync-active-tracking', requirePermission('orders.manage'), requireCsrf"));
   const vendorPanel = fsMod.readFileSync(pathMod.join(root, 'src/routes/vendorPanel.js'), 'utf8');
   assert.ok(vendorPanel.includes("router.get('/vendor/fulfillment/analytics'"));
 

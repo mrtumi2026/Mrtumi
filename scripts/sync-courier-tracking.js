@@ -6,23 +6,31 @@
  * synchronizes tracking status, updates fulfillment and sub-order lifecycle states,
  * and records auditable tracking events.
  *
- * Usage: node scripts/sync-courier-tracking.js [--limit=50] [--dry-run]
+ * Scheduling options:
+ * 1. CLI / Cron: node scripts/sync-courier-tracking.js [--limit=100] [--dry-run]
+ * 2. npm script: npm run courier:sync-tracking
+ * 3. Web UI: POST /admin/fulfillment/sync-active-tracking
+ * 4. Programmatic: const { run } = require('./scripts/sync-courier-tracking'); await run();
  */
 
 const { env } = require('../src/config/env');
 const { getPool, closePool } = require('../src/db/mysqlPool');
 const courierRepo = require('../src/repositories/courierIntegrationRepository');
 
-async function run() {
+async function run(opts = {}) {
   const isMysql = env.db.client === 'mysql' || process.env.DB_CLIENT === 'mysql' || Boolean(process.env.MYSQL_TEST_HOST);
   if (!isMysql) {
     console.log('[courier-sync] Skipped: MySQL database required for tracking synchronization.');
-    return { skipped: true };
+    return { skipped: true, total: 0, synchronized: 0, delivered: 0, failedDelivery: 0, returned: 0, cancelled: 0, inTransit: 0, errors: 0 };
   }
 
   const limitArg = process.argv.find((a) => a.startsWith('--limit='));
-  const limit = limitArg ? Math.max(1, parseInt(limitArg.split('=')[1], 10)) : 100;
-  const isDryRun = process.argv.includes('--dry-run');
+  const limit = opts.limit !== undefined && opts.limit !== null
+    ? Math.max(1, Number(opts.limit))
+    : (limitArg ? Math.max(1, parseInt(limitArg.split('=')[1], 10)) : 100);
+
+  const isDryRun = opts.isDryRun !== undefined ? Boolean(opts.isDryRun) : process.argv.includes('--dry-run');
+  const shouldClose = opts.shouldClosePool !== undefined ? Boolean(opts.shouldClosePool) : (require.main === module);
 
   const pool = getPool();
   console.log(`[courier-sync] Starting tracking sync runner (limit: ${limit}, dry-run: ${isDryRun})...`);
@@ -83,12 +91,14 @@ async function run() {
   }
 
   console.log('[courier-sync] Summary:', JSON.stringify(stats, null, 2));
-  await closePool();
+  if (shouldClose) {
+    await closePool();
+  }
   return stats;
 }
 
 if (require.main === module) {
-  run().catch((err) => {
+  run({ shouldClosePool: true }).catch((err) => {
     console.error('[courier-sync] Fatal error:', err);
     process.exit(1);
   });

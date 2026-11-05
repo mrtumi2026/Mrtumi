@@ -199,6 +199,17 @@ router.get('/admin/fulfillment/analytics', requirePermission('orders.manage'), a
   return res.json({ success: true, analytics });
 }));
 
+// Trigger immediate active shipments tracking synchronization runner
+router.post('/admin/fulfillment/sync-active-tracking', requirePermission('orders.manage'), requireCsrf, asyncHandler(async (req, res) => {
+  const syncRunner = require('../../scripts/sync-courier-tracking');
+  const result = await syncRunner.run({ limit: Number(req.body.limit || 50), shouldClosePool: false });
+  if (req.accepts('json') && !req.body.redirect) {
+    return res.json({ success: true, result });
+  }
+  req.flash('success', `Active shipment tracking synchronized: ${result.synchronized} updated, ${result.delivered} delivered, ${result.failedDelivery} failed, ${result.returned} returned.`);
+  return res.redirect('/admin/fulfillment/ambiguous-shipments?status=all');
+}));
+
 function generateInvoiceId() {
   for (let i = 0; i < 10; i++) {
     const code = String(Math.floor(10000 + Math.random() * 90000));

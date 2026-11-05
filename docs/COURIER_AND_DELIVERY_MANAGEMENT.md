@@ -157,10 +157,48 @@ Super Admins access the centralized monitoring dashboard at `/admin/fulfillment/
   - Allows recording courier remittance reference, collected paisa, courier fee, and COD service fee.
   - Verifies amounts against `cod_due_paisa`.
   - Automatically marks parent order as `payment_status = 'paid'` when all shipments for the order are reconciled.
+  - Computes and records courier fee variance (`feeVariancePaisa = courierFee - quotedChargePaisa`) to ensure billing transparency between quoted tariff and final courier invoice deductions.
+- **On-Demand Tracking Synchronization:**
+  - One-click trigger in the top toolbar (`POST /admin/fulfillment/sync-active-tracking`) invokes the tracking synchronization runner across active parcels without needing shell/SSH access.
 
 ---
 
-## 7. Database Migration & Rollback Safety (Migration 0029)
+## 7. Scheduled Courier Tracking Synchronization Runner & Monitoring
+
+A dedicated background runner (`scripts/sync-courier-tracking.js`) polls courier APIs to synchronize live shipment statuses for active parcels (`ready_for_pickup`, `in_transit`) that have already been booked with carrier consignment IDs.
+
+### 1. Execution Methods:
+- **cPanel / Linux Crontab (Recommended production schedule):**
+  ```cron
+  # Poll active courier shipments every 15 minutes (non-blocking)
+  */15 * * * * cd /home/username/mrtumi && /usr/local/bin/node scripts/sync-courier-tracking.js --limit=100 >> /home/username/logs/courier-sync.log 2>&1
+  ```
+- **NPM Package Script:**
+  ```bash
+  npm run courier:sync-tracking
+  ```
+- **Admin Operations Center UI:**
+  Super Admins can trigger immediate synchronization on demand via the **Sync Active Tracking** button at `/admin/fulfillment/ambiguous-shipments`.
+- **Dry-run Mode:**
+  ```bash
+  node scripts/sync-courier-tracking.js --dry-run
+  ```
+
+### 2. State Machine Transitions Handled:
+- **`in_transit`:** Records `picked_up_at = UTC_TIMESTAMP()`, transitions sub-order to `in_transit`, and logs audit event.
+- **`delivered`:** Records `delivered_at = UTC_TIMESTAMP()`, transitions sub-order to `delivered`, logs audit event, and synchronizes parent order status via `vendorOrderRepository.syncParentStatus`.
+- **`failed_delivery`:** Records `failed_delivery_at = UTC_TIMESTAMP()`, updates shipment status, and logs audit event for customer support follow-up.
+- **`returned` (RTO):** Records `returned_at = UTC_TIMESTAMP()`, updates sub-order, logs audit event, and synchronizes parent order.
+- **`cancelled`:** Records `cancelled_at = UTC_TIMESTAMP()`, updates shipment status, and logs event.
+
+### 3. Monitoring & Heartbeat Contract:
+- Every execution logs structured JSON summary: `{ total, synchronized, delivered, failedDelivery, returned, cancelled, inTransit, errors }`.
+- Each updated shipment generates an immutable record in `fulfillment_shipment_events` (`event_type: 'status_sync'`).
+- In accordance with Phase F Operations policy, timers are **not** placed in the Express web server process. Scheduling is managed externally via host cron or administrative triggers to ensure multi-process scalability.
+
+---
+
+## 8. Database Migration & Rollback Safety (Migration 0029)
 
 - **Migration Up:** `0029_multi_courier_engine.up.sql`
   - Adds `quoted_charge_paisa`, `booking_idempotency_key`, `recommendation_snapshot_json`, `booking_response_json`, `external_consignment_id` to `fulfillment_shipments`.
@@ -173,7 +211,7 @@ Super Admins access the centralized monitoring dashboard at `/admin/fulfillment/
 
 ---
 
-## 8. Known Limitations & Owner Decisions Required
+## 9. Known Limitations & Owner Decisions Required
 
 1. **Production Carrier Credentials:**
    - Live booking with Steadfast, Pathao, or RedX requires valid merchant credentials (API Key, Secret Key, Client ID) configured in `/admin/courierapi/manage`.

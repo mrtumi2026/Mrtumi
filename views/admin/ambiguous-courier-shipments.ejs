@@ -11,6 +11,12 @@
         <p class="text-muted mb-0"><%= locale === 'bn' ? 'নেটওয়ার্ক টাইমআউট বা অস্পষ্ট পার্সেল বুকিংয়ের অবস্থা, বয়স ও নিরাপদ রিকনসিলিয়েশন' : 'Track and safely reconcile parcels left in ambiguous states after courier network timeouts' %></p>
       </div>
       <div class="d-flex gap-2">
+        <form action="/admin/fulfillment/sync-active-tracking" method="POST" class="d-inline">
+          <input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>" />
+          <button type="submit" class="btn btn-sm btn-outline-primary" title="<%= locale === 'bn' ? 'সক্রিয় পার্সেলের ট্র্যাকিং স্বয়ংক্রিয় সিঙ্ক করুন' : 'Synchronize active parcel tracking with couriers' %>">
+            <i class="bi bi-arrow-repeat"></i> <%= locale === 'bn' ? 'সক্রিয় ট্র্যাকিং সিঙ্ক' : 'Sync Active Tracking' %>
+          </button>
+        </form>
         <a href="/admin/reseller-commerce" class="btn btn-sm btn-outline-secondary">
           <i class="bi bi-arrow-left"></i> <%= locale === 'bn' ? 'রিসেলার কমার্স' : 'Reseller Commerce' %>
         </a>
