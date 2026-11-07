@@ -216,6 +216,12 @@ async function createOrder(input,options={}){
       for(const item of subOrder.items)await tx.execute('INSERT INTO vendor_sub_order_items(vendor_sub_order_id,order_item_id,quantity) VALUES(?,?,?)',[insertedSubOrder.insertId,item.orderItemId,item.quantity]);
     }
     await tx.execute("INSERT INTO order_status_history (order_id,from_status,to_status,note,changed_by_user_id) VALUES (?,'','pending','Customer checkout submitted',NULL)",[order.insertId]);
+    const { splitOrderByVendor } = require('../services/splitOrderService');
+    await splitOrderByVendor(Number(order.insertId), {
+      gatewayCode: paymentMethod,
+      actor: { type: 'customer', id: customerId || null },
+      tx,
+    });
     // Reserve only after the durable order and lines exist, in this same transaction.
     await lifecycle.reserveOrderInventoryTx(tx,Number(order.insertId),{type:'system'});
     if(coupon.code)await tx.execute('UPDATE coupons SET used_count=used_count+1 WHERE code=?',[coupon.code]);

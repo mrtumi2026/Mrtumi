@@ -38,6 +38,18 @@ const storefrontRoutes = require('./src/routes/storefront');
 const customerAccountRoutes = require('./src/routes/customerAccount');
 const phase08AdminRoutes = require('./src/routes/phase08Admin');
 const d7AdminRoutes = require('./src/routes/d7Admin');
+const paymentRoutes = require('./src/routes/paymentRoutes');
+const logisticsRoutes = require('./src/routes/logisticsRoutes');
+const { createSecurityHeaders } = require('./src/middleware/securityHeaders');
+const { corsMiddleware } = require('./src/middleware/corsConfig');
+const { sanitizeRequestMiddleware } = require('./src/middleware/validator');
+
+let compression;
+try {
+  compression = require('compression');
+} catch {
+  compression = null;
+}
 
 // Initialize local SQLite prototype ONLY in non-production when DB_CLIENT=sqlite.
 // Production strictly uses MySQL via versioned migrations (`npm run migrate:up`).
@@ -53,6 +65,9 @@ app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.locals.mysqlCheckoutEnabled = env.db.client === 'mysql';
 
+// Security Headers (Helmet CSP, HSTS, X-Content-Type-Options)
+app.use(createSecurityHeaders());
+
 // Allow embedding in Arena live preview iframes in non-production environments
 if (!env.isProduction) {
   app.use((_req, res, next) => {
@@ -61,9 +76,17 @@ if (!env.isProduction) {
   });
 }
 
+// CORS & Webhook Bypass
+app.use(corsMiddleware);
+
+// HTTP Response Compression
+if (compression) {
+  app.use(compression());
+}
 app.use(attachRequestId);
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(express.json({ limit: '10mb' }));
+app.use(sanitizeRequestMiddleware);
 app.use(express.static(path.join(__dirname, 'public')));
 // Keep uploaded admin images reachable when UPLOAD_DIR points outside the disposable app release.
 // The default local path is also under public/, so this is only a fallback there.
@@ -103,6 +126,8 @@ app.use(vendorPanelRoutes);
 app.use(resellerPanelRoutes);
 app.use(adminResellerCommerceRoutes);
 app.use(customerAccountRoutes);
+app.use(paymentRoutes);
+app.use(logisticsRoutes);
 app.use(storefrontRoutes);
 
 // 404 Handler (JSON envelope for API paths, HTML/redirects for portal paths)
