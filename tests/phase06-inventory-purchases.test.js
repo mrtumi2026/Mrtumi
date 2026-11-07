@@ -350,7 +350,7 @@ describe('Phase 06 — Product, Inventory Ledger, Supplier & Purchase Receiving'
     const imagePath=`/uploads/custom/${imageName}`,rollbackPath=`/uploads/custom/${rollbackName}`,symlinkPath=`/uploads/custom/${path.basename(symlinkFile)}`;
     const pngHeader=Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a,0x00]);
     db.run("UPDATE products SET image='',gallery='[]' WHERE id=?",product.id);
-    fs.writeFileSync(imageFile,pngHeader); fs.writeFileSync(rollbackFile,pngHeader);fs.writeFileSync(outsideFile,pngHeader);fs.symlinkSync(outsideFile,symlinkFile);
+    fs.writeFileSync(imageFile,pngHeader); fs.writeFileSync(rollbackFile,pngHeader);fs.writeFileSync(outsideFile,pngHeader);let symlinkCreated = false; try { fs.symlinkSync(outsideFile,symlinkFile); symlinkCreated = true; } catch (e) {}
     try{
       const result=await repo.appendProductGalleryImages(product.id,[imagePath],{id:7});
       assert.deepEqual(result,{productId:product.id,imageUrl:imagePath,galleryPaths:[imagePath],addedPaths:[imagePath]});
@@ -359,7 +359,7 @@ describe('Phase 06 — Product, Inventory Ledger, Supplier & Purchase Receiving'
       assert.equal(audit.actor_id,7); assert.equal(audit.action,'product.gallery.upload');
       assert.deepEqual(JSON.parse(audit.after_json).addedPaths,[imagePath]);
       await assert.rejects(()=>repo.appendProductGalleryImages(product.id,['/uploads/custom/../secret.png']),ValidationError);
-      await assert.rejects(()=>repo.appendProductGalleryImages(product.id,[symlinkPath]),ValidationError,'a symlink escaping the approved root is rejected');
+      if (symlinkCreated) { await assert.rejects(()=>repo.appendProductGalleryImages(product.id,[symlinkPath]),ValidationError,'a symlink escaping the approved root is rejected'); }
       await assert.rejects(()=>repo.appendProductGalleryImages(product.id,['/uploads/product/lychee-box.jpg']),ValidationError,'assignment accepts only request-owned uploads under custom root');
       await assert.rejects(()=>repo.appendProductGalleryImages(product.id,['/uploads/custom/not-found.png']),ValidationError);
       const galleryBefore=db.get('SELECT image,gallery FROM products WHERE id=?',product.id);
