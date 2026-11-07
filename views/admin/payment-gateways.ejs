@@ -1,4 +1,4 @@
-<%- include('partials/head', { title: 'Payment Gateways' }) %>
+<%- include('partials/head', { title: 'Payment Gateways — Dynamic MFS & COD' }) %>
 <%- include('partials/topbar') %>
 <%- include('partials/sidebar') %>
 <div class="content-page">
@@ -6,51 +6,114 @@
     <div class="container-fluid py-3">
       <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-4">
         <div>
-          <h1 class="h3 fw-bold mb-1">Payment Gateways</h1>
-          <p class="text-muted mb-0">Manage COD and manual MFS receiving details shown to customers at checkout.</p>
+          <h1 class="h3 fw-bold mb-1">Bangladesh MFS &amp; COD Payment Channels</h1>
+          <p class="text-muted mb-0">Manage automatic API gateways and manual Send Money channels with real-time checkout activation.</p>
         </div>
-        <span class="badge bg-light text-dark border"><%= rows.length %> gateways</span>
+        <div class="d-flex align-items-center gap-2">
+          <span class="badge bg-primary fs-6"><%= rows.length %> Channels Configured</span>
+        </div>
       </div>
 
       <% if (!rows.length) { %>
-        <div class="alert alert-info">No payment gateways are configured yet.</div>
+        <div class="alert alert-info">No payment gateways are configured yet. Run migrations to initialize channels.</div>
       <% } %>
 
-      <div class="row g-3">
+      <div class="row g-4">
         <% rows.forEach(function(gateway) {
-          const isManual = gateway.gateway_type === 'manual';
-          const brand = String(gateway.code || '').replace(/^manual_/, '').toLowerCase();
-          const isMfs = isManual && ['bkash', 'nagad', 'rocket'].includes(brand);
-          const heading = gateway.code === 'cod' ? 'Cash on Delivery (COD)' : (isMfs ? (brand === 'bkash' ? 'bKash' : brand.charAt(0).toUpperCase() + brand.slice(1)) : gateway.name);
+          const isManual = gateway.mode === 'manual' || gateway.gateway_type === 'manual';
+          const isActive = Number(gateway.is_active !== undefined ? gateway.is_active : gateway.status) === 1;
+          const isAuto = !isManual;
         %>
           <div class="col-12 col-xl-6">
-            <section class="card h-100 shadow-sm border-0">
-              <div class="card-header bg-white d-flex align-items-center justify-content-between gap-2">
+            <section class="card h-100 shadow-sm border <%= isActive ? 'border-success' : 'border-light' %>">
+              <div class="card-header bg-white d-flex align-items-center justify-content-between gap-2 py-3">
                 <div>
-                  <h2 class="h5 fw-bold mb-1"><%= heading %></h2>
-                  <div class="small text-muted">Code: <code><%= gateway.code %></code> · <%= isManual ? 'Manual payment' : 'Automatic / COD' %></div>
+                  <div class="d-flex align-items-center gap-2">
+                    <h2 class="h5 fw-bold mb-0"><%= gateway.name %></h2>
+                    <span class="badge <%= isAuto ? 'bg-info text-dark' : 'bg-warning text-dark' %>">
+                      <%= isAuto ? '⚡ Auto API' : '📱 Manual MFS' %>
+                    </span>
+                  </div>
+                  <div class="small text-muted mt-1">Code: <code><%= gateway.code %></code></div>
                 </div>
-                <span class="badge <%= Number(gateway.status) === 1 ? 'bg-success' : 'bg-secondary' %>"><%= Number(gateway.status) === 1 ? 'Active' : 'Inactive' %></span>
+
+                <div class="d-flex align-items-center gap-2">
+                  <span class="badge <%= isActive ? 'bg-success' : 'bg-secondary' %>">
+                    <%= isActive ? 'Active' : 'Inactive' %>
+                  </span>
+                  <form method="POST" action="/admin/settings/payments/<%= gateway.id %>/toggle" class="d-inline">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <button type="submit" class="btn btn-sm <%= isActive ? 'btn-outline-danger' : 'btn-outline-success' %>">
+                      <%= isActive ? 'Turn Off' : 'Turn On' %>
+                    </button>
+                  </form>
+                </div>
               </div>
+
               <div class="card-body">
                 <form method="POST" action="/admin/payment-gateways/<%= gateway.id %>/update" class="gateway-update-form">
                   <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
                   <div class="mb-3">
-                    <label class="form-label fw-semibold" for="gateway-account-<%= gateway.id %>">Receiving Account Number</label>
-                    <input id="gateway-account-<%= gateway.id %>" name="account_number" type="text" class="form-control" maxlength="100" value="<%= gateway.account_number || '' %>" placeholder="017XXXXXXXX" autocomplete="off" <%= isMfs ? 'aria-describedby="gateway-account-help-' + gateway.id + '"' : '' %>>
-                    <% if (isMfs) { %><div id="gateway-account-help-<%= gateway.id %>" class="form-text">Customers will see this account after selecting <%= heading %>.</div><% } else if (gateway.code === 'cod') { %><div class="form-text">Optional for Cash on Delivery.</div><% } %>
+                    <label class="form-label fw-semibold" for="gateway-account-<%= gateway.id %>">
+                      Receiving Wallet / Account Number
+                    </label>
+                    <input id="gateway-account-<%= gateway.id %>" name="account_number" type="text"
+                           class="form-control" maxlength="100" value="<%= gateway.account_number || '' %>"
+                           placeholder="017XXXXXXXX" autocomplete="off">
+                    <div class="form-text"><%= isManual ? 'Customers will see this wallet number at checkout.' : 'Optional for automated API channels.' %></div>
                   </div>
+
                   <div class="mb-3">
-                    <label class="form-label fw-semibold" for="gateway-instructions-<%= gateway.id %>">Customer Instructions</label>
-                    <textarea id="gateway-instructions-<%= gateway.id %>" name="instructions" class="form-control" rows="3" maxlength="4000" placeholder="Send Money (Personal) to 017XXXXXXXX and enter your sender number and TrxID."><%= gateway.instructions || '' %></textarea>
-                    <% if (isMfs) { %><div class="form-text">Instructions and account details are displayed when this method is selected at checkout.</div><% } %>
+                    <label class="form-label fw-semibold" for="gateway-instructions-bn-<%= gateway.id %>">
+                      Bengali Customer Instructions (চেকআউট নির্দেশনা)
+                    </label>
+                    <textarea id="gateway-instructions-bn-<%= gateway.id %>" name="instructions_bn"
+                              class="form-control" rows="2" maxlength="4000"
+                              placeholder="আমাদের বিকাশ নম্বরে Send Money করুন এবং নিচের ঘরে আপনার বিকাশ নম্বর ও TrxID লিখুন।"><%= gateway.instructions_bn || gateway.instructions || '' %></textarea>
+                    <div class="form-text">Displayed in Bengali on customer checkout when this channel is selected.</div>
                   </div>
-                  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
-                    <div class="flex-grow-1" style="max-width:220px;">
-                      <label class="form-label fw-semibold" for="gateway-status-<%= gateway.id %>">Status</label>
-                      <select id="gateway-status-<%= gateway.id %>" name="status" class="form-select" required>
-                        <option value="1" <%= Number(gateway.status) === 1 ? 'selected' : '' %>>Active</option>
-                        <option value="0" <%= Number(gateway.status) !== 1 ? 'selected' : '' %>>Inactive</option>
+
+                  <div class="mb-3">
+                    <label class="form-label fw-semibold" for="gateway-instructions-<%= gateway.id %>">
+                      English Customer Instructions
+                    </label>
+                    <textarea id="gateway-instructions-<%= gateway.id %>" name="instructions"
+                              class="form-control" rows="2" maxlength="4000"
+                              placeholder="English checkout instructions..."><%= gateway.instructions || '' %></textarea>
+                  </div>
+
+                  <% if (isAuto) { %>
+                    <div class="mb-3">
+                      <label class="form-label fw-semibold" for="gateway-creds-<%= gateway.id %>">
+                        API Credentials / Keys (JSON or Secrets Override)
+                      </label>
+                      <textarea id="gateway-creds-<%= gateway.id %>" name="api_credentials"
+                                class="form-control font-monospace small" rows="2"
+                                placeholder='{"app_key": "...", "app_secret": "..."}'><%= gateway.api_credentials || '' %></textarea>
+                      <div class="form-text">Leave blank to use default production .env variables.</div>
+                    </div>
+                  <% } %>
+
+                  <div class="row g-2 mb-3">
+                    <div class="col-6">
+                      <label class="form-label small fw-semibold" for="gateway-min-<%= gateway.id %>">Min Order (paisa)</label>
+                      <input id="gateway-min-<%= gateway.id %>" name="min_order_paisa" type="number"
+                             class="form-control form-control-sm" value="<%= gateway.min_order_paisa || 0 %>">
+                    </div>
+                    <div class="col-6">
+                      <label class="form-label small fw-semibold" for="gateway-max-<%= gateway.id %>">Max Order (paisa)</label>
+                      <input id="gateway-max-<%= gateway.id %>" name="max_order_paisa" type="number"
+                             class="form-control form-control-sm" value="<%= gateway.max_order_paisa || '' %>" placeholder="Unlimited">
+                    </div>
+                  </div>
+
+                  <div class="d-flex justify-content-between align-items-center pt-2 border-top">
+                    <div style="max-width: 180px;">
+                      <label class="form-label small fw-semibold mb-1" for="gateway-status-<%= gateway.id %>">Status</label>
+                      <select id="gateway-status-<%= gateway.id %>" name="status" class="form-select form-select-sm" required>
+                        <option value="1" <%= isActive ? 'selected' : '' %>>Active</option>
+                        <option value="0" <%= !isActive ? 'selected' : '' %>>Inactive</option>
                       </select>
                     </div>
                     <button type="submit" class="btn btn-success mt-auto">Save Changes</button>

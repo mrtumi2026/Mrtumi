@@ -1,15 +1,15 @@
 'use strict';
 
 /**
- * Payment Controller
- * ==================
- * Production orchestrator connecting browser checkout with gateways,
- * executing server-to-server verification, and processing callbacks safely.
+ * Payment Controller — Dynamic Bangladesh MFS Dual-Mode
+ * ======================================================
+ * Supports programmatic API checkout (bKash, Nagad, Rocket) and
+ * manual TrxID verification workflows with immutable double-entry ledger settlement.
  */
 
 const bkash = require('../services/gateways/bkashService');
-const shurjopay = require('../services/gateways/shurjopayService');
-const uddoktapay = require('../services/gateways/uddoktapayService');
+const nagad = require('../services/gateways/nagadService');
+const rocket = require('../services/gateways/rocketService');
 const webhookService = require('../services/paymentWebhookService');
 const codGuard = require('../services/codGuardService');
 const mysql = require('../db/mysqlPool');
@@ -18,12 +18,12 @@ const { env } = require('../config/env');
 const { logger } = require('../utils/logger');
 
 /**
- * Initiates an automated payment gateway session for an existing order.
+ * Initiates an automated payment gateway session or processes manual selection.
  * POST /payment/initiate/:gateway
  */
 async function initiatePayment(req, res, next) {
   try {
-    const gateway = String(req.params.gateway || '').toLowerCase();
+    const gateway = String(req.params.gateway || '').toLowerCase().trim();
     const orderId = Number(req.body.order_id);
 
     if (!Number.isSafeInteger(orderId) || orderId < 1) {
@@ -44,8 +44,8 @@ async function initiatePayment(req, res, next) {
 
     const amountToCharge = Number(order.cod_due_paisa) > 0 ? Number(order.cod_due_paisa) : Number(order.total_paisa);
 
-    // 1. bKash Tokenized
-    if (gateway === 'bkash' || gateway === 'bkash_tokenized') {
+    // 1. bKash Automated API Mode
+    if (['bkash', 'bkash_api', 'bkash_tokenized'].includes(gateway)) {
       const callbackUrl = `${env.appUrl}/payment/bkash/callback?order_id=${orderId}`;
       const session = await bkash.createPayment({
         orderId,
@@ -57,59 +57,45 @@ async function initiatePayment(req, res, next) {
       return res.redirect(session.bkashURL);
     }
 
-    // 2. ShurjoPay
-    if (gateway === 'shurjopay') {
-      const returnUrl = `${env.appUrl}/payment/shurjopay/callback?order_id=${orderId}`;
-      const cancelUrl = `${env.appUrl}/checkout?cancelled=1&order_id=${orderId}`;
-
-      const session = await shurjopay.initiatePayment({
+    // 2. Nagad Automated API Mode
+    if (['nagad', 'nagad_api'].includes(gateway)) {
+      const callbackUrl = `${env.appUrl}/payment/nagad/callback?order_id=${orderId}`;
+      const session = await nagad.createPayment({
         orderId,
-        invoiceNo: order.invoice_no,
         amountPaisa: amountToCharge,
-        customer: {
-          name: order.customer_name,
-          phone: order.customer_phone,
-          address: order.shipping_address,
-          city: order.district,
-        },
-        returnUrl,
-        cancelUrl,
-        clientIp: req.ip || '127.0.0.1',
+        customerPhone: order.customer_phone,
+        callbackUrl,
       });
 
-      return res.redirect(session.checkoutUrl);
+      return res.redirect(session.redirectUrl);
     }
 
-    // 3. UddoktaPay
-    if (gateway === 'uddoktapay') {
-      const redirectUrl = `${env.appUrl}/payment/uddoktapay/callback?order_id=${orderId}`;
-      const cancelUrl = `${env.appUrl}/checkout?cancelled=1&order_id=${orderId}`;
-      const webhookUrl = `${env.appUrl}/webhooks/uddoktapay`;
-
-      const session = await uddoktapay.createPayment({
+    // 3. Rocket Automated API Mode
+    if (['rocket', 'rocket_api'].includes(gateway)) {
+      const callbackUrl = `${env.appUrl}/payment/rocket/callback?order_id=${orderId}`;
+      const session = await rocket.createPayment({
         orderId,
-        invoiceNo: order.invoice_no,
         amountPaisa: amountToCharge,
-        customer: {
-          name: order.customer_name,
-          phone: order.customer_phone,
-        },
-        redirectUrl,
-        cancelUrl,
-        webhookUrl,
+        customerPhone: order.customer_phone,
+        callbackUrl,
       });
 
-      return res.redirect(session.paymentUrl);
+      return res.redirect(session.redirectUrl);
     }
 
-    throw new ValidationError(`Unsupported online gateway: ${gateway}`);
+    // 4. Manual MFS Modes (bKash Manual, Nagad Manual, Rocket Manual, COD)
+    if (['bkash_manual', 'nagad_manual', 'rocket_manual', 'cod', 'manual_bkash', 'manual_nagad', 'manual_rocket'].includes(gateway)) {
+      return res.redirect(`/order-success?invoice=${encodeURIComponent(order.invoice_no)}&manual=1`);
+    }
+
+    throw new ValidationError(`Unsupported payment gateway code: ${gateway}`);
   } catch (err) {
     next(err);
   }
 }
 
 /**
- * Handles bKash redirect callback after customer completes authentication in bKash frame.
+ * Handles bKash return callback.
  * GET /payment/bkash/callback
  */
 async function bkashCallback(req, res, next) {
@@ -119,7 +105,7 @@ async function bkashCallback(req, res, next) {
     const orderId = Number(req.query.order_id);
 
     if (status === 'cancel' || status === 'failure') {
-      logger.warn({ event: 'bkash_payment_cancelled_or_failed', status, orderId, paymentID });
+      logger.warn('bKash payment cancelled or failed', { status, orderId, paymentID });
       return res.redirect(`/checkout?error=Payment+was+${status}&order_id=${orderId}`);
     }
 
@@ -127,21 +113,18 @@ async function bkashCallback(req, res, next) {
       throw new ValidationError('bKash callback reported invalid payment outcome.');
     }
 
-    // Process payment execution via Idempotent Webhook Engine
     await webhookService.processWebhookEvent({
-      gatewayCode: 'bkash_tokenized',
+      gatewayCode: 'bkash_api',
       eventType: 'callback',
       uniqueEventId: paymentID,
       headers: req.headers,
       payload: req.query,
       clientIp: req.ip,
       handlerFn: async (tx) => {
-        // Execute payment with bKash server
         const execution = await bkash.executePayment(paymentID);
 
-        // Mark order and vendor sub-orders as settled
         await webhookService.settleOrderPayment(tx, orderId, {
-          gatewayCode: 'bkash_tokenized',
+          gatewayCode: 'bkash_api',
           paymentId: execution.paymentID,
           trxId: execution.trxID,
           amountPaisa: execution.amountPaisa,
@@ -163,35 +146,38 @@ async function bkashCallback(req, res, next) {
 }
 
 /**
- * Handles ShurjoPay return callback.
- * ALL /payment/shurjopay/callback
+ * Handles Nagad return callback / IPN.
+ * GET/POST /payment/nagad/callback
  */
-async function shurjopayCallback(req, res, next) {
+async function nagadCallback(req, res, next) {
   try {
-    const spOrderId = String(req.query.sp_order_id || req.body.sp_order_id || req.query.order_id || req.body.order_id || '').trim();
-    const orderId = Number(req.query.order_id || req.body.value1 || 0);
+    const paymentRefId = String(req.query.payment_ref_id || req.body.payment_ref_id || req.query.paymentRefId || '').trim();
+    const orderId = Number(req.query.order_id || req.body.order_id || 0);
+    const status = String(req.query.status || req.body.status || '').toLowerCase();
 
-    if (!spOrderId) throw new ValidationError('ShurjoPay sp_order_id missing from callback.');
+    if (status === 'aborted' || status === 'failed') {
+      logger.warn('Nagad payment declined or aborted', { status, orderId, paymentRefId });
+      return res.redirect(`/checkout?error=Payment+was+${status}&order_id=${orderId}`);
+    }
+
+    if (!paymentRefId) {
+      throw new ValidationError('Nagad payment reference is missing from callback.');
+    }
 
     await webhookService.processWebhookEvent({
-      gatewayCode: 'shurjopay',
+      gatewayCode: 'nagad_api',
       eventType: 'callback',
-      uniqueEventId: spOrderId,
+      uniqueEventId: paymentRefId,
       headers: req.headers,
       payload: { ...req.query, ...req.body },
       clientIp: req.ip,
       handlerFn: async (tx) => {
-        const verified = await shurjopay.verifyPayment(spOrderId);
+        const verified = await nagad.verifyPayment({ paymentRefId });
 
-        if (!verified.isSuccess) {
-          throw new AppError('SHURJOPAY_DECLINED', `ShurjoPay declined: ${verified.spMessage}`, 400);
-        }
-
-        const targetOrderId = orderId || verified.orderId;
-        await webhookService.settleOrderPayment(tx, targetOrderId, {
-          gatewayCode: 'shurjopay',
-          paymentId: verified.spOrderId,
-          trxId: verified.bankTrxId,
+        await webhookService.settleOrderPayment(tx, orderId, {
+          gatewayCode: 'nagad_api',
+          paymentId: verified.paymentId,
+          trxId: verified.trxId,
           amountPaisa: verified.amountPaisa,
           rawResponse: verified.raw,
         });
@@ -200,41 +186,41 @@ async function shurjopayCallback(req, res, next) {
       },
     });
 
-    return res.redirect(`/order-success?sp_order=${encodeURIComponent(spOrderId)}&paid=1`);
+    const pool = mysql.getPool();
+    const [orders] = await pool.query('SELECT invoice_no FROM orders WHERE id = ?', [orderId]);
+    const invoiceNo = orders[0]?.invoice_no || orderId;
+
+    return res.redirect(`/order-success?invoice=${encodeURIComponent(invoiceNo)}&paid=1`);
   } catch (err) {
     next(err);
   }
 }
 
 /**
- * Handles UddoktaPay IPN / Webhook callback.
- * POST /webhooks/uddoktapay
+ * Handles DBBL Rocket return callback.
+ * GET/POST /payment/rocket/callback
  */
-async function uddoktapayWebhook(req, res) {
+async function rocketCallback(req, res, next) {
   try {
-    const invoiceId = req.body.invoice_id || req.body.metadata?.invoice_id;
-    if (!invoiceId) {
-      return res.status(400).json({ error: 'Missing invoice_id' });
-    }
+    const paymentId = String(req.query.payment_id || req.body.payment_id || '').trim();
+    const orderId = Number(req.query.order_id || req.body.order_id || 0);
 
-    const result = await webhookService.processWebhookEvent({
-      gatewayCode: 'uddoktapay',
-      eventType: 'webhook',
-      uniqueEventId: String(invoiceId),
+    if (!paymentId) throw new ValidationError('Rocket payment ID is missing from callback.');
+
+    await webhookService.processWebhookEvent({
+      gatewayCode: 'rocket_api',
+      eventType: 'callback',
+      uniqueEventId: paymentId,
       headers: req.headers,
-      payload: req.body,
+      payload: { ...req.query, ...req.body },
       clientIp: req.ip,
       handlerFn: async (tx) => {
-        const verified = await uddoktapay.verifyPayment(invoiceId);
+        const verified = await rocket.verifyPayment({ paymentId });
 
-        if (!verified.isSuccess) {
-          throw new AppError('UDDOKTAPAY_NOT_COMPLETED', 'Payment verification was not completed.', 400);
-        }
-
-        await webhookService.settleOrderPayment(tx, verified.orderId, {
-          gatewayCode: 'uddoktapay',
-          paymentId: verified.invoiceId,
-          trxId: verified.transactionId,
+        await webhookService.settleOrderPayment(tx, orderId, {
+          gatewayCode: 'rocket_api',
+          paymentId: verified.paymentId,
+          trxId: verified.trxId,
           amountPaisa: verified.amountPaisa,
           rawResponse: verified.raw,
         });
@@ -243,10 +229,13 @@ async function uddoktapayWebhook(req, res) {
       },
     });
 
-    return res.status(200).json({ success: true, replayed: result.isReplay });
+    const pool = mysql.getPool();
+    const [orders] = await pool.query('SELECT invoice_no FROM orders WHERE id = ?', [orderId]);
+    const invoiceNo = orders[0]?.invoice_no || orderId;
+
+    return res.redirect(`/order-success?invoice=${encodeURIComponent(invoiceNo)}&paid=1`);
   } catch (err) {
-    logger.error({ event: 'uddoktapay_webhook_error', error: err.message });
-    return res.status(err.statusCode || 500).json({ error: err.message });
+    next(err);
   }
 }
 
@@ -273,7 +262,7 @@ async function verifyCodEligibility(req, res, next) {
 module.exports = {
   initiatePayment,
   bkashCallback,
-  shurjopayCallback,
-  uddoktapayWebhook,
+  nagadCallback,
+  rocketCallback,
   verifyCodEligibility,
 };

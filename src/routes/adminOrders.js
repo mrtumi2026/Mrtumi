@@ -420,6 +420,21 @@ router.post('/admin/order/:id/status', asyncHandler(async (req,res)=>{
   req.flash('success','অর্ডার স্ট্যাটাস পরিবর্তন হয়েছে।');
   return res.redirect(`/admin/order/view/${req.params.id}`);
 }));
+router.post(['/admin/order/:id/verify-payment', '/admin/orders/:id/verify-payment'], asyncHandler(async (req, res, next) => {
+  const adminPaymentGatewayRepository = require('../repositories/adminPaymentGatewayRepository');
+  const actor = orderActor(req);
+  try {
+    const result = await adminPaymentGatewayRepository.verifyManualOrderPayment(req.params.id, actor);
+    if (req.accepts('json') && !req.headers['content-type']?.includes('form')) {
+      return res.json({ success: true, message: 'Payment successfully verified.', ...result });
+    }
+    req.flash('success', `Payment for Order #${req.params.id} successfully verified and confirmed.`);
+    return res.redirect(req.get('Referrer') || `/admin/order/view/${req.params.id}`);
+  } catch (err) {
+    if (handleOrderMutationError(err, req, res, req.get('Referrer') || `/admin/order/view/${req.params.id}`)) return;
+    return next(err);
+  }
+}));
 
 router.post('/admin/order/status-quick', asyncHandler(async (req, res) => {
   if(env.db.client==='mysql'){

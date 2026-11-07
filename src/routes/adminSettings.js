@@ -441,17 +441,42 @@ router.post('/admin/banner/delete/:id', asyncHandler(async (req,res)=>{
   res.redirect('/admin/banner/manage');
 }));
 
-// Canonical payment gateway management for COD and configured manual MFS methods.
-router.get('/admin/payment-gateways',asyncHandler(async(_req,res)=>{
-  const rows=await adminPaymentGatewayRepository.listPaymentGateways();
-  return res.render('admin/payment-gateways',{rows});
+// Canonical payment gateway management for Bangladesh MFS (Auto & Manual) and COD
+router.get('/admin/payment-gateways', asyncHandler(async (_req, res) => {
+  const rows = await adminPaymentGatewayRepository.listPaymentGateways();
+  return res.render('admin/payment-gateways', { rows });
 }));
-router.post('/admin/payment-gateways/:id/update',requireCsrf,asyncHandler(async(req,res)=>{
-  await adminPaymentGatewayRepository.updatePaymentGateway(req.params.id,req.body,{id:req.adminUser?.id||null,ip:req.ip||'',userAgent:req.get('user-agent')||''});
-  req.adminDomainAudit=true;
-  req.flash('success','Payment gateway settings saved.');
+router.get('/admin/settings/payments', (req, res) => res.redirect('/admin/payment-gateways'));
+
+router.post('/admin/payment-gateways/:id/toggle', requireCsrf, asyncHandler(async (req, res) => {
+  await adminPaymentGatewayRepository.togglePaymentGateway(req.params.id, {
+    id: req.adminUser?.id || null,
+    ip: req.ip || '',
+    userAgent: req.get('user-agent') || '',
+  });
+  req.adminDomainAudit = true;
+  req.flash('success', 'পেমেন্ট চ্যানেল স্ট্যাটাস আপডেট হয়েছে।');
+  return res.redirect(req.get('Referrer') || '/admin/payment-gateways');
+}));
+router.post('/admin/settings/payments/:id/toggle', requireCsrf, (req, res, next) => {
+  req.url = `/admin/payment-gateways/${req.params.id}/toggle`;
+  router.handle(req, res, next);
+});
+
+router.post('/admin/payment-gateways/:id/update',requireCsrf, asyncHandler(async (req, res) => {
+  await adminPaymentGatewayRepository.updatePaymentGateway(req.params.id, req.body, {
+    id: req.adminUser?.id || null,
+    ip: req.ip || '',
+    userAgent: req.get('user-agent') || '',
+  });
+  req.adminDomainAudit = true;
+  req.flash('success', 'Payment gateway settings saved.');
   return res.redirect('/admin/payment-gateways');
 }));
+router.post('/admin/settings/payments/:id/update', requireCsrf, (req, res, next) => {
+  req.url = `/admin/payment-gateways/${req.params.id}/update`;
+  router.handle(req, res, next);
+});
 
 // Payment Gateways (Auto & Manual)
 router.get('/admin/paymentgeteway/manage', asyncHandler(async (_req,res)=>renderGateways(res,'auto')));

@@ -57,7 +57,7 @@ function corsMiddleware(req, res, next) {
   if (isExternalWebhook(req.path)) {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, RT-UDDOKTAPAY-API-KEY');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-KM-IPN-SIGNATURE');
     if (req.method === 'OPTIONS') {
       return res.sendStatus(204);
     }

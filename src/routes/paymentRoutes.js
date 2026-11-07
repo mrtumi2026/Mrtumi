@@ -1,9 +1,9 @@
 'use strict';
 
 /**
- * Payment Routes
- * ==============
- * Wires customer checkout, redirect gateways, and inbound webhooks.
+ * Payment Routes — Bangladesh MFS
+ * =================================
+ * Wires customer checkout, redirect gateways (bKash, Nagad, Rocket), and COD safeguard.
  */
 
 const express = require('express');
@@ -16,7 +16,7 @@ const router = express.Router();
 const paymentInitiateLimiter = createRateLimiter({
   keyPrefix: 'pay_initiate',
   windowMs: 60_000,
-  max: 15,
+  max: 20,
 });
 
 const webhookLimiter = createRateLimiter({
@@ -28,16 +28,14 @@ const webhookLimiter = createRateLimiter({
 // Customer payment session initiation (protected by CSRF and rate limiting)
 router.post('/payment/initiate/:gateway', paymentInitiateLimiter, requireCsrf, paymentController.initiatePayment);
 
-// Gateway browser redirect callbacks (must NOT enforce CSRF because they originate from external bank/gateway domains)
+// Gateway browser redirect callbacks (exempt from CSRF because calls originate from external MFS gateway domains)
 router.get('/payment/bkash/callback', paymentController.bkashCallback);
-router.all('/payment/shurjopay/callback', paymentController.shurjopayCallback);
-router.all('/payment/uddoktapay/callback', (req, res) => {
-  const orderId = req.query.order_id || req.body?.metadata?.order_id;
-  return res.redirect(`/order-success?order_id=${encodeURIComponent(orderId || '')}`);
-});
+router.all('/payment/nagad/callback', paymentController.nagadCallback);
+router.all('/payment/rocket/callback', paymentController.rocketCallback);
 
-// Server-to-server asynchronous webhooks & IPN endpoints
-router.post('/webhooks/uddoktapay', webhookLimiter, paymentController.uddoktapayWebhook);
+// Inbound IPN Webhook callbacks
+router.post('/webhooks/nagad/ipn', webhookLimiter, paymentController.nagadCallback);
+router.post('/webhooks/rocket/ipn', webhookLimiter, paymentController.rocketCallback);
 
 // Cash on Delivery (COD) Anti-Fraud Check endpoint
 router.post('/payment/cod/verify', requireCsrf, paymentController.verifyCodEligibility);

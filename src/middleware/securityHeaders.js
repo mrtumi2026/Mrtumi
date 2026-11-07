@@ -6,7 +6,7 @@
  * Implements OWASP ASVS v4.0 compliance using Helmet.
  *
  * Configures:
- *  - Content Security Policy (CSP) compatible with EJS, CDN assets, and MFS payment iframes (bKash, ShurjoPay, UddoktaPay)
+ *  - Content Security Policy (CSP) compatible with EJS, CDN assets, and MFS payment iframes (bKash, Nagad, Rocket)
  *  - HTTP Strict Transport Security (HSTS) with 1-year duration, subdomains, and preloading
  *  - Anti-Clickjacking protection via X-Frame-Options & CSP frame-ancestors
  *  - X-Content-Type-Options: nosniff
@@ -41,7 +41,8 @@ function createSecurityHeaders() {
             'https://www.google-analytics.com',
             'https://scripts.bkash.com',
             'https://*.bka.sh',
-            'https://*.shurjopayment.com',
+            'https://*.nagad.com.bd',
+            'https://*.dutchbanglabank.com',
           ],
           styleSrc: [
             "'self'",

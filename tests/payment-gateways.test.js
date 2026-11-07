@@ -5,25 +5,15 @@ const { test, describe } = require('node:test');
 const {
   getPaymentGateway,
   BkashGateway,
-  ShurjoPayGateway,
-  UddoktaPayGateway,
   PaymentGateway,
 } = require('../src/services/payments');
 const { ValidationError } = require('../src/utils/errors');
 
-describe('Phase 11 — Payment Gateways (bKash, ShurjoPay, UddoktaPay)', () => {
+describe('Payment Gateways — Bangladesh MFS (bKash, Nagad, Rocket, COD)', () => {
   test('getPaymentGateway resolves registered gateways and rejects unknown', () => {
     const bkash = getPaymentGateway('bkash_auto');
     assert.ok(bkash instanceof BkashGateway);
     assert.equal(bkash.code, 'bkash_auto');
-
-    const shurjopay = getPaymentGateway('shurjopay');
-    assert.ok(shurjopay instanceof ShurjoPayGateway);
-    assert.equal(shurjopay.code, 'shurjopay');
-
-    const uddoktapay = getPaymentGateway('uddoktapay');
-    assert.ok(uddoktapay instanceof UddoktaPayGateway);
-    assert.equal(uddoktapay.code, 'uddoktapay');
 
     assert.throws(() => getPaymentGateway('unknown_payment'), ValidationError);
   });
@@ -85,51 +75,6 @@ describe('Phase 11 — Payment Gateways (bKash, ShurjoPay, UddoktaPay)', () => {
     assert.equal(query.provider, 'bkash_auto');
     assert.equal(query.paymentId, init.paymentId);
     assert.equal(query.status, 'Completed');
-  });
-
-  test('ShurjoPayGateway initiates and queries payment in sandbox mock mode', async () => {
-    const sp = new ShurjoPayGateway({ sandbox: true });
-
-    const init = await sp.initiatePayment({
-      orderId: 'ORD-SP-01',
-      invoice: 'INV-SP-01',
-      amountPaisa: 75000,
-      customerName: 'Monir Hossain',
-      customerPhone: '01811223344',
-      callbackUrl: 'http://localhost:3000/checkout/payment/callback',
-    });
-
-    assert.equal(init.success, true);
-    assert.equal(init.provider, 'shurjopay');
-    assert.equal(init.mode, 'sandbox_mock');
-    assert.ok(init.paymentId.startsWith('SP-'));
-
-    const query = await sp.queryPayment(init.paymentId);
-    assert.equal(query.success, true);
-    assert.equal(query.status, 'completed');
-    assert.ok(query.transactionId.startsWith('SP-TRX'));
-  });
-
-  test('UddoktaPayGateway initiates and verifies payment in sandbox mock mode', async () => {
-    const up = new UddoktaPayGateway({ sandbox: true });
-
-    const init = await up.initiatePayment({
-      orderId: 'ORD-UP-01',
-      invoice: 'INV-UP-01',
-      amountPaisa: 150000,
-      customerName: 'Shakil Khan',
-      callbackUrl: 'http://localhost:3000/checkout/payment/callback',
-    });
-
-    assert.equal(init.success, true);
-    assert.equal(init.provider, 'uddoktapay');
-    assert.equal(init.mode, 'sandbox_mock');
-    assert.ok(init.paymentId.startsWith('UP-'));
-
-    const query = await up.queryPayment(init.paymentId);
-    assert.equal(query.success, true);
-    assert.equal(query.status, 'completed');
-    assert.ok(query.transactionId.startsWith('UP-TXN'));
   });
 
   test('PaymentGateway redacts sensitive API keys and secrets', () => {
