@@ -26,24 +26,31 @@ echo "Working directory: $SCRIPT_DIR"
 echo ""
 echo "🔍 [1/6] Detecting Node.js runtime environment..."
 
+# Allow manual override via command line argument (e.g. bash deploy.sh /path/to/activate)
+if [ -n "$1" ] && [ -f "$1" ]; then
+  echo "✔ Using explicitly provided virtual environment: $1"
+  # shellcheck source=/dev/null
+  source "$1"
+fi
+
 CPANEL_ACTIVATE=""
 APP_BASENAME="$(basename "$SCRIPT_DIR")"
 
-# Search in user's home directory if available
-if [ -n "$HOME" ] && [ -d "$HOME/nodevenv" ]; then
-  # Match nodevenv path specific to this app directory
-  APP_MATCH=$(find "$HOME/nodevenv" -maxdepth 5 -type f -name "activate" 2>/dev/null | grep "/$APP_BASENAME/" | head -n 1 || true)
+# 1a. Search for activate script under $HOME
+if [ -z "$CPANEL_ACTIVATE" ] && [ -n "$HOME" ]; then
+  # Check standard nodevenv paths
+  APP_MATCH=$(find "$HOME" -maxdepth 8 -type f -name "activate" 2>/dev/null | grep -E "nodevenv|virtualenv" | grep "/$APP_BASENAME/" | head -n 1 || true)
   if [ -n "$APP_MATCH" ] && [ -f "$APP_MATCH" ]; then
     CPANEL_ACTIVATE="$APP_MATCH"
   else
-    # Fallback to any nodevenv activate script under $HOME/nodevenv
-    CPANEL_ACTIVATE=$(find "$HOME/nodevenv" -maxdepth 5 -type f -name "activate" 2>/dev/null | head -n 1 || true)
+    # Any activate script under $HOME
+    CPANEL_ACTIVATE=$(find "$HOME" -maxdepth 8 -type f -name "activate" 2>/dev/null | grep -E "nodevenv|virtualenv" | head -n 1 || true)
   fi
 fi
 
-# Global wildcard fallback for CloudLinux / cPanel cagefs
+# 1b. Global search across /home/*/nodevenv (CloudLinux standard)
 if [ -z "$CPANEL_ACTIVATE" ]; then
-  CPANEL_ACTIVATE=$(find /home/*/nodevenv -maxdepth 6 -type f -name "activate" 2>/dev/null | head -n 1 || true)
+  CPANEL_ACTIVATE=$(find /home/*/nodevenv -maxdepth 8 -type f -name "activate" 2>/dev/null | head -n 1 || true)
 fi
 
 if [ -n "$CPANEL_ACTIVATE" ] && [ -f "$CPANEL_ACTIVATE" ]; then
@@ -52,14 +59,61 @@ if [ -n "$CPANEL_ACTIVATE" ] && [ -f "$CPANEL_ACTIVATE" ]; then
   # shellcheck source=/dev/null
   source "$CPANEL_ACTIVATE"
 else
-  echo "ℹ No cPanel nodevenv found. Proceeding with system PATH."
+  echo "ℹ No cPanel activate script found directly."
+fi
+
+# 1c. CloudLinux alt-nodejs fallback (/opt/alt/alt-nodejs*)
+if ! command -v node >/dev/null 2>&1; then
+  for ALT_NODE_DIR in \
+    /opt/alt/alt-nodejs22/root/usr/bin \
+    /opt/alt/alt-nodejs20/root/usr/bin \
+    /opt/alt/alt-nodejs18/root/usr/bin \
+    /opt/alt/alt-nodejs16/root/usr/bin; do
+    if [ -x "$ALT_NODE_DIR/node" ]; then
+      echo "✔ Detected CloudLinux Node.js at $ALT_NODE_DIR"
+      export PATH="$ALT_NODE_DIR:$PATH"
+      break
+    fi
+  done
+fi
+
+# 1d. cPanel EasyApache ea-nodejs fallback (/opt/cpanel/ea-nodejs*)
+if ! command -v node >/dev/null 2>&1; then
+  for EA_NODE_DIR in \
+    /opt/cpanel/ea-nodejs22/bin \
+    /opt/cpanel/ea-nodejs20/bin \
+    /opt/cpanel/ea-nodejs18/bin \
+    /opt/cpanel/ea-nodejs16/bin; do
+    if [ -x "$EA_NODE_DIR/node" ]; then
+      echo "✔ Detected cPanel EasyApache Node.js at $EA_NODE_DIR"
+      export PATH="$EA_NODE_DIR:$PATH"
+      break
+    fi
+  done
+fi
+
+# 1e. Deep search inside $HOME for any standalone bin/node executable
+if ! command -v node >/dev/null 2>&1 && [ -n "$HOME" ]; then
+  FOUND_NODE=$(find "$HOME" -maxdepth 8 -type f -name "node" -perm -111 2>/dev/null | grep -E "/bin/node$" | head -n 1 || true)
+  if [ -n "$FOUND_NODE" ]; then
+    NODE_BIN_DIR="$(dirname "$FOUND_NODE")"
+    echo "✔ Located user-level Node.js binary at $NODE_BIN_DIR"
+    export PATH="$NODE_BIN_DIR:$PATH"
+    if [ -f "$NODE_BIN_DIR/activate" ]; then
+      source "$NODE_BIN_DIR/activate"
+    fi
+  fi
 fi
 
 # Validate executables exist and are runnable
 if ! command -v node >/dev/null 2>&1; then
+  echo ""
   echo "❌ FATAL: 'node' executable not found in PATH."
-  echo "   Please activate your cPanel Node.js app from the cPanel interface,"
-  echo "   or check your environment PATH."
+  echo "   Troubleshooting:"
+  echo "   1. Open cPanel -> 'Setup Node.js App'"
+  echo "   2. Ensure your application is created and started."
+  echo "   3. Copy the 'source /home/.../bin/activate' command from the top of that page"
+  echo "      and pass it to deploy.sh: bash deploy.sh /home/.../bin/activate"
   exit 1
 fi
 
