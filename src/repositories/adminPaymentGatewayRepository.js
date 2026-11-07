@@ -211,11 +211,13 @@ async function updatePaymentGateway(idInput, input = {}, actor = {}, { pool = nu
 /**
  * Manual TrxID Verification Engine
  */
-async function verifyManualOrderPayment(orderIdInput, actor = {}) {
+async function verifyManualOrderPayment(orderIdInput, actor = {}, { pool = null, tx: externalTx = null } = {}) {
   const orderId = requirePositiveInt(orderIdInput, 'Order ID');
   const adminId = actor.id ? requirePositiveInt(actor.id, 'Admin ID') : null;
 
-  return mysql.withTransaction(async (tx) => {
+  const runWithTx = (callback) => externalTx ? callback(externalTx) : mysql.withTransaction(callback, { pool });
+
+  return runWithTx(async (tx) => {
     const order = await tx.queryOne(
       `SELECT o.id, o.invoice_no, o.total_paisa, o.paid_paisa, o.cod_due_paisa,
               o.payment_method, o.payment_status, o.order_status, o.manual_sender_number,
@@ -286,11 +288,17 @@ async function verifyManualOrderPayment(orderIdInput, actor = {}) {
       ]
     );
 
-    await splitOrderByVendor(orderId, {
-      gatewayCode: order.payment_method,
-      actor: { type: 'admin', id: adminId },
-      tx,
-    });
+    const existingSplit = await tx.queryOne(
+      'SELECT id FROM vendor_orders WHERE order_id = ? LIMIT 1',
+      [orderId]
+    );
+    if (!existingSplit) {
+      await splitOrderByVendor(orderId, {
+        gatewayCode: order.payment_method,
+        actor: { type: 'admin', id: adminId },
+        tx,
+      });
+    }
 
     await recordAuditLog(
       {

@@ -18,6 +18,7 @@
     "seed:categories": "node scripts/seed-categories.js",
     "lint": "node scripts/check-foundation.js",
     "test": "NODE_ENV=test node --no-warnings --test --test-concurrency=1 tests/*.test.js",
+    "test:e2e": "node scripts/test-e2e-order-flow.js",
     "verify": "npm run lint && npm test",
     "qa:browser": "node scripts/qa/demo-browser-e2e.js"
   },
