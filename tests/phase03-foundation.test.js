@@ -278,10 +278,10 @@ describe('Phase 03 — Production SQLite Prohibition & DB Connection Failure Han
 describe('Phase 03 — Migration Loader, Validator, Logger Redaction, CSRF, Rate Limit & RBAC', () => {
   test('Loads versioned reversible migration pairs in strict order and validates SQL integrity', () => {
     const pairs = loadMigrationPairs();
-    assert.equal(pairs.length, 25);
+    assert.equal(pairs.length, 28);
     assert.deepEqual(
       pairs.map((p) => p.version),
-      ['0001', '0002', '0003', '0004', '0005', '0006', '0007', '0008', '0009', '0010', '0011', '0012', '0013', '0014', '0015', '0016', '0017', '0018', '0019', '0020', '0021', '0022', '0023', '0024', '0025']
+      ['0001', '0002', '0003', '0004', '0005', '0006', '0007', '0008', '0009', '0010', '0011', '0012', '0013', '0014', '0015', '0016', '0017', '0018', '0019', '0020', '0021', '0022', '0023', '0024', '0025', '0026', '0027', '0028']
     );
 
     let totalCreateTables = 0;

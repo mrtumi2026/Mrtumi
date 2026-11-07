@@ -23,9 +23,14 @@
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
+    "compression": "^1.7.5",
+    "cors": "^2.8.5",
     "ejs": "^7.0.2",
     "express": "^4.21.1",
     "express-session": "^1.18.1",
+    "helmet": "^8.0.0",
+    "ioredis": "^5.4.1",
+    "joi": "^17.13.3",
     "multer": "^2.0.1",
     "mysql2": "^3.24.6"
   },
