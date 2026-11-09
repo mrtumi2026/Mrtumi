@@ -43,7 +43,7 @@
                     <li><a href="/admin/order/all"><i data-feather="file-plus"></i> <%= t('admin.menu.allOrders') %></a></li>
                     <% if (hasPermission('orders.manage')) { %><li><a href="/admin/phase08/orders"><i data-feather="repeat"></i> <%= locale === 'bn' ? 'অর্ডার লাইফসাইকেল (Phase 08)' : 'Order Lifecycle (Phase 08)' %></a></li><% } %>
                     <li><a href="/admin/reseller-orders"><i data-feather="users"></i> <%= t('admin.menu.resellerOrders') %></a></li>
-                    <li><a href="/admin/incomplete-orders"><i data-feather="file-plus"></i> <%= locale === 'bn' ? 'অসম্পূর্ণ অর্ডার' : 'Incomplete Orders' %></a></li>
+                    <li><a href="/admin/phase08/incomplete"><i data-feather="file-plus"></i> <%= locale === 'bn' ? 'অসম্পূর্ণ অর্ডার' : 'Incomplete Orders' %></a></li>
                     <li><a href="/admin/order/pending"><i data-feather="file-plus"></i> <%= t('admin.menu.pending') %> (<%= fmt.number(pendingOrdersCount || 0) %>)</a></li>
                     <li><a href="/admin/order/processing"><i data-feather="file-plus"></i> <%= t('admin.menu.processing') %></a></li>
                     <li><a href="/admin/order/on-the-way"><i data-feather="file-plus"></i> <%= t('admin.menu.onTheWay') %></a></li>

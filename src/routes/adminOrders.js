@@ -731,7 +731,7 @@ router.get('/admin/reseller-orders', asyncHandler(async (req, res) => {
 
 // ─── Incomplete Orders ───
 router.get('/admin/incomplete-orders', (_req, res) => {
-  if (env.db.client === 'mysql') return res.status(409).send('Legacy incomplete-order records are unavailable in MySQL mode; only consented Phase 08 recovery records are supported.')
+  if (env.db.client === 'mysql') return res.redirect('/admin/phase08/incomplete');
   const rows = db.all('SELECT * FROM incomplete_orders ORDER BY id DESC');
   res.render('admin/crud-module', {
     pageTitle: 'Incomplete / Abandoned Orders',
@@ -925,7 +925,7 @@ router.post('/admin/customer/ip-block/delete/:id', asyncHandler(async (_req, _re
 
 // ─── Refunds ───
 router.get('/admin/refunds', (req, res) => {
-  if (env.db.client === 'mysql') return res.status(409).send('Legacy refund records are unavailable in MySQL mode; no refund provider operation is configured.')
+  if (env.db.client === 'mysql') return res.redirect('/admin/phase08/refunds' + (req.query.status ? `?status=${encodeURIComponent(req.query.status)}` : ''));
   const statusFilter = req.query.status || '';
   const rows = statusFilter
     ? db.all('SELECT * FROM refunds WHERE status = ? ORDER BY id DESC', statusFilter)
