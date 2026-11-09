@@ -10,6 +10,7 @@ const { env } = require('../config/env');
 const vendorPortal = require('../repositories/vendorPortalRepository');
 const { generateSafeProductSlug } = require('../utils/slug');
 const partnerWithdrawalRepository = require('../repositories/partnerWithdrawalRepository');
+const bdCourierFraudService = require('../services/bdCourierFraudService');
 const mysqlActive = () => env.db.client === 'mysql';
 
 const router = express.Router();
@@ -372,6 +373,34 @@ router.post('/vendor/products/delete/:id', requireCsrf, async (req, res, next) =
   db.run('DELETE FROM products WHERE id = ? AND vendor_id = ?', req.params.id, req.session.vendorUser.id);
   req.flash('success', 'প্রোডাক্ট মুছে ফেলা হয়েছে।');
   res.redirect('/vendor/products');
+});
+
+// ─── Vendor Courier Fraud Check ───
+router.get('/vendor/fraud-check', async (req, res, next) => {
+  try {
+    const phone = String(req.query.phone || '').trim();
+    const result = phone ? await bdCourierFraudService.checkPhoneFraud(phone) : null;
+    let vendor = req.session.vendorUser;
+    if (mysqlActive()) {
+      const sql = require('../db/mysqlPool');
+      const vRow = await sql.queryOne('SELECT id,shop_name,owner_name,commission_rate_bps/100 AS commission_rate,balance_paisa FROM vendors WHERE id=? AND status=1', [req.session.vendorUser.id]);
+      if (vRow) {
+        vendor = { ...vendor, ...vRow, balance: (Number(vRow.balance_paisa || 0) / 100).toFixed(2) };
+      }
+    } else {
+      const vRow = db.get('SELECT * FROM vendors WHERE id = ?', req.session.vendorUser.id);
+      if (vRow) vendor = { ...vendor, ...vRow };
+    }
+    return res.render('vendor/fraud-check', {
+      title: req.locale === 'bn' ? 'কুরিয়ার ফ্রড চেক' : 'Courier Fraud Check',
+      phone,
+      result,
+      vendorUser: vendor,
+      vendor
+    });
+  } catch (error) {
+    return next(error);
+  }
 });
 
 // ─── Vendor Orders ───

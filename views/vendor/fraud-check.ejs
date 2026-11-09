@@ -1,0 +1,166 @@
+<%- include('partials/layout-top', { title: title || (locale === 'bn' ? 'কুরিয়ার ফ্রড চেক' : 'Courier Fraud Check') }) %>
+
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+  <div>
+    <h4 class="fw-bold mb-0">🛡️ <%= locale === 'bn' ? 'কাস্টমার কুরিয়ার ফ্রড ও ডেলিভারি হিস্ট্রি চেক' : 'Customer Courier Fraud Check' %></h4>
+    <p class="text-muted small mb-0"><%= locale === 'bn' ? 'গ্রাহকের মোবাইল নম্বর দিয়ে Steadfast, Pathao ও RedX কুরিয়ারে অতীত ডেলিভারি সাফল্য ও রিটার্ন রেট যাচাই করুন' : 'Verify customer parcel delivery success rate and return history across Steadfast, Pathao, and RedX' %></p>
+  </div>
+  <div>
+    <a href="/vendor/orders" class="btn btn-outline-secondary btn-sm">🛒 <%= t('vendor.orders') %></a>
+  </div>
+</div>
+
+<div class="tbl-card p-4 mb-4">
+  <form action="/vendor/fraud-check" method="GET" class="row g-2 align-items-end">
+    <div class="col-md-8">
+      <label class="form-label fw-semibold small"><%= locale === 'bn' ? 'কাস্টমারের ১১ সংখ্যার মোবাইল নম্বর লিখুন' : 'Enter 11-Digit Customer Mobile Number' %></label>
+      <div class="input-group">
+        <span class="input-group-text bg-light"><i class="fas fa-phone"></i></span>
+        <input type="tel" name="phone" value="<%= phone %>" class="form-control" placeholder="যেমন: 01711223301" minlength="11" maxlength="14" required />
+      </div>
+      <div class="form-text small"><%= locale === 'bn' ? 'পার্সেল প্যাকিং বা বুকিংয়ের পূর্বে কাস্টমারের বিশ্বস্ততা পরীক্ষা করতে ফোন নম্বর দিন।' : 'Check parcel history before packing or shipping.' %></div>
+    </div>
+    <div class="col-md-4">
+      <button type="submit" class="btn btn-forest w-100 py-2">
+        <i class="fas fa-search me-1"></i> <%= locale === 'bn' ? 'কুরিয়ার হিস্ট্রি যাচাই করুন' : 'Check Courier History' %>
+      </button>
+    </div>
+  </form>
+</div>
+
+<% if (result) { %>
+  <% if (result.available === false) { %>
+    <div class="alert alert-warning" role="status">
+      <i class="fas fa-exclamation-triangle me-1"></i>
+      <strong><%= locale === 'bn' ? 'যাচাই করা সম্ভব হয়নি:' : 'Verification Notice:' %></strong> <%= result.message %>
+    </div>
+  <% } else { %>
+    <div class="row g-3 mb-4">
+      <!-- Success Score Card -->
+      <div class="col-lg-4">
+        <div class="tbl-card p-4 text-center h-100">
+          <div class="text-muted small text-uppercase fw-bold mb-2"><%= locale === 'bn' ? 'ডেলিভারি সাকসেস স্কোর' : 'Delivery Success Score' %></div>
+          <div style="font-size: 46px; font-weight: 800;" class="<%= result.successRate >= 80 ? 'text-success' : (result.successRate >= 60 ? 'text-warning' : 'text-danger') %>">
+            <%= result.successRate %>%
+          </div>
+          <span class="badge <%= result.successRate >= 80 ? 'bg-success' : (result.successRate >= 60 ? 'bg-warning text-dark' : 'bg-danger') %> px-3 py-1.5 mb-3" style="font-size: 13px;">
+            <%= result.riskLevel %>
+          </span>
+
+          <div class="d-flex justify-content-around border-top pt-3 mt-2">
+            <div>
+              <div class="fw-bold fs-5"><%= result.totalParcels %></div>
+              <small class="text-muted"><%= locale === 'bn' ? 'মোট পার্সেল' : 'Total' %></small>
+            </div>
+            <div>
+              <div class="fw-bold fs-5 text-success"><%= result.totalDelivered %></div>
+              <small class="text-muted"><%= locale === 'bn' ? 'ডেলিভার্ড' : 'Delivered' %></small>
+            </div>
+            <div>
+              <div class="fw-bold fs-5 text-danger"><%= result.totalReturned %></div>
+              <small class="text-muted"><%= locale === 'bn' ? 'রিটার্ন/বাতিল' : 'Returned' %></small>
+            </div>
+          </div>
+
+          <% if (result.isBlocked) { %>
+            <div class="alert alert-danger py-1 px-2 mt-3 mb-0 small">
+              <i class="fas fa-ban me-1"></i> <%= locale === 'bn' ? 'এই কাস্টমারকে সিস্টেমে ব্লক করা রয়েছে!' : 'This customer is blacklisted!' %>
+            </div>
+          <% } %>
+
+          <div class="mt-3 p-2 bg-light rounded text-start small">
+            <i class="fas fa-info-circle text-primary me-1"></i>
+            <% if (result.successRate >= 80) { %>
+              <span class="text-success fw-semibold"><%= locale === 'bn' ? 'গ্রাহকের ডেলিভারি রেকর্ড ভালো। ক্যাশ অন ডেলিভারিতে পার্সেল পাঠাতে পারেন।' : 'Good track record. Safe for cash on delivery.' %></span>
+            <% } else if (result.successRate >= 60) { %>
+              <span class="text-warning fw-semibold"><%= locale === 'bn' ? 'মাঝারি ঝুঁকি। গ্রাহককে কল দিয়ে অর্ডার নিশ্চিত করুন।' : 'Moderate risk. Call customer to confirm.' %></span>
+            <% } else { %>
+              <span class="text-danger fw-semibold"><%= locale === 'bn' ? 'উচ্চ ঝুঁকি! ডেলিভারি চার্জ অগ্রিম নিয়ে পার্সেল পাঠানো নিরাপদ।' : 'High cancellation risk! Require advance shipping.' %></span>
+            <% } %>
+          </div>
+        </div>
+      </div>
+
+      <!-- Courier Partners Breakdown -->
+      <div class="col-lg-8">
+        <div class="tbl-card h-100">
+          <div class="tbl-card-head d-flex justify-content-between align-items-center">
+            <h4 class="mb-0"><%= locale === 'bn' ? 'কুরিয়ারভিত্তিক বিস্তারিত হিসাব' : 'Courier-wise Breakdown' %> (<%= result.phone %>)</h4>
+            <span class="badge bg-light text-dark border">BD Courier Verified</span>
+          </div>
+          <div class="tbl-card-body">
+            <div class="table-responsive">
+              <table class="table clean mb-0 align-middle">
+                <thead>
+                  <tr>
+                    <th><%= locale === 'bn' ? 'কুরিয়ার পার্টনার' : 'Courier Partner' %></th>
+                    <th><%= locale === 'bn' ? 'মোট পার্সেল' : 'Total Parcels' %></th>
+                    <th><%= locale === 'bn' ? 'সফল ডেলিভারি' : 'Delivered' %></th>
+                    <th><%= locale === 'bn' ? 'বাতিল / ফেরত' : 'Returned' %></th>
+                    <th><%= locale === 'bn' ? 'সাফল্য হার' : 'Success %' %></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% result.couriers.forEach(function(c) {
+                       const pct = c.total > 0 ? Math.round((c.delivered / c.total) * 100) : (c.total === 0 ? 100 : 0);
+                  %>
+                    <tr>
+                      <td class="fw-semibold">
+                        <i class="fas fa-truck text-muted me-2"></i><%= c.name %>
+                      </td>
+                      <td><%= c.total %></td>
+                      <td class="text-success fw-bold"><%= c.delivered %></td>
+                      <td class="text-danger fw-bold"><%= c.returned %></td>
+                      <td>
+                        <span class="badge <%= pct >= 80 ? 'bg-success-subtle text-success' : (pct >= 60 ? 'bg-warning-subtle text-warning' : 'bg-danger-subtle text-danger') %> px-2 py-1">
+                          <%= pct %>%
+                        </span>
+                      </td>
+                    </tr>
+                  <% }) %>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Store History -->
+    <% if (result.storeOrders && result.storeOrders.length) { %>
+      <div class="tbl-card">
+        <div class="tbl-card-head">
+          <h4><%= locale === 'bn' ? 'আমাদের স্টোরে এই কাস্টমারের পূর্বের অর্ডারসমূহ' : 'Store Order History for this Customer' %> (<%= result.storeOrders.length %>)</h4>
+        </div>
+        <div class="tbl-card-body">
+          <div class="table-responsive">
+            <table class="table clean mb-0 align-middle">
+              <thead>
+                <tr>
+                  <th><%= locale === 'bn' ? 'ইনভয়েস' : 'Invoice' %></th>
+                  <th><%= locale === 'bn' ? 'কাস্টমার নাম' : 'Customer Name' %></th>
+                  <th><%= locale === 'bn' ? 'টাকার পরিমাণ' : 'Amount' %></th>
+                  <th><%= locale === 'bn' ? 'স্ট্যাটাস' : 'Status' %></th>
+                  <th><%= locale === 'bn' ? 'তারিখ' : 'Date' %></th>
+                </tr>
+              </thead>
+              <tbody>
+                <% result.storeOrders.forEach(function(so) { %>
+                  <tr>
+                    <td class="fw-bold">#<%= so.invoice_id %></td>
+                    <td><%= so.customer_name %></td>
+                    <td>৳<%= so.amount %></td>
+                    <td><span class="badge bg-light text-dark border"><%= so.status %></span></td>
+                    <td class="small text-muted"><%= so.created_at %></td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    <% } %>
+  <% } %>
+<% } %>
+
+<%- include('partials/layout-bottom') %>
