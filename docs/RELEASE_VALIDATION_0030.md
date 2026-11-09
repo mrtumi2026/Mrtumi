@@ -91,7 +91,11 @@ The `/uploads/custom` evidence guard was missing, and the public static middlewa
 - `GET /admin/api/analytics/visitors` had no legacy policy and fell through to the fail-closed "unmapped" 403, so the dashboard widget could never load. It is now mapped to `dashboard.view`.
 - `/admin/courierapi/*` routes had lost their explicit `settings.manage` + CSRF guards. Restored on list/create/update/toggle/delete, and the middleware policy now agrees on `settings.manage` instead of requiring a second, undocumented permission.
 
-### 2.8 Stale migration-count test
+### 2.8 Stale OTP severity expectation in the live database suite
+
+`tests/phase05-mysql.test.js` expected `CONFLICT` for a checkout refused because OTP verification is missing. The repository throws `ValidationError` (`VALIDATION_ERROR`, HTTP 400), which is the correct severity for unverified user input and matches the message returned to the customer. The assertion was stale: it had never executed because the MySQL job aborted at migration diagnosis. It now asserts `VALIDATION_ERROR` plus the OTP message, so the refusal is still verified without changing runtime behavior.
+
+### 2.9 Stale migration-count test
 
 `tests/phase03-foundation.test.js` hard-coded 29 migration pairs. It now derives the contiguous `0001`–`0036` expectation, so the assertion still fails on gaps or duplicates without blocking approved additive migrations.
 
@@ -116,6 +120,10 @@ The `/uploads/custom` evidence guard was missing, and the public static middlewa
 | MySQL-dialect syntax parse of 0030–0036 | `node-sql-parser` (MySQL grammar) | **72/72 statements parsed** |
 | Phase B lifecycle simulation | SQLite transaction shim over the real repository | **PASS** — booking/handover separation, conflicts, admin gate, retry shipment, parent `shipped`/`delivered`, event actor types |
 | Migration execution | `npm run migrate:status` | Blocked: no MySQL/MariaDB service or credentials in sandbox |
+| CI migration diagnosis (MySQL 8.0) | GitHub Actions `Diagnose MySQL migrations individually on a fresh schema` | **PASS** (all 36 pairs) |
+| CI migrator round-trip (MySQL 8.0) | `up -> status -> reversible down/up` + full reapply | **PASS** |
+| CI backup/restore rehearsal (MySQL 8.0) | Disposable schema logical dump/restore | **PASS** |
+| CI migration diagnosis + round-trip (MariaDB 10.11) | Diagnose, `0028`–`0029` up/down/reapply, `0025`–`0024` rollback, full reapply, backup/restore | **PASS** |
 
 **Not executable here:** applying DDL to a live MySQL 8.0/MariaDB 10.11 instance, live-provider calls, and production deployment. The repository's own CI (`Diagnose migrations`, migrator up/down/reapply, live MySQL/MariaDB integration suites) is the authoritative database gate for this change.
 
