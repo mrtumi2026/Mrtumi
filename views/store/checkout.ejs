@@ -227,6 +227,38 @@
       </div>
     </form>
   <% } %>
+
+<!-- Order OTP Verification Modal -->
+<div class="modal fade" id="orderOtpModal" tabindex="-1" aria-labelledby="orderOtpModalLabel" aria-hidden="true" data-bs-backdrop="static">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content rounded-4 border-0 shadow">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title fw-bold" id="orderOtpModalLabel">📱 মোবাইল ভেরিফিকেশন (OTP)</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-center py-4">
+        <div class="mb-3">
+          <i class="fas fa-shield-halved text-success fa-3x"></i>
+        </div>
+        <p class="text-muted small mb-3">
+          অর্ডার সুরক্ষিত রাখতে <strong id="otpTargetPhone">017XXXXXXXX</strong> নম্বরে পাঠানো ৬ সংখ্যার ওটিপি (OTP) কোডটি লিখুন:
+        </p>
+        <div class="mb-3 d-flex justify-content-center">
+          <input type="text" id="orderOtpInput" class="form-control form-control-lg text-center fw-bold fs-4" style="max-width: 220px; letter-spacing: 6px;" maxlength="6" placeholder="------" pattern="\d{6}" inputmode="numeric" autocomplete="one-time-code" />
+        </div>
+        <div id="otpErrorMessage" class="text-danger small mb-3" style="display:none;"></div>
+        <button type="button" id="btnVerifyOtp" class="btn btn-success w-100 py-2.5 fw-bold rounded-3" style="background:#1b4332;">
+          ✓ কোড যাচাই করে অর্ডার কনফার্ম করুন
+        </button>
+        <div class="mt-3 text-muted small">
+          কোড পাননি? <button type="button" id="btnResendOtp" class="btn btn-link p-0 small text-decoration-none">পুনরায় কোড পাঠান</button>
+          <span id="otpTimerSpan" class="text-muted ms-1"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 </main>
 
 <script>
@@ -393,5 +425,160 @@
 
   document.addEventListener('DOMContentLoaded', recalcCheckout);
 </script>
+
+
+  var otpModeEnabled = <%= (typeof siteSettings !== 'undefined' && siteSettings && siteSettings.otp_mode === 'on') ? 'true' : 'false' %>;
+  var otpVerifiedInSession = false;
+
+  document.addEventListener('DOMContentLoaded', function() {
+    var checkoutForm = document.getElementById('checkoutForm') || document.querySelector('form[action="/customer/checkout"]');
+    if (!checkoutForm) return;
+
+    checkoutForm.addEventListener('submit', function(e) {
+      if (!otpModeEnabled || otpVerifiedInSession) return;
+
+      e.preventDefault();
+      var phoneInput = document.getElementById('customerPhone') || document.querySelector('input[name="phone"]');
+      var rawPhone = phoneInput ? phoneInput.value.trim() : '';
+      if (!rawPhone || rawPhone.length < 11) {
+        if (typeof toastr !== 'undefined') toastr.error('অনুগ্রহ করে ১১ সংখ্যার সঠিক মোবাইল নম্বর লিখুন।');
+        return;
+      }
+
+      var csrfMeta = document.querySelector('meta[name="csrf-token"]');
+      var csrfToken = csrfMeta ? csrfMeta.getAttribute('content') : '';
+
+      var submitBtn = checkoutForm.querySelector('button[type="submit"]');
+      if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'ওটিপি পাঠানো হচ্ছে...'; }
+
+      fetch('/api/checkout/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({ phone: rawPhone, _csrf: csrfToken })
+      })
+      .then(function(res) { return res.json(); })
+      .then(function(data) {
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '✓ অর্ডার নিশ্চিত করুন'; }
+        if (data.success) {
+          document.getElementById('otpTargetPhone').textContent = data.phone || rawPhone;
+          var otpModalEl = document.getElementById('orderOtpModal');
+          var modal = bootstrap.Modal.getOrCreateInstance(otpModalEl);
+          modal.show();
+          document.getElementById('orderOtpInput').value = '';
+          document.getElementById('orderOtpInput').focus();
+          document.getElementById('otpErrorMessage').style.display = 'none';
+          startOtpCountdown(60);
+          if (data.devCode) {
+            console.log('DEV / TEST OTP CODE:', data.devCode);
+          }
+        } else {
+          if (typeof toastr !== 'undefined') toastr.error(data.message || 'ওটিপি পাঠানো যায়নি।');
+        }
+      })
+      .catch(function() {
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '✓ অর্ডার নিশ্চিত করুন'; }
+        if (typeof toastr !== 'undefined') toastr.error('নেটওয়ার্ক ত্রুটি! অনুগ্রহ করে পুনরায় চেষ্টা করুন।');
+      });
+    });
+
+    var verifyBtn = document.getElementById('btnVerifyOtp');
+    if (verifyBtn) {
+      verifyBtn.addEventListener('click', function() {
+        var code = document.getElementById('orderOtpInput').value.trim();
+        var phoneInput = document.getElementById('customerPhone') || document.querySelector('input[name="phone"]');
+        var rawPhone = phoneInput ? phoneInput.value.trim() : '';
+        var csrfMeta = document.querySelector('meta[name="csrf-token"]');
+        var csrfToken = csrfMeta ? csrfMeta.getAttribute('content') : '';
+
+        if (!/^\d{6}$/.test(code)) {
+          var errDiv = document.getElementById('otpErrorMessage');
+          errDiv.textContent = '৬ সংখ্যার সঠিক ওটিপি কোড লিখুন।';
+          errDiv.style.display = 'block';
+          return;
+        }
+
+        verifyBtn.disabled = true;
+        verifyBtn.textContent = 'যাচাই করা হচ্ছে...';
+
+        fetch('/api/checkout/verify-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify({ phone: rawPhone, code: code, _csrf: csrfToken })
+        })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          verifyBtn.disabled = false;
+          verifyBtn.textContent = '✓ কোড যাচাই করে অর্ডার কনফার্ম করুন';
+          if (data.success) {
+            otpVerifiedInSession = true;
+            var modal = bootstrap.Modal.getInstance(document.getElementById('orderOtpModal'));
+            if (modal) modal.hide();
+            if (typeof toastr !== 'undefined') toastr.success('ওটিপি সফলভাবে যাচাই হয়েছে!');
+            checkoutForm.submit();
+          } else {
+            var errDiv = document.getElementById('otpErrorMessage');
+            errDiv.textContent = data.message || 'ভুল ওটিপি কোড!';
+            errDiv.style.display = 'block';
+          }
+        })
+        .catch(function() {
+          verifyBtn.disabled = false;
+          verifyBtn.textContent = '✓ কোড যাচাই করে অর্ডার কনফার্ম করুন';
+          var errDiv = document.getElementById('otpErrorMessage');
+          errDiv.textContent = 'যাচাইকরণে সমস্যা হয়েছে। পুনরায় চেষ্টা করুন।';
+          errDiv.style.display = 'block';
+        });
+      });
+    }
+
+    var resendBtn = document.getElementById('btnResendOtp');
+    if (resendBtn) {
+      resendBtn.addEventListener('click', function() {
+        if (resendBtn.disabled) return;
+        var phoneInput = document.getElementById('customerPhone') || document.querySelector('input[name="phone"]');
+        var rawPhone = phoneInput ? phoneInput.value.trim() : '';
+        var csrfMeta = document.querySelector('meta[name="csrf-token"]');
+        var csrfToken = csrfMeta ? csrfMeta.getAttribute('content') : '';
+
+        fetch('/api/checkout/send-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify({ phone: rawPhone, _csrf: csrfToken })
+        })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          if (data.success) {
+            if (typeof toastr !== 'undefined') toastr.success('নতুন ওটিপি কোড পাঠানো হয়েছে।');
+            startOtpCountdown(60);
+          } else {
+            if (typeof toastr !== 'undefined') toastr.error(data.message || 'কোড পাঠানো যায়নি।');
+          }
+        });
+      });
+    }
+
+    var countdownTimer = null;
+    function startOtpCountdown(sec) {
+      var resendBtn = document.getElementById('btnResendOtp');
+      var timerSpan = document.getElementById('otpTimerSpan');
+      if (!resendBtn) return;
+      resendBtn.disabled = true;
+      resendBtn.classList.add('text-muted');
+      if (countdownTimer) clearInterval(countdownTimer);
+      var rem = sec;
+      timerSpan.textContent = '(' + rem + 's)';
+      countdownTimer = setInterval(function() {
+        rem--;
+        if (rem <= 0) {
+          clearInterval(countdownTimer);
+          resendBtn.disabled = false;
+          resendBtn.classList.remove('text-muted');
+          timerSpan.textContent = '';
+        } else {
+          timerSpan.textContent = '(' + rem + 's)';
+        }
+      }, 1000);
+    }
+  });
 
 <%- include('partials/footer') %>

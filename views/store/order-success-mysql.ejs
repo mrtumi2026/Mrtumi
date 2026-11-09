@@ -18,4 +18,28 @@
     <a class="btn btn-success" href="/all-products"><%= isEn ? 'Continue shopping' : 'কেনাকাটা চালিয়ে যান' %></a>
   </section>
 </main>
+
+<% if (typeof siteSettings !== 'undefined' && siteSettings && siteSettings.fb_pixel_id && siteSettings.fb_pixel_enabled !== '0') { %>
+<script>
+  if (typeof fbq === 'function') {
+    fbq('track', 'Purchase', {
+      content_type: 'product',
+      value: <%= (Number(order.total_paisa || 0) / 100).toFixed(2) %>,
+      currency: 'BDT'
+    });
+  }
+</script>
+<% } %>
+<% if (typeof siteSettings !== 'undefined' && siteSettings && siteSettings.tiktok_pixel_id && siteSettings.tiktok_pixel_enabled !== '0') { %>
+<script>
+  if (typeof ttq === 'object' && typeof ttq.track === 'function') {
+    ttq.track('CompletePayment', {
+      content_type: 'product',
+      value: <%= (Number(order.total_paisa || 0) / 100).toFixed(2) %>,
+      currency: 'BDT'
+    });
+  }
+</script>
+<% } %>
+
 <%- include('partials/footer') %>

@@ -7,7 +7,14 @@ const { CSP_REPORT_ONLY, createSecurityHeaders } = require('../src/middleware/se
 function collect(middleware) {
   const headers = {};
   let called = false;
-  middleware({}, { setHeader(name, value) { headers[name] = value; } }, () => { called = true; });
+  middleware(
+    {},
+    {
+      setHeader(name, value) { headers[name] = value; },
+      removeHeader(name) { delete headers[name]; }
+    },
+    () => { called = true; }
+  );
   return { headers, called };
 }
 

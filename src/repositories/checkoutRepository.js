@@ -139,7 +139,7 @@ async function createOrder(input,options={}){
   const attributionData=attributionAllowed?normalizeAttribution(attribution||{}):EMPTY_ATTRIBUTION;
   assertMysql();const name=requireString(input.customer_name,'customer name',{min:2,max:191});const phone=normalizeBdPhone(input.phone);const address=requireString(input.address,'shipping address',{min:5,max:2000});const zoneId=requirePositiveInt(input.delivery_location_id,'delivery location');const note=String(input.note||'').trim().slice(0,1000);
   const paymentMethod=String(input.payment_method||'cod').trim().toLowerCase();if(!/^[a-z0-9_-]{1,48}$/.test(paymentMethod))throw new ValidationError('Select a valid payment method.');
-  const manualBrand=paymentMethod.replace(/^(manual_)?/,'').replace(/(_manual)?$/,'');
+  const manualBrand=paymentMethod.replace(/^manual_/,'').replace(/_manual$/,'');
   const isManualPayment=paymentMethod!=='cod';
   if(isManualPayment&&!['bkash','nagad','rocket'].includes(manualBrand))throw new ValidationError('Choose Cash on Delivery, bKash, Nagad, or Rocket.');
   const trxId=isManualPayment?requireString(input.trx_id,'Transaction ID',{min:4,max:128}).trim():'';
@@ -180,7 +180,21 @@ async function createOrder(input,options={}){
     const total=subtotal+shipping-coupon.amount;if(!Number.isSafeInteger(total)||total<0)throw new ValidationError('Order total is invalid.');
     const settingsRows=await tx.queryAll("SELECT setting_key,setting_value FROM settings WHERE setting_key IN ('otp_mode','advance_payment_mode','advance_payment_value','advance_min_order_paisa','advance_max_order_paisa')");
     const settings=Object.fromEntries(settingsRows.map(x=>[x.setting_key,x.setting_value]));
-    if(settings.otp_mode==='on')throw new ConflictError('Order verification is enabled, but no verified OTP delivery/checkout verification route is configured; checkout is paused rather than bypassing OTP.');
+    let isOtpVerified=Boolean(options.otpVerified);
+    if(settings.otp_mode==='on'&&!isOtpVerified){
+      if(options.sessionSid){
+        const sidHash=crypto.createHash('sha256').update(String(options.sessionSid)).digest('hex');
+        const verifiedRow=await tx.queryOne("SELECT id FROM order_otps WHERE phone=? AND (session_hash=? OR session_hash='') AND verified_at IS NOT NULL ORDER BY id DESC LIMIT 1",[phone,sidHash]);
+        if(verifiedRow)isOtpVerified=true;
+      }
+      if(!isOtpVerified&&customerId){
+        const custVerified=await tx.queryOne("SELECT phone_verified_at FROM customers WHERE id=? AND status=1",[customerId]);
+        if(custVerified?.phone_verified_at)isOtpVerified=true;
+      }
+      if(!isOtpVerified){
+        throw new ValidationError('অর্ডার সম্পন্ন করতে প্রথমে আপনার মোবাইলে পাঠানো ওটিপি (OTP) কোড ভেরিফাই করুন।');
+      }
+    }
     const policy=lifecycle.validateAdvancePolicy({mode:settings.advance_payment_mode||'off',value:Number(settings.advance_payment_value||0),minimumPaisa:settings.advance_min_order_paisa||0,maximumPaisa:settings.advance_max_order_paisa||null});
     const advance=lifecycle.calculateAdvance(total,policy);
     if(advance>0)throw new ConflictError('An advance is required by the current policy, but no verified payment provider is configured; checkout is paused rather than marking an unconfirmed payment paid.');
@@ -251,6 +265,10 @@ async function createOrder(input,options={}){
       await tx.execute("INSERT INTO audit_logs (actor_type,actor_id,action,entity_type,entity_id,before_json,after_json,ip_address,user_agent) VALUES ('customer',NULL,'checkout.recovery.recovered','incomplete_order',?,?,?,?,'')",[String(recoveryId),JSON.stringify({status:recovery.status}),JSON.stringify({status:'recovered',orderId:Number(order.insertId)}),String(ip||'').slice(0,64)]);
     }
     await tx.execute(`INSERT INTO audit_logs (actor_type,actor_id,action,entity_type,entity_id,before_json,after_json,ip_address,user_agent) VALUES ('system',NULL,'checkout.order.created','order',?,NULL,?,?, '')`,[String(order.insertId),JSON.stringify({invoiceNo:invoice,totalPaisa:total,status:'pending',paymentStatus:'unpaid',reservation:'active'}),String(ip||'').slice(0,64)]);
+    if(isOtpVerified){
+      await tx.execute("UPDATE orders SET otp_status='verified' WHERE id=?",[order.insertId]);
+      await tx.execute("UPDATE order_otps SET order_id=? WHERE phone=? AND order_id IS NULL AND verified_at IS NOT NULL",[order.insertId,phone]);
+    }
     return{id:Number(order.insertId),invoiceNo:invoice,replayed:false,totalPaisa:total,paidPaisa:0,codDuePaisa:codDue,paymentStatus};
   });
   if (result && !result.replayed) {
@@ -266,6 +284,21 @@ async function createOrder(input,options={}){
       });
     } catch (_smsErr) {
       // Non-blocking SMS trigger
+    }
+    try {
+      const capiService = require('../services/facebookCapiService');
+      capiService.sendOrderPurchaseEvent({
+        invoiceNo: result.invoiceNo,
+        totalAmount: (Number(result.totalPaisa || 0) / 100).toFixed(2),
+        customerName: input.customer_name,
+        phone: input.phone,
+        clientIp: options.ip || '',
+        userAgent: options.userAgent || '',
+        fbp: options.fbp || '',
+        fbc: options.fbc || ''
+      });
+    } catch (_capiErr) {
+      // Non-blocking CAPI trigger
     }
   }
   } catch(err) {

@@ -816,6 +816,45 @@ router.get('/cart/json', asyncHandler(async (req, res) => {
 // ============================================================================
 
 // ─── Direct 1-Click Quick Order (from Quick Order Modal or Product Page) ───
+// 📱 Order OTP Verification Routes (Full verification before order completion)
+router.post('/api/checkout/send-otp', publicFormLimiter, requireCsrf, asyncHandler(async (req, res) => {
+  const orderOtpService = require('../services/orderOtpService');
+  const result = await orderOtpService.requestCheckoutOtp({
+    phone: req.body.phone,
+    sessionSid: req.sessionID,
+    customerId: req.customerUser?.id || null
+  });
+  return res.json(result);
+}));
+
+router.post('/api/checkout/verify-otp', publicFormLimiter, requireCsrf, asyncHandler(async (req, res) => {
+  const orderOtpService = require('../services/orderOtpService');
+  const result = await orderOtpService.verifyCheckoutOtp({
+    phone: req.body.phone,
+    code: req.body.code || req.body.otp,
+    sessionSid: req.sessionID,
+    customerId: req.customerUser?.id || null
+  });
+  if (result.success) {
+    const { normalizeBdPhone } = require('../utils/validator');
+    req.session.orderOtpVerified = true;
+    req.session.orderOtpPhone = normalizeBdPhone(req.body.phone);
+  }
+  return res.json(result);
+}));
+
+router.get('/api/checkout/otp-status', asyncHandler(async (req, res) => {
+  const orderOtpService = require('../services/orderOtpService');
+  const settings = await orderOtpService.getOtpSettings();
+  const { normalizeBdPhone } = require('../utils/validator');
+  const phone = req.query.phone ? normalizeBdPhone(req.query.phone) : '';
+  const isVerified = Boolean(req.session.orderOtpVerified && (!phone || req.session.orderOtpPhone === phone));
+  return res.json({
+    otpEnabled: settings.enabled,
+    isVerified
+  });
+}));
+
 router.get('/api/checkout/delivery-locations', asyncHandler(async (_req, res) => {
   if (!storefrontRepo.isMysqlMode()) return res.status(404).json({ success:false, message:'Configured delivery locations are only exposed by canonical checkout.' });
   const locations=await checkoutRepo.listDeliveryLocations();
@@ -1154,12 +1193,16 @@ router.post('/customer/checkout', requireCsrf, asyncHandler(async (req, res) => 
       checkoutInput.phone = selectedPhone;
       checkoutInput.address = [savedAddress.street_address, savedAddress.upazila, savedAddress.district, savedAddress.division].filter(Boolean).join(', ');
     }
+    const { normalizeBdPhone } = require('../utils/validator');
+    const cleanCustomerPhone = normalizeBdPhone(checkoutInput.phone);
+    const isOtpSessionVerified = Boolean(req.session.orderOtpVerified && req.session.orderOtpPhone === cleanCustomerPhone);
     const result = await checkoutRepo.createOrder({
       customer_name: checkoutInput.customer_name, phone: checkoutInput.phone, address: checkoutInput.address,
       delivery_location_id: checkoutInput.delivery_location_id, payment_method: checkoutInput.payment_method,
       trx_id: req.body.trx_id, sender_number: req.body.sender_number,
       note: req.body.note, coupon_code: matches(replayKey) ? String(req.body.coupon_code || '') : (req.session.appliedCoupon?.code || ''),
-    }, { locale: req.locale, sessionCustomer: req.customerUser || null, ip: req.ip, requestKey: expected, cart: sourceCart, incompleteOrderId, sessionSid: req.sessionID, analyticsConsent: consentGranted(req.session, env.analyticsAttributionEnabled), attribution: req.session.analyticsAttribution || null });
+    }, { locale: req.locale, sessionCustomer: req.customerUser || null, ip: req.ip, userAgent: req.get('user-agent'), fbp: req.cookies?._fbp, fbc: req.cookies?._fbc, requestKey: expected, cart: sourceCart, incompleteOrderId, sessionSid: req.sessionID, otpVerified: isOtpSessionVerified, analyticsConsent: consentGranted(req.session, env.analyticsAttributionEnabled), attribution: req.session.analyticsAttribution || null });
+    delete req.session.orderOtpVerified; delete req.session.orderOtpPhone;
     if (!isReplay) { req.session.checkoutLastCart = JSON.parse(JSON.stringify(sourceCart)); req.session.checkoutLastRequestKey = expected; req.session.checkoutLastRecoveryId = incompleteOrderId; delete req.session.incompleteCheckoutId; req.session.cart = []; delete req.session.appliedCoupon; if (!(storefrontRepo.isMysqlMode() && req.customerUser?.id)) await persistCustomerCart(req); }
     req.session.checkoutLastInvoice = String(result.invoiceNo);
     return res.redirect(`/order-success/${encodeURIComponent(result.invoiceNo)}`);
@@ -1305,6 +1348,30 @@ router.post('/customer/checkout', requireCsrf, asyncHandler(async (req, res) => 
   req.session.cart = [];
   delete req.session.appliedCoupon;
 
+  try {
+    const smsService = require('../services/smsService');
+    smsService.sendOrderPlacedSms({
+      invoiceNo: inv,
+      customerName: cleanName,
+      phone: cleanPhone,
+      totalAmount: totalAmount,
+      deliveryArea: cleanAddress
+    });
+  } catch (_sErr) {}
+  try {
+    const capiService = require('../services/facebookCapiService');
+    capiService.sendOrderPurchaseEvent({
+      invoiceNo: inv,
+      totalAmount: totalAmount,
+      customerName: cleanName,
+      phone: cleanPhone,
+      clientIp: req.ip || '',
+      userAgent: req.get('user-agent') || '',
+      fbp: req.cookies ? req.cookies._fbp : '',
+      fbc: req.cookies ? req.cookies._fbc : ''
+    });
+  } catch (_cErr) {}
+
   req.session.checkoutLastInvoice = String(inv);
   return res.redirect(`/order-success/${inv}`);
 }));
@@ -1424,7 +1491,11 @@ router.post('/campaign/:slug/order', publicFormLimiter, requireCsrf, asyncHandle
     const expected=String(req.session.campaignCheckoutKey||'');
     const same=supplied.length===expected.length&&expected.length>=32&&crypto.timingSafeEqual(Buffer.from(supplied),Buffer.from(expected));
     if(!same||String(req.session.campaignCheckoutSlug||'')!==String(req.params.slug))throw new (require('../utils/errors').ConflictError)('Campaign checkout session expired. Reload the campaign and try again.');
-    const result=await checkoutRepo.createCampaignOrder({customer_name:req.body.customer_name,phone:req.body.phone,address:req.body.address,delivery_location_id:req.body.delivery_location_id,payment_method:'cod'}, {campaignSlug:req.params.slug,qty:req.body.qty,requestKey:`${req.sessionID}:${supplied}`,locale:req.locale,ip:req.ip||''});
+    const { normalizeBdPhone: normPhoneCamp } = require('../utils/validator');
+    const cleanCampPhone = normPhoneCamp(req.body.phone);
+    const isCampOtpVerified = Boolean(req.session.orderOtpVerified && req.session.orderOtpPhone === cleanCampPhone);
+    const result=await checkoutRepo.createCampaignOrder({customer_name:req.body.customer_name,phone:req.body.phone,address:req.body.address,delivery_location_id:req.body.delivery_location_id,payment_method:'cod'}, {campaignSlug:req.params.slug,qty:req.body.qty,requestKey:`${req.sessionID}:${supplied}`,locale:req.locale,ip:req.ip||'',sessionSid:req.sessionID,userAgent:req.get('user-agent'),fbp:req.cookies?._fbp,fbc:req.cookies?._fbc,otpVerified:isCampOtpVerified});
+    delete req.session.orderOtpVerified; delete req.session.orderOtpPhone;
     req.session.checkoutLastInvoice=String(result.invoiceNo);
     delete req.session.campaignCheckoutKey;delete req.session.campaignCheckoutSlug;
     return res.redirect(`/order-success/${encodeURIComponent(result.invoiceNo)}`);
