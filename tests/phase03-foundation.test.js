@@ -295,11 +295,9 @@ describe('Phase 03 — Production SQLite Prohibition & DB Connection Failure Han
 describe('Phase 03 — Migration Loader, Validator, Logger Redaction, CSRF, Rate Limit & RBAC', () => {
   test('Loads versioned reversible migration pairs in strict order and validates SQL integrity', () => {
     const pairs = loadMigrationPairs();
-    assert.equal(pairs.length, 29);
-    assert.deepEqual(
-      pairs.map((p) => p.version),
-      ['0001', '0002', '0003', '0004', '0005', '0006', '0007', '0008', '0009', '0010', '0011', '0012', '0013', '0014', '0015', '0016', '0017', '0018', '0019', '0020', '0021', '0022', '0023', '0024', '0025', '0026', '0027', '0028', '0029']
-    );
+    const expectedVersions = Array.from({ length: 36 }, (_, index) => String(index + 1).padStart(4, '0'));
+    assert.equal(pairs.length, expectedVersions.length);
+    assert.deepEqual(pairs.map((p) => p.version), expectedVersions);
 
     let totalCreateTables = 0;
     for (const pair of pairs) {
@@ -323,6 +321,35 @@ describe('Phase 03 — Migration Loader, Validator, Logger Redaction, CSRF, Rate
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
+  });
+
+  test('Additive ALTER COLUMN statements never reintroduce an existing column', () => {
+    const schema = new Map();
+    const duplicates = [];
+    for (const pair of loadMigrationPairs()) {
+      for (const statement of splitSqlStatements(pair.upSql)) {
+        const create = /CREATE TABLE IF NOT EXISTS `([^`]+)`\s*\(([\s\S]*)\)\s*ENGINE=/i.exec(statement);
+        if (create) {
+          const columns = schema.get(create[1]) || new Set();
+          for (const line of create[2].split(/\r?\n/)) {
+            const column = /^\s*`([^`]+)`\s+[A-Za-z]/.exec(line);
+            if (column && !/^(PRIMARY|UNIQUE|KEY|INDEX|CONSTRAINT|FOREIGN)$/i.test(column[1])) columns.add(column[1]);
+          }
+          schema.set(create[1], columns);
+          continue;
+        }
+        const alter = /ALTER TABLE `([^`]+)`([\s\S]*)$/i.exec(statement);
+        if (!alter) continue;
+        const columns = schema.get(alter[1]);
+        assert.ok(columns, `ALTER TABLE ${alter[1]} targets a table created earlier (${pair.version})`);
+        for (const add of alter[2].matchAll(/ADD COLUMN `([^`]+)`\s+[A-Za-z(]/g)) {
+          if (columns.has(add[1])) duplicates.push(`${pair.version}:${alter[1]}.${add[1]}`);
+          columns.add(add[1]);
+        }
+        for (const drop of alter[2].matchAll(/DROP COLUMN `([^`]+)`/g)) columns.delete(drop[1]);
+      }
+    }
+    assert.deepEqual(duplicates, [], 'no migration may add a column that already exists');
   });
 
   test('Validates BD phones, emails, enums, and redacts PII/secrets in structured logs', () => {

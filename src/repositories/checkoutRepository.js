@@ -87,7 +87,7 @@ async function listDeliveryLocations(){
 }
 async function listCheckoutMethods(){
   assertMysql();
-  const rows = await client().queryAll("SELECT code,name,account_number,instructions,instructions_bn,gateway_type,mode FROM payment_gateways WHERE (status=1 OR is_active=1) AND (gateway_type='manual' OR code IN ('cod','bkash_api','bkash_manual','nagad_api','nagad_manual','rocket_api','rocket_manual','bkash','nagad','rocket')) ORDER BY CASE WHEN code='cod' THEN 0 ELSE 1 END,id");
+  const rows = await client().queryAll("SELECT code,name,account_number,instructions,instructions_bn,gateway_type,mode FROM payment_gateways WHERE (status=1 AND is_active=1) AND (gateway_type='manual' OR code IN ('cod','bkash_api','bkash_manual','nagad_api','nagad_manual','rocket_api','rocket_manual','bkash','nagad','rocket')) ORDER BY CASE WHEN code='cod' THEN 0 ELSE 1 END,id");
   const hasBkash = rows.some(r => r.code === 'bkash' || r.code === 'bkash_manual' || r.code === 'bkash_api');
   const hasNagad = rows.some(r => r.code === 'nagad' || r.code === 'nagad_manual' || r.code === 'nagad_api');
   const hasRocket = rows.some(r => r.code === 'rocket' || r.code === 'rocket_manual' || r.code === 'rocket_api');
@@ -155,7 +155,7 @@ async function createOrder(input,options={}){
     if(replay){if(replay.checkout_request_hash!==payloadHash)throw new ConflictError('This checkout request key was already used with different order details.');return{id:Number(replay.id),invoiceNo:replay.invoice_no,replayed:true};}
     const blocked=await tx.queryOne('SELECT id FROM ip_blocks WHERE status=1 AND ip_or_phone IN (?,?) LIMIT 1 FOR UPDATE',[phone,String(ip||'').slice(0,64)]);
     if(blocked)throw new ConflictError('This phone number or IP address is blocked from placing orders.');
-    const gateway=await tx.queryOne("SELECT code,gateway_type,mode FROM payment_gateways WHERE (code=? OR code=REPLACE(?,'_manual','') OR code=CONCAT(?,'_manual')) AND (status=1 OR is_active=1) LIMIT 1 FOR UPDATE",[paymentMethod,paymentMethod,paymentMethod]);
+    const gateway=await tx.queryOne("SELECT code,gateway_type,mode FROM payment_gateways WHERE (code=? OR code=REPLACE(?,'_manual','') OR code=CONCAT(?,'_manual')) AND (status=1 AND is_active=1) LIMIT 1 FOR UPDATE",[paymentMethod,paymentMethod,paymentMethod]);
     if(!gateway || (isManualPayment && !['bkash','nagad','rocket'].includes(manualBrand)))throw new ConflictError('This payment method is not active or is not supported at checkout.');
     const zone=await tx.queryOne('SELECT id,division,district,upazila,delivery_charge_paisa FROM delivery_locations WHERE id=? AND status=1 FOR UPDATE',[zoneId]);
     if(!zone)throw new ValidationError('Select an active, configured delivery location.');
@@ -178,6 +178,11 @@ async function createOrder(input,options={}){
     let coupon={amount:0,code:''};const couponCode=String(input.coupon_code||'').trim().toUpperCase();
     if(couponCode){const row=await tx.queryOne('SELECT code,discount_type,discount_value,min_purchase_paisa,max_discount_paisa,usage_limit,used_count,expires_at,status FROM coupons WHERE UPPER(code)=? FOR UPDATE',[couponCode]);coupon=couponAmount(row,subtotal);}
     const total=subtotal+shipping-coupon.amount;if(!Number.isSafeInteger(total)||total<0)throw new ValidationError('Order total is invalid.');
+    // Resolve the session customer before the OTP policy check: the verified-phone bypass
+    // needs the customer id, and referencing it before its declaration used to throw a
+    // temporal-dead-zone ReferenceError (surfaced as DB_QUERY_FAILED) whenever OTP was on.
+    const sessionCustomerId=sessionCustomer?.id?requirePositiveInt(sessionCustomer.id,'customer ID'):null;
+    let customerId=sessionCustomerId;
     const settingsRows=await tx.queryAll("SELECT setting_key,setting_value FROM settings WHERE setting_key IN ('otp_mode','advance_payment_mode','advance_payment_value','advance_min_order_paisa','advance_max_order_paisa')");
     const settings=Object.fromEntries(settingsRows.map(x=>[x.setting_key,x.setting_value]));
     let isOtpVerified=Boolean(options.otpVerified);
@@ -198,8 +203,7 @@ async function createOrder(input,options={}){
     const policy=lifecycle.validateAdvancePolicy({mode:settings.advance_payment_mode||'off',value:Number(settings.advance_payment_value||0),minimumPaisa:settings.advance_min_order_paisa||0,maximumPaisa:settings.advance_max_order_paisa||null});
     const advance=lifecycle.calculateAdvance(total,policy);
     if(advance>0)throw new ConflictError('An advance is required by the current policy, but no verified payment provider is configured; checkout is paused rather than marking an unconfirmed payment paid.');
-    let customerId=null;
-    if(sessionCustomer?.id){const customer=await tx.queryOne('SELECT id,phone,status,is_blocked FROM customers WHERE id=? FOR UPDATE',[requirePositiveInt(sessionCustomer.id,'customer ID')]);if(!customer||Number(customer.status)!==1||Number(customer.is_blocked)===1||normalizeBdPhone(customer.phone)!==phone)throw new ConflictError('Sign in with an account matching the delivery phone, or continue as a guest.');customerId=Number(customer.id);}
+    if(customerId){const customer=await tx.queryOne('SELECT id,phone,status,is_blocked FROM customers WHERE id=? FOR UPDATE',[customerId]);if(!customer||Number(customer.status)!==1||Number(customer.is_blocked)===1||normalizeBdPhone(customer.phone)!==phone)throw new ConflictError('Sign in with an account matching the delivery phone, or continue as a guest.');customerId=Number(customer.id);}
     const invoice=`MT-${crypto.randomBytes(12).toString('hex').toUpperCase()}`;
     const zoneLabel=[zone.division,zone.district,zone.upazila].filter(Boolean).join(' / ');
     const orderChannel=campaign?'campaign':'storefront';const trafficSource=campaign?`Campaign:${campaign.slug}`:attributionData.platformSource;const customerNote=note||(campaign?`Campaign: ${campaign.title}`:null);

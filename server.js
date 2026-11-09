@@ -4,6 +4,7 @@ const path = require('path');
 const express = require('express');
 const { env } = require('./src/config/env');
 const db = require('./src/db/database');
+const mysqlPool = require('./src/db/mysqlPool');
 const { logger } = require('./src/utils/logger');
 const { sendError } = require('./src/utils/apiResponse');
 const sessionManager = require('./src/middleware/sessionManager');
@@ -15,8 +16,12 @@ const { legacyAdminRbac, legacyAdminCsrf } = require('./src/middleware/legacyAdm
 const { legacyAdminAudit } = require('./src/middleware/legacyAdminAudit');
 const { recordErrorLog } = require('./src/repositories/auditLogRepository');
 
-if (require.main === module && env.isDevelopment) {
+const isStartupInvocation = require.main === module || typeof PhusionPassenger !== 'undefined';
+if (isStartupInvocation && env.isDevelopment) {
   throw new Error('DEPLOYMENT STARTUP ERROR: direct server.js startup refuses development defaults; use `npm run dev` locally or configure production and use app.js.');
+}
+if (isStartupInvocation && env.isTest && process.env.APP_ALLOW_TEST_STARTUP !== 'true') {
+  throw new Error('DEPLOYMENT STARTUP ERROR: NODE_ENV=test cannot start server.js without the explicit test-only APP_ALLOW_TEST_STARTUP=true flag.');
 }
 
 const localeRoutes = require('./src/routes/locale');
@@ -88,6 +93,29 @@ app.use(attachRequestId);
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(express.json({ limit: '10mb' }));
 app.use(sanitizeRequestMiddleware);
+
+// Customer return evidence is private. Legacy evidence files may still exist beneath the
+// public upload tree, so any file registered in `customer_return_requests` is refused
+// before either static handler can serve it. This guard must stay above `express.static`.
+app.use('/uploads/custom', async (req, res, next) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+  const match = /^\/?return-evidence\/([A-Za-z0-9-]+\.(?:jpg|jpeg|png|webp|gif))$/i.exec(String(req.path || ''));
+  if (!match) return next();
+  const evidenceKey = `return-evidence/${match[1]}`;
+  try {
+    const legacyEvidence = env.db.client === 'mysql'
+      ? await mysqlPool.queryOne('SELECT id FROM customer_return_requests WHERE evidence_path IN (?, ?) LIMIT 1', [evidenceKey, match[1]])
+      : db.get('SELECT id FROM customer_return_requests WHERE evidence_path IN (?, ?) LIMIT 1', evidenceKey, match[1]);
+    if (legacyEvidence) return res.sendStatus(404);
+    return next();
+  } catch (error) {
+    logger.error('Return evidence exposure guard failed closed', {
+      code: error && error.code ? String(error.code).slice(0, 64) : 'ERROR',
+    });
+    return res.sendStatus(404);
+  }
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 // Keep uploaded admin images reachable when UPLOAD_DIR points outside the disposable app release.
 // The default local path is also under public/, so this is only a fallback there.
@@ -175,4 +203,8 @@ if (require.main === module) {
   startServer();
 }
 
-module.exports = { app, startServer };
+// Primary export remains the Express application so `require('./server')` is a drop-in
+// Passenger-compatible entry point; named exports preserve the existing import contract.
+module.exports = app;
+module.exports.app = app;
+module.exports.startServer = startServer;

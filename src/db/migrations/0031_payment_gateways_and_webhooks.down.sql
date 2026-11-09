@@ -1,5 +1,5 @@
 -- ============================================================================
--- Migration 0017 (DOWN): Rollback payment_transactions and webhook logs
+-- Migration 0031 (DOWN): Rollback payment_transactions and webhook logs
 -- ============================================================================
 DROP TABLE IF EXISTS `payment_webhook_logs`;
 DROP TABLE IF EXISTS `payment_transactions`;
