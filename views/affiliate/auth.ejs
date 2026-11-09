@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+  <meta charset="utf-8" />
+  <meta name="csrf-token" content="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>" />
+  <title><%= mode === 'register' ? 'এফিলিয়েট রেজিস্ট্রেশন' : 'এফিলিয়েট লগইন' %> — Mr. Tumi</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="shortcut icon" href="/uploads/brand/mrtumi-placeholder-favicon.svg" />
+  <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet" />
+  <style>
+    body { font-family: 'Hind Siliguri', sans-serif; background: #0f172a; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+    .auth-card { background: #1e293b; border-radius: 16px; border: 1px solid rgba(255,255,255,0.1); width: 100%; max-width: 480px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); color: #fff; }
+    .form-control, .form-select { background: #0f172a; border: 1px solid #334155; color: #fff; border-radius: 8px; padding: 10px 14px; }
+    .form-control:focus, .form-select:focus { background: #0f172a; border-color: #38bdf8; color: #fff; box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2); }
+    .btn-affiliate { background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); color: #fff; font-weight: 600; border-radius: 8px; padding: 12px; border: none; }
+    .btn-affiliate:hover { background: linear-gradient(135deg, #0369a1 0%, #075985 100%); color: #fff; }
+  </style>
+</head>
+<body class="p-3">
+  <div class="auth-card p-4 p-md-5">
+    <div class="text-center mb-4">
+      <h2 class="h4 fw-bold mb-1">💼 <%= mode === 'register' ? 'এফিলিয়েট পার্টনার রেজিস্ট্রেশন' : 'এফিলিয়েট পার্টনার লগইন' %></h2>
+      <p class="text-white-50 small mb-0"><%= mode === 'register' ? 'লিংক শেয়ার করে প্রতিটি বিক্রয়ে সর্বোচ্চ কমিশন আয় করুন' : 'আপনার ড্যাশবোর্ডে প্রবেশ করতে লগইন করুন' %></p>
+    </div>
+
+    <% if (typeof error !== 'undefined' && error) { %>
+      <div class="alert alert-danger py-2 px-3 small border-0 mb-3" style="background: rgba(239,68,68,0.2); color:#fca5a5;">
+        <i class="fas fa-exclamation-circle me-1"></i> <%= error %>
+      </div>
+    <% } %>
+
+    <% if (mode === 'register') { %>
+      <form action="/affiliate/register" method="POST">
+        <input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>">
+        <% if (typeof parentCode !== 'undefined' && parentCode) { %>
+          <input type="hidden" name="parent_code" value="<%= parentCode %>">
+          <div class="p-2 mb-3 rounded small" style="background: rgba(56,189,248,0.15); border: 1px solid rgba(56,189,248,0.3); color:#7dd3fc;">
+            <i class="fas fa-user-friends me-1"></i> আপনি আমন্ত্রিত সাব-এফিলিয়েট হিসেবে যুক্ত হচ্ছেন (রেফারার কোড: <strong><%= parentCode %></strong>)
+          </div>
+        <% } %>
+
+        <div class="mb-3">
+          <label class="form-label small text-white-50">পূর্ণ নাম</label>
+          <input type="text" name="name" class="form-control" placeholder="আপনার নাম লিখুন" required>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label small text-white-50">মোবাইল নম্বর (লগইন আইডি)</label>
+          <input type="tel" name="phone" class="form-control" placeholder="০১XXXXXXXXX" required>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label small text-white-50">ইমেইল (ঐচ্ছিক)</label>
+          <input type="email" name="email" class="form-control" placeholder="example@gmail.com">
+        </div>
+
+        <div class="row g-2 mb-3">
+          <div class="col-sm-5">
+            <label class="form-label small text-white-50">পেমেন্ট মেথড</label>
+            <select name="payout_method" class="form-select">
+              <option value="bKash">bKash</option>
+              <option value="Nagad">Nagad</option>
+              <option value="Rocket">Rocket</option>
+              <option value="Bank">Bank Transfer</option>
+            </select>
+          </div>
+          <div class="col-sm-7">
+            <label class="form-label small text-white-50">উইথড্রয়াল অ্যাকাউন্ট/নম্বর</label>
+            <input type="text" name="payout_account" class="form-control" placeholder="বিকাশ/নগদ নম্বর">
+          </div>
+        </div>
+
+        <div class="mb-4">
+          <label class="form-label small text-white-50">পাসওয়ার্ড</label>
+          <input type="password" name="password" class="form-control" placeholder="কমপক্ষে ৬ অক্ষর" required minlength="6">
+        </div>
+
+        <button type="submit" class="btn btn-affiliate w-100">রেজিস্ট্রেশন সম্পূর্ণ করুন</button>
+      </form>
+
+      <div class="text-center mt-4">
+        <span class="text-white-50 small">ইতিমধ্যে অ্যাকাউন্ট আছে? </span>
+        <a href="/affiliate/login" class="text-info text-decoration-none small fw-semibold">লগইন করুন</a>
+      </div>
+    <% } else { %>
+      <form action="/affiliate/login" method="POST">
+        <input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>">
+
+        <div class="mb-3">
+          <label class="form-label small text-white-50">মোবাইল নম্বর বা এফিলিয়েট কোড</label>
+          <input type="text" name="identifier" class="form-control" placeholder="০১XXXXXXXXX বা AFF-XXXX" required>
+        </div>
+
+        <div class="mb-4">
+          <label class="form-label small text-white-50">পাসওয়ার্ড</label>
+          <input type="password" name="password" class="form-control" placeholder="পাসওয়ার্ড লিখুন" required>
+        </div>
+
+        <button type="submit" class="btn btn-affiliate w-100">লগইন করুন</button>
+      </form>
+
+      <div class="text-center mt-4">
+        <span class="text-white-50 small">নতুন এফিলিয়েট পার্টনার হতে চান? </span>
+        <a href="/affiliate/register" class="text-info text-decoration-none small fw-semibold">নতুন অ্যাকাউন্ট খুলুন</a>
+      </div>
+    <% } %>
+
+    <div class="text-center mt-3 pt-3 border-top border-secondary border-opacity-25">
+      <a href="/" class="text-muted text-decoration-none small"><i class="fas fa-arrow-left me-1"></i> মিস্টার তুমি স্টোরে ফিরে যান</a>
+    </div>
+  </div>
+</body>
+</html>

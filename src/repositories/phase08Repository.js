@@ -311,12 +311,28 @@ async function transitionOrderTx(tx, orderIdInput, toStatus, note, actor = {}, r
       const referralService = require('../services/referralService');
       await referralService.creditReferralRewardForOrder(id, tx);
     } catch (_refDeliveredErr) {}
+    try {
+      const affiliateService = require('../services/affiliateService');
+      await affiliateService.creditOrderAffiliateCommission(id, tx);
+    } catch (_affDeliveredErr) {}
   } else if (target === 'cancelled' || target === 'failed') {
     try {
       const referralService = require('../services/referralService');
       await referralService.cancelReferralRewardForOrder(id, tx);
     } catch (_refCancelErr) {}
+    try {
+      const affiliateService = require('../services/affiliateService');
+      await affiliateService.cancelOrderAffiliateCommission(id, tx);
+    } catch (_affCancelErr) {}
   }
+  try {
+    const pushService = require('../services/pushNotificationService');
+    pushService.notifyCustomerOrderStatus({
+      orderId: id,
+      invoiceNo: order.invoice_no,
+      status: target
+    });
+  } catch (_pushStatusErr) {}
   await tx.execute('INSERT INTO order_status_history (order_id,from_status,to_status,note,request_key,changed_by_user_id) VALUES (?,?,?,?,?,?)', [id,from,target,reason,key,actor.id||null]);
   await insertAudit(tx, actor, `order.status.${target}`, 'order', id, { status:from }, { status:target, reason, requestKey:key });
   return { id, from, to:target, replayed:false };

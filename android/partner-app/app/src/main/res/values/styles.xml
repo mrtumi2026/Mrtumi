@@ -1,0 +1,9 @@
+<resources>
+    <style name="Theme.MrTumiPartner" parent="Theme.MaterialComponents.Light.NoActionBar">
+        <item name="colorPrimary">@color/partner_dark</item>
+        <item name="colorPrimaryVariant">#030712</item>
+        <item name="colorOnPrimary">@color/white</item>
+        <item name="android:statusBarColor">@color/partner_dark</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

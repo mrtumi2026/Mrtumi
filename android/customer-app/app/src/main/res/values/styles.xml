@@ -1,0 +1,9 @@
+<resources>
+    <style name="Theme.MrTumiStore" parent="Theme.MaterialComponents.Light.NoActionBar">
+        <item name="colorPrimary">@color/brand_forest</item>
+        <item name="colorPrimaryVariant">#09281a</item>
+        <item name="colorOnPrimary">@color/white</item>
+        <item name="android:statusBarColor">@color/brand_forest</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

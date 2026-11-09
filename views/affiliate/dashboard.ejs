@@ -1,0 +1,229 @@
+<%- include('partials/layout-top', { title: 'এফিলিয়েট ড্যাশবোর্ড' }) %>
+
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+  <div>
+    <h4 class="fw-bold mb-0">💼 এফিলিয়েট ড্যাশবোর্ড (<%= affiliate.name %>)</h4>
+    <p class="text-muted small mb-0">এফিলিয়েট কোড: <strong class="badge bg-dark px-2 py-1"><%= affiliateCode %></strong> &bull; বেসিক কমিশন রেট: <strong><%= commissionRatePercent %>%</strong> &bull; সাব-এফিলিয়েট টিয়ার-২ রেট: <strong><%= tier2RatePercent %>%</strong></p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="/affiliate/links" class="btn btn-primary btn-sm"><i class="fas fa-plus-circle me-1"></i>নতুন লিংক তৈরি</a>
+    <a href="/affiliate/withdrawals" class="btn btn-outline-success btn-sm">💰 টাকা উত্তোলন</a>
+  </div>
+</div>
+
+<!-- 4 Stat Cards -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-3">
+    <div class="card h-100 border-0 shadow-sm rounded-3">
+      <div class="card-body p-3">
+        <div class="d-flex align-items-center gap-3">
+          <div class="rounded-circle bg-success bg-opacity-10 text-success d-flex align-items-center justify-content-center" style="width:48px;height:48px;font-size:20px;">
+            <i class="fas fa-wallet"></i>
+          </div>
+          <div>
+            <div class="text-muted small fw-semibold">উত্তোলনযোগ্য ব্যালেন্স</div>
+            <div class="h4 fw-bold text-success mb-0">৳<%= balanceBdt.toLocaleString('en-IN') %></div>
+            <small class="text-muted" style="font-size:11px;">পেমেন্টের জন্য প্রস্তুত</small>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-6 col-lg-3">
+    <div class="card h-100 border-0 shadow-sm rounded-3">
+      <div class="card-body p-3">
+        <div class="d-flex align-items-center gap-3">
+          <div class="rounded-circle bg-warning bg-opacity-10 text-warning d-flex align-items-center justify-content-center" style="width:48px;height:48px;font-size:20px;">
+            <i class="fas fa-hourglass-half"></i>
+          </div>
+          <div>
+            <div class="text-muted small fw-semibold">পেন্ডিং কমিশন</div>
+            <div class="h4 fw-bold text-warning mb-0">৳<%= pendingBdt.toLocaleString('en-IN') %></div>
+            <small class="text-muted" style="font-size:11px;">ডেলিভারির অপেক্ষায়</small>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-6 col-lg-3">
+    <div class="card h-100 border-0 shadow-sm rounded-3">
+      <div class="card-body p-3">
+        <div class="d-flex align-items-center gap-3">
+          <div class="rounded-circle bg-primary bg-opacity-10 text-primary d-flex align-items-center justify-content-center" style="width:48px;height:48px;font-size:20px;">
+            <i class="fas fa-mouse-pointer"></i>
+          </div>
+          <div>
+            <div class="text-muted small fw-semibold">মোট ক্লিক ও কনভার্সন</div>
+            <div class="h4 fw-bold text-primary mb-0"><%= totalClicks %></div>
+            <small class="text-muted" style="font-size:11px;"><%= totalConversions %> টি সফল সেলস</small>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-6 col-lg-3">
+    <div class="card h-100 border-0 shadow-sm rounded-3">
+      <div class="card-body p-3">
+        <div class="d-flex align-items-center gap-3">
+          <div class="rounded-circle bg-info bg-opacity-10 text-info d-flex align-items-center justify-content-center" style="width:48px;height:48px;font-size:20px;">
+            <i class="fas fa-users-cog"></i>
+          </div>
+          <div>
+            <div class="text-muted small fw-semibold">সাব-এফিলিয়েট টিম (Tier 2)</div>
+            <div class="h4 fw-bold text-info mb-0"><%= subAffiliatesCount %> জন</div>
+            <small class="text-muted" style="font-size:11px;">লাইফটাইম ইনকাম: ৳<%= lifetimeBdt.toLocaleString('en-IN') %></small>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Multi-tier Sub-affiliate Invite Banner -->
+<div class="card border-0 shadow-sm rounded-4 overflow-hidden mb-4" style="background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%); color: #fff;">
+  <div class="card-body p-4">
+    <div class="row align-items-center g-3">
+      <div class="col-lg-8">
+        <span class="badge bg-warning text-dark px-2.5 py-1 rounded-pill fw-bold mb-2">⭐ Multi-Tier Affiliate Earning</span>
+        <h5 class="fw-bold mb-1">সাব-এফিলিয়েট ইনভাইট করুন — টিম বিক্রয়ে পান অতিরিক্ত ১% ওভাররাইড কমিশন!</h5>
+        <p class="text-white-50 small mb-3">আপনার সাব-এফিলিয়েট ইনভাইট লিংক দিয়ে বন্ধুদের রেজিস্টার করান। তারা যত বিক্রয় করবে, আপনি পাবেন প্রতিটি সেলসে লাইফটাইম Tier-2 প্যাসিভ ইনকাম।</p>
+        
+        <div class="input-group">
+          <input type="text" class="form-control" id="subInviteInput" value="<%= subInviteLink %>" readonly style="background:#f8fafc; font-size:13px;">
+          <button class="btn btn-warning text-dark fw-bold px-3" type="button" onclick="copyText('subInviteInput', 'subBtnText')">
+            <i class="far fa-copy me-1"></i> <span id="subBtnText">কপি করুন</span>
+          </button>
+        </div>
+      </div>
+      <div class="col-lg-4 text-center text-lg-end">
+        <a href="https://api.whatsapp.com/send?text=<%= encodeURIComponent('Mr. Tumi Affiliate প্রোগ্রামে যোগ দিন এবং ঘরে বসেই বিক্রয় করে আয় করুন! আমার ইনভাইট লিংক: ' + subInviteLink) %>" target="_blank" rel="noopener" class="btn btn-success rounded-pill px-4 py-2 fw-semibold" style="background:#25D366; border-color:#25D366;">
+          <i class="fab fa-whatsapp me-1"></i> WhatsApp এ ইনভাইট পাঠান
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Quick Link Generator & Recent Commissions -->
+<div class="row g-4">
+  <div class="col-lg-6">
+    <div class="card border-0 shadow-sm rounded-3 h-100">
+      <div class="card-header bg-white py-3 border-0 d-flex justify-content-between align-items-center">
+        <h5 class="card-title h6 mb-0 fw-bold"><i class="fas fa-link text-primary me-2"></i>আপনার সক্রিয় এফিলিয়েট লিংকসমূহ</h5>
+        <a href="/affiliate/links" class="small text-decoration-none">সবগুলো দেখুন &rarr;</a>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0" style="font-size:13px;">
+            <thead class="table-light">
+              <tr>
+                <th>লিংক</th>
+                <th>ক্লিক</th>
+                <th>সেলস</th>
+                <th>একশন</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% links.forEach(function(l, idx) { %>
+                <tr>
+                  <td>
+                    <span class="d-inline-block text-truncate" style="max-width: 220px;" title="<%= l.target_url %>">
+                      <%= l.target_url %>
+                    </span>
+                    <input type="hidden" id="linkVal<%= idx %>" value="<%= l.target_url %>">
+                  </td>
+                  <td><span class="badge bg-secondary"><%= l.clicks_count %></span></td>
+                  <td><span class="badge bg-success"><%= l.conversions_count %></span></td>
+                  <td>
+                    <button class="btn btn-sm btn-outline-primary py-0 px-2" onclick="copyText('linkVal<%= idx %>')">
+                      <i class="far fa-copy"></i>
+                    </button>
+                  </td>
+                </tr>
+              <% }); %>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="card border-0 shadow-sm rounded-3 h-100">
+      <div class="card-header bg-white py-3 border-0 d-flex justify-content-between align-items-center">
+        <h5 class="card-title h6 mb-0 fw-bold"><i class="fas fa-coins text-warning me-2"></i>সাম্প্রতিক কমিশনসমূহ</h5>
+        <a href="/affiliate/commissions" class="small text-decoration-none">পূর্ণাঙ্গ হিস্ট্রি &rarr;</a>
+      </div>
+      <div class="card-body p-0">
+        <% if (!commissions || commissions.length === 0) { %>
+          <div class="p-4 text-center text-muted">
+            <i class="fas fa-coins fa-2x text-muted mb-2 opacity-25"></i>
+            <p class="small mb-0">এখনও কোনো কমিশন রেকর্ড হয়নি। আপনার এফিলিয়েট লিংকগুলো শেয়ার করা শুরু করুন!</p>
+          </div>
+        <% } else { %>
+          <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0" style="font-size:13px;">
+              <thead class="table-light">
+                <tr>
+                  <th>তারিখ</th>
+                  <th>অর্ডার</th>
+                  <th>টিয়ার</th>
+                  <th>কমিশন</th>
+                  <th>স্ট্যাটাস</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% commissions.slice(0, 6).forEach(function(c) { %>
+                  <tr>
+                    <td><%= new Date(c.created_at).toLocaleDateString('bn-BD') %></td>
+                    <td><strong>#<%= c.order_id %></strong></td>
+                    <td>
+                      <% if (c.tier === 2) { %>
+                        <span class="badge bg-info-subtle text-info">Tier-2 (Team)</span>
+                      <% } else { %>
+                        <span class="badge bg-primary-subtle text-primary">Tier-1 (Direct)</span>
+                      <% } %>
+                    </td>
+                    <td><strong class="text-success">+৳<%= Math.round(Number(c.commission_paisa || 0) / 100) %></strong></td>
+                    <td>
+                      <% if (c.status === 'approved') { %>
+                        <span class="badge bg-success-subtle text-success">✓ অ্যাকাউন্টে জমা</span>
+                      <% } else if (c.status === 'rejected') { %>
+                        <span class="badge bg-danger-subtle text-danger">বাতিল</span>
+                      <% } else { %>
+                        <span class="badge bg-warning-subtle text-warning">⏳ অপেক্ষমাণ</span>
+                      <% } %>
+                    </td>
+                  </tr>
+                <% }); %>
+              </tbody>
+            </table>
+          </div>
+        <% } %>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function copyText(elemId, btnTextId) {
+  const el = document.getElementById(elemId);
+  if (!el) return;
+  const val = el.value || el.innerText;
+  navigator.clipboard.writeText(val).then(() => {
+    if (btnTextId) {
+      const btnTxt = document.getElementById(btnTextId);
+      const orig = btnTxt.innerText;
+      btnTxt.innerText = 'কপি হয়েছে!';
+      setTimeout(() => { btnTxt.innerText = orig; }, 2000);
+    } else {
+      alert('লিংক কপি করা হয়েছে!');
+    }
+  });
+}
+</script>
+
+<%- include('partials/layout-bottom') %>

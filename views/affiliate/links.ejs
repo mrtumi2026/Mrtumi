@@ -1,0 +1,99 @@
+<%- include('partials/layout-top', { title: 'এফিলিয়েট লিংক ও প্রমোশন' }) %>
+
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+  <div>
+    <h4 class="fw-bold mb-0">🔗 এফিলিয়েট লিংক জেনারেটর ও প্রমোশন</h4>
+    <p class="text-muted small mb-0">যেকোনো পণ্য বা অফারের লিংক দিয়ে মুহূর্তেই আপনার পার্সোনাল এফিলিয়েট লিংক তৈরি করুন</p>
+  </div>
+  <a href="/affiliate/dashboard" class="btn btn-outline-secondary btn-sm"><i class="fas fa-arrow-left me-1"></i>ড্যাশবোর্ড</a>
+</div>
+
+<!-- Link Generator Form -->
+<div class="card border-0 shadow-sm rounded-3 mb-4">
+  <div class="card-header bg-white py-3 border-0">
+    <h5 class="card-title h6 mb-0 fw-bold"><i class="fas fa-magic text-primary me-2"></i>কাস্টম এফিলিয়েট লিংক তৈরি করুন</h5>
+  </div>
+  <div class="card-body">
+    <form action="/affiliate/links/create" method="POST" class="row g-3">
+      <input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>">
+      
+      <div class="col-md-8">
+        <label class="form-label small fw-semibold">টার্গেট ওয়েব লিংক (পণ্য বা ক্যাম্পেইন URL)</label>
+        <input type="text" name="target_url" class="form-control" placeholder="যেমন: https://mrtumi.com/product/mango-fresh বা /campaign/summer-fest" required>
+        <small class="text-muted">আপনি স্টোরের যেকোনো পেজ, ক্যাটাগরি বা পণ্যের লিংক পেস্ট করতে পারেন।</small>
+      </div>
+
+      <div class="col-md-4">
+        <label class="form-label small fw-semibold">লিংকের ধরন</label>
+        <select name="target_type" class="form-select">
+          <option value="product">পণ্য (Product)</option>
+          <option value="campaign">ক্যাম্পেইন (Campaign)</option>
+          <option value="storefront">হোমপেজ / সাধারণ (Storefront)</option>
+        </select>
+      </div>
+
+      <div class="col-12 text-end">
+        <button type="submit" class="btn btn-primary px-4 fw-semibold"><i class="fas fa-link me-1"></i>এফিলিয়েট লিংক জেনারেট করুন</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- All Created Links Table -->
+<div class="card border-0 shadow-sm rounded-3">
+  <div class="card-header bg-white py-3 border-0">
+    <h5 class="card-title h6 mb-0 fw-bold"><i class="fas fa-list text-success me-2"></i>আপনার সক্রিয় প্রমোশনাল লিংকসমূহ</h5>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>ধরন</th>
+            <th>এফিলিয়েট লিংক</th>
+            <th>মোট ক্লিক</th>
+            <th>মোট বিক্রয় (Sales)</th>
+            <th>অ্যাকশন</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% links.forEach(function(l, idx) { %>
+            <tr>
+              <td><span class="badge bg-light text-dark border text-uppercase"><%= l.target_type %></span></td>
+              <td>
+                <span class="d-inline-block text-truncate fw-semibold" style="max-width: 420px;">
+                  <%= l.target_url %>
+                </span>
+                <input type="hidden" id="fullLinkVal<%= idx %>" value="<%= l.target_url %>">
+              </td>
+              <td><span class="badge bg-secondary px-2.5 py-1"><%= l.clicks_count %></span></td>
+              <td><span class="badge bg-success px-2.5 py-1"><%= l.conversions_count %> টি</span></td>
+              <td>
+                <div class="d-flex gap-1">
+                  <button class="btn btn-sm btn-outline-primary" onclick="copyDirect('fullLinkVal<%= idx %>')">
+                    <i class="far fa-copy me-1"></i>কপি
+                  </button>
+                  <a href="https://api.whatsapp.com/send?text=<%= encodeURIComponent('Mr. Tumi তে সেরা দামে কেনাকাটা করুন: ' + l.target_url) %>" target="_blank" rel="noopener" class="btn btn-sm btn-success" style="background:#25D366; border-color:#25D366;">
+                    <i class="fab fa-whatsapp"></i>
+                  </a>
+                </div>
+              </td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+function copyDirect(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  navigator.clipboard.writeText(el.value).then(() => {
+    alert('এফিলিয়েট লিংকটি ক্লিপবোর্ডে কপি করা হয়েছে!');
+  });
+}
+</script>
+
+<%- include('partials/layout-bottom') %>

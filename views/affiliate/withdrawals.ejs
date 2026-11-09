@@ -1,0 +1,125 @@
+<%- include('partials/layout-top', { title: 'টাকা উত্তোলন' }) %>
+
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+  <div>
+    <h4 class="fw-bold mb-0">💰 টাকা উত্তোলন (Payout Withdrawal)</h4>
+    <p class="text-muted small mb-0">আপনার অর্জিত এফিলিয়েট কমিশন বিকাশ, নগদ, রকেট বা ব্যাংক অ্যাকাউন্টে উত্তোলন করুন</p>
+  </div>
+  <a href="/affiliate/dashboard" class="btn btn-outline-secondary btn-sm"><i class="fas fa-arrow-left me-1"></i>ড্যাশবোর্ড</a>
+</div>
+
+<div class="row g-4 mb-4">
+  <!-- Balance & Instructions Card -->
+  <div class="col-lg-5">
+    <div class="card border-0 shadow-sm rounded-3 mb-4 h-100" style="background: linear-gradient(135deg, #065f46 0%, #047857 100%); color: #fff;">
+      <div class="card-body p-4 d-flex flex-column justify-content-between">
+        <div>
+          <span class="badge bg-warning text-dark px-2.5 py-1 rounded-pill fw-bold mb-3">উত্তোলনযোগ্য ব্যালেন্স</span>
+          <div class="display-6 fw-bold mb-1">৳<%= balanceBdt.toLocaleString('en-IN') %></div>
+          <p class="text-white-50 small mb-4">পেন্ডিং কমিশন: ৳<%= pendingBdt.toLocaleString('en-IN') %> (ডেলিভারির পর যোগ হবে)</p>
+        </div>
+
+        <div class="p-3 rounded bg-white bg-opacity-10 border border-white border-opacity-25 small">
+          <strong class="d-block mb-1 text-warning"><i class="fas fa-info-circle me-1"></i>উইথড্রয়াল নীতিমালা:</strong>
+          <ul class="mb-0 ps-3 text-white-50">
+            <li>সর্বনিম্ন উত্তোলনের পরিমাণ <strong>৳৫০০</strong>।</li>
+            <li>রিকোয়েস্ট করার ২৪–৪৮ কর্মঘণ্টার মধ্যে পেমেন্ট সম্পন্ন হবে।</li>
+            <li>সঠিক ও সচল পার্সোনাল বা মার্চেন্ট অ্যাকাউন্ট নম্বর প্রদান করুন।</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Withdrawal Request Form -->
+  <div class="col-lg-7">
+    <div class="card border-0 shadow-sm rounded-3 h-100">
+      <div class="card-header bg-white py-3 border-0">
+        <h5 class="card-title h6 mb-0 fw-bold"><i class="fas fa-paper-plane text-primary me-2"></i>নতুন উইথড্রয়াল রিকোয়েস্ট জমা দিন</h5>
+      </div>
+      <div class="card-body">
+        <form action="/affiliate/withdrawals/create" method="POST">
+          <input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>">
+
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">উত্তোলনের পরিমাণ (টাকায়)</label>
+            <div class="input-group">
+              <span class="input-group-text">৳</span>
+              <input type="number" name="amount" class="form-control" placeholder="যেমন: ১০০০" min="500" max="<%= balanceBdt %>" required>
+            </div>
+            <small class="text-muted">সর্বনিম্ন ৫০০ টাকা এবং সর্বোচ্চ আপনার বর্তমান ব্যালেন্স ৳<%= balanceBdt %> পর্যন্ত।</small>
+          </div>
+
+          <div class="row g-2 mb-3">
+            <div class="col-sm-6">
+              <label class="form-label small fw-semibold">পেমেন্ট মেথড</label>
+              <select name="payout_method" class="form-select">
+                <option value="bKash" <%= affiliate.payout_method === 'bKash' ? 'selected' : '' %>>বিকাশ (bKash)</option>
+                <option value="Nagad" <%= affiliate.payout_method === 'Nagad' ? 'selected' : '' %>>নগদ (Nagad)</option>
+                <option value="Rocket" <%= affiliate.payout_method === 'Rocket' ? 'selected' : '' %>>রকেট (Rocket)</option>
+                <option value="Bank" <%= affiliate.payout_method === 'Bank' ? 'selected' : '' %>>ব্যাংক ট্রান্সফার (Bank)</option>
+              </select>
+            </div>
+            <div class="col-sm-6">
+              <label class="form-label small fw-semibold">অ্যাকাউন্ট নম্বর</label>
+              <input type="text" name="payout_account" class="form-control" value="<%= affiliate.payout_account || affiliate.phone %>" required>
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-success px-4 fw-semibold" <%= balanceBdt < 500 ? 'disabled' : '' %>>
+            <i class="fas fa-check-circle me-1"></i>উইথড্রয়াল সাবমিট করুন
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Withdrawal History Table -->
+<div class="card border-0 shadow-sm rounded-3">
+  <div class="card-header bg-white py-3 border-0">
+    <h5 class="card-title h6 mb-0 fw-bold"><i class="fas fa-history text-secondary me-2"></i>উইথড্রয়াল ইতিহাস</h5>
+  </div>
+  <div class="card-body p-0">
+    <% if (!withdrawals || withdrawals.length === 0) { %>
+      <div class="p-4 text-center text-muted">
+        <p class="small mb-0">এখনও কোনো উত্তোলনের রিকোয়েস্ট জমা দেওয়া হয়নি।</p>
+      </div>
+    <% } else { %>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>তারিখ</th>
+              <th>পরিমাণ</th>
+              <th>মেথড</th>
+              <th>অ্যাকাউন্ট</th>
+              <th>স্ট্যাটাস</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% withdrawals.forEach(function(w) { %>
+              <tr>
+                <td><%= new Date(w.created_at).toLocaleDateString('bn-BD') %></td>
+                <td><strong class="text-dark">৳<%= Math.round(Number(w.amount_paisa || 0) / 100).toLocaleString('en-IN') %></strong></td>
+                <td><span class="badge bg-secondary"><%= w.payout_method %></span></td>
+                <td><%= w.payout_account %></td>
+                <td>
+                  <% if (w.status === 'approved') { %>
+                    <span class="badge bg-success-subtle text-success">✓ সম্পন্ন হয়েছে</span>
+                  <% } else if (w.status === 'rejected') { %>
+                    <span class="badge bg-danger-subtle text-danger">বাতিল</span>
+                  <% } else { %>
+                    <span class="badge bg-warning-subtle text-warning">⏳ পর্যালোচনায়</span>
+                  <% } %>
+                </td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+  </div>
+</div>
+
+<%- include('partials/layout-bottom') %>

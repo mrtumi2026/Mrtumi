@@ -679,6 +679,7 @@ function initializeDatabase() {
     "ALTER TABLE customers ADD COLUMN referral_code TEXT DEFAULT NULL;",
     "ALTER TABLE customers ADD COLUMN referred_by_code TEXT DEFAULT NULL;",
     "ALTER TABLE vendors ADD COLUMN referral_code TEXT DEFAULT NULL;",
+    "ALTER TABLE orders ADD COLUMN affiliate_code TEXT DEFAULT NULL;",
   ];
   for (const stmt of additiveAlterStatements) {
     try {

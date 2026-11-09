@@ -53,6 +53,26 @@ router.use((req, res, next) => {
     }
   }
 
+  // Capture affiliate tracking code from ?aff=...
+  if (req.query && req.query.aff && typeof req.query.aff === 'string') {
+    const rawAff = req.query.aff.trim();
+    if (rawAff && rawAff.length <= 32) {
+      if (req.session) {
+        req.session.affiliateCode = rawAff;
+      }
+      res.cookie('mrtumi_aff', rawAff, {
+        maxAge: 30 * 24 * 60 * 60 * 1000,
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: env.isProduction,
+      });
+      try {
+        const { trackClick } = require('../services/affiliateService');
+        trackClick(rawAff);
+      } catch (_) {}
+    }
+  }
+
   next();
 });
 
@@ -858,6 +878,30 @@ router.post('/api/checkout/send-otp', publicFormLimiter, requireCsrf, asyncHandl
   return res.json(result);
 }));
 
+router.post('/api/device/register-token', asyncHandler(async (req, res) => {
+  const pushService = require('../services/pushNotificationService');
+  const result = await pushService.registerDeviceToken({
+    token: req.body.token,
+    appType: req.body.app_type || 'customer',
+    userId: req.customerUser?.id || req.body.user_id || null,
+    platform: req.body.platform || 'android',
+    topic: req.body.topic || 'general',
+  });
+  return res.json({ success: Boolean(result), data: result });
+}));
+
+router.post('/api/push/broadcast-offer', asyncHandler(async (req, res) => {
+  const pushService = require('../services/pushNotificationService');
+  const result = await pushService.broadcastOfferNotification({
+    title: req.body.title,
+    body: req.body.body,
+    imageUrl: req.body.image_url,
+    deepLink: req.body.deep_link,
+    appType: req.body.app_type || 'customer',
+  });
+  return res.json({ success: Boolean(result), data: result });
+}));
+
 router.post('/api/checkout/verify-otp', publicFormLimiter, requireCsrf, asyncHandler(async (req, res) => {
   const orderOtpService = require('../services/orderOtpService');
   const result = await orderOtpService.verifyCheckoutOtp({
@@ -1233,7 +1277,7 @@ router.post('/customer/checkout', requireCsrf, asyncHandler(async (req, res) => 
       delivery_location_id: checkoutInput.delivery_location_id, payment_method: checkoutInput.payment_method,
       trx_id: req.body.trx_id, sender_number: req.body.sender_number,
       note: req.body.note, coupon_code: matches(replayKey) ? String(req.body.coupon_code || '') : (req.session.appliedCoupon?.code || ''),
-    }, { locale: req.locale, sessionCustomer: req.customerUser || null, ip: req.ip, userAgent: req.get('user-agent'), fbp: req.cookies?._fbp, fbc: req.cookies?._fbc, requestKey: expected, cart: sourceCart, incompleteOrderId, sessionSid: req.sessionID, otpVerified: isOtpSessionVerified, referralCode: req.body.referral_code || req.session.referralCode || req.cookies?.mrtumi_ref || null, analyticsConsent: consentGranted(req.session, env.analyticsAttributionEnabled), attribution: req.session.analyticsAttribution || null });
+    }, { locale: req.locale, sessionCustomer: req.customerUser || null, ip: req.ip, userAgent: req.get('user-agent'), fbp: req.cookies?._fbp, fbc: req.cookies?._fbc, requestKey: expected, cart: sourceCart, incompleteOrderId, sessionSid: req.sessionID, otpVerified: isOtpSessionVerified, referralCode: req.body.referral_code || req.session.referralCode || req.cookies?.mrtumi_ref || null, affiliateCode: req.body.affiliate_code || req.session?.affiliateCode || req.cookies?.mrtumi_aff || null, analyticsConsent: consentGranted(req.session, env.analyticsAttributionEnabled), attribution: req.session.analyticsAttribution || null });
     delete req.session.orderOtpVerified; delete req.session.orderOtpPhone;
     if (!isReplay) { req.session.checkoutLastCart = JSON.parse(JSON.stringify(sourceCart)); req.session.checkoutLastRequestKey = expected; req.session.checkoutLastRecoveryId = incompleteOrderId; delete req.session.incompleteCheckoutId; req.session.cart = []; delete req.session.appliedCoupon; if (!(storefrontRepo.isMysqlMode() && req.customerUser?.id)) await persistCustomerCart(req); }
     req.session.checkoutLastInvoice = String(result.invoiceNo);

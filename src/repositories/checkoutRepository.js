@@ -265,6 +265,18 @@ async function createOrder(input,options={}){
         });
       } catch (_refErr) {}
     }
+    const affiliateCode = options.affiliateCode || null;
+    if (affiliateCode) {
+      try {
+        const affiliateService = require('../services/affiliateService');
+        await affiliateService.recordOrderAffiliatePending({
+          orderId: order.insertId,
+          orderTotalPaisa: total,
+          affiliateCode,
+          tx,
+        });
+      } catch (_affErr) {}
+    }
     if(customerId){
       await tx.execute('UPDATE customers SET total_orders=total_orders+1,address=? WHERE id=?',[address,customerId]);
       if(clearSavedCart){
@@ -299,6 +311,14 @@ async function createOrder(input,options={}){
     } catch (_smsErr) {
       // Non-blocking SMS trigger
     }
+    try {
+      const pushService = require('../services/pushNotificationService');
+      pushService.notifyPartnerNewOrder({
+        orderId: result.id,
+        invoiceNo: result.invoiceNo,
+        totalBdt: (Number(result.totalPaisa || 0) / 100).toFixed(0)
+      });
+    } catch (_pushErr) {}
     try {
       const capiService = require('../services/facebookCapiService');
       capiService.sendOrderPurchaseEvent({
