@@ -118,12 +118,16 @@ router.get('/admin/dashboard', requirePermission('dashboard.view'), asyncHandler
   });
 
 
+  const { getVisitorAnalytics } = require('../services/visitorTrackingService');
+  const visitorAnalytics = await getVisitorAnalytics();
+
   return res.render('admin/dashboard', {
     formattedDate, totalOrders, pendingOrders, totalRevenue: deliveredRow.rev,
     deliveredCount: deliveredRow.c, lowStockCount, todayOrders: todayOrdersRow.c,
     todayRevenue: todayOrdersRow.rev, todayDeliveredRev, trafficSources, trendLabels,
     trendData, statusBreakdown, totalProducts, dashboardProducts, dashboardCategories,
     recentOrders, fundBalance, totalExpenses, todayExpenses, monthlyExpenses,
+    visitorAnalytics
   });
 }));
 
@@ -151,6 +155,12 @@ router.get('/admin/bdcourier/my-plan', requirePermission('dashboard.view'), asyn
 router.get('/admin/steadfast/dashboard-widget', requirePermission('dashboard.view'), asyncHandler(async (req, res) => unconfiguredProviderWidget(req, res, 'steadfast')));
 
 // Real-time New Order Polling (Toast + Chime)
+router.get('/admin/api/analytics/visitors', requirePermission('dashboard.view'), asyncHandler(async (_req, res) => {
+  const { getVisitorAnalytics } = require('../services/visitorTrackingService');
+  const data = await getVisitorAnalytics();
+  return res.json({ success: true, ...data });
+}));
+
 router.get('/admin/orders/poll-new', requirePermission('orders.poll'), asyncHandler(async (req, res) => {
   if (env.db.client === 'mysql') {
     const raw = Number.parseInt(req.query.after_id || '0', 10);

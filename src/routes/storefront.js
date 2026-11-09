@@ -22,6 +22,17 @@ router.use((req, res, next) => {
   res.locals.mysqlCheckoutEnabled = typeof res.locals.mysqlCheckoutEnabled === 'boolean'
     ? res.locals.mysqlCheckoutEnabled
     : Boolean(env.db.client === 'mysql' || (req.app && req.app.locals && req.app.locals.mysqlCheckoutEnabled));
+
+  // Non-blocking storefront visitor & platform analytics tracking
+  if (req.method === 'GET') {
+    setImmediate(() => {
+      try {
+        const { recordVisitorEvent } = require('../services/visitorTrackingService');
+        recordVisitorEvent(req);
+      } catch (_) {}
+    });
+  }
+
   next();
 });
 

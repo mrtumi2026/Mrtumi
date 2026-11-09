@@ -96,7 +96,10 @@ async function getDashboardData({ pool = null, now = new Date() } = {}) {
     stock: asNum(p.available_stock), category_name: p.category_name || '',
   }));
   const deliveredBdt = paisaToBdt(orderTotals.delivered_paisa);
+  const { getVisitorAnalytics } = require('../services/visitorTrackingService');
+  const visitorAnalytics = await getVisitorAnalytics();
   return {
+    visitorAnalytics,
     formattedDate: new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Dhaka', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }).format(now),
     totalOrders, pendingOrders: asNum(orderTotals.pending_orders), totalRevenue: deliveredBdt,
     deliveredCount: asNum(orderTotals.delivered_count), lowStockCount: asNum(lowStockTotals.count),

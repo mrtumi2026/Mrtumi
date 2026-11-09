@@ -144,37 +144,104 @@
         </div>
       </div>
 
-      <!-- Traffic Source Breakdown -->
-      <div style="background:#fff;border:1px solid #eaecf0;border-radius:12px;padding:18px 20px;margin-bottom:16px;">
-        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:14px;">
+      <!-- Platform-wise Visitors Tracking & Device Analytics -->
+      <%
+        const vAnalytics = (typeof visitorAnalytics !== 'undefined' && visitorAnalytics) ? visitorAnalytics : {
+          totalViews: 0, totalVisitors: 0, todayVisitors: 0,
+          platforms: [], devices: [], browsers: []
+        };
+        const vPlatforms = (vAnalytics.platforms && vAnalytics.platforms.length) ? vAnalytics.platforms : trafficSources;
+        const vDevices = (vAnalytics.devices && vAnalytics.devices.length) ? vAnalytics.devices : [
+          { device: 'Mobile', count: 0, percent: '0.0' },
+          { device: 'Desktop', count: 0, percent: '0.0' }
+        ];
+        const vBrowsers = vAnalytics.browsers || [];
+      %>
+      <div style="background:#fff;border:1px solid #eaecf0;border-radius:12px;padding:20px;margin-bottom:16px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px;">
           <div>
-            <h4 style="font-size:14px;font-weight:700;color:#1a1f2e;margin:0;">Traffic Source</h4>
-            <p style="font-size:11px;color:#9ca3af;margin:2px 0 0;">অর্ডার কোথা থেকে এসেছে &bull; মোট <%= totalOrders %> অর্ডার</p>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <h4 style="font-size:15px;font-weight:700;color:#1a1f2e;margin:0;">📊 Platform-wise Visitors & Device Analytics</h4>
+              <span class="badge bg-success bg-opacity-10 text-success border border-success-subtle" style="font-size:11px;">Live Tracking</span>
+            </div>
+            <p style="font-size:11.5px;color:#6b7280;margin:3px 0 0;">ভিজিটররা কোন প্ল্যাটফর্ম (Facebook, TikTok, Google, Direct) এবং কোন ডিভাইসে সাইট ব্রাউজ করছেন</p>
           </div>
-          <span style="font-size:11px;color:#6b7280;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:4px 10px;">Auto-tracked</span>
+          <div style="display:flex;align-items:center;gap:12px;">
+            <div style="text-align:right;">
+              <span style="font-size:11px;color:#9ca3af;display:block;">আজকের ভিজিটর</span>
+              <strong style="font-size:14px;color:#1b4332;"><%= vAnalytics.todayVisitors || 0 %> জন</strong>
+            </div>
+            <div style="text-align:right;border-left:1px solid #e5e7eb;padding-left:12px;">
+              <span style="font-size:11px;color:#9ca3af;display:block;">মোট সেশন</span>
+              <strong style="font-size:14px;color:#1b4332;"><%= vAnalytics.totalViews || totalOrders %> বার</strong>
+            </div>
+          </div>
         </div>
 
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(195px,1fr));gap:10px;">
-          <% trafficSources.forEach(function(ts) {
-               const barColor = ts.source === 'Facebook' ? '#1877F2' : (ts.source === 'Direct' ? '#6366f1' : '#64748b');
-               const iconBg = ts.source === 'Facebook' ? '#1877F2' : (ts.source === 'Direct' ? '#6366f1' : '#64748b');
-          %>
-            <div style="background:#f9fafb;border:1px solid #eaecf0;border-radius:10px;padding:12px 14px;">
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-                <div style="display:flex;align-items:center;gap:8px;">
-                  <span style="width:22px;height:22px;border-radius:6px;background:<%= iconBg %>;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;">
-                    <% if (ts.source === 'Facebook') { %>f<% } else if (ts.source === 'Direct') { %>⌂<% } else { %>🌐<% } %>
-                  </span>
-                  <span style="font-size:12.5px;font-weight:600;color:#1a1f2e;"><%= ts.source %></span>
+        <div class="row g-3">
+          <!-- Left: Referring Platforms & Sites -->
+          <div class="col-lg-7">
+            <h6 style="font-size:12.5px;font-weight:700;color:#374151;margin-bottom:10px;display:flex;align-items:center;gap:6px;">
+              <span>🌐 Referring Platforms / Channels</span>
+            </h6>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;">
+              <% vPlatforms.forEach(function(ts) {
+                   let barColor = '#64748b';
+                   let iconBg = '#64748b';
+                   let iconChar = '🌐';
+                   const s = (ts.source || '').toLowerCase();
+                   if (s.includes('facebook') || s.includes('fb')) {
+                     barColor = '#1877F2'; iconBg = '#1877F2'; iconChar = '<i class="fab fa-facebook-f"></i>';
+                   } else if (s.includes('tiktok')) {
+                     barColor = '#00f2fe'; iconBg = '#010101'; iconChar = '<i class="fab fa-tiktok"></i>';
+                   } else if (s.includes('google')) {
+                     barColor = '#ea4335'; iconBg = '#4285f4'; iconChar = '<i class="fab fa-google"></i>';
+                   } else if (s.includes('youtube')) {
+                     barColor = '#ff0000'; iconBg = '#ff0000'; iconChar = '<i class="fab fa-youtube"></i>';
+                   } else if (s.includes('instagram')) {
+                     barColor = '#e1306c'; iconBg = '#e1306c'; iconChar = '<i class="fab fa-instagram"></i>';
+                   } else if (s.includes('direct')) {
+                     barColor = '#4f46e5'; iconBg = '#4f46e5'; iconChar = '<i class="fas fa-link"></i>';
+                   }
+              %>
+                <div style="background:#f9fafb;border:1px solid #eaecf0;border-radius:10px;padding:12px 14px;">
+                  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                    <div style="display:flex;align-items:center;gap:8px;">
+                      <span style="width:24px;height:24px;border-radius:6px;background:<%= iconBg %>;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px;">
+                        <%- iconChar %>
+                      </span>
+                      <span style="font-size:12.5px;font-weight:600;color:#1a1f2e;"><%= ts.source %></span>
+                    </div>
+                    <span style="font-size:13.5px;font-weight:700;color:#111827;"><%= ts.count %></span>
+                  </div>
+                  <div style="background:#e5e7eb;border-radius:4px;height:5px;overflow:hidden;">
+                    <div style="height:100%;width:<%= ts.percent %>%;background:<%= barColor %>;border-radius:4px;"></div>
+                  </div>
+                  <span style="font-size:10.5px;color:#9ca3af;margin-top:4px;display:block;"><%= ts.percent %>%</span>
                 </div>
-                <span style="font-size:13.5px;font-weight:700;color:#111827;"><%= ts.count %></span>
-              </div>
-              <div style="background:#e5e7eb;border-radius:4px;height:5px;overflow:hidden;">
-                <div style="height:100%;width:<%= ts.percent %>%;background:<%= barColor %>;border-radius:4px;"></div>
-              </div>
-              <span style="font-size:10.5px;color:#9ca3af;margin-top:4px;display:block;"><%= ts.percent %>%</span>
+              <% }) %>
             </div>
-          <% }) %>
+          </div>
+
+          <!-- Right: Devices & Browsers -->
+          <div class="col-lg-5">
+            <h6 style="font-size:12.5px;font-weight:700;color:#374151;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;">
+              <span>📱 Device & Browser Breakdown</span>
+            </h6>
+            <div style="background:#f9fafb;border:1px solid #eaecf0;border-radius:10px;padding:14px;">
+              <div id="deviceChart" style="min-height:160px;"></div>
+              <% if (vBrowsers && vBrowsers.length) { %>
+                <div class="mt-2 pt-2 border-top d-flex flex-wrap gap-1 align-items-center">
+                  <span style="font-size:11px;color:#6b7280;margin-right:4px;">Top Browsers:</span>
+                  <% vBrowsers.forEach(function(b) { %>
+                    <span class="badge bg-white text-dark border" style="font-size:10.5px;font-weight:500;">
+                      <%= b.browser %>: <strong><%= b.count %></strong>
+                    </span>
+                  <% }) %>
+                </div>
+              <% } %>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -419,6 +486,38 @@
 <script>
   document.addEventListener('DOMContentLoaded', function() {
     // 7-Day Trend Area Chart
+    // Device Breakdown Donut Chart
+    var devLabels = <%- JSON.stringify(vDevices.map(d => d.device)) %>;
+    var devSeries = <%- JSON.stringify(vDevices.map(d => Number(d.count))) %>;
+    var devTotal = devSeries.reduce((a, b) => a + b, 0);
+
+    new ApexCharts(document.querySelector('#deviceChart'), {
+      chart: { type: 'donut', height: 175, fontFamily: 'Inter, sans-serif' },
+      labels: devLabels.length ? devLabels : ['Mobile', 'Desktop'],
+      series: devTotal > 0 ? devSeries : [1, 1],
+      colors: ['#10b981', '#3b82f6', '#f59e0b'],
+      legend: { position: 'bottom', fontSize: '11px', horizontalAlign: 'center' },
+      dataLabels: { enabled: false },
+      plotOptions: {
+        pie: {
+          donut: {
+            size: '65%',
+            labels: {
+              show: true,
+              total: {
+                show: true,
+                label: 'Devices',
+                fontSize: '11px',
+                formatter: function() {
+                  return devTotal > 0 ? devTotal : 'Active';
+                }
+              }
+            }
+          }
+        }
+      }
+    }).render();
+
     new ApexCharts(document.querySelector('#trendChart'), {
       chart: { type: 'area', height: 210, toolbar: { show: false }, fontFamily: 'Inter, sans-serif' },
       series: [{ name: 'Orders', data: <%- JSON.stringify(trendData) %> }],
