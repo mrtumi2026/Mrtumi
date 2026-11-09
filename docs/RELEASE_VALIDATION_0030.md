@@ -45,7 +45,7 @@ Removing the silent `IF NOT EXISTS` then exposed a second latent defect that Mar
 
 `0033_dynamic_mfs_payment_gateways.up.sql` began with `DELETE FROM payment_gateways WHERE code NOT IN (...)`, permanently destroying operator-configured gateway rows and credentials.
 
-**Fix:** the migration now adds its columns first and then **deactivates** non-canonical rows (`status=0, is_active=0`). No row or credential is deleted. Checkout already filters on `(status=1 OR is_active=1)`, so retired channels disappear from checkout while remaining available for audit and reconciliation.
+**Fix:** the migration now adds its columns first and then **deactivates** non-canonical rows (`status=0, is_active=0`). No row or credential is deleted. Checkout filters on `(status=1 AND is_active=1)`, so retired channels disappear from checkout while remaining available for audit and reconciliation.
 
 ### 2.3 Migration 0030 rollback referenced a constraint it never created
 
@@ -97,7 +97,13 @@ The `/uploads/custom` evidence guard was missing, and the public static middlewa
 
 **Fix:** resolve and validate the session customer id before the OTP policy block, then reuse it for both the verified-phone bypass and the ownership check. The live test now asserts the documented `VALIDATION_ERROR` and the customer-facing OTP message, and its helper prints the driver code on failure.
 
-### 2.9 Stale migration-count test
+### 2.9 Deactivated gateways stayed selectable (`OR` instead of `AND`)
+
+After 0033 added `is_active` (default `1`) alongside the legacy `status` column, checkout's gateway lookup accepted a row when **either** flag was set. Disabling a channel with `UPDATE payment_gateways SET status=0` — what the legacy admin screen does — therefore left it fully selectable, including manual MFS channels. The live MySQL suite caught it once earlier failures were cleared.
+
+**Fix:** both checkout queries now require `status=1 AND is_active=1`. Legacy `status` remains authoritative for deactivation, and `is_active` can only narrow the set further — fail-closed in both directions. Both columns are already written together by the current admin repository, so no UI behavior regresses.
+
+### 2.10 Stale migration-count test
 
 `tests/phase03-foundation.test.js` hard-coded 29 migration pairs. It now derives the contiguous `0001`–`0036` expectation, so the assertion still fails on gaps or duplicates without blocking approved additive migrations.
 
