@@ -201,7 +201,7 @@ async function syncDeliveryLocationCharges(updates) {
 }
 
 // ─── Universal Key-Value Settings Save Endpoint ───
-router.post('/admin/settings/save', upload.single('logo_file'), asyncHandler(async (req, res) => {
+router.post('/admin/settings/save', upload.single('logo_file'), requireCsrfAndCleanupBannerFile, asyncHandler(async (req, res) => {
   const redirectTo = req.body._redirect || req.get('Referrer') || '/admin/settings/manage';
   const changes = Object.fromEntries(Object.entries(req.body).filter(([key]) => !key.startsWith('_')));
   if (req.file) {

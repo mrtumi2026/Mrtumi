@@ -108,7 +108,8 @@ function legacyAdminCsrf(req, res, next) {
     /^\/admin\/phase06\/products\/\d+\/gallery\/upload$/.test(req.path);
   const standardProductImageMultipartPath=req.path==='/admin/products/create'||/^\/admin\/products\/edit\/\d+$/.test(req.path);
   const priorityBannerMultipartPath=req.path==='/admin/banner/create'||/^\/admin\/banner\/update\/\d+$/.test(req.path);
-  const multipartUpload=req.method==='POST'&&(phase06ImageMultipartPath||standardProductImageMultipartPath||priorityBannerMultipartPath)&&
+  const settingsMultipartPath = req.path === '/admin/settings/save';
+  const multipartUpload=req.method==='POST'&&(phase06ImageMultipartPath||standardProductImageMultipartPath||priorityBannerMultipartPath||settingsMultipartPath)&&
     String(req.headers?.['content-type']||'').toLowerCase().startsWith('multipart/form-data;');
   if(multipartUpload)return next();
   return requireCsrf(req,res,next);
