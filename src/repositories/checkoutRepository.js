@@ -178,6 +178,11 @@ async function createOrder(input,options={}){
     let coupon={amount:0,code:''};const couponCode=String(input.coupon_code||'').trim().toUpperCase();
     if(couponCode){const row=await tx.queryOne('SELECT code,discount_type,discount_value,min_purchase_paisa,max_discount_paisa,usage_limit,used_count,expires_at,status FROM coupons WHERE UPPER(code)=? FOR UPDATE',[couponCode]);coupon=couponAmount(row,subtotal);}
     const total=subtotal+shipping-coupon.amount;if(!Number.isSafeInteger(total)||total<0)throw new ValidationError('Order total is invalid.');
+    // Resolve the session customer before the OTP policy check: the verified-phone bypass
+    // needs the customer id, and referencing it before its declaration used to throw a
+    // temporal-dead-zone ReferenceError (surfaced as DB_QUERY_FAILED) whenever OTP was on.
+    const sessionCustomerId=sessionCustomer?.id?requirePositiveInt(sessionCustomer.id,'customer ID'):null;
+    let customerId=sessionCustomerId;
     const settingsRows=await tx.queryAll("SELECT setting_key,setting_value FROM settings WHERE setting_key IN ('otp_mode','advance_payment_mode','advance_payment_value','advance_min_order_paisa','advance_max_order_paisa')");
     const settings=Object.fromEntries(settingsRows.map(x=>[x.setting_key,x.setting_value]));
     let isOtpVerified=Boolean(options.otpVerified);
@@ -198,8 +203,7 @@ async function createOrder(input,options={}){
     const policy=lifecycle.validateAdvancePolicy({mode:settings.advance_payment_mode||'off',value:Number(settings.advance_payment_value||0),minimumPaisa:settings.advance_min_order_paisa||0,maximumPaisa:settings.advance_max_order_paisa||null});
     const advance=lifecycle.calculateAdvance(total,policy);
     if(advance>0)throw new ConflictError('An advance is required by the current policy, but no verified payment provider is configured; checkout is paused rather than marking an unconfirmed payment paid.');
-    let customerId=null;
-    if(sessionCustomer?.id){const customer=await tx.queryOne('SELECT id,phone,status,is_blocked FROM customers WHERE id=? FOR UPDATE',[requirePositiveInt(sessionCustomer.id,'customer ID')]);if(!customer||Number(customer.status)!==1||Number(customer.is_blocked)===1||normalizeBdPhone(customer.phone)!==phone)throw new ConflictError('Sign in with an account matching the delivery phone, or continue as a guest.');customerId=Number(customer.id);}
+    if(customerId){const customer=await tx.queryOne('SELECT id,phone,status,is_blocked FROM customers WHERE id=? FOR UPDATE',[customerId]);if(!customer||Number(customer.status)!==1||Number(customer.is_blocked)===1||normalizeBdPhone(customer.phone)!==phone)throw new ConflictError('Sign in with an account matching the delivery phone, or continue as a guest.');customerId=Number(customer.id);}
     const invoice=`MT-${crypto.randomBytes(12).toString('hex').toUpperCase()}`;
     const zoneLabel=[zone.division,zone.district,zone.upazila].filter(Boolean).join(' / ');
     const orderChannel=campaign?'campaign':'storefront';const trafficSource=campaign?`Campaign:${campaign.slug}`:attributionData.platformSource;const customerNote=note||(campaign?`Campaign: ${campaign.title}`:null);

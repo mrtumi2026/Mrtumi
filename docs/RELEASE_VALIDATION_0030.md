@@ -91,9 +91,11 @@ The `/uploads/custom` evidence guard was missing, and the public static middlewa
 - `GET /admin/api/analytics/visitors` had no legacy policy and fell through to the fail-closed "unmapped" 403, so the dashboard widget could never load. It is now mapped to `dashboard.view`.
 - `/admin/courierapi/*` routes had lost their explicit `settings.manage` + CSRF guards. Restored on list/create/update/toggle/delete, and the middleware policy now agrees on `settings.manage` instead of requiring a second, undocumented permission.
 
-### 2.8 Stale OTP severity expectation in the live database suite
+### 2.8 OTP-mode checkout failed with DB_QUERY_FAILED (TDZ `ReferenceError`)
 
-`tests/phase05-mysql.test.js` expected `CONFLICT` for a checkout refused because OTP verification is missing. The repository throws `ValidationError` (`VALIDATION_ERROR`, HTTP 400), which is the correct severity for unverified user input and matches the message returned to the customer. The assertion was stale: it had never executed because the MySQL job aborted at migration diagnosis. It now asserts `VALIDATION_ERROR` plus the OTP message, so the refusal is still verified without changing runtime behavior.
+`checkoutRepository.createOrder` consulted `customerId` in the OTP-verification branch *before* its `let customerId` declaration. That is a temporal-dead-zone `ReferenceError`; `mysqlPool.withTransaction` sanitized the non-operational error to `DB_QUERY_FAILED (MYSQL_ERROR)`, so **every checkout while `otp_mode='on'` returned HTTP 500** instead of the OTP prompt. The live MySQL/MariaDB suite that exercises this path had a stale expectation (`CONFLICT`) and had never executed, because CI aborted earlier at migration diagnosis.
+
+**Fix:** resolve and validate the session customer id before the OTP policy block, then reuse it for both the verified-phone bypass and the ownership check. The live test now asserts the documented `VALIDATION_ERROR` and the customer-facing OTP message, and its helper prints the driver code on failure.
 
 ### 2.9 Stale migration-count test
 
