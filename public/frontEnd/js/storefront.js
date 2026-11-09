@@ -626,7 +626,8 @@
               notify('success', d.message);
               window.location.href = navUrl(d.redirect);
             } else {
-              notify('error', (d && d.message) || i18nStr('networkErrorMsg', 'Unable to place order.'));
+              var errMsg = (d && (d.message || (d.error && d.error.message))) || i18nStr('networkErrorMsg', 'Unable to place order.');
+              notify('error', errMsg);
               if (submitBtn) submitBtn.disabled = false;
             }
           })

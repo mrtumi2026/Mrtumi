@@ -131,7 +131,7 @@ async function createOrder(input,options={}){
   const attributionData=attributionAllowed?normalizeAttribution(attribution||{}):EMPTY_ATTRIBUTION;
   assertMysql();const name=requireString(input.customer_name,'customer name',{min:2,max:191});const phone=normalizeBdPhone(input.phone);const address=requireString(input.address,'shipping address',{min:5,max:2000});const zoneId=requirePositiveInt(input.delivery_location_id,'delivery location');const note=String(input.note||'').trim().slice(0,1000);
   const paymentMethod=String(input.payment_method||'cod').trim().toLowerCase();if(!/^[a-z0-9_-]{1,48}$/.test(paymentMethod))throw new ValidationError('Select a valid payment method.');
-  const manualBrand=paymentMethod.replace(/^manual_/,'');
+  const manualBrand=paymentMethod.replace(/^(manual_)?/,'').replace(/(_manual)?$/,'');
   const isManualPayment=paymentMethod!=='cod';
   if(isManualPayment&&!['bkash','nagad','rocket'].includes(manualBrand))throw new ValidationError('Choose Cash on Delivery, bKash, Nagad, or Rocket.');
   const trxId=isManualPayment?requireString(input.trx_id,'Transaction ID',{min:4,max:128}).trim():'';
@@ -148,7 +148,7 @@ async function createOrder(input,options={}){
     const blocked=await tx.queryOne('SELECT id FROM ip_blocks WHERE status=1 AND ip_or_phone IN (?,?) LIMIT 1 FOR UPDATE',[phone,String(ip||'').slice(0,64)]);
     if(blocked)throw new ConflictError('This phone number or IP address is blocked from placing orders.');
     const gateway=await tx.queryOne("SELECT code,gateway_type,mode FROM payment_gateways WHERE (code=? OR code=REPLACE(?,'_manual','') OR code=CONCAT(?,'_manual')) AND (status=1 OR is_active=1) LIMIT 1 FOR UPDATE",[paymentMethod,paymentMethod,paymentMethod]);
-    if(!gateway || (isManualPayment && (gateway.gateway_type!=='manual'||!['bkash','nagad','rocket'].includes(paymentMethod.replace(/^manual_/,'')))))throw new ConflictError('This payment method is not active or is not supported at checkout.');
+    if(!gateway || (isManualPayment && !['bkash','nagad','rocket'].includes(manualBrand)))throw new ConflictError('This payment method is not active or is not supported at checkout.');
     const zone=await tx.queryOne('SELECT id,division,district,upazila,delivery_charge_paisa FROM delivery_locations WHERE id=? AND status=1 FOR UPDATE',[zoneId]);
     if(!zone)throw new ValidationError('Select an active, configured delivery location.');
     let recovery=null;
