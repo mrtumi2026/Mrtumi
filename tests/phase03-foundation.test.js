@@ -323,6 +323,35 @@ describe('Phase 03 — Migration Loader, Validator, Logger Redaction, CSRF, Rate
     }
   });
 
+  test('Additive ALTER COLUMN statements never reintroduce an existing column', () => {
+    const schema = new Map();
+    const duplicates = [];
+    for (const pair of loadMigrationPairs()) {
+      for (const statement of splitSqlStatements(pair.upSql)) {
+        const create = /CREATE TABLE IF NOT EXISTS `([^`]+)`\s*\(([\s\S]*)\)\s*ENGINE=/i.exec(statement);
+        if (create) {
+          const columns = schema.get(create[1]) || new Set();
+          for (const line of create[2].split(/\r?\n/)) {
+            const column = /^\s*`([^`]+)`\s+[A-Za-z]/.exec(line);
+            if (column && !/^(PRIMARY|UNIQUE|KEY|INDEX|CONSTRAINT|FOREIGN)$/i.test(column[1])) columns.add(column[1]);
+          }
+          schema.set(create[1], columns);
+          continue;
+        }
+        const alter = /ALTER TABLE `([^`]+)`([\s\S]*)$/i.exec(statement);
+        if (!alter) continue;
+        const columns = schema.get(alter[1]);
+        assert.ok(columns, `ALTER TABLE ${alter[1]} targets a table created earlier (${pair.version})`);
+        for (const add of alter[2].matchAll(/ADD COLUMN `([^`]+)`\s+[A-Za-z(]/g)) {
+          if (columns.has(add[1])) duplicates.push(`${pair.version}:${alter[1]}.${add[1]}`);
+          columns.add(add[1]);
+        }
+        for (const drop of alter[2].matchAll(/DROP COLUMN `([^`]+)`/g)) columns.delete(drop[1]);
+      }
+    }
+    assert.deepEqual(duplicates, [], 'no migration may add a column that already exists');
+  });
+
   test('Validates BD phones, emails, enums, and redacts PII/secrets in structured logs', () => {
     assert.equal(normalizeBdPhone('+880 1712-345678'), '01712345678');
     assert.throws(() => normalizeBdPhone('0212345678'), /Invalid Bangladesh mobile/);

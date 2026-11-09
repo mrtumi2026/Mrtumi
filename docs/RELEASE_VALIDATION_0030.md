@@ -39,6 +39,8 @@ mysqlCode: ER_PARSE_ERROR
 
 **Fix:** rewrote the affected clauses as portable plain DDL, preserving the exact same column/index definitions and order. Added a permanent foundation check that rejects MariaDB-only `ALTER ... IF [NOT] EXISTS` / `CREATE INDEX IF NOT EXISTS` syntax in any `.up.sql` or `.down.sql`.
 
+Removing the silent `IF NOT EXISTS` then exposed a second latent defect that MariaDB had been masking: `0030` re-added `payment_gateways.gateway_type`, which has existed since migration `0003`. On MySQL this is `ER_DUP_FIELDNAME` (`Duplicate column name 'gateway_type'`, confirmed in CI run for this branch). The redundant add — and its rollback drop — were removed; `gateway_type` remains owned by `0003`. A new migration test simulates the ordered schema and fails on any future duplicate `ADD COLUMN`.
+
 ### 2.2 Migration 0033 deleted live gateway rows
 
 `0033_dynamic_mfs_payment_gateways.up.sql` began with `DELETE FROM payment_gateways WHERE code NOT IN (...)`, permanently destroying operator-configured gateway rows and credentials.
@@ -109,7 +111,7 @@ The `/uploads/custom` evidence guard was missing, and the public static middlewa
 | Gate | Command | Result |
 |---|---|---|
 | Foundation lint (syntax, EJS, i18n, migrations, secrets) | `npm run lint` | **1714 passed, 0 failed** |
-| Full unit/portal suite | `npm test` | **411 tests, 379 passed, 0 failed, 32 skipped** (DB-gated suites), 23.7 s |
+| Full unit/portal suite | `npm test` | **412 tests, 380 passed, 0 failed, 32 skipped** (DB-gated suites) |
 | Production dependency audit | `npm audit --omit=dev --audit-level=high` | **0 vulnerabilities** |
 | MySQL-dialect syntax parse of 0030–0036 | `node-sql-parser` (MySQL grammar) | **72/72 statements parsed** |
 | Phase B lifecycle simulation | SQLite transaction shim over the real repository | **PASS** — booking/handover separation, conflicts, admin gate, retry shipment, parent `shipped`/`delivered`, event actor types |
