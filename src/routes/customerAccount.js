@@ -115,6 +115,17 @@ router.get('/customer/account', requireCustomer, asyncHandler(async (req, res) =
   return res.render('customer/account', { profile, addresses, consents, consentHistory, requests, acceptances, consentOptions, isEn: isEn(req) });
 }));
 
+router.get('/customer/account/referrals', requireCustomer, asyncHandler(async (req, res) => {
+  const referralService = require('../services/referralService');
+  const baseUrl = `${req.protocol}://${req.get('host')}`;
+  const referralStats = await referralService.getCustomerWalletAndReferralStats(req.session.customerUser.id, baseUrl);
+  return res.render('customer/referral', {
+    referralStats,
+    isEn: isEn(req),
+    customer: req.session.customerUser || null,
+  });
+}));
+
 router.get('/privacy-policy', asyncHandler(async (req, res) => {
   if (env.db.client !== 'mysql') return res.redirect('/page/privacy-policy');
   const policy = await privacy.getCurrentPolicy(req.locale);

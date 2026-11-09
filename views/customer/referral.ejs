@@ -1,0 +1,283 @@
+<%- include('../store/partials/header', { title: isEn ? 'Refer & Earn' : 'রেফার ও ইনকাম — মিস্টার তুমি' }) %>
+
+<main id="mainContent" class="container py-4 py-md-5">
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-4">
+    <div>
+      <a href="/customer/account" class="text-decoration-none text-muted small"><i class="fas fa-arrow-left me-1"></i> <%= isEn ? 'Back to account' : 'অ্যাকাউন্টে ফিরে যান' %></a>
+      <h1 class="h3 mt-1 mb-0 fw-bold">🎁 <%= isEn ? 'Customer Referral & Wallet' : 'রেফার ও ইনকাম এবং ওয়ালেট' %></h1>
+    </div>
+    <div class="d-flex gap-2">
+      <a href="/customer/account" class="btn btn-outline-secondary btn-sm"><i class="fas fa-user me-1"></i> <%= isEn ? 'My Profile' : 'আমার প্রোফাইল' %></a>
+      <a href="/customer/account/orders" class="btn btn-outline-success btn-sm"><i class="fas fa-shopping-bag me-1"></i> <%= isEn ? 'Order History' : 'অর্ডার হিস্ট্রি' %></a>
+    </div>
+  </div>
+
+  <!-- Referral Hero Card -->
+  <div class="card border-0 shadow-sm rounded-4 overflow-hidden mb-4" style="background: linear-gradient(135deg, #0d3b26 0%, #155734 100%); color: #fff;">
+    <div class="card-body p-4 p-md-5">
+      <div class="row align-items-center g-4">
+        <div class="col-lg-7">
+          <span class="badge bg-warning text-dark px-3 py-1 rounded-pill fw-bold mb-2">🎁 <%= isEn ? 'Exclusive Referral Program' : 'রেফারেল ও ক্যাশব্যাক প্রোগ্রাম' %></span>
+          <h2 class="h2 fw-bold text-white mb-2"><%= isEn ? 'Invite Friends, Earn Cashback & Points!' : 'বন্ধুদের ইনভাইট করুন, ঘরে বসেই আয় করুন!' %></h2>
+          <p class="text-white-50 mb-4" style="max-width: 540px;">
+            <%= isEn ? 'Share your unique referral link with family and friends. When they place an order using your link, you instantly earn cashback into your wallet and reward points!' : 'আপনার ইউনিক রেফারেল লিংক বা কোডটি বন্ধুদের সাথে শেয়ার করুন। তারা কেনাকাটা করলেই আপনার ওয়ালেটে জমা হবে ক্যাশব্যাক ও আকর্ষণীয় রিওয়ার্ড পয়েন্ট!' %>
+          </p>
+
+          <div class="bg-white p-3 rounded-3 shadow-sm text-dark">
+            <label class="form-label small fw-bold text-muted mb-1"><%= isEn ? 'Your Unique Referral Link' : 'আপনার পার্সোনাল রেফারেল লিংক' %></label>
+            <div class="input-group">
+              <input type="text" class="form-control fw-semibold" id="referralLinkInput" value="<%= referralStats.referralLink %>" readonly style="background:#f8fafc; font-size:14px;">
+              <button class="btn btn-success px-4 fw-bold" type="button" id="copyRefBtn" onclick="copyReferralLink()">
+                <i class="far fa-copy me-1"></i> <span id="copyBtnText"><%= isEn ? 'Copy' : 'কপি করুন' %></span>
+              </button>
+            </div>
+            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mt-2">
+              <span class="small text-muted"><%= isEn ? 'Referral Code:' : 'রেফারেল কোড:' %> <strong class="text-dark bg-light px-2 py-0.5 rounded border"><%= referralStats.referralCode %></strong></span>
+              <div class="d-flex gap-2">
+                <a href="https://api.whatsapp.com/send?text=<%= encodeURIComponent((isEn ? 'Buy genuine grocery & gifts from Mr. Tumi and get special discount! Click my link: ' : 'মিস্টার তুমি (Mr. Tumi) থেকে সেরা দামে বাজার ও গিফট কিনুন! আমার লিংক থেকে অর্ডার করলেই পাবেন দারুণ অফার: ') + referralStats.referralLink) %>" target="_blank" rel="noopener" class="btn btn-sm btn-success rounded-pill px-3 py-1" style="background:#25D366; border-color:#25D366;">
+                  <i class="fab fa-whatsapp me-1"></i> WhatsApp
+                </a>
+                <a href="https://www.facebook.com/sharer/sharer.php?u=<%= encodeURIComponent(referralStats.referralLink) %>" target="_blank" rel="noopener" class="btn btn-sm btn-primary rounded-pill px-3 py-1" style="background:#1877F2; border-color:#1877F2;">
+                  <i class="fab fa-facebook-f me-1"></i> Facebook
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-lg-5">
+          <div class="bg-white bg-opacity-10 p-4 rounded-4 backdrop-blur border border-white border-opacity-25 text-white">
+            <h3 class="h6 text-warning text-uppercase fw-bold letter-spacing-1 mb-3"><%= isEn ? 'How It Works' : 'রেফারেল যেভাবে কাজ করে' %></h3>
+            <div class="d-flex gap-3 mb-3">
+              <div class="rounded-circle bg-warning text-dark fw-bold d-flex align-items-center justify-content-center flex-shrink-0" style="width:32px; height:32px;">1</div>
+              <div>
+                <strong class="d-block text-white"><%= isEn ? 'Share your link' : '১. লিংক শেয়ার করুন' %></strong>
+                <small class="text-white-50"><%= isEn ? 'Send your link to friends via WhatsApp or Facebook.' : 'আপনার পার্সোনাল রেফারেল লিংকটি বন্ধুদের পাঠান।' %></small>
+              </div>
+            </div>
+            <div class="d-flex gap-3 mb-3">
+              <div class="rounded-circle bg-warning text-dark fw-bold d-flex align-items-center justify-content-center flex-shrink-0" style="width:32px; height:32px;">2</div>
+              <div>
+                <strong class="d-block text-white"><%= isEn ? 'Friend places an order' : '২. বন্ধু অর্ডার করবে' %></strong>
+                <small class="text-white-50"><%= isEn ? 'Your friend completes any eligible order on mrtumi.com.' : 'বন্ধু আপনার লিংক ব্যবহার করে পছন্দের পণ্য অর্ডার করবে।' %></small>
+              </div>
+            </div>
+            <div class="d-flex gap-3">
+              <div class="rounded-circle bg-warning text-dark fw-bold d-flex align-items-center justify-content-center flex-shrink-0" style="width:32px; height:32px;">3</div>
+              <div>
+                <strong class="d-block text-white"><%= isEn ? 'Get Cashback in Wallet' : '৩. ওয়ালেটে ক্যাশব্যাক পান' %></strong>
+                <small class="text-white-50"><%= isEn ? 'Order delivery completed? Cashback & points credit instantly to your wallet!' : 'ডেলিভারি সম্পন্ন হলেই অটোমেটিক আপনার ওয়ালেটে জমা হবে টাকা ও পয়েন্ট!' %></small>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Wallet & Stats Grid -->
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-lg-3">
+      <div class="card h-100 border-0 shadow-sm rounded-3">
+        <div class="card-body p-3 p-md-4">
+          <div class="d-flex align-items-center gap-3">
+            <div class="rounded-circle bg-success bg-opacity-10 text-success d-flex align-items-center justify-content-center" style="width:48px;height:48px;font-size:22px;">
+              <i class="fas fa-wallet"></i>
+            </div>
+            <div>
+              <div class="text-muted small fw-semibold"><%= isEn ? 'Wallet Balance' : 'ওয়ালেট ব্যালেন্স' %></div>
+              <div class="h4 fw-bold text-success mb-0">৳<%= referralStats.balanceBdt.toLocaleString('en-IN') %></div>
+              <small class="text-muted" style="font-size:11px;"><%= isEn ? 'Available for use' : 'ব্যবহারযোগ্য ক্যাশব্যাক' %></small>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-6 col-lg-3">
+      <div class="card h-100 border-0 shadow-sm rounded-3">
+        <div class="card-body p-3 p-md-4">
+          <div class="d-flex align-items-center gap-3">
+            <div class="rounded-circle bg-warning bg-opacity-10 text-warning d-flex align-items-center justify-content-center" style="width:48px;height:48px;font-size:22px;">
+              <i class="fas fa-coins"></i>
+            </div>
+            <div>
+              <div class="text-muted small fw-semibold"><%= isEn ? 'Reward Points' : 'রিওয়ার্ড পয়েন্টস' %></div>
+              <div class="h4 fw-bold text-warning mb-0"><%= referralStats.pointsBalance.toLocaleString('en-IN') %></div>
+              <small class="text-muted" style="font-size:11px;"><%= isEn ? 'Loyalty coins' : 'অর্জিত পয়েন্ট' %></small>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-6 col-lg-3">
+      <div class="card h-100 border-0 shadow-sm rounded-3">
+        <div class="card-body p-3 p-md-4">
+          <div class="d-flex align-items-center gap-3">
+            <div class="rounded-circle bg-primary bg-opacity-10 text-primary d-flex align-items-center justify-content-center" style="width:48px;height:48px;font-size:22px;">
+              <i class="fas fa-user-friends"></i>
+            </div>
+            <div>
+              <div class="text-muted small fw-semibold"><%= isEn ? 'Friends Invited' : 'আমন্ত্রিত বন্ধু' %></div>
+              <div class="h4 fw-bold text-primary mb-0"><%= referralStats.invitedCount %></div>
+              <small class="text-muted" style="font-size:11px;"><%= referralStats.completedCount %> <%= isEn ? 'orders completed' : 'টি সফল অর্ডার' %></small>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-6 col-lg-3">
+      <div class="card h-100 border-0 shadow-sm rounded-3">
+        <div class="card-body p-3 p-md-4">
+          <div class="d-flex align-items-center gap-3">
+            <div class="rounded-circle bg-info bg-opacity-10 text-info d-flex align-items-center justify-content-center" style="width:48px;height:48px;font-size:22px;">
+              <i class="fas fa-hand-holding-usd"></i>
+            </div>
+            <div>
+              <div class="text-muted small fw-semibold"><%= isEn ? 'Lifetime Earned' : 'সর্বমোট আয়' %></div>
+              <div class="h4 fw-bold text-info mb-0">৳<%= referralStats.lifetimeEarnedBdt.toLocaleString('en-IN') %></div>
+              <small class="text-muted" style="font-size:11px;"><%= isEn ? 'Total rewards received' : 'মোট প্রাপ্ত ক্যাশব্যাক' %></small>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tables Section: Rewards & Transactions -->
+  <div class="row g-4">
+    <div class="col-lg-6">
+      <div class="card border-0 shadow-sm rounded-3 h-100">
+        <div class="card-header bg-white py-3 border-0">
+          <h3 class="h6 mb-0 fw-bold"><i class="fas fa-gift text-success me-2"></i><%= isEn ? 'Referral Rewards Activity' : 'রেফারেল রিওয়ার্ড ইতিহাস' %></h3>
+        </div>
+        <div class="card-body p-0">
+          <% if (!referralStats.rewards || referralStats.rewards.length === 0) { %>
+            <div class="p-4 text-center text-muted">
+              <i class="fas fa-user-plus fa-2x text-muted mb-2 opacity-50"></i>
+              <p class="mb-0 small"><%= isEn ? 'No referral activity yet. Share your link to start earning!' : 'এখনও কোনো রেফারেল নেই। আপনার রেফারেল লিংকটি বন্ধুদের শেয়ার করুন!' %></p>
+            </div>
+          <% } else { %>
+            <div class="table-responsive">
+              <table class="table table-hover align-middle mb-0" style="font-size:13px;">
+                <thead class="table-light">
+                  <tr>
+                    <th><%= isEn ? 'Date' : 'তারিখ' %></th>
+                    <th><%= isEn ? 'Reference' : 'অর্ডার' %></th>
+                    <th><%= isEn ? 'Reward' : 'রিওয়ার্ড' %></th>
+                    <th><%= isEn ? 'Status' : 'অবস্থা' %></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% referralStats.rewards.forEach(function(r) { %>
+                    <tr>
+                      <td><%= new Date(r.created_at).toLocaleDateString('bn-BD') %></td>
+                      <td>
+                        <strong>#<%= r.order_id || '—' %></strong>
+                        <% if (r.referee_phone) { %>
+                          <div class="text-muted small"><%= r.referee_phone.slice(0, 4) %>***<%= r.referee_phone.slice(-3) %></div>
+                        <% } %>
+                      </td>
+                      <td>
+                        <span class="text-success fw-bold">+৳<%= Math.round(Number(r.reward_paisa || 0) / 100) %></span>
+                        <% if (r.reward_points > 0) { %>
+                          <span class="badge bg-warning-subtle text-warning-emphasis ms-1">+<%= r.reward_points %> pts</span>
+                        <% } %>
+                      </td>
+                      <td>
+                        <% if (r.status === 'credited') { %>
+                          <span class="badge bg-success-subtle text-success">✓ <%= isEn ? 'Credited' : 'জমা হয়েছে' %></span>
+                        <% } else if (r.status === 'cancelled') { %>
+                          <span class="badge bg-danger-subtle text-danger"><%= isEn ? 'Cancelled' : 'বাতিল' %></span>
+                        <% } else { %>
+                          <span class="badge bg-warning-subtle text-warning">⏳ <%= isEn ? 'Pending Delivery' : 'অপেক্ষমাণ' %></span>
+                        <% } %>
+                      </td>
+                    </tr>
+                  <% }); %>
+                </tbody>
+              </table>
+            </div>
+          <% } %>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-6">
+      <div class="card border-0 shadow-sm rounded-3 h-100">
+        <div class="card-header bg-white py-3 border-0">
+          <h3 class="h6 mb-0 fw-bold"><i class="fas fa-history text-primary me-2"></i><%= isEn ? 'Wallet Transactions' : 'ওয়ালেট লেনদেনের ইতিহাস' %></h3>
+        </div>
+        <div class="card-body p-0">
+          <% if (!referralStats.transactions || referralStats.transactions.length === 0) { %>
+            <div class="p-4 text-center text-muted">
+              <i class="fas fa-wallet fa-2x text-muted mb-2 opacity-50"></i>
+              <p class="mb-0 small"><%= isEn ? 'No wallet transactions yet.' : 'এখনও কোনো ওয়ালেট লেনদেন হয়নি।' %></p>
+            </div>
+          <% } else { %>
+            <div class="table-responsive">
+              <table class="table table-hover align-middle mb-0" style="font-size:13px;">
+                <thead class="table-light">
+                  <tr>
+                    <th><%= isEn ? 'Date' : 'তারিখ' %></th>
+                    <th><%= isEn ? 'Details' : 'বিবরণ' %></th>
+                    <th><%= isEn ? 'Amount' : 'পরিমাণ' %></th>
+                    <th><%= isEn ? 'Balance' : 'ব্যালেন্স' %></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% referralStats.transactions.forEach(function(tx) { %>
+                    <tr>
+                      <td><%= new Date(tx.created_at).toLocaleDateString('bn-BD') %></td>
+                      <td><%= tx.note || tx.tx_type %></td>
+                      <td>
+                        <% if (Number(tx.amount_paisa) >= 0) { %>
+                          <span class="text-success fw-bold">+৳<%= Math.round(Number(tx.amount_paisa) / 100) %></span>
+                        <% } else { %>
+                          <span class="text-danger fw-bold">-৳<%= Math.round(Math.abs(Number(tx.amount_paisa)) / 100) %></span>
+                        <% } %>
+                      </td>
+                      <td class="fw-semibold">৳<%= Math.round(Number(tx.balance_after_paisa || 0) / 100) %></td>
+                    </tr>
+                  <% }); %>
+                </tbody>
+              </table>
+            </div>
+          <% } %>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+function copyReferralLink() {
+  const copyInput = document.getElementById('referralLinkInput');
+  copyInput.select();
+  copyInput.setSelectionRange(0, 99999);
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(copyInput.value).then(showCopiedNotice);
+  } else {
+    document.execCommand('copy');
+    showCopiedNotice();
+  }
+}
+
+function showCopiedNotice() {
+  const btn = document.getElementById('copyRefBtn');
+  const txt = document.getElementById('copyBtnText');
+  const original = txt.innerText;
+  btn.classList.remove('btn-success');
+  btn.classList.add('btn-primary');
+  txt.innerText = '<%= isEn ? "Copied!" : "কপি হয়েছে!" %>';
+  setTimeout(() => {
+    btn.classList.remove('btn-primary');
+    btn.classList.add('btn-success');
+    txt.innerText = original;
+  }, 2000);
+}
+</script>
+
+<%- include('../store/partials/footer') %>

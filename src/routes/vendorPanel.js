@@ -232,6 +232,22 @@ router.get('/vendor/dashboard', (req, res) => {
   });
 });
 
+// ─── Vendor Referral Program ───
+router.get('/vendor/referrals', async (req, res, next) => {
+  try {
+    const referralService = require('../services/referralService');
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    const vendorId = req.session.vendorUser.id;
+    const referralStats = await referralService.getVendorReferralStats(vendorId, baseUrl);
+    return res.render('vendor/referrals', {
+      vendor: req.session.vendorUser,
+      referralStats,
+    });
+  } catch (err) {
+    return next(err);
+  }
+});
+
 // ─── Vendor Products Management ───
 router.get('/vendor/products', async (req, res, next) => {
   const vendorId = req.session.vendorUser.id;

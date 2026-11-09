@@ -251,6 +251,20 @@ async function createOrder(input,options={}){
     // Reserve only after the durable order and lines exist, in this same transaction.
     await lifecycle.reserveOrderInventoryTx(tx,Number(order.insertId),{type:'system'});
     if(coupon.code)await tx.execute('UPDATE coupons SET used_count=used_count+1 WHERE code=?',[coupon.code]);
+    const referralCode = options.referralCode || null;
+    if (referralCode) {
+      try {
+        const referralService = require('../services/referralService');
+        await referralService.recordReferralOrderPending({
+          orderId: order.insertId,
+          orderTotalPaisa: total,
+          referralCode,
+          refereePhone: phone,
+          refereeCustomerId: customerId,
+          tx,
+        });
+      } catch (_refErr) {}
+    }
     if(customerId){
       await tx.execute('UPDATE customers SET total_orders=total_orders+1,address=? WHERE id=?',[address,customerId]);
       if(clearSavedCart){

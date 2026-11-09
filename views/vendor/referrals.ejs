@@ -1,0 +1,137 @@
+<%- include('partials/layout-top', { title: 'Vendor Referral Program' }) %>
+
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+  <div>
+    <h4 class="fw-bold mb-0">🎁 সেলার রেফারেল প্রোগ্রাম (Seller Referral)</h4>
+    <p class="text-muted small mb-0">নতুন কাস্টমার ও সেলার রেফার করে বাড়তি কমিশন ও বোনাস ক্যাশব্যাক আয় করুন!</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="/vendor/dashboard" class="btn btn-outline-secondary btn-sm"><i class="fas fa-arrow-left me-1"></i>ড্যাশবোর্ড</a>
+    <a href="/vendor/withdrawals" class="btn btn-outline-success btn-sm"><i class="fas fa-wallet me-1"></i>উইথড্রয়াল</a>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm rounded-4 overflow-hidden mb-4" style="background: linear-gradient(135deg, #0d3b26 0%, #155734 100%); color: #fff;">
+  <div class="card-body p-4 p-md-5">
+    <div class="row align-items-center g-4">
+      <div class="col-lg-8">
+        <span class="badge bg-warning text-dark px-3 py-1 rounded-pill fw-bold mb-2">🏪 ভেন্ডর এক্সক্লুসিভ অফার</span>
+        <h2 class="h3 fw-bold text-white mb-2">আপনার রেফারেল লিংকে কেনাকাটায় সরাসরি আয়</h2>
+        <p class="text-white-50 mb-3" style="max-width: 580px;">
+          আপনার শপ বা পণ্যের প্রচার করতে আপনার পার্সোনাল সেলার রেফারেল লিংক ব্যবহার করুন। আপনার লিংক থেকে যেকোনো ক্রেতা সফলভাবে অর্ডার করলে ভেন্ডর কমিশন ব্যালেন্সে বোনাস জমা হবে!
+        </p>
+
+        <div class="bg-white p-3 rounded-3 shadow-sm text-dark">
+          <label class="form-label small fw-bold text-muted mb-1">আপনার সেলার রেফারেল লিংক</label>
+          <div class="input-group">
+            <input type="text" class="form-control fw-semibold" id="vendorRefLink" value="<%= referralStats.referralLink %>" readonly style="background:#f8fafc; font-size:14px;">
+            <button class="btn btn-forest px-4 fw-bold" type="button" id="copyVendorRefBtn" onclick="copyVendorRefLink()">
+              <i class="far fa-copy me-1"></i> <span id="copyVendorBtnText">কপি করুন</span>
+            </button>
+          </div>
+          <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mt-2">
+            <span class="small text-muted">ইউনিক রেফারেল কোড: <strong class="text-dark bg-light px-2 py-0.5 rounded border"><%= referralStats.referralCode %></strong></span>
+            <div class="d-flex gap-2">
+              <a href="https://api.whatsapp.com/send?text=<%= encodeURIComponent('Mr. Tumi তে কেনাকাটা করুন সেরা মূল্যে! আমার রেফারেল লিংক: ' + referralStats.referralLink) %>" target="_blank" rel="noopener" class="btn btn-sm btn-success rounded-pill px-3 py-1" style="background:#25D366; border-color:#25D366;">
+                <i class="fab fa-whatsapp me-1"></i> WhatsApp এ শেয়ার করুন
+              </a>
+              <a href="https://www.facebook.com/sharer/sharer.php?u=<%= encodeURIComponent(referralStats.referralLink) %>" target="_blank" rel="noopener" class="btn btn-sm btn-primary rounded-pill px-3 py-1" style="background:#1877F2; border-color:#1877F2;">
+                <i class="fab fa-facebook-f me-1"></i> Facebook
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-lg-4">
+        <div class="bg-white bg-opacity-10 p-4 rounded-4 backdrop-blur border border-white border-opacity-25 text-white">
+          <div class="h6 text-warning text-uppercase fw-bold mb-3">রেফারেল পারফরম্যান্স</div>
+          <div class="mb-3">
+            <div class="text-white-50 small">মোট লিংক ক্লিক</div>
+            <div class="h4 fw-bold text-white mb-0"><%= referralStats.clicksCount %></div>
+          </div>
+          <div class="mb-3">
+            <div class="text-white-50 small">অর্ডার কনভার্সন</div>
+            <div class="h4 fw-bold text-white mb-0"><%= referralStats.conversionsCount %></div>
+          </div>
+          <div>
+            <div class="text-white-50 small">মোট রেফারেল বোনাস অর্জিত</div>
+            <div class="h4 fw-bold text-warning mb-0">৳<%= referralStats.totalEarnedBdt.toLocaleString('en-IN') %></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm rounded-3">
+  <div class="card-header bg-white py-3 border-0">
+    <h5 class="card-title mb-0 fw-bold"><i class="fas fa-list-alt text-success me-2"></i>রেফারেল অর্ডার ও রিওয়ার্ড রেকর্ড</h5>
+  </div>
+  <div class="card-body p-0">
+    <% if (!referralStats.rewards || referralStats.rewards.length === 0) { %>
+      <div class="p-5 text-center text-muted">
+        <i class="fas fa-store-slash fa-3x text-muted mb-3 opacity-25"></i>
+        <h6>এখনও কোনো রেফারেল ট্রানজ্যাকশন নেই</h6>
+        <p class="small text-muted mb-0">আপনার সেলার রেফারেল লিংকটি সোশ্যাল মিডিয়া ও ক্রেতাদের সাথে শেয়ার করুন।</p>
+      </div>
+    <% } else { %>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>তারিখ</th>
+              <th>অর্ডার আইডি</th>
+              <th>অর্ডারের মোট মূল্য</th>
+              <th>রেফারেল বোনাস</th>
+              <th>অবস্থা</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% referralStats.rewards.forEach(function(r) { %>
+              <tr>
+                <td><%= new Date(r.created_at).toLocaleDateString('bn-BD') %></td>
+                <td><strong>#<%= r.order_id || '—' %></strong></td>
+                <td>৳<%= Math.round(Number(r.order_amount_paisa || 0) / 100) %></td>
+                <td>
+                  <span class="text-success fw-bold">+৳<%= Math.round(Number(r.reward_paisa || 0) / 100) %></span>
+                </td>
+                <td>
+                  <% if (r.status === 'credited') { %>
+                    <span class="badge bg-success-subtle text-success">✓ অ্যাকাউন্টে জমা</span>
+                  <% } else if (r.status === 'cancelled') { %>
+                    <span class="badge bg-danger-subtle text-danger">বাতিল</span>
+                  <% } else { %>
+                    <span class="badge bg-warning-subtle text-warning">⏳ ডেলিভারি অপেক্ষমাণ</span>
+                  <% } %>
+                </td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+  </div>
+</div>
+
+<script>
+function copyVendorRefLink() {
+  const copyInput = document.getElementById('vendorRefLink');
+  copyInput.select();
+  copyInput.setSelectionRange(0, 99999);
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(copyInput.value).then(showVendorCopied);
+  } else {
+    document.execCommand('copy');
+    showVendorCopied();
+  }
+}
+function showVendorCopied() {
+  const txt = document.getElementById('copyVendorBtnText');
+  const orig = txt.innerText;
+  txt.innerText = 'কপি হয়েছে!';
+  setTimeout(() => { txt.innerText = orig; }, 2000);
+}
+</script>
+
+<%- include('partials/layout-bottom') %>

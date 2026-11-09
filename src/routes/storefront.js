@@ -33,6 +33,26 @@ router.use((req, res, next) => {
     });
   }
 
+  // Capture referral tracking code from ?ref=...
+  if (req.query && req.query.ref && typeof req.query.ref === 'string') {
+    const rawRef = req.query.ref.trim();
+    if (rawRef && rawRef.length <= 32) {
+      if (req.session) {
+        req.session.referralCode = rawRef;
+      }
+      res.cookie('mrtumi_ref', rawRef, {
+        maxAge: 30 * 24 * 60 * 60 * 1000,
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: env.isProduction,
+      });
+      try {
+        const { trackClick } = require('../services/referralService');
+        trackClick(rawRef);
+      } catch (_) {}
+    }
+  }
+
   next();
 });
 
@@ -907,6 +927,7 @@ router.post('/order/quick-submit', publicFormLimiter, requireCsrf, asyncHandler(
       requestKey:`quick:${sessionHash}:${rawKey}`,
       cart:[{product_id:productId,variant_id:variantId,qty:req.body.qty}],
       clearSavedCart:false,
+      referralCode: req.body.referral_code || req.session?.referralCode || req.cookies?.mrtumi_ref || null,
     });
     const redirect=`/order-success/${encodeURIComponent(result.invoiceNo)}`;
     return res.json({success:true,invoice_id:result.invoiceNo,redirect,message:req.locale==='en'?`Order #${result.invoiceNo} was submitted successfully.`:`অর্ডার #${result.invoiceNo} সফলভাবে গ্রহণ করা হয়েছে!`,replayed:Boolean(result.replayed)});
@@ -1212,7 +1233,7 @@ router.post('/customer/checkout', requireCsrf, asyncHandler(async (req, res) => 
       delivery_location_id: checkoutInput.delivery_location_id, payment_method: checkoutInput.payment_method,
       trx_id: req.body.trx_id, sender_number: req.body.sender_number,
       note: req.body.note, coupon_code: matches(replayKey) ? String(req.body.coupon_code || '') : (req.session.appliedCoupon?.code || ''),
-    }, { locale: req.locale, sessionCustomer: req.customerUser || null, ip: req.ip, userAgent: req.get('user-agent'), fbp: req.cookies?._fbp, fbc: req.cookies?._fbc, requestKey: expected, cart: sourceCart, incompleteOrderId, sessionSid: req.sessionID, otpVerified: isOtpSessionVerified, analyticsConsent: consentGranted(req.session, env.analyticsAttributionEnabled), attribution: req.session.analyticsAttribution || null });
+    }, { locale: req.locale, sessionCustomer: req.customerUser || null, ip: req.ip, userAgent: req.get('user-agent'), fbp: req.cookies?._fbp, fbc: req.cookies?._fbc, requestKey: expected, cart: sourceCart, incompleteOrderId, sessionSid: req.sessionID, otpVerified: isOtpSessionVerified, referralCode: req.body.referral_code || req.session.referralCode || req.cookies?.mrtumi_ref || null, analyticsConsent: consentGranted(req.session, env.analyticsAttributionEnabled), attribution: req.session.analyticsAttribution || null });
     delete req.session.orderOtpVerified; delete req.session.orderOtpPhone;
     if (!isReplay) { req.session.checkoutLastCart = JSON.parse(JSON.stringify(sourceCart)); req.session.checkoutLastRequestKey = expected; req.session.checkoutLastRecoveryId = incompleteOrderId; delete req.session.incompleteCheckoutId; req.session.cart = []; delete req.session.appliedCoupon; if (!(storefrontRepo.isMysqlMode() && req.customerUser?.id)) await persistCustomerCart(req); }
     req.session.checkoutLastInvoice = String(result.invoiceNo);

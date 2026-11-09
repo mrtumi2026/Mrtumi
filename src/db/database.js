@@ -673,6 +673,12 @@ function initializeDatabase() {
     "ALTER TABLE brands ADD COLUMN name_en TEXT DEFAULT '';",
     "ALTER TABLE coupons ADD COLUMN max_discount REAL DEFAULT NULL;",
     "ALTER TABLE coupons ADD COLUMN usage_limit INTEGER DEFAULT NULL;",
+    "ALTER TABLE orders ADD COLUMN referral_code TEXT DEFAULT NULL;",
+    "ALTER TABLE orders ADD COLUMN referred_by_id INTEGER DEFAULT NULL;",
+    "ALTER TABLE orders ADD COLUMN referred_by_type TEXT DEFAULT NULL;",
+    "ALTER TABLE customers ADD COLUMN referral_code TEXT DEFAULT NULL;",
+    "ALTER TABLE customers ADD COLUMN referred_by_code TEXT DEFAULT NULL;",
+    "ALTER TABLE vendors ADD COLUMN referral_code TEXT DEFAULT NULL;",
   ];
   for (const stmt of additiveAlterStatements) {
     try {
