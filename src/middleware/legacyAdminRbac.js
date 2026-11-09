@@ -20,6 +20,7 @@ function policyForAdminRoute(method, pathname) {
   if (path==='/admin/dashboard/dismiss-new-orders-popup') return { key:'orders.popup.dismiss', audit:false };
   if (has(path,'/admin/dashboard/new-orders-popup')) return { key:'orders.popup.view', audit:false };
   if (has(path,'/admin/gemini-chat')) return { key:'assistant.report', audit:false };
+  if (has(path,'/admin/api/analytics')) return { key:'dashboard.view', audit:false };
   if (has(path,'/admin/smsgeteway/balance') || has(path,'/admin/bdcourier/my-plan') || has(path,'/admin/steadfast/dashboard-widget')) return { key:'dashboard.view', audit:false };
 
   if (has(path,'/admin/privacy/requests')) return { key:'privacy.review', audit:false };

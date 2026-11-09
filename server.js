@@ -14,9 +14,13 @@ const { attachGlobals } = require('./src/middleware/auth');
 const { legacyAdminRbac, legacyAdminCsrf } = require('./src/middleware/legacyAdminRbac');
 const { legacyAdminAudit } = require('./src/middleware/legacyAdminAudit');
 const { recordErrorLog } = require('./src/repositories/auditLogRepository');
+const mysqlPool = require('./src/db/mysqlPool');
 
 if (require.main === module && env.isDevelopment) {
   throw new Error('DEPLOYMENT STARTUP ERROR: direct server.js startup refuses development defaults; use `npm run dev` locally or configure production and use app.js.');
+}
+if (require.main === module && env.isTest && process.env.APP_ALLOW_TEST_STARTUP !== 'true') {
+  throw new Error('DEPLOYMENT STARTUP ERROR: NODE_ENV=test cannot start server.js without the explicit test-only APP_ALLOW_TEST_STARTUP=true flag.');
 }
 
 const localeRoutes = require('./src/routes/locale');
@@ -88,6 +92,24 @@ app.use(attachRequestId);
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(express.json({ limit: '10mb' }));
 app.use(sanitizeRequestMiddleware);
+// Older return evidence was saved below /uploads/custom. Keep those files out of
+// public static responses without deleting customer evidence or changing history.
+app.use('/uploads/custom', async (req, res, next) => {
+  if (env.db.client !== 'mysql' || !/\.(?:jpe?g|png|webp|gif)$/i.test(req.path)) return next();
+  const filename = path.basename(req.path);
+  if (!filename || filename === '.' || filename === '..') return next();
+  try {
+    const legacyEvidence = await mysqlPool.queryOne(
+      'SELECT id FROM customer_return_requests WHERE evidence_path IN (?, ?) LIMIT 1',
+      [`/uploads/custom/${filename}`, `uploads/custom/${filename}`]
+    );
+    if (legacyEvidence) return res.sendStatus(404);
+    return next();
+  } catch (error) {
+    logger.error('Unable to verify legacy customer evidence access', { code: error.code || 'DB_QUERY_FAILED' });
+    return res.sendStatus(503);
+  }
+});
 app.use(express.static(path.join(__dirname, 'public')));
 // Keep uploaded admin images reachable when UPLOAD_DIR points outside the disposable app release.
 // The default local path is also under public/, so this is only a fallback there.
@@ -175,4 +197,4 @@ if (require.main === module) {
   startServer();
 }
 
-module.exports = { app, startServer };
+module.exports = Object.assign(app, { app, startServer });

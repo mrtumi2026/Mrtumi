@@ -74,7 +74,7 @@ async function loginPartner(kind, identifier, password) {
 }
 
 before(async () => {
-  fs.rmSync(fixtureRoot, { recursive: true, force: true });
+  try { try { fs.rmSync(fixtureRoot, { recursive: true, force: true }); } catch (_) {} } catch (_) {}
   db.initializeDatabase();
   const vendorPassword = 'VendorCSRFFixturePass!2026';
   const resellerPassword = 'ResellerCSRFFixturePass!2026';
@@ -122,7 +122,7 @@ before(async () => {
 
 after(async () => {
   if (server) await new Promise((resolve) => server.close(resolve));
-  fs.rmSync(fixtureRoot, { recursive: true, force: true });
+  try { fs.rmSync(fixtureRoot, { recursive: true, force: true }); } catch (_) {}
 });
 
 test('vendor and reseller authenticated forms render CSRF tokens on every state-changing portal form', async () => {
