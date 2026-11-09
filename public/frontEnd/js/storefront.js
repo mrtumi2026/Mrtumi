@@ -302,20 +302,18 @@
     select._methodsPromise = fetch('/api/checkout/payment-methods', { headers: { Accept: 'application/json' } })
       .then(function (response) { return response.json().then(function (data) { if (!response.ok || !data.success) throw new Error('Payment methods unavailable.'); return data.methods || []; }); })
       .then(function (methods) {
-        select.innerHTML = '';
-        methods.forEach(function (method) {
-          var option = document.createElement('option');
-          option.value = String(method.code);
-          option.textContent = String(method.name);
-          option.dataset.gatewayType = String(method.gateway_type || '');
-          option.dataset.account = String(method.account_number || '');
-          option.dataset.instructions = String(method.instructions || '');
-          select.appendChild(option);
-        });
-        if (!methods.length) {
-          var unavailable = document.createElement('option'); unavailable.value = ''; unavailable.disabled = true; unavailable.selected = true;
-          unavailable.textContent = window.__MT_I18N && window.__MT_I18N.locale === 'en' ? 'No payment methods available' : 'কোনো পেমেন্ট মাধ্যম পাওয়া যায়নি'; select.appendChild(unavailable);
-        } else {
+        // Only override if server returned at least 2 configured methods, otherwise preserve full canonical options
+        if (methods && methods.length > 1) {
+          select.innerHTML = '';
+          methods.forEach(function (method) {
+            var option = document.createElement('option');
+            option.value = String(method.code);
+            option.textContent = String(method.name);
+            option.dataset.gatewayType = String(method.gateway_type || (method.mode === 'manual' ? 'manual' : 'auto'));
+            option.dataset.account = String(method.account_number || '');
+            option.dataset.instructions = String(method.instructions || '');
+            select.appendChild(option);
+          });
           select.value = methods.some(function (method) { return method.code === 'cod'; }) ? 'cod' : String(methods[0].code);
         }
         select.dataset.methodsLoaded = 'true';

@@ -147,7 +147,7 @@ async function createOrder(input,options={}){
     if(replay){if(replay.checkout_request_hash!==payloadHash)throw new ConflictError('This checkout request key was already used with different order details.');return{id:Number(replay.id),invoiceNo:replay.invoice_no,replayed:true};}
     const blocked=await tx.queryOne('SELECT id FROM ip_blocks WHERE status=1 AND ip_or_phone IN (?,?) LIMIT 1 FOR UPDATE',[phone,String(ip||'').slice(0,64)]);
     if(blocked)throw new ConflictError('This phone number or IP address is blocked from placing orders.');
-    const gateway=await tx.queryOne('SELECT code,gateway_type,mode FROM payment_gateways WHERE code=? AND (status=1 OR is_active=1) FOR UPDATE',[paymentMethod]);
+    const gateway=await tx.queryOne("SELECT code,gateway_type,mode FROM payment_gateways WHERE (code=? OR code=REPLACE(?,'_manual','') OR code=CONCAT(?,'_manual')) AND (status=1 OR is_active=1) LIMIT 1 FOR UPDATE",[paymentMethod,paymentMethod,paymentMethod]);
     if(!gateway || (isManualPayment && (gateway.gateway_type!=='manual'||!['bkash','nagad','rocket'].includes(paymentMethod.replace(/^manual_/,'')))))throw new ConflictError('This payment method is not active or is not supported at checkout.');
     const zone=await tx.queryOne('SELECT id,division,district,upazila,delivery_charge_paisa FROM delivery_locations WHERE id=? AND status=1 FOR UPDATE',[zoneId]);
     if(!zone)throw new ValidationError('Select an active, configured delivery location.');

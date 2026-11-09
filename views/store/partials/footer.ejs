@@ -271,8 +271,11 @@
                   </div>
                   <div class="col-12 mt-2">
                     <label for="qoPaymentMethod" class="visually-hidden"><%= locale === 'en' ? 'Payment method' : 'পেমেন্ট মাধ্যম' %></label>
-                    <select name="payment_method" id="qoPaymentMethod" class="form-select form-select-sm" required>
-                      <option value="cod"><%= locale === 'en' ? 'Cash on Delivery' : 'ক্যাশ অন ডেলিভারি' %></option>
+                    <select name="payment_method" id="qoPaymentMethod" class="form-select form-select-sm" onchange="updateQuickOrderPaymentFields()" required>
+                      <option value="cod" data-gateway-type="auto" selected><%= locale === 'en' ? 'Cash on Delivery (COD)' : 'ক্যাশ অন ডেলিভারি (COD)' %></option>
+                      <option value="bkash_manual" data-gateway-type="manual" data-account="01711-000000" data-instructions="<%= locale === 'en' ? 'Send Money to our bKash number and enter TrxID below.' : 'আমাদের বিকাশ নম্বরে Send Money করে নিচে TrxID দিন।' %>">bKash (বিকাশ Send Money)</option>
+                      <option value="nagad_manual" data-gateway-type="manual" data-account="01711-000000" data-instructions="<%= locale === 'en' ? 'Send Money to our Nagad number and enter TrxID below.' : 'আমাদের নগদ নম্বরে Send Money করে নিচে TrxID দিন।' %>">Nagad (নগদ Send Money)</option>
+                      <option value="rocket_manual" data-gateway-type="manual" data-account="01711-000000" data-instructions="<%= locale === 'en' ? 'Send Money to our Rocket number and enter TrxID below.' : 'আমাদের রকেট নম্বরে Send Money করে নিচে TrxID দিন।' %>">Rocket (রকেট Send Money)</option>
                     </select>
                   </div>
                   <div id="qoManualPaymentFields" class="col-12 mt-2 p-2 rounded-2 bg-warning-subtle border border-warning" style="display:none;">
