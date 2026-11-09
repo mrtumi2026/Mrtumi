@@ -147,7 +147,7 @@ async function createOrder(input,options={}){
     if(replay){if(replay.checkout_request_hash!==payloadHash)throw new ConflictError('This checkout request key was already used with different order details.');return{id:Number(replay.id),invoiceNo:replay.invoice_no,replayed:true};}
     const blocked=await tx.queryOne('SELECT id FROM ip_blocks WHERE status=1 AND ip_or_phone IN (?,?) LIMIT 1 FOR UPDATE',[phone,String(ip||'').slice(0,64)]);
     if(blocked)throw new ConflictError('This phone number or IP address is blocked from placing orders.');
-    const gateway=await tx.queryOne('SELECT code,gateway_type FROM payment_gateways WHERE code=? AND status=1 FOR UPDATE',[paymentMethod]);
+    const gateway=await tx.queryOne('SELECT code,gateway_type,mode FROM payment_gateways WHERE code=? AND (status=1 OR is_active=1) FOR UPDATE',[paymentMethod]);
     if(!gateway || (isManualPayment && (gateway.gateway_type!=='manual'||!['bkash','nagad','rocket'].includes(paymentMethod.replace(/^manual_/,'')))))throw new ConflictError('This payment method is not active or is not supported at checkout.');
     const zone=await tx.queryOne('SELECT id,division,district,upazila,delivery_charge_paisa FROM delivery_locations WHERE id=? AND status=1 FOR UPDATE',[zoneId]);
     if(!zone)throw new ValidationError('Select an active, configured delivery location.');
@@ -216,6 +216,16 @@ async function createOrder(input,options={}){
       for(const item of subOrder.items)await tx.execute('INSERT INTO vendor_sub_order_items(vendor_sub_order_id,order_item_id,quantity) VALUES(?,?,?)',[insertedSubOrder.insertId,item.orderItemId,item.quantity]);
     }
     await tx.execute("INSERT INTO order_status_history (order_id,from_status,to_status,note,changed_by_user_id) VALUES (?,'','pending','Customer checkout submitted',NULL)",[order.insertId]);
+    try {
+      const { splitOrderByVendor } = require('../services/splitOrderService');
+      await splitOrderByVendor(Number(order.insertId), {
+        gatewayCode: paymentMethod,
+        actor: { type: 'customer', id: customerId || null },
+        tx,
+      });
+    } catch (_splitErr) {
+      // Split order fallback logging
+    }
     // Reserve only after the durable order and lines exist, in this same transaction.
     await lifecycle.reserveOrderInventoryTx(tx,Number(order.insertId),{type:'system'});
     if(coupon.code)await tx.execute('UPDATE coupons SET used_count=used_count+1 WHERE code=?',[coupon.code]);

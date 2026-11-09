@@ -108,12 +108,15 @@
               <% if (canonicalMysqlCheckout && (!gateways || !gateways.length)) { %>
                 <div class="col-12 alert alert-warning"><%= checkoutEnglish ? 'Checkout is unavailable: COD is not enabled in payment settings.' : 'চেকআউট করা যাচ্ছে না: পেমেন্ট সেটিংসে COD চালু নেই।' %></div>
               <% } else if (canonicalMysqlCheckout) { %>
-                <% gateways.forEach(function(gateway, gatewayIndex) { %>
-                  <div class="col-md-6"><label class="pay-option <%= gateway.code === 'cod' ? 'active' : '' %> w-100 d-flex align-items-start gap-2" data-gateway-type="<%= gateway.gateway_type %>" data-account="<%= gateway.account_number || '' %>" data-instructions="<%= gateway.instructions || '' %>">
+                <% gateways.forEach(function(gateway, gatewayIndex) { 
+                    const isManual = (gateway.mode === 'manual' || gateway.gateway_type === 'manual') && gateway.code !== 'cod';
+                    const inst = checkoutEnglish ? (gateway.instructions || '') : (gateway.instructions_bn || gateway.instructions || '');
+                  %>
+                  <div class="col-md-6"><label class="pay-option <%= gateway.code === 'cod' ? 'active' : '' %> w-100 d-flex align-items-start gap-2" data-gateway-type="<%= isManual ? 'manual' : 'auto' %>" data-account="<%= gateway.account_number || '' %>" data-instructions="<%= inst %>">
                     <input type="radio" name="payment_method" value="<%= gateway.code %>" class="form-check-input mt-1" required <%= gateway.code === 'cod' ? 'checked' : '' %> />
                     <div><div class="fw-bold small"><%= gateway.name %></div>
                       <% if (gateway.code === 'cod') { %><div class="text-muted" style="font-size:11.5px;"><%= checkoutEnglish ? 'Pay the configured COD due on delivery.' : 'ডেলিভারির সময় প্রদেয় অর্থ দিন।' %></div>
-                      <% } else { %><% if (gateway.account_number) { %><div class="text-muted" style="font-size:11.5px;"><%= checkoutEnglish ? 'Account' : 'অ্যাকাউন্ট' %>: <%= gateway.account_number %></div><% } %><% if (gateway.instructions) { %><div class="text-muted" style="font-size:11.5px;"><%= gateway.instructions %></div><% } %><div class="text-muted" style="font-size:11.5px;"><%= checkoutEnglish ? 'Payment remains unverified until staff confirms it.' : 'কর্মী নিশ্চিত না করা পর্যন্ত পেমেন্ট যাচাইকৃত হবে না।' %></div><% } %>
+                      <% } else { %><% if (gateway.account_number) { %><div class="text-muted" style="font-size:11.5px;"><%= checkoutEnglish ? 'Wallet / Account' : 'ওয়ালেট নম্বর' %>: <%= gateway.account_number %></div><% } %><% if (inst) { %><div class="text-muted" style="font-size:11.5px;"><%= inst %></div><% } %><div class="text-muted" style="font-size:11.5px;"><%= isManual ? (checkoutEnglish ? 'Payment verified by staff after checking TrxID.' : 'TrxID যাচাই করার পর পেমেন্ট নিশ্চিত করা হবে।') : (checkoutEnglish ? 'Instant online automated payment.' : 'তাৎক্ষণিক অনলাইন স্বয়ংক্রিয় পেমেন্ট।') %></div><% } %>
                     </div>
                   </label></div>
                 <% }) %>

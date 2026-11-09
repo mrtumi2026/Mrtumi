@@ -22,7 +22,8 @@
     "qa:browser": "node scripts/qa/demo-browser-e2e.js",
     "backup:restore:rehearsal": "node scripts/backup-restore-rehearsal.js",
     "db:privileges:check": "node scripts/check-db-privileges.js",
-    "courier:sync-tracking": "node scripts/sync-courier-tracking.js"
+    "courier:sync-tracking": "node scripts/sync-courier-tracking.js",
+    "test:e2e": "node scripts/test-e2e-order-flow.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

@@ -19,6 +19,14 @@
           <button type="submit" class="btn btn-outline-danger btn-sm">🛵 Send to Pathao</button>
         </form>
         <a href="/admin/manual-fraud-check?phone=<%= encodeURIComponent(order.phone) %>" class="btn btn-outline-info btn-sm">🛡️ Check Fraud Ratio</a>
+        <% if (order.payment_status !== 'paid' && (order.manual_trx_id || order.trx_id || String(order.payment_method || '').includes('manual'))) { %>
+          <form action="/admin/order/<%= order.id %>/verify-payment" method="POST" class="d-inline">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+            <button type="submit" class="btn btn-success btn-sm" onclick="return confirm('Confirm TrxID verification and mark order paid?');">
+              ✅ Verify TrxID & Confirm Payment
+            </button>
+          </form>
+        <% } %>
         <a href="/admin/order/invoice/<%= order.id %>" target="_blank" class="btn btn-outline-dark btn-sm"><i class="fas fa-print me-1"></i>Print Invoice</a>
         <a href="/admin/order/all" class="btn btn-outline-secondary btn-sm">← Back</a>
       </div>
@@ -106,8 +114,11 @@
         <div id="order-detail-payment" class="tbl-card p-3">
           <h6 class="fw-bold mb-2">Payment &amp; Customer Note</h6>
           <p class="small mb-1"><strong>Payment Method:</strong> <%= order.payment_method %> (<span class="badge bg-secondary"><%= order.payment_status %></span>)</p>
-          <% if (order.trx_id) { %>
-            <p class="small mb-1"><strong>Transaction ID:</strong> <code><%= order.trx_id %></code> | Sender: <%= order.sender_number || '—' %></p>
+          <% if (order.trx_id || order.manual_trx_id) { %>
+            <p class="small mb-1"><strong>Transaction ID:</strong> <code><%= order.manual_trx_id || order.trx_id %></code> | Sender: <%= order.manual_sender_number || order.sender_number || '—' %></p>
+          <% } %>
+          <% if (order.verified_at) { %>
+            <p class="small text-success mb-1"><strong>Verified:</strong> <%= order.verified_at %> (Admin #<%= order.verified_by_user_id || 'Staff' %>)</p>
           <% } %>
           <% if (order.note) { %>
             <p class="small mb-0"><strong>Customer Note:</strong> <%= order.note %></p>

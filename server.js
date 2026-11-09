@@ -14,15 +14,9 @@ const { attachGlobals } = require('./src/middleware/auth');
 const { legacyAdminRbac, legacyAdminCsrf } = require('./src/middleware/legacyAdminRbac');
 const { legacyAdminAudit } = require('./src/middleware/legacyAdminAudit');
 const { recordErrorLog } = require('./src/repositories/auditLogRepository');
-const { createSecurityHeaders } = require('./src/middleware/securityHeaders');
-const { createRateLimiter } = require('./src/middleware/rateLimit');
-const mysqlPool = require('./src/db/mysqlPool');
 
 if (require.main === module && env.isDevelopment) {
   throw new Error('DEPLOYMENT STARTUP ERROR: direct server.js startup refuses development defaults; use `npm run dev` locally or configure production and use app.js.');
-}
-if (require.main === module && env.isTest && process.env.APP_ALLOW_TEST_STARTUP !== 'true') {
-  throw new Error('DEPLOYMENT STARTUP ERROR: NODE_ENV=test cannot start server.js without the explicit test-only APP_ALLOW_TEST_STARTUP=true flag.');
 }
 
 const localeRoutes = require('./src/routes/locale');
@@ -30,7 +24,6 @@ const apiFoundationRoutes = require('./src/routes/apiFoundation');
 const adminAuthRoutes = require('./src/routes/adminAuth');
 const adminDashboardRoutes = require('./src/routes/adminDashboard');
 const adminAccessRoutes = require('./src/routes/adminAccess');
-const adminTestDataRoutes = require('./src/routes/adminTestData');
 const adminPrivacyRoutes = require('./src/routes/adminPrivacy');
 const adminOrdersRoutes = require('./src/routes/adminOrders');
 const adminCatalogRoutes = require('./src/routes/adminCatalog');
@@ -45,6 +38,18 @@ const storefrontRoutes = require('./src/routes/storefront');
 const customerAccountRoutes = require('./src/routes/customerAccount');
 const phase08AdminRoutes = require('./src/routes/phase08Admin');
 const d7AdminRoutes = require('./src/routes/d7Admin');
+const paymentRoutes = require('./src/routes/paymentRoutes');
+const logisticsRoutes = require('./src/routes/logisticsRoutes');
+const { createSecurityHeaders } = require('./src/middleware/securityHeaders');
+const { corsMiddleware } = require('./src/middleware/corsConfig');
+const { sanitizeRequestMiddleware } = require('./src/middleware/validator');
+
+let compression;
+try {
+  compression = require('compression');
+} catch {
+  compression = null;
+}
 
 // Initialize local SQLite prototype ONLY in non-production when DB_CLIENT=sqlite.
 // Production strictly uses MySQL via versioned migrations (`npm run migrate:up`).
@@ -60,6 +65,9 @@ app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.locals.mysqlCheckoutEnabled = env.db.client === 'mysql';
 
+// Security Headers (Helmet CSP, HSTS, X-Content-Type-Options)
+app.use(createSecurityHeaders());
+
 // Allow embedding in Arena live preview iframes in non-production environments
 if (!env.isProduction) {
   app.use((_req, res, next) => {
@@ -68,54 +76,17 @@ if (!env.isProduction) {
   });
 }
 
-app.use(createSecurityHeaders({ isProduction: env.isProduction }));
+// CORS & Webhook Bypass
+app.use(corsMiddleware);
 
-const cspReportLimiter = createRateLimiter({ keyPrefix: 'csp-report', windowMs: 60_000, max: 60 });
-app.post(
-  '/api/security/csp-report',
-  cspReportLimiter,
-  express.json({ type: ['application/csp-report', 'application/reports+json'], limit: '16kb' }),
-  (req, res) => {
-    const payload = req.body;
-    const reports = Array.isArray(payload) ? payload.slice(0, 5) : [payload];
-    for (const item of reports) {
-      const report = item && (item['csp-report'] || item.body || item);
-      if (!report || typeof report !== 'object') continue;
-      const origin = (value) => {
-        try { return new URL(String(value)).origin.slice(0, 200); } catch (_err) { return ''; }
-      };
-      logger.warn('CSP report-only violation', {
-        directive: String(report.effectiveDirective || report['effective-directive'] || report.violatedDirective || report['violated-directive'] || '').slice(0, 100),
-        disposition: String(report.disposition || '').slice(0, 32),
-        documentOrigin: origin(report.documentURL || report['document-uri']),
-        blockedOrigin: origin(report.blockedURL || report['blocked-uri']),
-      });
-    }
-    return res.status(204).end();
-  }
-);
-
+// HTTP Response Compression
+if (compression) {
+  app.use(compression());
+}
 app.use(attachRequestId);
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(express.json({ limit: '10mb' }));
-// Older return evidence was saved below /uploads/custom. Keep those files out of
-// public static responses without deleting customer evidence or changing history.
-app.use('/uploads/custom', async (req, res, next) => {
-  if (env.db.client !== 'mysql' || !/\.(?:jpe?g|png|webp|gif)$/i.test(req.path)) return next();
-  const filename = path.basename(req.path);
-  if (!filename || filename === '.' || filename === '..') return next();
-  try {
-    const legacyEvidence = await mysqlPool.queryOne(
-      'SELECT id FROM customer_return_requests WHERE evidence_path IN (?, ?) LIMIT 1',
-      [`/uploads/custom/${filename}`, `uploads/custom/${filename}`]
-    );
-    if (legacyEvidence) return res.sendStatus(404);
-    return next();
-  } catch (error) {
-    logger.error('Unable to verify legacy customer evidence access', { code: error.code || 'DB_QUERY_FAILED' });
-    return res.sendStatus(503);
-  }
-});
+app.use(sanitizeRequestMiddleware);
 app.use(express.static(path.join(__dirname, 'public')));
 // Keep uploaded admin images reachable when UPLOAD_DIR points outside the disposable app release.
 // The default local path is also under public/, so this is only a fallback there.
@@ -142,7 +113,6 @@ app.use(legacyAdminAudit);
 app.use(adminAuthRoutes);
 app.use(adminDashboardRoutes);
 app.use(adminAccessRoutes);
-app.use(adminTestDataRoutes);
 app.use(adminPrivacyRoutes);
 app.use(adminOrdersRoutes);
 app.use(adminCatalogRoutes);
@@ -156,6 +126,8 @@ app.use(vendorPanelRoutes);
 app.use(resellerPanelRoutes);
 app.use(adminResellerCommerceRoutes);
 app.use(customerAccountRoutes);
+app.use(paymentRoutes);
+app.use(logisticsRoutes);
 app.use(storefrontRoutes);
 
 // 404 Handler (JSON envelope for API paths, HTML/redirects for portal paths)
@@ -201,4 +173,4 @@ if (require.main === module) {
   startServer();
 }
 
-module.exports = Object.assign(app, { app, startServer });
+module.exports = { app, startServer };

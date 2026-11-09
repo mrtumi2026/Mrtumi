@@ -233,7 +233,7 @@ router.post('/admin/products/approve/:id', asyncHandler(async (req, res) => {
 }));
 
 router.post('/admin/products/reject/:id', asyncHandler(async (req,res) => {
-  if(!mysqlMode())return res.status(409).send('Vendor product rejection workflow requires MySQL.');
+  if(!mysqlMode()){db.run("UPDATE products SET approval_status='rejected',status=0 WHERE id=?",req.params.id);req.flash('success','Vendor product rejected.');return res.redirect(req.get('Referrer')||'/admin/products/pending');}
   await catalogRepo.rejectPendingVendorProduct(req.params.id,req.body.reason,actor(req));req.adminDomainAudit=true;
   req.flash('success','Vendor product rejected with a reason.');return res.redirect(req.get('Referrer')||'/admin/products/pending');
 }));
