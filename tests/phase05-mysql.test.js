@@ -64,6 +64,22 @@ test('Phase 05 setup reuses migration-seeded active COD gateway without a duplic
   );
 });
 
+async function assertRejectsWithCode(fn, expectedCode, label) {
+  let caught = null;
+  try {
+    await fn();
+  } catch (error) {
+    caught = error;
+  }
+  assert.ok(caught, `${label}: expected the operation to be refused`);
+  assert.equal(
+    caught.code,
+    expectedCode,
+    `${label}: refused with ${caught.code} (${String(caught.message || '').slice(0, 200)}) instead of ${expectedCode}`
+  );
+  return caught;
+}
+
 function httpRequest(baseUrl, urlPath, options = {}) {
   return new Promise((resolve, reject) => {
     const url = new URL(urlPath, baseUrl);
@@ -563,12 +579,12 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
       assert.deepEqual([noConsentOrder.traffic_source,noConsentOrder.utm_source,noConsentOrder.utm_medium,noConsentOrder.utm_campaign,noConsentOrder.analytics_consent_at,noConsentOrder.analytics_consent_version],['Direct','','','',null,null],'without explicit consent, no attribution is persisted');
       assert.equal(Number((await client.queryOne('SELECT stock_reserved FROM product_variants WHERE id=?',[variant5KgId])).stock_reserved),8);
       await client.execute("INSERT INTO settings (setting_key,setting_value) VALUES ('otp_mode','on') ON DUPLICATE KEY UPDATE setting_value='on'");
-      // An unverified OTP is a user-input validation failure (400 VALIDATION_ERROR), not a
-      // state conflict; assert the documented contract and the user-facing message.
-      await assert.rejects(()=>checkoutRepo.createOrder({customer_name:'OTP blocked',phone:'01912345678',address:'House 3, Policy Road',delivery_location_id:deliveryLocationId,payment_method:'cod'},{locale:'en',requestKey:`p08-checkout-otp-${Date.now()}`,cart:[{product_id:inhouseProdId,qty:1}]}),(err)=>err.code==='VALIDATION_ERROR'&&/OTP|ওটিপি/.test(err.message));
+      // An unverified OTP is a user-input validation failure, not a state conflict.
+      const otpRefusal=await assertRejectsWithCode(()=>checkoutRepo.createOrder({customer_name:'OTP blocked',phone:'01912345678',address:'House 3, Policy Road',delivery_location_id:deliveryLocationId,payment_method:'cod'},{locale:'en',requestKey:`p08-checkout-otp-${Date.now()}`,cart:[{product_id:inhouseProdId,qty:1}]}),'VALIDATION_ERROR','OTP-required checkout');
+      assert.match(otpRefusal.message,/OTP|ওটিপি/,'OTP refusal explains that verification is required');
       await client.execute("UPDATE settings SET setting_value='off' WHERE setting_key='otp_mode'");
       await client.execute("INSERT INTO settings (setting_key,setting_value) VALUES ('advance_payment_mode','fixed'),('advance_payment_value','100') ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)");
-      await assert.rejects(()=>checkoutRepo.createOrder({customer_name:'Advance blocked',phone:'01912345678',address:'House 3, Policy Road',delivery_location_id:deliveryLocationId,payment_method:'cod'},{locale:'en',requestKey:`p08-checkout-advance-${Date.now()}`,cart:[{product_id:inhouseProdId,qty:1}]}),(err)=>err.code==='CONFLICT');
+      await assertRejectsWithCode(()=>checkoutRepo.createOrder({customer_name:'Advance blocked',phone:'01912345678',address:'House 3, Policy Road',delivery_location_id:deliveryLocationId,payment_method:'cod'},{locale:'en',requestKey:`p08-checkout-advance-${Date.now()}`,cart:[{product_id:inhouseProdId,qty:1}]}),'CONFLICT','advance-required checkout');
       await client.execute("UPDATE settings SET setting_value='off' WHERE setting_key='advance_payment_mode'");
     }
   );
