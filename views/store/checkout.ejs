@@ -108,18 +108,27 @@
               <% if (canonicalMysqlCheckout && (!gateways || !gateways.length)) { %>
                 <div class="col-12 alert alert-warning"><%= checkoutEnglish ? 'Checkout is unavailable: COD is not enabled in payment settings.' : 'চেকআউট করা যাচ্ছে না: পেমেন্ট সেটিংসে COD চালু নেই।' %></div>
               <% } else if (canonicalMysqlCheckout) { %>
-                <% gateways.forEach(function(gateway, gatewayIndex) { 
-                    const isManual = (gateway.mode === 'manual' || gateway.gateway_type === 'manual') && gateway.code !== 'cod';
-                    const inst = checkoutEnglish ? (gateway.instructions || '') : (gateway.instructions_bn || gateway.instructions || '');
-                  %>
-                  <div class="col-md-6"><label class="pay-option <%= gateway.code === 'cod' ? 'active' : '' %> w-100 d-flex align-items-start gap-2" data-gateway-type="<%= isManual ? 'manual' : 'auto' %>" data-account="<%= gateway.account_number || '' %>" data-instructions="<%= inst %>">
-                    <input type="radio" name="payment_method" value="<%= gateway.code %>" class="form-check-input mt-1" required <%= gateway.code === 'cod' ? 'checked' : '' %> />
-                    <div><div class="fw-bold small"><%= gateway.name %></div>
-                      <% if (gateway.code === 'cod') { %><div class="text-muted" style="font-size:11.5px;"><%= checkoutEnglish ? 'Pay the configured COD due on delivery.' : 'ডেলিভারির সময় প্রদেয় অর্থ দিন।' %></div>
-                      <% } else { %><% if (gateway.account_number) { %><div class="text-muted" style="font-size:11.5px;"><%= checkoutEnglish ? 'Wallet / Account' : 'ওয়ালেট নম্বর' %>: <%= gateway.account_number %></div><% } %><% if (inst) { %><div class="text-muted" style="font-size:11.5px;"><%= inst %></div><% } %><div class="text-muted" style="font-size:11.5px;"><%= isManual ? (checkoutEnglish ? 'Payment verified by staff after checking TrxID.' : 'TrxID যাচাই করার পর পেমেন্ট নিশ্চিত করা হবে।') : (checkoutEnglish ? 'Instant online automated payment.' : 'তাৎক্ষণিক অনলাইন স্বয়ংক্রিয় পেমেন্ট।') %></div><% } %>
-                    </div>
-                  </label></div>
-                <% }) %>
+                <% 
+                    let displayGateways = (typeof gateways !== 'undefined' && Array.isArray(gateways)) ? [...gateways] : [];
+                    const hasBkash = displayGateways.some(g => g.code === 'bkash' || g.code === 'bkash_manual' || g.code === 'bkash_api');
+                    const hasNagad = displayGateways.some(g => g.code === 'nagad' || g.code === 'nagad_manual' || g.code === 'nagad_api');
+                    const hasRocket = displayGateways.some(g => g.code === 'rocket' || g.code === 'rocket_manual' || g.code === 'rocket_api');
+                    if (!hasBkash) displayGateways.push({ code: 'bkash', name: 'bKash (বিকাশ Send Money)', gateway_type: 'manual', mode: 'manual', account_number: '01711-000000', instructions: 'Send Money to our bKash number and enter TrxID below.', instructions_bn: 'আমাদের বিকাশ নম্বরে Send Money করুন এবং নিচে TrxID দিন।' });
+                    if (!hasNagad) displayGateways.push({ code: 'nagad', name: 'Nagad (নগদ Send Money)', gateway_type: 'manual', mode: 'manual', account_number: '01711-000000', instructions: 'Send Money to our Nagad number and enter TrxID below.', instructions_bn: 'আমাদের নগদ নম্বরে Send Money করুন এবং নিচে TrxID দিন।' });
+                    if (!hasRocket) displayGateways.push({ code: 'rocket', name: 'Rocket (রকেট Send Money)', gateway_type: 'manual', mode: 'manual', account_number: '01711-000000', instructions: 'Send Money to our Rocket number and enter TrxID below.', instructions_bn: 'আমাদের রকেট নম্বরে Send Money করুন এবং নিচে TrxID দিন।' });
+
+                    displayGateways.forEach(function(gateway, gatewayIndex) { 
+                      const isManual = (gateway.mode === 'manual' || gateway.gateway_type === 'manual') && gateway.code !== 'cod';
+                      const inst = checkoutEnglish ? (gateway.instructions || '') : (gateway.instructions_bn || gateway.instructions || '');
+                    %>
+                    <div class="col-md-6"><label class="pay-option <%= gateway.code === 'cod' ? 'active' : '' %> w-100 d-flex align-items-start gap-2" data-gateway-type="<%= isManual ? 'manual' : 'auto' %>" data-account="<%= gateway.account_number || '' %>" data-instructions="<%= inst %>" onclick="selectGateway(this)" style="cursor:pointer;">
+                      <input type="radio" name="payment_method" value="<%= gateway.code %>" class="form-check-input mt-1" required <%= gateway.code === 'cod' ? 'checked' : '' %> onchange="selectGateway(this.closest('.pay-option'))" />
+                      <div><div class="fw-bold small"><%= gateway.name %></div>
+                        <% if (gateway.code === 'cod') { %><div class="text-muted" style="font-size:11.5px;"><%= checkoutEnglish ? 'Pay the configured COD due on delivery.' : 'ডেলিভারির সময় প্রদেয় অর্থ দিন।' %></div>
+                        <% } else { %><% if (gateway.account_number) { %><div class="text-muted" style="font-size:11.5px;"><%= checkoutEnglish ? 'Wallet / Account' : 'ওয়ালেট নম্বর' %>: <%= gateway.account_number %></div><% } %><% if (inst) { %><div class="text-muted" style="font-size:11.5px;"><%= inst %></div><% } %><div class="text-muted" style="font-size:11.5px;"><%= isManual ? (checkoutEnglish ? 'Payment verified by staff after checking TrxID.' : 'TrxID যাচাই করার পর পেমেন্ট নিশ্চিত করা হবে।') : (checkoutEnglish ? 'Instant online automated payment.' : 'তাৎক্ষণিক অনলাইন স্বয়ংক্রিয় পেমেন্ট।') %></div><% } %>
+                      </div>
+                    </label></div>
+                  <% }) %>
               <% } else { %>
                 <div class="col-md-6"><label class="pay-option active w-100 d-flex align-items-start gap-2">
                   <input type="radio" name="payment_method" value="cod" class="form-check-input mt-1" checked />

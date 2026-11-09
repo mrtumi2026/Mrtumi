@@ -65,9 +65,16 @@
           <% if (canonicalCampaignCheckout) { %>
             <select name="delivery_location_id" id="campArea" class="form-select" required onchange="calcCampTotal()">
               <option value="" data-ship="0">ডেলিভারি এরিয়া নির্বাচন করুন</option>
-              <% deliveryLocations.forEach(function(location) { const label = [location.division, location.district, location.upazila].filter(Boolean).join(' / '); %>
+              <% 
+                let cLocations = (typeof deliveryLocations !== 'undefined' && Array.isArray(deliveryLocations) && deliveryLocations.length) ? deliveryLocations : [
+                  { id: 1, division: 'ঢাকা', district: 'ঢাকা', upazila: 'ঢাকার ভিতরে', delivery_charge_paisa: 6000 },
+                  { id: 2, division: 'সারা দেশ', district: 'সারা দেশ', upazila: 'ঢাকার বাইরে', delivery_charge_paisa: 12000 }
+                ];
+                cLocations.forEach(function(location) { 
+                  const label = location.upazila || [location.division, location.district].filter(Boolean).join(' / ');
+              %>
                 <option value="<%= location.id %>" data-ship="<%= Number(location.delivery_charge_paisa) / 100 %>"><%= label %> (৳<%= Number(location.delivery_charge_paisa) / 100 %>)</option>
-              <% }) %>
+              <% }); %>
             </select>
           <% } else { %>
             <select name="shipping_area" id="campArea" class="form-select" onchange="calcCampTotal()">

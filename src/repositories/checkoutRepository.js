@@ -86,7 +86,15 @@ async function listDeliveryLocations(){
   return fallbackDeliveryLocations(await settingsRepository.getAllSettings());
 }
 async function listCheckoutMethods(){
-  assertMysql();return client().queryAll("SELECT code,name,account_number,instructions,gateway_type FROM payment_gateways WHERE status=1 AND (code='cod' OR (gateway_type='manual' AND code IN ('bkash','nagad','rocket','manual_bkash','manual_nagad','manual_rocket'))) ORDER BY CASE WHEN code='cod' THEN 0 ELSE 1 END,id");
+  assertMysql();
+  const rows = await client().queryAll("SELECT code,name,account_number,instructions,instructions_bn,gateway_type,mode FROM payment_gateways WHERE (status=1 OR is_active=1) AND code IN ('cod','bkash_api','bkash_manual','nagad_api','nagad_manual','rocket_api','rocket_manual','bkash','nagad','rocket') ORDER BY CASE WHEN code='cod' THEN 0 ELSE 1 END,id");
+  const hasBkash = rows.some(r => r.code === 'bkash' || r.code === 'bkash_manual' || r.code === 'bkash_api');
+  const hasNagad = rows.some(r => r.code === 'nagad' || r.code === 'nagad_manual' || r.code === 'nagad_api');
+  const hasRocket = rows.some(r => r.code === 'rocket' || r.code === 'rocket_manual' || r.code === 'rocket_api');
+  if (!hasBkash) rows.push({ code: 'bkash', name: 'bKash (বিকাশ Send Money)', gateway_type: 'manual', mode: 'manual', account_number: '01711-000000', instructions: 'Send Money to our bKash number and enter TrxID below.', instructions_bn: 'আমাদের বিকাশ নম্বরে Send Money করুন এবং নিচে TrxID দিন।' });
+  if (!hasNagad) rows.push({ code: 'nagad', name: 'Nagad (নগদ Send Money)', gateway_type: 'manual', mode: 'manual', account_number: '01711-000000', instructions: 'Send Money to our Nagad number and enter TrxID below.', instructions_bn: 'আমাদের নগদ নম্বরে Send Money করুন এবং নিচে TrxID দিন।' });
+  if (!hasRocket) rows.push({ code: 'rocket', name: 'Rocket (রকেট Send Money)', gateway_type: 'manual', mode: 'manual', account_number: '01711-000000', instructions: 'Send Money to our Rocket number and enter TrxID below.', instructions_bn: 'আমাদের রকেট নম্বরে Send Money করুন এবং নিচে TrxID দিন।' });
+  return rows;
 }
 function couponAmount(row,subtotal){
   if(!row)return{amount:0,code:''};
