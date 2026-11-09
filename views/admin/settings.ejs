@@ -166,31 +166,99 @@
             </div>
 
           <% } else if (section === 'sms_gateway') { %>
-            <div class="col-md-4">
-              <label class="form-label small fw-semibold">BulkSMSBD API Key</label>
-              <input type="text" name="bulksms_api_key" value="<%= siteSettings.bulksms_api_key || '' %>" class="form-control" />
+            <div class="col-md-5">
+              <label class="form-label small fw-semibold">BulkSMSBD API Key *</label>
+              <input type="password" name="bulksms_api_key" value="<%= siteSettings.bulksms_api_key || '' %>" class="form-control" placeholder="API Key বসান..." />
+              <div class="form-text">BulkSMSBD ড্যাশবোর্ড থেকে প্রাপ্ত API Key।</div>
             </div>
             <div class="col-md-4">
-              <label class="form-label small fw-semibold">Sender ID</label>
-              <input type="text" name="bulksms_sender_id" value="<%= siteSettings.bulksms_sender_id || '' %>" class="form-control" />
+              <label class="form-label small fw-semibold">Approved Sender ID *</label>
+              <input type="text" name="bulksms_sender_id" value="<%= siteSettings.bulksms_sender_id || '' %>" class="form-control" placeholder="যেমন: 8809612... বা Non-masking ID" />
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small fw-semibold">SMS Gateway Status</label>
+              <select name="bulksms_enabled" class="form-select">
+                <option value="1" <%= siteSettings.bulksms_enabled !== '0' ? 'selected' : '' %>>সক্রিয় (Active)</option>
+                <option value="0" <%= siteSettings.bulksms_enabled === '0' ? 'selected' : '' %>>নিষ্ক্রিয় (Disabled)</option>
+              </select>
             </div>
             <div class="col-md-4">
-              <label class="form-label small fw-semibold">Current Balance (tk)</label>
-              <input type="text" name="bulksms_balance" value="<%= siteSettings.bulksms_balance || '' %>" class="form-control" />
+              <label class="form-label small fw-semibold">Current Account Balance</label>
+              <div class="input-group">
+                <span class="input-group-text">৳</span>
+                <input type="text" name="bulksms_balance" value="<%= siteSettings.bulksms_balance || '0.00' %>" class="form-control" readonly />
+              </div>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold">অর্ডার হলে কাস্টমারকে অটো SMS</label>
+              <select name="sms_order_customer_enabled" class="form-select">
+                <option value="1" <%= siteSettings.sms_order_customer_enabled !== '0' ? 'selected' : '' %>>চালু (Send on New Order)</option>
+                <option value="0" <%= siteSettings.sms_order_customer_enabled === '0' ? 'selected' : '' %>>বন্ধ (Disabled)</option>
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold">অর্ডার হলে এডমিনকে অটো SMS</label>
+              <select name="sms_order_admin_enabled" class="form-select">
+                <option value="1" <%= siteSettings.sms_order_admin_enabled !== '0' ? 'selected' : '' %>>চালু (Alert Admin)</option>
+                <option value="0" <%= siteSettings.sms_order_admin_enabled === '0' ? 'selected' : '' %>>বন্ধ (Disabled)</option>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">এডমিন নোটিফিকেশন মোবাইল নম্বর</label>
+              <input type="text" name="sms_admin_phone" value="<%= siteSettings.sms_admin_phone || siteSettings.site_phone || '' %>" class="form-control" placeholder="যেমন: 01711223344" />
+              <div class="form-text">এই নম্বরে নতুন অর্ডার আসলে তাৎক্ষণিক SMS যাবে।</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">কুইক অ্যাকশন</label>
+              <div class="pt-1">
+                <a href="/admin/sms/custom-send" class="btn btn-outline-secondary btn-sm">📨 ম্যানুয়াল SMS পাঠান</a>
+              </div>
+            </div>
+            <div class="col-12">
+              <label class="form-label small fw-semibold">কাস্টমার অর্ডার নিশ্চিতকরণ SMS টেমপ্লেট</label>
+              <textarea name="sms_customer_template" rows="2" class="form-control"><%= siteSettings.sms_customer_template || 'প্রিয় {customer_name}, {site_name}-এ আপনার অর্ডার #{invoice_no} সফলভাবে গৃহীত হয়েছে। সর্বমোট: ৳{total_amount}। অর্ডার ট্র্যাক করুন: {tracking_url}' %></textarea>
+              <div class="form-text">উপলব্ধ ট্যাগ: {customer_name}, {invoice_no}, {total_amount}, {site_name}, {tracking_url}</div>
+            </div>
+            <div class="col-12">
+              <label class="form-label small fw-semibold">এডমিন নোটিফিকেশন SMS টেমপ্লেট</label>
+              <textarea name="sms_admin_template" rows="2" class="form-control"><%= siteSettings.sms_admin_template || 'নতুন অর্ডার! #{invoice_no}, গ্রাহক: {customer_name} ({phone}), মোট: ৳{total_amount}। এরিয়া: {delivery_area} - {site_name}' %></textarea>
+              <div class="form-text">উপলব্ধ ট্যাগ: {customer_name}, {phone}, {invoice_no}, {total_amount}, {delivery_area}, {site_name}</div>
             </div>
 
           <% } else if (section === 'fraud_api' || section === 'order_restriction') { %>
-            <div class="col-md-4">
-              <label class="form-label small fw-semibold">BD Courier API Key</label>
-              <input type="text" name="bdcourier_api_key" value="<%= siteSettings.bdcourier_api_key || '' %>" class="form-control" />
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">BD Courier API Key *</label>
+              <input type="password" name="bdcourier_api_key" value="<%= siteSettings.bdcourier_api_key || '' %>" class="form-control" placeholder="BD Courier API Key বসান..." />
+              <div class="form-text">BD Courier (bdcourier.com) অ্যাকাউন্ট থেকে প্রাপ্ত API Key।</div>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small fw-semibold">Courier Fraud Checker</label>
+              <select name="bdcourier_enabled" class="form-select">
+                <option value="1" <%= siteSettings.bdcourier_enabled !== '0' ? 'selected' : '' %>>সক্রিয় (Active)</option>
+                <option value="0" <%= siteSettings.bdcourier_enabled === '0' ? 'selected' : '' %>>নিষ্ক্রিয় (Disabled)</option>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small fw-semibold">BD Courier Plan</label>
+              <input type="text" name="bdcourier_plan" value="<%= siteSettings.bdcourier_plan || 'Enterprise / Standard' %>" class="form-control" />
             </div>
             <div class="col-md-4">
-              <label class="form-label small fw-semibold">BD Courier Plan Name</label>
-              <input type="text" name="bdcourier_plan" value="<%= siteSettings.bdcourier_plan || '' %>" class="form-control" />
+              <label class="form-label small fw-semibold">অটো অর্ডার সীমা নিয়ন্ত্রণ (Anti-Spam)</label>
+              <select name="order_restriction_enabled" class="form-select">
+                <option value="1" <%= siteSettings.order_restriction_enabled !== '0' ? 'selected' : '' %>>সক্রিয় (Active)</option>
+                <option value="0" <%= siteSettings.order_restriction_enabled === '0' ? 'selected' : '' %>>নিষ্ক্রিয় (Disabled)</option>
+              </select>
             </div>
             <div class="col-md-4">
-              <label class="form-label small fw-semibold">Max Orders Per Hour (Per Phone)</label>
+              <label class="form-label small fw-semibold">Max Orders Per Hour (প্রতি ফোন/আইপি)</label>
               <input type="number" name="max_orders_per_hour" value="<%= siteSettings.max_orders_per_hour || '5' %>" class="form-control" />
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold">ডুপ্লিকেট অর্ডার ব্লক সময় (মিনিট)</label>
+              <input type="number" name="duplicate_order_block_minutes" value="<%= siteSettings.duplicate_order_block_minutes || '10' %>" class="form-control" />
+            </div>
+            <div class="col-12 mt-2">
+              <a href="/admin/manual-fraud-check" class="btn btn-forest btn-sm">🛡️ ম্যানুয়াল কুরিয়ার ফ্রড চেক পেজে যান</a>
             </div>
 
           <% } else if (section === 'email') { %>

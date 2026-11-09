@@ -87,7 +87,7 @@ async function listDeliveryLocations(){
 }
 async function listCheckoutMethods(){
   assertMysql();
-  const rows = await client().queryAll("SELECT code,name,account_number,instructions,instructions_bn,gateway_type,mode FROM payment_gateways WHERE (status=1 OR is_active=1) AND code IN ('cod','bkash_api','bkash_manual','nagad_api','nagad_manual','rocket_api','rocket_manual','bkash','nagad','rocket') ORDER BY CASE WHEN code='cod' THEN 0 ELSE 1 END,id");
+  const rows = await client().queryAll("SELECT code,name,account_number,instructions,instructions_bn,gateway_type,mode FROM payment_gateways WHERE (status=1 OR is_active=1) AND (gateway_type='manual' OR code IN ('cod','bkash_api','bkash_manual','nagad_api','nagad_manual','rocket_api','rocket_manual','bkash','nagad','rocket')) ORDER BY CASE WHEN code='cod' THEN 0 ELSE 1 END,id");
   const hasBkash = rows.some(r => r.code === 'bkash' || r.code === 'bkash_manual' || r.code === 'bkash_api');
   const hasNagad = rows.some(r => r.code === 'nagad' || r.code === 'nagad_manual' || r.code === 'nagad_api');
   const hasRocket = rows.some(r => r.code === 'rocket' || r.code === 'rocket_manual' || r.code === 'rocket_api');
@@ -253,6 +253,21 @@ async function createOrder(input,options={}){
     await tx.execute(`INSERT INTO audit_logs (actor_type,actor_id,action,entity_type,entity_id,before_json,after_json,ip_address,user_agent) VALUES ('system',NULL,'checkout.order.created','order',?,NULL,?,?, '')`,[String(order.insertId),JSON.stringify({invoiceNo:invoice,totalPaisa:total,status:'pending',paymentStatus:'unpaid',reservation:'active'}),String(ip||'').slice(0,64)]);
     return{id:Number(order.insertId),invoiceNo:invoice,replayed:false,totalPaisa:total,paidPaisa:0,codDuePaisa:codDue,paymentStatus};
   });
+  if (result && !result.replayed) {
+    try {
+      const smsService = require('../services/smsService');
+      smsService.sendOrderPlacedSms({
+        orderId: result.id,
+        invoiceNo: result.invoiceNo,
+        customerName: input.customer_name,
+        phone: input.phone,
+        totalAmount: (Number(result.totalPaisa || 0) / 100).toFixed(0),
+        deliveryArea: input.address
+      });
+    } catch (_smsErr) {
+      // Non-blocking SMS trigger
+    }
+  }
   } catch(err) {
     if(err.code==='DB_DUPLICATE_ENTRY'||err.mysqlCode==='ER_LOCK_DEADLOCK'){
       const replay=await client().queryOne('SELECT id,invoice_no,checkout_request_hash FROM orders WHERE idempotency_key=?',[key]);

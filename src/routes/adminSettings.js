@@ -8,6 +8,8 @@ const { requireCsrf } = require('../middleware/csrf');
 const upload = require('../middleware/upload');
 const { env } = require('../config/env');
 const settingsRepository = require('../repositories/settingsRepository');
+const smsService = require('../services/smsService');
+const bdCourierFraudService = require('../services/bdCourierFraudService');
 const adminFinanceReadRepository = require('../repositories/adminFinanceReadRepository');
 const adminPaymentGatewayRepository = require('../repositories/adminPaymentGatewayRepository');
 const { asyncHandler } = require('../utils/asyncHandler');
@@ -106,32 +108,72 @@ router.post('/admin/campaign/delete/:id', (req, res) => {
 });
 
 // ─── Manual Fraud Check (/admin/manual-fraud-check) ───
-router.get('/admin/manual-fraud-check', (req, res) => {
+router.get('/admin/manual-fraud-check', asyncHandler(async (req, res) => {
   const phone = String(req.query.phone || '').trim();
-  const result = phone ? {
-    phone,
-    available: false,
-    message: 'External fraud-provider verification is not configured. No courier history or risk score is available; review manually.',
-  } : null;
+  const result = phone ? await bdCourierFraudService.checkPhoneFraud(phone) : null;
   res.render('admin/fraud-check', { phone, result });
-});
+}));
 
 // ─── Send Custom SMS ───
-router.get('/admin/sms/custom-send', (_req, res) => {
-  const logs = db.all('SELECT * FROM sms_logs ORDER BY id DESC LIMIT 50');
-  const customers = db.all('SELECT name, phone FROM customers ORDER BY id DESC LIMIT 100');
+router.get('/admin/sms/custom-send', asyncHandler(async (_req, res) => {
+  let logs = [];
+  let customers = [];
+  if (env.db.client === 'mysql') {
+    const client = createQueryClient(getPool());
+    const logRows = await client.queryAll('SELECT * FROM sms_logs ORDER BY id DESC LIMIT 50');
+    logs = logRows.map(l => ({
+      recipient: l.recipient_masked || l.recipient,
+      message: l.message_preview || l.message,
+      status: l.delivery_status || l.status,
+      created_at: l.created_at ? new Date(l.created_at).toISOString().split('T')[0] : '—'
+    }));
+    const custRows = await client.queryAll('SELECT name, phone FROM customers ORDER BY id DESC LIMIT 100');
+    customers = custRows;
+  } else {
+    logs = db.all('SELECT * FROM sms_logs ORDER BY id DESC LIMIT 50');
+    customers = db.all('SELECT name, phone FROM customers ORDER BY id DESC LIMIT 100');
+  }
   res.render('admin/settings', {
     pageTitle: 'Send Custom SMS',
     section: 'custom_sms',
     logs,
     customers,
   });
-});
+}));
 
-router.post('/admin/sms/custom-send', (req, res) => {
-  req.flash('error', 'SMS sending is disabled: no verified SMS provider is configured. No message was sent and no balance was changed.');
+router.post('/admin/sms/custom-send', asyncHandler(async (req, res) => {
+  const rawRecipients = String(req.body.recipient || '').split(/[,;\n]/).map(p => p.trim()).filter(Boolean);
+  const message = String(req.body.message || '').trim();
+  if (!rawRecipients.length) {
+    req.flash('error', 'কমপক্ষে একটি মোবাইল নম্বর দিন।');
+    return res.redirect('/admin/sms/custom-send');
+  }
+  if (!message) {
+    req.flash('error', 'এসএমএস বার্তা খালি রাখা যাবে না।');
+    return res.redirect('/admin/sms/custom-send');
+  }
+
+  let sentCount = 0;
+  let failCount = 0;
+  let lastError = '';
+
+  for (const recipient of rawRecipients) {
+    const sendResult = await smsService.sendSms({ phone: recipient, message, templateKey: 'custom' });
+    if (sendResult.success) {
+      sentCount++;
+    } else {
+      failCount++;
+      lastError = sendResult.error || 'Failed';
+    }
+  }
+
+  if (sentCount > 0) {
+    req.flash('success', `${sentCount} টি SMS সফলভাবে পাঠানো হয়েছে!` + (failCount > 0 ? ` (${failCount} টি ব্যর্থ)` : ''));
+  } else {
+    req.flash('error', `SMS পাঠানো ব্যর্থ হয়েছে: ${lastError}`);
+  }
   return res.redirect('/admin/sms/custom-send');
-});
+}));
 
 function getDeliveryLocationChargeUpdates(changes) {
   const targets = [

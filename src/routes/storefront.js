@@ -983,6 +983,18 @@ router.post('/order/quick-submit', publicFormLimiter, requireCsrf, asyncHandler(
     );
   }
 
+  try {
+    const smsService = require('../services/smsService');
+    smsService.sendOrderPlacedSms({
+      orderId: ordRes.lastInsertRowid,
+      invoiceNo: inv,
+      customerName: cleanName,
+      phone: cleanPhone,
+      totalAmount: totalAmount,
+      deliveryArea: shipping_area || 'ঢাকার ভিতরে'
+    });
+  } catch (_) {}
+
   const successUrl = `/order-success/${inv}`;
   req.session.checkoutLastInvoice = String(inv);
   if (wantsJson(req)) {

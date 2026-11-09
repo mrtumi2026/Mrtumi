@@ -129,6 +129,18 @@ router.get('/admin/dashboard', requirePermission('dashboard.view'), asyncHandler
 
 // Graceful async widgets: never contact external providers unless a verified adapter is configured.
 const unconfiguredProviderWidget = async (_req, res, kind) => {
+  if (kind === 'sms') {
+    const s = db.getSettings();
+    if (s && s.bulksms_api_key && s.bulksms_enabled !== '0') {
+      return res.status(200).json({ success: true, configured: true, status: 'active', balance: s.bulksms_balance || '0.00' });
+    }
+  }
+  if (kind === 'bdcourier') {
+    const s = db.getSettings();
+    if (s && s.bdcourier_api_key && s.bdcourier_enabled !== '0') {
+      return res.status(200).json({ success: true, configured: true, status: 'active', data: { plan_name: s.bdcourier_plan || 'Active Plan' } });
+    }
+  }
   const message = 'API credentials not yet configured';
   const body = { success: false, configured: false, status: 'unconfigured', message };
   if (kind === 'bdcourier') Object.assign(body, { data: null });
