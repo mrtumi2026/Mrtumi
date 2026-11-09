@@ -9,9 +9,15 @@
   "theme_color": "#dc2626",
   "icons": [
     {
-      "src": "/uploads/brand/mrtumi-placeholder-favicon.svg",
-      "sizes": "192x192 512x512",
-      "type": "image/svg+xml",
+      "src": "/uploads/brand/mrtumi-app-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/uploads/brand/mrtumi-app-icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
       "purpose": "any maskable"
     }
   ]
