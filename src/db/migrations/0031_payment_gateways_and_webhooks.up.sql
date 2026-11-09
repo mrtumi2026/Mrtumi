@@ -1,5 +1,5 @@
 -- ============================================================================
--- Migration 0017 (UP): Payment Gateways, Tokenized Checkout, and Webhook Logs
+-- Migration 0031 (UP): Payment Gateways, Tokenized Checkout, and Webhook Logs
 -- Target: MySQL 5.7+, MySQL 8.0+, MariaDB 10.3+
 -- Monetary values: BIGINT paisa (৳1.00 = 100 paisa)
 -- ============================================================================

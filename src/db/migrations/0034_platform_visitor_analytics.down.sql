@@ -3,8 +3,8 @@
 -- ============================================================================
 
 ALTER TABLE `visitor_events`
-  DROP COLUMN IF EXISTS `ip_hash`,
-  DROP COLUMN IF EXISTS `referrer_domain`,
-  DROP COLUMN IF EXISTS `os`,
-  DROP COLUMN IF EXISTS `browser`,
-  DROP COLUMN IF EXISTS `device_type`;
+  DROP COLUMN `ip_hash`,
+  DROP COLUMN `referrer_domain`,
+  DROP COLUMN `os`,
+  DROP COLUMN `browser`,
+  DROP COLUMN `device_type`;

@@ -1,5 +1,5 @@
 -- ============================================================================
--- Migration 0018 (UP): Logistics, Courier Shipments, and Query Optimizations
+-- Migration 0032 (UP): Logistics, Courier Shipments, and Query Optimizations
 -- Target: MySQL 5.7+, MySQL 8.0+, MariaDB 10.3+
 -- All monetary amounts: BIGINT paisa (৳1.00 = 100 paisa)
 -- ============================================================================
@@ -59,13 +59,13 @@ CREATE TABLE IF NOT EXISTS `courier_shipments` (
 -- 2. Performance Indexes (High Concurrency & Flash Sale Optimizations)
 -- ---------------------------------------------------------------------------
 ALTER TABLE `products`
-  ADD KEY IF NOT EXISTS `idx_products_vendor_status_created` (`vendor_id`, `status`, `created_at`),
-  ADD KEY IF NOT EXISTS `idx_products_category_status`       (`category_id`, `status`, `is_archived`);
+  ADD KEY `idx_products_vendor_status_created` (`vendor_id`, `status`, `created_at`),
+  ADD KEY `idx_products_category_status`       (`category_id`, `status`, `is_archived`);
 
 ALTER TABLE `orders`
-  ADD KEY IF NOT EXISTS `idx_orders_customer_phone_created`  (`customer_phone`, `created_at`),
-  ADD KEY IF NOT EXISTS `idx_orders_payment_order_status`    (`payment_status`, `order_status`);
+  ADD KEY `idx_orders_customer_phone_created`  (`customer_phone`, `created_at`),
+  ADD KEY `idx_orders_payment_order_status`    (`payment_status`, `order_status`);
 
 ALTER TABLE `vendor_orders`
-  ADD KEY IF NOT EXISTS `idx_vendor_orders_status_credited`  (`status`, `ledger_credited`),
-  ADD KEY IF NOT EXISTS `idx_vendor_orders_created_status`   (`created_at`, `status`);
+  ADD KEY `idx_vendor_orders_status_credited`  (`status`, `ledger_credited`),
+  ADD KEY `idx_vendor_orders_created_status`   (`created_at`, `status`);

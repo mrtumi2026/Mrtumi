@@ -106,4 +106,4 @@ CREATE TABLE IF NOT EXISTS `push_notifications` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 ALTER TABLE `orders`
-  ADD COLUMN IF NOT EXISTS `affiliate_code` VARCHAR(32) DEFAULT NULL;
+  ADD COLUMN `affiliate_code` VARCHAR(32) DEFAULT NULL;

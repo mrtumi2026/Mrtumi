@@ -145,6 +145,14 @@ for (const upPath of upMigrations) {
     `Reverse FK drop order or explicit irreversible guard matches in ${path.basename(downPath)}`
   );
   check(!/\b(FLOAT|DOUBLE)\b/i.test(upSql), `No floating-point column types in ${relUp}`);
+  // MariaDB accepts ALTER ... [ADD|DROP] ... IF [NOT] EXISTS and CREATE INDEX IF NOT EXISTS;
+  // MySQL 8.0 does not, and rejects the statement with ER_PARSE_ERROR. Keep migrations portable.
+  const mariadbOnlyAlter = /\b(?:ADD\s+(?:COLUMN|KEY|INDEX)|DROP\s+(?:COLUMN|KEY|INDEX|FOREIGN\s+KEY))\s+IF\s+(?:NOT\s+)?EXISTS\b/i;
+  const mariadbOnlyCreateIndex = /\bCREATE\s+(?:UNIQUE\s+)?INDEX\s+IF\s+NOT\s+EXISTS\b/i;
+  check(
+    !mariadbOnlyAlter.test(upSql) && !mariadbOnlyAlter.test(downSql) && !mariadbOnlyCreateIndex.test(upSql) && !mariadbOnlyCreateIndex.test(downSql),
+    `No MariaDB-only ALTER/CREATE INDEX IF [NOT] EXISTS syntax in ${relUp} or its rollback`
+  );
   const engineCount = (upSql.match(/ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci/g) || []).length;
   check(
     engineCount === createNames.length,

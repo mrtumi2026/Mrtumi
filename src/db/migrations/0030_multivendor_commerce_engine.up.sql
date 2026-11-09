@@ -1,5 +1,5 @@
 -- ============================================================================
--- Migration 0016 (UP): Multi-Vendor Commerce Engine
+-- Migration 0030 (UP): Multi-Vendor Commerce Engine
 -- Split-orders, commission rules, vendor wallets, immutable ledger,
 -- payout requests, and gateway configuration.
 -- All monetary values: BIGINT integer paisa (1 BDT = 100 paisa).
@@ -91,9 +91,9 @@ CREATE TABLE IF NOT EXISTS `vendor_orders` (
 
 -- Link order_items to their sub-order (nullable until split is performed)
 ALTER TABLE `order_items`
-  ADD COLUMN IF NOT EXISTS `vendor_order_id` BIGINT UNSIGNED DEFAULT NULL
+  ADD COLUMN `vendor_order_id` BIGINT UNSIGNED DEFAULT NULL
     COMMENT 'FK to vendor_orders.id — set during order split',
-  ADD KEY IF NOT EXISTS `idx_order_items_vendor_order` (`vendor_order_id`);
+  ADD KEY `idx_order_items_vendor_order` (`vendor_order_id`);
 
 -- ---------------------------------------------------------------------------
 -- 3. Vendor Wallets (single row per vendor, balance in paisa)
@@ -191,13 +191,13 @@ CREATE TABLE IF NOT EXISTS `vendor_payout_requests` (
 -- 6. Gateway Config Table (extends existing payment_gateways with credentials)
 -- ---------------------------------------------------------------------------
 ALTER TABLE `payment_gateways`
-  ADD COLUMN IF NOT EXISTS `config_json` LONGTEXT DEFAULT NULL
+  ADD COLUMN `config_json` LONGTEXT DEFAULT NULL
     COMMENT 'Encrypted gateway credentials (app_key, secret_key, merchant_id, etc.)',
-  ADD COLUMN IF NOT EXISTS `webhook_secret` VARCHAR(255) NOT NULL DEFAULT ''
+  ADD COLUMN `webhook_secret` VARCHAR(255) NOT NULL DEFAULT ''
     COMMENT 'HMAC secret for validating inbound webhook callbacks',
-  ADD COLUMN IF NOT EXISTS `gateway_fee_bps` INT UNSIGNED NOT NULL DEFAULT 0
+  ADD COLUMN `gateway_fee_bps` INT UNSIGNED NOT NULL DEFAULT 0
     COMMENT 'Gateway deduction in basis points applied to vendor earnings',
-  ADD COLUMN IF NOT EXISTS `gateway_type` VARCHAR(24) NOT NULL DEFAULT 'auto'
+  ADD COLUMN `gateway_type` VARCHAR(24) NOT NULL DEFAULT 'auto'
     COMMENT 'auto|manual — duplicates legacy `type` column; kept for backward compat';
 
 -- ---------------------------------------------------------------------------

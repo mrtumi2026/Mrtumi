@@ -3,7 +3,7 @@
 -- ============================================================================
 
 ALTER TABLE `orders`
-  DROP COLUMN IF EXISTS `affiliate_code`;
+  DROP COLUMN `affiliate_code`;
 
 DROP TABLE IF EXISTS `push_notifications`;
 DROP TABLE IF EXISTS `device_push_tokens`;

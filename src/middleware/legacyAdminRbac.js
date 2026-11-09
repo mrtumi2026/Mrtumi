@@ -16,6 +16,8 @@ function policyForAdminRoute(method, pathname) {
   if (path === '/admin' || path === '/admin/login' || path === '/admin/logout' || path==='/logout') return { exempt: true, key: null, audit: false };
 
   if (path === '/admin/dashboard') return { key:'dashboard.view', audit:false };
+  // Visitor analytics widget polls this JSON endpoint from the dashboard.
+  if (has(path,'/admin/api/analytics/visitors')) return { key:'dashboard.view', audit:false };
   if (has(path,'/admin/orders/poll-new')) return { key:'orders.poll', audit:false };
   if (path==='/admin/dashboard/dismiss-new-orders-popup') return { key:'orders.popup.dismiss', audit:false };
   if (has(path,'/admin/dashboard/new-orders-popup')) return { key:'orders.popup.view', audit:false };
@@ -71,7 +73,10 @@ function policyForAdminRoute(method, pathname) {
   if (has(path,'/admin/blog') || has(path,'/admin/blogs') || has(path,'/admin/page') || has(path,'/admin/banner') || has(path,'/admin/features') || has(path,'/admin/social-media')) return { key:'content.manage', audit:write };
   if (has(path,'/admin/manual-fraud-check')) return { key:'security.manage', audit:false };
   if (has(path,'/admin/sms/custom-send')) return { key:'communications.send', audit:write };
-  if (has(path,'/admin/payment-gateways') || has(path,'/admin/paymentgeteway') || has(path,'/admin/courierapi') || has(path,'/admin/smsgeteway') || has(path,'/admin/bdcourier') || has(path,'/admin/steadfast')) return { key:'integrations.manage', audit:write };
+  // Courier API credentials are settings-owned (documented RBAC contract); payment,
+  // SMS and courier-operations integrations remain under integrations.manage.
+  if (has(path,'/admin/courierapi')) return { key:'settings.manage', audit:write };
+  if (has(path,'/admin/payment-gateways') || has(path,'/admin/paymentgeteway') || has(path,'/admin/smsgeteway') || has(path,'/admin/bdcourier') || has(path,'/admin/steadfast')) return { key:'integrations.manage', audit:write };
   if (has(path,'/admin/ads-analytics')) return { key:'analytics.view', audit:false };
   if (has(path,'/admin/reports')) return { key:'reports.view', audit:false, auditRead:true };
   if (has(path,'/admin/error-log')) return { key:write?'error_logs.manage':'error_logs.view', audit:write };
