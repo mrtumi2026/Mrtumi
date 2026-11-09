@@ -75,7 +75,7 @@ async function assertRejectsWithCode(fn, expectedCode, label) {
   assert.equal(
     caught.code,
     expectedCode,
-    `${label}: refused with ${caught.code} (${String(caught.message || '').slice(0, 200)}) instead of ${expectedCode}`
+    `${label}: refused with ${caught.code}${caught.mysqlCode ? `/${caught.mysqlCode}` : ''} (${String(caught.message || '').slice(0, 160)}) instead of ${expectedCode}`
   );
   return caught;
 }
