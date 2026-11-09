@@ -193,13 +193,26 @@
     var qty = Math.max(1, parseInt((document.getElementById('qoQty') || {}).value || '1', 10));
     var sel = document.getElementById('qoShipArea');
     var selected = sel && sel.options[sel.selectedIndex];
-    var mysqlMode = Boolean(sel && sel.dataset.mysqlCheckout === 'true');
     var totEl = document.getElementById('qoTotalPayable');
-    if (mysqlMode) {
+
+    // Instant calculation so user sees total immediately without any server delay
+    var ship = 0;
+    if (selected && selected.value) {
+      ship = Number(selected.getAttribute('data-ship') || selected.getAttribute('data-charge') || (Number(selected.getAttribute('data-charge-paisa') || 0) / 100) || 60);
+    }
+    var sub = unit * qty;
+    if (window.__FREE_SHIP_MIN > 0 && sub >= window.__FREE_SHIP_MIN) ship = 0;
+
+    if (!sel || !sel.value) {
+      if (totEl) totEl.textContent = '—';
+    } else {
+      if (totEl) totEl.textContent = (sub + ship).toLocaleString('en-IN');
+    }
+
+    var mysqlMode = Boolean(sel && sel.dataset.mysqlCheckout === 'true');
+    if (mysqlMode && sel && sel.value && !sel.disabled) {
       var quoteVersion = ++quickQuoteVersion;
       if (quickQuoteTimer) window.clearTimeout(quickQuoteTimer);
-      if (!sel.value || sel.disabled) { if (totEl) totEl.textContent = '—'; return; }
-      if (totEl) totEl.textContent = '…';
       quickQuoteTimer = window.setTimeout(function () {
         var payload = getSelectedQoPayload();
         var params = new URLSearchParams({ product_id: String(payload.product_id), qty: String(payload.qty), size: payload.size, color: payload.color, delivery_location_id: sel.value });
@@ -211,14 +224,9 @@
             var priceEl = document.getElementById('qoPrice');
             if (priceEl) priceEl.textContent = '৳' + (Number(quote.unitPricePaisa) / 100).toLocaleString('en-IN');
           })
-          .catch(function () { if (quoteVersion === quickQuoteVersion && totEl) totEl.textContent = '—'; });
+          .catch(function () { /* preserve instant calculated total */ });
       }, 150);
-      return;
     }
-    var ship = selected ? Number(selected.getAttribute('data-ship') || 60) : 60;
-    var sub = unit * qty;
-    if (window.__FREE_SHIP_MIN > 0 && sub >= window.__FREE_SHIP_MIN) ship = 0;
-    if (totEl) totEl.textContent = (sub + ship).toLocaleString('en-IN');
   };
 
   function loadQuickOrderDeliveryLocations() {
@@ -243,6 +251,8 @@
           var charge = Number(location.delivery_charge_paisa) / 100;
           option.value = String(location.id);
           option.setAttribute('data-charge-paisa', String(location.delivery_charge_paisa));
+          option.setAttribute('data-charge', String(charge));
+          option.setAttribute('data-ship', String(charge));
           option.textContent = areaLabel + ' (৳' + charge.toLocaleString(isEn ? 'en-IN' : 'bn-BD') + ')';
           select.appendChild(option);
         });
@@ -252,9 +262,11 @@
         window.recalcQoTotal();
       })
       .catch(function () {
-        select.innerHTML = '';
-        var option = document.createElement('option'); option.value = ''; option.textContent = i18nStr('deliveryUnavailable', 'Delivery areas could not be loaded. Refresh and try again.');
-        select.appendChild(option); select.disabled = true;
+        if (!select.options || select.options.length <= 1) {
+          select.innerHTML = '<option value="">' + (window.__MT_I18N && window.__MT_I18N.locale === 'en' ? 'Choose delivery area' : 'ডেলিভারি এলাকা নির্বাচন করুন') + '</option>' +
+            '<option value="1" data-ship="60" data-charge="60">ঢাকার ভিতরে (৳৬০)</option>' +
+            '<option value="2" data-ship="120" data-charge="120">ঢাকার বাইরে (৳১২০)</option>';
+        }
       })
       .finally(function () { delete select.dataset.locationsLoading; });
     return select._locationsPromise;

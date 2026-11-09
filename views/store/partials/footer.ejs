@@ -263,13 +263,10 @@
                   </div>
                   <div class="col-sm-5">
                     <label for="qoShipArea" class="visually-hidden"><%= t('store.shippingArea') %></label>
-                    <select name="<%= mysqlCheckoutEnabled ? 'delivery_location_id' : 'shipping_area' %>" id="qoShipArea" class="form-select form-select-sm" onchange="recalcQoTotal()" <%= mysqlCheckoutEnabled ? 'data-mysql-checkout="true" required' : '' %>>
-                      <% if (mysqlCheckoutEnabled) { %>
-                        <option value=""><%= locale === 'en' ? 'Choose delivery area' : 'ডেলিভারি এলাকা নির্বাচন করুন' %></option>
-                      <% } else { %>
-                        <option value="ঢাকার ভিতরে" data-ship="<%= siteSettings.inside_dhaka_charge || 60 %>"><%= t('common.insideDhaka') %> (৳<%= siteSettings.inside_dhaka_charge || 60 %>)</option>
-                        <option value="ঢাকার বাইরে" data-ship="<%= siteSettings.outside_dhaka_charge || 120 %>"><%= t('common.outsideDhaka') %> (৳<%= siteSettings.outside_dhaka_charge || 120 %>)</option>
-                      <% } %>
+                    <select name="<%= mysqlCheckoutEnabled ? 'delivery_location_id' : 'shipping_area' %>" id="qoShipArea" class="form-select form-select-sm" onchange="recalcQoTotal()" <%= mysqlCheckoutEnabled ? 'data-mysql-checkout="true"' : '' %> required>
+                      <option value="" data-ship="0" data-charge="0"><%= locale === 'en' ? 'Choose delivery area' : 'ডেলিভারি এলাকা নির্বাচন করুন' %></option>
+                      <option value="<%= mysqlCheckoutEnabled ? '1' : 'ঢাকার ভিতরে' %>" data-ship="<%= siteSettings.inside_dhaka_charge || 60 %>" data-charge="<%= siteSettings.inside_dhaka_charge || 60 %>" data-charge-paisa="<%= (siteSettings.inside_dhaka_charge || 60) * 100 %>"><%= t('common.insideDhaka') %> (৳<%= siteSettings.inside_dhaka_charge || 60 %>)</option>
+                      <option value="<%= mysqlCheckoutEnabled ? '2' : 'ঢাকার বাইরে' %>" data-ship="<%= siteSettings.outside_dhaka_charge || 120 %>" data-charge="<%= siteSettings.outside_dhaka_charge || 120 %>" data-charge-paisa="<%= (siteSettings.outside_dhaka_charge || 120) * 100 %>"><%= t('common.outsideDhaka') %> (৳<%= siteSettings.outside_dhaka_charge || 120 %>)</option>
                     </select>
                   </div>
                   <div class="col-12 mt-2">

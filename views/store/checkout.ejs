@@ -64,15 +64,26 @@
               <div class="col-md-6">
                 <label for="ckShipping" class="form-label small fw-semibold"><%= t('store.shippingArea') %> *</label>
                 <select name="<%= canonicalMysqlCheckout ? 'delivery_location_id' : 'shipping_area' %>" id="ckShipping" class="form-select" onchange="recalcCheckout()" required>
-                  <% if (canonicalMysqlCheckout) { %>
-                    <option value="" data-charge="0"><%= checkoutEnglish ? 'Choose delivery area' : 'ডেলিভারি এলাকা নির্বাচন করুন' %></option>
-                    <% deliveryLocations.filter(function(location) { return location.division === 'Dhaka' || location.division === 'All'; }).forEach(function(location) { const charge = Number(location.delivery_charge_paisa) / 100; const inside = location.division === 'Dhaka'; const areaLabel = inside ? (checkoutEnglish ? 'Inside Dhaka' : 'ঢাকার ভিতরে') : (checkoutEnglish ? 'Outside Dhaka' : 'ঢাকার বাইরে'); %>
-                      <option value="<%= location.id %>" data-charge="<%= charge %>"><%= areaLabel %> (৳<%= charge.toLocaleString(checkoutEnglish ? 'en-IN' : 'bn-BD') %>)</option>
-                    <% }) %>
-                  <% } else { %>
-                    <option value="ঢাকার ভিতরে" data-charge="<%= siteSettings.inside_dhaka_charge || 60 %>"><%= checkoutEnglish ? 'Inside Dhaka' : 'ঢাকার ভিতরে' %> (৳<%= Number(siteSettings.inside_dhaka_charge || 60).toLocaleString(checkoutEnglish ? 'en-IN' : 'bn-BD') %>)</option>
-                    <option value="ঢাকার বাইরে" data-charge="<%= siteSettings.outside_dhaka_charge || 120 %>"><%= checkoutEnglish ? 'Outside Dhaka' : 'ঢাকার বাইরে' %> (৳<%= Number(siteSettings.outside_dhaka_charge || 120).toLocaleString(checkoutEnglish ? 'en-IN' : 'bn-BD') %>)</option>
-                  <% } %>
+                  <option value="" data-charge="0"><%= checkoutEnglish ? 'Choose delivery area' : 'ডেলিভারি এলাকা নির্বাচন করুন' %></option>
+                  <% 
+                    const validLocations = (typeof deliveryLocations !== 'undefined' && Array.isArray(deliveryLocations)) ? deliveryLocations : [];
+                    let matchedLocations = validLocations.filter(function(location) {
+                      return location.division === 'Dhaka' || location.division === 'All' || location.division === 'ঢাকা' || !location.division;
+                    });
+                    if (matchedLocations.length === 0) {
+                      matchedLocations = [
+                        { id: 1, division: 'Dhaka', delivery_charge_paisa: (siteSettings.inside_dhaka_charge || 60) * 100 },
+                        { id: 2, division: 'All', delivery_charge_paisa: (siteSettings.outside_dhaka_charge || 120) * 100 }
+                      ];
+                    }
+                    matchedLocations.forEach(function(location) {
+                      const charge = Number(location.delivery_charge_paisa || 6000) / 100;
+                      const inside = location.division === 'Dhaka' || location.division === 'ঢাকা' || String(location.id) === '1';
+                      const areaLabel = inside ? (checkoutEnglish ? 'Inside Dhaka' : 'ঢাকার ভিতরে') : (checkoutEnglish ? 'Outside Dhaka' : 'ঢাকার বাইরে');
+                      const optVal = canonicalMysqlCheckout ? location.id : (inside ? 'ঢাকার ভিতরে' : 'ঢাকার বাইরে');
+                  %>
+                    <option value="<%= optVal %>" data-charge="<%= charge %>"><%= areaLabel %> (৳<%= charge.toLocaleString(checkoutEnglish ? 'en-IN' : 'bn-BD') %>)</option>
+                  <% }); %>
                 </select>
               </div>
               <div class="col-md-6">
