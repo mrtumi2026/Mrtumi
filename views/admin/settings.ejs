@@ -221,6 +221,117 @@
               <input type="text" name="seo_keywords" value="<%= siteSettings.seo_keywords || '' %>" class="form-control" />
             </div>
 
+          <% } else if (section === 'gemini_ai') { %>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Gemini API Key</label>
+              <input type="password" name="gemini_api_key" value="<%= siteSettings.gemini_api_key || '' %>" class="form-control" placeholder="AIzaSy..." />
+              <div class="form-text">Google AI Studio থেকে প্রাপ্ত API কী।</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Gemini Model</label>
+              <input type="text" name="gemini_model" value="<%= siteSettings.gemini_model || 'gemini-2.5-flash' %>" class="form-control" />
+              <div class="form-text">ডিফল্ট: gemini-2.5-flash বা gemini-1.5-pro</div>
+            </div>
+            <div class="col-12">
+              <label class="form-label small fw-semibold">Assistant System Instructions (প্রম্পট)</label>
+              <textarea name="gemini_prompt" rows="3" class="form-control" placeholder="আপনি Mr. Tumi ই-কমার্স প্ল্যাটফর্মের একজন বিনয়ী ও সহায়ক সহকারী..."><%= siteSettings.gemini_prompt || '' %></textarea>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">AI Assistant Status</label>
+              <select name="gemini_enabled" class="form-select">
+                <option value="1" <%= siteSettings.gemini_enabled !== '0' ? 'selected' : '' %>>সক্রিয় (Active)</option>
+                <option value="0" <%= siteSettings.gemini_enabled === '0' ? 'selected' : '' %>>নিষ্ক্রিয় (Disabled)</option>
+              </select>
+            </div>
+
+          <% } else if (section === 'fb_page') { %>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Facebook Page ID</label>
+              <input type="text" name="fb_page_id" value="<%= siteSettings.fb_page_id || '' %>" class="form-control" placeholder="1029384756..." />
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Facebook Page Access Token</label>
+              <input type="password" name="fb_page_access_token" value="<%= siteSettings.fb_page_access_token || '' %>" class="form-control" placeholder="EAAB..." />
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Auto-Post on New Product</label>
+              <select name="fb_page_auto_post" class="form-select">
+                <option value="1" <%= siteSettings.fb_page_auto_post === '1' ? 'selected' : '' %>>Enabled (নতুন পণ্য যুক্ত হলে অটো পোস্ট হবে)</option>
+                <option value="0" <%= siteSettings.fb_page_auto_post !== '1' ? 'selected' : '' %>>Disabled (অটো পোস্ট বন্ধ)</option>
+              </select>
+            </div>
+
+          <% } else if (section === 'social_login') { %>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Google Client ID</label>
+              <input type="text" name="google_client_id" value="<%= siteSettings.google_client_id || '' %>" class="form-control" />
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Google Client Secret</label>
+              <input type="password" name="google_client_secret" value="<%= siteSettings.google_client_secret || '' %>" class="form-control" />
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Facebook App ID</label>
+              <input type="text" name="facebook_app_id" value="<%= siteSettings.facebook_app_id || '' %>" class="form-control" />
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Facebook App Secret</label>
+              <input type="password" name="facebook_app_secret" value="<%= siteSettings.facebook_app_secret || '' %>" class="form-control" />
+            </div>
+
+          <% } else if (section === 'gtm') { %>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Google Tag Manager Container ID</label>
+              <input type="text" name="gtm_id" value="<%= siteSettings.gtm_id || '' %>" class="form-control" placeholder="GTM-XXXXXXX" />
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">GTM Status</label>
+              <select name="gtm_enabled" class="form-select">
+                <option value="1" <%= siteSettings.gtm_enabled !== '0' ? 'selected' : '' %>>Active (হেডারে ট্যাগ চালু)</option>
+                <option value="0" <%= siteSettings.gtm_enabled === '0' ? 'selected' : '' %>>Disabled</option>
+              </select>
+            </div>
+
+          <% } else if (section === 'fb_pixel') { %>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Facebook Pixel ID</label>
+              <input type="text" name="fb_pixel_id" value="<%= siteSettings.fb_pixel_id || '' %>" class="form-control" placeholder="123456789012345" />
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Pixel Status</label>
+              <select name="fb_pixel_enabled" class="form-select">
+                <option value="1" <%= siteSettings.fb_pixel_enabled !== '0' ? 'selected' : '' %>>Active</option>
+                <option value="0" <%= siteSettings.fb_pixel_enabled === '0' ? 'selected' : '' %>>Disabled</option>
+              </select>
+            </div>
+
+          <% } else if (section === 'tiktok_pixel') { %>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">TikTok Pixel ID</label>
+              <input type="text" name="tiktok_pixel_id" value="<%= siteSettings.tiktok_pixel_id || '' %>" class="form-control" placeholder="CXXXXXXX..." />
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">TikTok Pixel Status</label>
+              <select name="tiktok_pixel_enabled" class="form-select">
+                <option value="1" <%= siteSettings.tiktok_pixel_enabled !== '0' ? 'selected' : '' %>>Active</option>
+                <option value="0" <%= siteSettings.tiktok_pixel_enabled === '0' ? 'selected' : '' %>>Disabled</option>
+              </select>
+            </div>
+
+          <% } else if (section === 'fb_capi') { %>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Facebook Pixel ID</label>
+              <input type="text" name="fb_pixel_id" value="<%= siteSettings.fb_pixel_id || '' %>" class="form-control" />
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Conversion API Access Token</label>
+              <input type="password" name="fb_capi_token" value="<%= siteSettings.fb_capi_token || '' %>" class="form-control" />
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Test Event Code (Optional)</label>
+              <input type="text" name="fb_capi_test_code" value="<%= siteSettings.fb_capi_test_code || '' %>" class="form-control" placeholder="TEST12345" />
+            </div>
+
           <% } else { %>
             <div class="col-md-4">
               <label class="form-label small fw-semibold">Google Tag Manager ID</label>
