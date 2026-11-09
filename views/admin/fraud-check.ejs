@@ -40,6 +40,7 @@
             </div>
             <% if (!result.isBlocked) { %>
               <form action="/admin/customer/ip-block/create" method="POST" class="mt-3">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                 <input type="hidden" name="ip_or_phone" value="<%= result.phone %>" />
                 <input type="hidden" name="reason" value="Flagged from Manual Fraud Check" />
                 <button type="submit" class="btn btn-outline-danger btn-sm w-100">🚫 Block This Phone Number</button>

@@ -13,6 +13,7 @@
       <div class="row g-3">
         <div class="col-lg-5">
           <form action="/admin/sms/custom-send" method="POST" class="tbl-card p-4">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
             <h6 class="fw-bold mb-3">Send Instant SMS (BulkSMSBD)</h6>
             <div class="mb-3">
               <label class="form-label small fw-semibold">Recipient Phone Numbers (comma separated) *</label>
@@ -100,6 +101,7 @@
 
     <% } else { %>
       <form action="/admin/settings/save" method="POST" enctype="multipart/form-data" class="tbl-card p-4">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
         <input type="hidden" name="_redirect" value="<%= currentPath %>" />
 
         <div class="row g-3">
