@@ -13,21 +13,21 @@ WHERE `code` IN (
 );
 
 ALTER TABLE `payment_transactions`
-  DROP COLUMN IF EXISTS `verified_at`,
-  DROP COLUMN IF EXISTS `verified_by_user_id`,
-  DROP COLUMN IF EXISTS `manual_trx_id`,
-  DROP COLUMN IF EXISTS `manual_sender_number`;
+  DROP COLUMN `verified_at`,
+  DROP COLUMN `verified_by_user_id`,
+  DROP COLUMN `manual_trx_id`,
+  DROP COLUMN `manual_sender_number`;
 
 ALTER TABLE `orders`
-  DROP COLUMN IF EXISTS `verified_at`,
-  DROP COLUMN IF EXISTS `verified_by_user_id`,
-  DROP COLUMN IF EXISTS `manual_trx_id`,
-  DROP COLUMN IF EXISTS `manual_sender_number`;
+  DROP COLUMN `verified_at`,
+  DROP COLUMN `verified_by_user_id`,
+  DROP COLUMN `manual_trx_id`,
+  DROP COLUMN `manual_sender_number`;
 
 ALTER TABLE `payment_gateways`
-  DROP COLUMN IF EXISTS `max_order_paisa`,
-  DROP COLUMN IF EXISTS `min_order_paisa`,
-  DROP COLUMN IF EXISTS `api_credentials`,
-  DROP COLUMN IF EXISTS `instructions_bn`,
-  DROP COLUMN IF EXISTS `mode`,
-  DROP COLUMN IF EXISTS `is_active`;
+  DROP COLUMN `max_order_paisa`,
+  DROP COLUMN `min_order_paisa`,
+  DROP COLUMN `api_credentials`,
+  DROP COLUMN `instructions_bn`,
+  DROP COLUMN `mode`,
+  DROP COLUMN `is_active`;
