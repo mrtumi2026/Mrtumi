@@ -4,6 +4,7 @@ const path = require('path');
 const express = require('express');
 const { env } = require('./src/config/env');
 const db = require('./src/db/database');
+const mysqlPool = require('./src/db/mysqlPool');
 const { logger } = require('./src/utils/logger');
 const { sendError } = require('./src/utils/apiResponse');
 const sessionManager = require('./src/middleware/sessionManager');

@@ -4,6 +4,7 @@ const fs = require('node:fs/promises');
 const crypto = require('node:crypto');
 const db = require('../db/database');
 const { requireAdmin } = require('../middleware/auth');
+const { requirePermission } = require('../middleware/rbac');
 const { requireCsrf } = require('../middleware/csrf');
 const { requirePermission } = require('../middleware/rbac');
 const upload = require('../middleware/upload');
