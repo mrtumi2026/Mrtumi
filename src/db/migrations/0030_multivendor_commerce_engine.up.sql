@@ -196,9 +196,7 @@ ALTER TABLE `payment_gateways`
   ADD COLUMN `webhook_secret` VARCHAR(255) NOT NULL DEFAULT ''
     COMMENT 'HMAC secret for validating inbound webhook callbacks',
   ADD COLUMN `gateway_fee_bps` INT UNSIGNED NOT NULL DEFAULT 0
-    COMMENT 'Gateway deduction in basis points applied to vendor earnings',
-  ADD COLUMN `gateway_type` VARCHAR(24) NOT NULL DEFAULT 'auto'
-    COMMENT 'auto|manual — duplicates legacy `type` column; kept for backward compat';
+    COMMENT 'Gateway deduction in basis points applied to vendor earnings';
 
 -- ---------------------------------------------------------------------------
 -- 7. Seed: global default commission rule (10% = 1000 bps)

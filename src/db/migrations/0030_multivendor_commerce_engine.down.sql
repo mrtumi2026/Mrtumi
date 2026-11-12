@@ -17,5 +17,4 @@ DROP TABLE IF EXISTS `commission_rules`;
 ALTER TABLE `payment_gateways`
   DROP COLUMN `config_json`,
   DROP COLUMN `webhook_secret`,
-  DROP COLUMN `gateway_fee_bps`,
-  DROP COLUMN `gateway_type`;
+  DROP COLUMN `gateway_fee_bps`;
