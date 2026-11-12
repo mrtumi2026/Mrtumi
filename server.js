@@ -15,7 +15,6 @@ const { attachGlobals } = require('./src/middleware/auth');
 const { legacyAdminRbac, legacyAdminCsrf } = require('./src/middleware/legacyAdminRbac');
 const { legacyAdminAudit } = require('./src/middleware/legacyAdminAudit');
 const { recordErrorLog } = require('./src/repositories/auditLogRepository');
-const mysqlPool = require('./src/db/mysqlPool');
 
 if (require.main === module && env.isDevelopment) {
   throw new Error('DEPLOYMENT STARTUP ERROR: direct server.js startup refuses development defaults; use `npm run dev` locally or configure production and use app.js.');
