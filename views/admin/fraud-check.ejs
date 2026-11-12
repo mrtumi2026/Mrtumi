@@ -25,6 +25,17 @@
       <% if (result.available === false) { %>
         <div class="alert alert-warning" role="status"><strong>External verification unavailable.</strong> <%= result.message %></div>
       <% } else { %>
+        <% if (result.isLiveApi) { %>
+          <div class="alert alert-success d-flex align-items-center mb-3 py-2 px-3 small">
+            <span class="me-2 fs-5">🟢</span>
+            <div><strong>BD Courier Live API কানেক্টেড:</strong> এই ফলাফলটি সরাসরি BD Courier API (Steadfast, Pathao, RedX ও Paperfly সার্ভার) থেকে প্রাপ্ত লাইভ ডাটা।</div>
+          </div>
+        <% } else { %>
+          <div class="alert alert-info d-flex align-items-center mb-3 py-2 px-3 small">
+            <span class="me-2 fs-5">ℹ️</span>
+            <div><strong>স্টোর ইন্টারনাল ডাটা:</strong> <%= result.notice || 'BD Courier API Key কনফিগার না থাকায় আপনার নিজস্ব স্টোর ডাটাবেজ থেকে এই কাস্টমারের অতীত হিস্ট্রি দেখানো হচ্ছে (কোনো র‍্যান্ডম ডাটা নয়)।' %> <a href="/admin/settings/manage" class="alert-link ms-1 fw-bold">API Key বসান</a></div>
+          </div>
+        <% } %>
       <div class="row g-3 mb-4">
         <div class="col-lg-4">
           <div class="tbl-card p-4 text-center h-100">

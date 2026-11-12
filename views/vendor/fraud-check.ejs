@@ -35,6 +35,17 @@
       <strong><%= locale === 'bn' ? 'যাচাই করা সম্ভব হয়নি:' : 'Verification Notice:' %></strong> <%= result.message %>
     </div>
   <% } else { %>
+    <% if (result.isLiveApi) { %>
+      <div class="alert alert-success d-flex align-items-center mb-3 py-2 px-3 small">
+        <i class="fas fa-check-circle text-success me-2 fs-5"></i>
+        <div><strong><%= locale === 'bn' ? 'লাইভ বিডি কুরিয়ার ভেরিফাইড:' : 'Live BD Courier Verified:' %></strong> <%= locale === 'bn' ? 'এই রিপোর্টটি সরাসরি Steadfast, Pathao, RedX ও Paperfly কুরিয়ার নেটওয়ার্কের লাইভ এপিআই থেকে প্রাপ্ত।' : 'This report is fetched in real-time across Steadfast, Pathao, RedX, and Paperfly courier networks.' %></div>
+      </div>
+    <% } else { %>
+      <div class="alert alert-info d-flex align-items-center mb-3 py-2 px-3 small">
+        <i class="fas fa-info-circle text-info me-2 fs-5"></i>
+        <div><strong><%= locale === 'bn' ? 'স্টোর ইন্টারনাল ডাটা:' : 'Internal Store Data:' %></strong> <%= locale === 'bn' ? 'বিডি কুরিয়ার এপিআই কী সক্রিয় না থাকায় এই কাস্টমারের তথ্য আপনার স্টোরের নিজস্ব অর্ডার ডাটাবেজ থেকে প্রস্তুত করা হয়েছে (এটি কোনো র‍্যান্ডম মান নয়)।' : 'Showing verified order history from internal store database (not random data).' %></div>
+      </div>
+    <% } %>
     <div class="row g-3 mb-4">
       <!-- Success Score Card -->
       <div class="col-lg-4">
