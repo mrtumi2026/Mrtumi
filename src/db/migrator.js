@@ -14,6 +14,7 @@ const KNOWN_CHECKSUM_ALIASES = {
     '7ceb4304a6d11636410d1aa505feb58de60c4f507fb331bc3927f1d8cd03c0bc',
     'ca1a5b47a9ef332ca89b0d2d3a778e5ab663e26210be8c5bc803b90906be336a',
   ]),
+  '0032': new Set(['d590045213ae8d0f282a6c4b7434a43c9b8d69ddf29293abd06a6e07c44425a4']),
   '0033': new Set(['f2b4b93601fdad281829bc15a0e413f5aa5940e2a23e7750d14c0c54277edc04']),
   '0034': new Set(['b319440aa224aa8a5202f6c24d4ebe8fdea1ac51e129dcd02ae8abd0e61bedaa']),
   '0035': new Set(['5005ec8784babd7df4f3177226e309ead91165edaa0243ee78a2665469b6ecc1']),

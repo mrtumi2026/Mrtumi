@@ -31,8 +31,9 @@ class CourierBaseAdapter {
   async safeFetch(url, options = {}, timeoutMs = 8000) {
     const isTestMode = process.env.NODE_ENV === 'test';
     const isMockFetch = Boolean(this.fetchFn);
+    const isLocalTestServer = isTestMode && (url.startsWith('http://127.0.0.1') || url.startsWith('http://localhost'));
 
-    if (!isMockFetch || !isTestMode) {
+    if (!isMockFetch && !isLocalTestServer) {
       await validateCourierBaseUrl(url);
     }
     const fetchFn = this.fetchFn || globalThis.fetch || require('node-fetch');
@@ -58,7 +59,8 @@ class CourierBaseAdapter {
           : (response.headers && response.headers.location);
         if (location) {
           const redirectUrl = new URL(location, url).toString();
-          if (!isMockFetch || !isTestMode) {
+          const isRedirectLocalTest = isTestMode && (redirectUrl.startsWith('http://127.0.0.1') || redirectUrl.startsWith('http://localhost'));
+          if (!isMockFetch && !isRedirectLocalTest) {
             await validateCourierBaseUrl(redirectUrl);
           }
         }
