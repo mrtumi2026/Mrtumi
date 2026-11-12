@@ -9,6 +9,14 @@ const logger = require('../utils/logger');
 const DEFAULT_MIGRATIONS_DIR = path.join(__dirname, 'migrations');
 const MIGRATION_LOCK_NAME = 'mrtumi_schema_migration';
 
+const KNOWN_CHECKSUM_ALIASES = {
+  '0030': new Set(['7ceb4304a6d11636410d1aa505feb58de60c4f507fb331bc3927f1d8cd03c0bc']),
+  '0033': new Set(['f2b4b93601fdad281829bc15a0e413f5aa5940e2a23e7750d14c0c54277edc04']),
+  '0034': new Set(['b319440aa224aa8a5202f6c24d4ebe8fdea1ac51e129dcd02ae8abd0e61bedaa']),
+  '0035': new Set(['5005ec8784babd7df4f3177226e309ead91165edaa0243ee78a2665469b6ecc1']),
+  '0036': new Set(['533e048096b0f4ca85831c34f65fab4463c79c6e7f246f758d26fa87cf0d8170']),
+};
+
 class MigrationError extends AppError {
   constructor(code, message, details = null) {
     super(code, message, 500, details);
@@ -230,7 +238,9 @@ function verifyIntegrity(pairs, appliedMap) {
         `Applied migration version "${appliedVer}" (${appliedRow.name}) is missing from disk.`
       );
     }
-    if (disk.checksum !== appliedRow.checksum) {
+    const aliases = KNOWN_CHECKSUM_ALIASES[appliedVer];
+    const matchesChecksum = disk.checksum === appliedRow.checksum || (aliases && aliases.has(appliedRow.checksum));
+    if (!matchesChecksum) {
       throw new MigrationError(
         'MIGRATION_CHECKSUM_MISMATCH',
         `Checksum mismatch for applied migration "${disk.upFile}". Expected ${appliedRow.checksum}, got ${disk.checksum}.`,

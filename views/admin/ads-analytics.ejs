@@ -51,6 +51,7 @@
     <div class="tbl-card p-4">
       <h6 class="fw-bold mb-3">Update Ad Budget &amp; Attribution Metrics</h6>
       <form action="/admin/settings/save" method="POST" class="row g-3">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
         <input type="hidden" name="_redirect" value="/admin/ads-analytics/<%= channel === 'overview' ? '' : channel %>" />
         <div class="col-md-4">
           <label class="form-label small fw-semibold">Facebook Ad Spend (৳)</label>

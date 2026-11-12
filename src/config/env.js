@@ -57,7 +57,8 @@ function buildConfig(overrides = {}) {
   loadDotEnvFile();
   const raw = { ...process.env, ...overrides };
 
-  const nodeEnv = String(raw.NODE_ENV || 'development').trim().toLowerCase();
+  const rawNodeEnv = raw.NODE_ENV || raw.PASSENGER_APP_ENV;
+  const nodeEnv = String(rawNodeEnv || 'development').trim().toLowerCase();
   if (!['development', 'test', 'production'].includes(nodeEnv)) {
     throw new Error(`Invalid NODE_ENV "${nodeEnv}". Expected development, test, or production.`);
   }

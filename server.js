@@ -16,10 +16,13 @@ const { legacyAdminRbac, legacyAdminCsrf } = require('./src/middleware/legacyAdm
 const { legacyAdminAudit } = require('./src/middleware/legacyAdminAudit');
 const { recordErrorLog } = require('./src/repositories/auditLogRepository');
 
-if (require.main === module && env.isDevelopment) {
+const isPassenger = typeof PhusionPassenger !== 'undefined' || Boolean(process.env.PASSENGER_APP_ENV) || Boolean(process.env.PHUSION_PASSENGER);
+const isDirectStartup = require.main === module || isPassenger;
+
+if (isDirectStartup && env.isDevelopment) {
   throw new Error('DEPLOYMENT STARTUP ERROR: direct server.js startup refuses development defaults; use `npm run dev` locally or configure production and use app.js.');
 }
-if (require.main === module && env.isTest && process.env.APP_ALLOW_TEST_STARTUP !== 'true') {
+if (isDirectStartup && env.isTest && process.env.APP_ALLOW_TEST_STARTUP !== 'true') {
   throw new Error('DEPLOYMENT STARTUP ERROR: NODE_ENV=test cannot start server.js without the explicit test-only APP_ALLOW_TEST_STARTUP=true flag.');
 }
 

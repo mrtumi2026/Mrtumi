@@ -30,6 +30,7 @@
       <!-- Search & Bulk Action Header -->
       <div class="tbl-card-head">
         <form action="/admin/order/bulk-action" method="POST" id="bulkOrderForm" class="d-flex flex-wrap gap-2 align-items-center">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
           <input type="hidden" name="request_key" value="<%= typeof bulkRequestKey !== 'undefined' ? bulkRequestKey : '' %>" />
           <input type="hidden" name="reason" value="Admin bulk status update" />
           <label for="bulkActionSelect" class="visually-hidden">Bulk Action</label>
@@ -106,6 +107,7 @@
                 </td>
                 <td>
                   <form action="/admin/order/status-quick" method="POST" class="d-inline">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                     <input type="hidden" name="order_id" value="<%= o.id %>" />
                     <input type="hidden" name="request_key" value="<%= o.status_request_key || '' %>" />
                     <input type="hidden" name="reason" value="Admin status update" />
@@ -129,6 +131,7 @@
                     <i class="fas fa-print"></i>
                   </a>
                   <form action="/admin/order/delete/<%= o.id %>" method="POST" class="d-inline">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                     <button type="button" class="btn btn-sm btn-outline-danger py-1 px-2 delete-confirm" aria-label="<%= t('common.delete') %> #<%= o.invoice_id %>" title="<%= t('common.delete') %>">
                       <i class="fas fa-trash"></i>
                     </button>

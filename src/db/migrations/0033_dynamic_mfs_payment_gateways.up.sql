@@ -14,37 +14,37 @@ WHERE `code` NOT IN ('cod', 'bkash_api', 'bkash_manual', 'nagad_api', 'nagad_man
 -- 2. Extend payment_gateways with Dual-Mode Attributes & Bengali Instructions
 -- ---------------------------------------------------------------------------
 ALTER TABLE `payment_gateways`
-  ADD COLUMN IF NOT EXISTS `is_active` TINYINT(1) NOT NULL DEFAULT 1
+  ADD COLUMN `is_active` TINYINT(1) NOT NULL DEFAULT 1
     COMMENT '1 = Active and visible on checkout; 0 = Deactivated',
-  ADD COLUMN IF NOT EXISTS `mode` VARCHAR(24) NOT NULL DEFAULT 'auto'
+  ADD COLUMN `mode` VARCHAR(24) NOT NULL DEFAULT 'auto'
     COMMENT 'auto = Programmatic API gateway; manual = Sender Number + TrxID',
-  ADD COLUMN IF NOT EXISTS `instructions_bn` TEXT DEFAULT NULL
+  ADD COLUMN `instructions_bn` TEXT DEFAULT NULL
     COMMENT 'Localized instructions in Bengali for customer checkout display',
-  ADD COLUMN IF NOT EXISTS `api_credentials` LONGTEXT DEFAULT NULL
+  ADD COLUMN `api_credentials` LONGTEXT DEFAULT NULL
     COMMENT 'Secure JSON configuration for automated API modes',
-  ADD COLUMN IF NOT EXISTS `min_order_paisa` BIGINT UNSIGNED NOT NULL DEFAULT 0
+  ADD COLUMN `min_order_paisa` BIGINT UNSIGNED NOT NULL DEFAULT 0
     COMMENT 'Minimum order amount in paisa to use this channel',
-  ADD COLUMN IF NOT EXISTS `max_order_paisa` BIGINT UNSIGNED DEFAULT NULL
+  ADD COLUMN `max_order_paisa` BIGINT UNSIGNED DEFAULT NULL
     COMMENT 'Maximum order amount in paisa allowed for this channel';
 
 -- ---------------------------------------------------------------------------
 -- 3. Extend orders and payment_transactions with Manual Verification Columns
 -- ---------------------------------------------------------------------------
 ALTER TABLE `orders`
-  ADD COLUMN IF NOT EXISTS `manual_sender_number` VARCHAR(32) NOT NULL DEFAULT ''
+  ADD COLUMN `manual_sender_number` VARCHAR(32) NOT NULL DEFAULT ''
     COMMENT 'Customer mobile number used to send manual MFS payment',
-  ADD COLUMN IF NOT EXISTS `manual_trx_id` VARCHAR(128) NOT NULL DEFAULT ''
+  ADD COLUMN `manual_trx_id` VARCHAR(128) NOT NULL DEFAULT ''
     COMMENT 'Customer provided transaction ID for manual verification',
-  ADD COLUMN IF NOT EXISTS `verified_by_user_id` BIGINT UNSIGNED DEFAULT NULL
+  ADD COLUMN `verified_by_user_id` BIGINT UNSIGNED DEFAULT NULL
     COMMENT 'Staff/Admin user ID who confirmed manual payment',
-  ADD COLUMN IF NOT EXISTS `verified_at` DATETIME DEFAULT NULL
+  ADD COLUMN `verified_at` DATETIME DEFAULT NULL
     COMMENT 'Timestamp when manual payment was verified';
 
 ALTER TABLE `payment_transactions`
-  ADD COLUMN IF NOT EXISTS `manual_sender_number` VARCHAR(32) NOT NULL DEFAULT '',
-  ADD COLUMN IF NOT EXISTS `manual_trx_id` VARCHAR(128) NOT NULL DEFAULT '',
-  ADD COLUMN IF NOT EXISTS `verified_by_user_id` BIGINT UNSIGNED DEFAULT NULL,
-  ADD COLUMN IF NOT EXISTS `verified_at` DATETIME DEFAULT NULL;
+  ADD COLUMN `manual_sender_number` VARCHAR(32) NOT NULL DEFAULT '',
+  ADD COLUMN `manual_trx_id` VARCHAR(128) NOT NULL DEFAULT '',
+  ADD COLUMN `verified_by_user_id` BIGINT UNSIGNED DEFAULT NULL,
+  ADD COLUMN `verified_at` DATETIME DEFAULT NULL;
 
 -- ---------------------------------------------------------------------------
 -- 4. Seed Canonical 7-Channel Dual-Mode Payment Gateways
