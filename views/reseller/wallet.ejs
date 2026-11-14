@@ -4,7 +4,60 @@
 <div class="row g-3">
   <div class="col-lg-5">
     <div class="tbl-card p-4">
-      <% if (canonicalWallet) { %><div class="alert alert-info mb-0">এই পোর্টালে canonical tx_type এবং amount_paisa অনুযায়ী লেনদেনের ইতিহাস দেখানো হয়। অনুমোদিত balance/settlement নীতি না থাকায় বর্তমান উত্তোলনযোগ্য ব্যালেন্স দেখানো বা কোনো আর্থিক আবেদন গ্রহণ করা হচ্ছে না।</div><% } else if (mode === 'deposit') { %>
+      <% if (canonicalWallet && mode === 'withdrawal') { %>
+        <div class="p-3 rounded-3 bg-success bg-opacity-10 border border-success mb-3 text-center">
+          <div class="small text-muted">উত্তোলনযোগ্য কমিশন ব্যালেন্স</div>
+          <div class="display-6 fw-bold text-success">৳<%= Number(reseller.balance || reseller.available_balance || 0).toLocaleString('en-IN') %></div>
+          <% if (Number(reseller.pending_balance || 0) > 0) { %>
+            <div class="small text-muted mt-1">অপেক্ষমাণ ব্যালেন্স: ৳<%= Number(reseller.pending_balance).toLocaleString('en-IN') %></div>
+          <% } %>
+        </div>
+        <h6 class="fw-bold mb-3">💸 কমিশন লাভ উত্তোলন রিকোয়েস্ট</h6>
+        <form action="/reseller/withdrawals/create" method="POST">
+          <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">পেমেন্ট মাধ্যম *</label>
+            <select name="method" class="form-select">
+              <option value="bKash">bKash</option>
+              <option value="Nagad">Nagad</option>
+              <option value="Rocket">Rocket</option>
+            </select>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">আপনার বিকাশ / নগদ নম্বর *</label>
+            <input type="text" name="trx_id" value="<%= reseller.phone %>" class="form-control" required />
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">উত্তোলন পরিমাণ (৳) *</label>
+            <input type="number" name="amount" min="100" max="<%= reseller.balance || reseller.available_balance || 0 %>" placeholder="ন্যূনতম ৳১০০" class="form-control" required />
+          </div>
+          <button type="submit" class="btn btn-success w-100 py-2 fw-bold" <%= Number(reseller.balance || reseller.available_balance || 0) < 100 ? 'disabled' : '' %>>উইথড্র রিকোয়েস্ট পাঠান →</button>
+        </form>
+      <% } else if (canonicalWallet && mode === 'deposit') { %>
+        <div class="p-3 rounded-3 bg-info bg-opacity-10 border border-info mb-3 text-center">
+          <div class="small text-muted">বর্তমান সিকিউরিটি ডিপোজিট ব্যালেন্স</div>
+          <div class="display-6 fw-bold text-primary">৳<%= Number(reseller.deposit_amount || 0).toLocaleString('en-IN') %></div>
+        </div>
+        <div class="alert alert-info mb-0">অনলাইন সিকিউরিটি ডিপোজিট বর্তমানে স্বয়ংক্রিয় গেটওয়ে সংযোগ ছাড়া সরাসরি বন্ধ রয়েছে। যেকোনো সহায়তা বা অ্যাকাউন্ট লিমিট বৃদ্ধির জন্য অ্যাডমিন সাপোর্টের সাথে যোগাযোগ করুন।</div>
+      <% } else if (canonicalWallet && mode === 'history') { %>
+        <div class="p-3 rounded-3 bg-light border mb-3">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="text-muted small">উত্তোলনযোগ্য কমিশন:</span>
+            <span class="fw-bold text-success">৳<%= Number(reseller.balance || reseller.available_balance || 0).toLocaleString('en-IN') %></span>
+          </div>
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="text-muted small">অপেক্ষমাণ (পেন্ডিং) কমিশন:</span>
+            <span class="fw-bold text-warning">৳<%= Number(reseller.pending_balance || 0).toLocaleString('en-IN') %></span>
+          </div>
+          <div class="d-flex justify-content-between align-items-center">
+            <span class="text-muted small">সিকিউরিটি ডিপোজিট:</span>
+            <span class="fw-bold text-info">৳<%= Number(reseller.deposit_amount || 0).toLocaleString('en-IN') %></span>
+          </div>
+        </div>
+        <div class="d-grid gap-2">
+          <a href="/reseller/withdrawals" class="btn btn-outline-success btn-sm">উইথড্র রিকোয়েস্ট পেজে যান</a>
+        </div>
+      <% } else if (mode === 'deposit') { %>
         <div class="p-3 rounded-3 bg-info bg-opacity-10 border border-info mb-3 text-center">
           <div class="small text-muted">বর্তমান সিকিউরিটি ডিপোজিট ব্যালেন্স</div>
           <div class="display-6 fw-bold text-primary">৳<%= Number(reseller.deposit_amount || 0).toLocaleString('en-IN') %></div>

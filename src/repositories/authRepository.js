@@ -134,7 +134,18 @@ async function findResellerById(id, poolOverride = null, config = env) {
     return sqliteDb.get('SELECT id,name,shop_name,phone,email,balance,deposit_amount,verified,status FROM resellers WHERE id = ? AND status = 1', id) || null;
   }
   const client = getClient(poolOverride);
-  return client.queryOne('SELECT `id`,`name`,`shop_name`,`phone`,`email`,`balance_paisa`/100 AS `balance`,`deposit_paisa`/100 AS `deposit_amount`,`verified`,`status` FROM `resellers` WHERE `id` = ? AND `status` = 1 LIMIT 1', [id]);
+  return client.queryOne(
+    `SELECT r.\`id\`, r.\`name\`, r.\`shop_name\`, r.\`phone\`, r.\`email\`,
+            COALESCE(w.\`available_balance\`, r.\`balance_paisa\`, 0)/100 AS \`balance\`,
+            COALESCE(w.\`available_balance\`, r.\`balance_paisa\`, 0)/100 AS \`available_balance\`,
+            COALESCE(w.\`pending_balance\`, 0)/100 AS \`pending_balance\`,
+            r.\`deposit_paisa\`/100 AS \`deposit_amount\`,
+            r.\`verified\`, r.\`status\`
+     FROM \`resellers\` r
+     LEFT JOIN \`partner_wallets\` w ON w.\`reseller_id\` = r.\`id\`
+     WHERE r.\`id\` = ? AND r.\`status\` = 1 LIMIT 1`,
+    [id]
+  );
 }
 
 async function findCustomerById(id, poolOverride = null, config = env) {
