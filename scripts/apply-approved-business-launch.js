@@ -19,25 +19,27 @@
 
 const { env } = require('../src/config/env');
 
-async function applyMysqlUpdates() {
+async function applyMysqlUpdates({ pool = null, transaction = null } = {}) {
   const { getPool, withTransaction } = require('../src/db/mysqlPool');
-  const pool = getPool();
+  const txRunner = transaction || withTransaction;
+  const activePool = pool || (transaction ? null : getPool());
 
-  return withTransaction(async (tx) => {
+  return txRunner(async (tx) => {
     const report = { productsUpdated: [], settingsUpdated: [] };
 
     // 1. Find Fruit Category & Subcategory
     const fruitCat = await tx.queryOne(
-      "SELECT id FROM categories WHERE slug='fruits-and-vegetables' LIMIT 1"
+      "SELECT id, slug FROM categories WHERE slug='fruits-and-vegetables' LIMIT 1"
     );
     const fruitSubcat = await tx.queryOne(
-      "SELECT id FROM subcategories WHERE slug='fruits-and-vegetables-fresh-fruits' LIMIT 1"
+      "SELECT id, slug FROM subcategories WHERE slug='fruits-and-vegetables-fresh-fruits' LIMIT 1"
     );
 
     if (fruitCat) {
       // 1. Update "দেশি লিচু ফ্রেশ প্যাক"
+      // Note: MariaDB products table has name_bn and name_en (not 'name')
       const lycheeProd = await tx.queryOne(
-        "SELECT id, slug, category_id, name, name_bn FROM products WHERE slug='product-5-v675ce0b6f0c36f53' OR slug='deshi-lychee-fresh-pack' OR name_bn LIKE '%দেশি লিচু ফ্রেশ প্যাক%' OR name LIKE '%দেশি লিচু ফ্রেশ প্যাক%' LIMIT 1"
+        "SELECT id, slug, category_id, subcategory_id, name_bn, name_en FROM products WHERE slug='product-5-v675ce0b6f0c36f53' OR slug='deshi-lychee-fresh-pack' OR name_bn LIKE '%দেশি লিচু ফ্রেশ প্যাক%' LIMIT 1"
       );
 
       if (lycheeProd) {
@@ -47,44 +49,64 @@ async function applyMysqlUpdates() {
         );
         report.productsUpdated.push({
           id: lycheeProd.id,
-          name: lycheeProd.name_bn || lycheeProd.name,
+          name: lycheeProd.name_bn || lycheeProd.name_en,
           oldSlug: lycheeProd.slug,
           newSlug: 'deshi-lychee-fresh-pack',
           newCategoryId: fruitCat.id,
-          newCategorySlug: 'fruits-and-vegetables'
+          newCategorySlug: 'fruits-and-vegetables',
+          subcategoryAssigned: Boolean(fruitSubcat)
         });
       }
     }
 
     // 2. Clean "ইউএসবি পোর্টেবল ফুড চপার" images
+    // Note: MariaDB products table has image_url and gallery_json (not 'image' or 'gallery')
     const chopperProd = await tx.queryOne(
-      "SELECT id, slug, image, gallery, image_url, name, name_bn FROM products WHERE slug='food-chopper' OR name_bn LIKE '%ফুড চপার%' OR name LIKE '%ফুড চপার%' LIMIT 1"
+      "SELECT id, slug, image_url, gallery_json, name_bn, name_en FROM products WHERE slug='food-chopper' OR name_bn LIKE '%ফুড চপার%' LIMIT 1"
     );
 
     if (chopperProd) {
-      let galleryStr = String(chopperProd.gallery || '');
-      let mainImg = String(chopperProd.image || chopperProd.image_url || '');
+      let mainImg = String(chopperProd.image_url || '').trim();
+      let galleryList = [];
 
-      // Filter gallery
-      let galleryParts = galleryStr.split(',').map(s => s.trim()).filter(Boolean);
-      const filteredGallery = galleryParts.filter(img => !img.includes('lychee-fresh.jpg'));
-      const newGallery = filteredGallery.join(',');
+      if (chopperProd.gallery_json) {
+        try {
+          const parsed = typeof chopperProd.gallery_json === 'string'
+            ? JSON.parse(chopperProd.gallery_json)
+            : chopperProd.gallery_json;
+          if (Array.isArray(parsed)) {
+            galleryList = parsed.map(item => (typeof item === 'string' ? item : item?.url || item?.image || '')).filter(Boolean);
+          } else if (typeof chopperProd.gallery_json === 'string' && chopperProd.gallery_json.includes(',')) {
+            galleryList = chopperProd.gallery_json.split(',').map(s => s.trim()).filter(Boolean);
+          }
+        } catch (_err) {
+          if (typeof chopperProd.gallery_json === 'string' && chopperProd.gallery_json.includes(',')) {
+            galleryList = chopperProd.gallery_json.split(',').map(s => s.trim()).filter(Boolean);
+          }
+        }
+      }
+
+      // Filter out any lychee image
+      const filteredGallery = galleryList.filter(img => !img.includes('lychee-fresh.jpg'));
 
       // If main image was the lychee image, switch to the first valid chopper image
       if (mainImg.includes('lychee-fresh.jpg')) {
         mainImg = filteredGallery[0] || '/uploads/custom/1793619821523-e506fec8dfd9.jpeg';
       }
 
+      const newGalleryJson = JSON.stringify(filteredGallery);
+
       await tx.execute(
-        "UPDATE products SET image=?, image_url=?, gallery=? WHERE id=?",
-        [mainImg, mainImg, newGallery, chopperProd.id]
+        "UPDATE products SET image_url=?, gallery_json=? WHERE id=?",
+        [mainImg, newGalleryJson, chopperProd.id]
       );
       report.productsUpdated.push({
         id: chopperProd.id,
-        name: chopperProd.name_bn || chopperProd.name,
+        name: chopperProd.name_bn || chopperProd.name_en,
         slug: chopperProd.slug,
         removedImage: '/uploads/product/lychee-fresh.jpg',
-        preservedImages: [mainImg, ...filteredGallery]
+        preservedImageUrl: mainImg,
+        preservedGallery: filteredGallery
       });
     }
 
@@ -107,7 +129,7 @@ async function applyMysqlUpdates() {
     }
 
     return report;
-  }, { pool });
+  }, { pool: activePool });
 }
 
 async function applySqliteUpdates() {
