@@ -109,9 +109,7 @@ router.get('/admin/fulfillment/ambiguous-shipments', requirePermission('orders.m
     return res.json({ success: true, data: result.shipments, pagination: result.pagination });
   }
 
-  const successMsg = req.flash ? req.flash('success') : null;
-  const errorMsg = req.flash ? req.flash('error') : null;
-  const flash = successMsg ? { type: 'success', message: successMsg } : (errorMsg ? { type: 'danger', message: errorMsg } : null);
+  const flash = res.locals.flash || null;
 
   return res.render('admin/ambiguous-courier-shipments', {
     pageTitle: 'Courier Operations & Monitoring Center',
