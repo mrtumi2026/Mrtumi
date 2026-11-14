@@ -13,10 +13,10 @@ class CourierBaseAdapter {
     this.providerName = String(config.name || '').trim();
     this.providerType = String(config.provider_type || config.code || '').trim().toLowerCase();
     this.baseUrl = String(config.base_url || '').trim();
-    this.apiKey = String(config.api_key || '').trim();
-    this.secretKey = String(config.secret_key || '').trim();
-    this.clientId = String(config.client_id || '').trim();
-    this.isSandbox = Boolean(Number(config.sandbox || 0));
+    this.apiKey = String(config.api_key || config.apiKey || '').trim();
+    this.secretKey = String(config.secret_key || config.secretKey || '').trim();
+    this.clientId = String(config.client_id || config.clientId || '').trim();
+    this.isSandbox = Boolean(Number(config.sandbox || 0) || config.isSandbox);
     this.supportsLiveQuotes = Boolean(Number(config.supports_live_quotes || 0));
     this.fetchFn = config.fetchFn || null;
     this.serviceOptions = config.service_options_json
