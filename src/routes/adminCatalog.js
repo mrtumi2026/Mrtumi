@@ -107,9 +107,10 @@ router.get('/admin/products/create', (req, res) => {
 });
 
 router.post('/admin/products/create', parseAndValidateProductImage, (req, res, next) => {
-  if(mysqlMode()){
-    if(req.file)upload.safeUnlink(req.file.path);
-    return next(new ConflictError('Use the canonical Phase 06 product form to create a MySQL catalog product.'));
+  if (mysqlMode()) {
+    if (req.file) upload.safeUnlink(req.file.path);
+    req.flash('info', 'পণ্য তৈরি ও ব্যবস্থাপনার জন্য ক্যাটালগ ম্যানেজমেন্ট ফর্ম ব্যবহার করুন।');
+    return res.redirect('/admin/phase06#products');
   }
   const b = req.body;
   const img = req.validatedProductImagePath || b.image_url || '/uploads/product/lychee-fresh.jpg';
@@ -168,9 +169,10 @@ router.get('/admin/products/edit/:id', asyncHandler(async (req, res) => {
 }));
 
 router.post('/admin/products/edit/:id', parseAndValidateProductImage, (req, res, next) => {
-  if(mysqlMode()){
-    if(req.file)upload.safeUnlink(req.file.path);
-    return next(new ConflictError('Use the canonical Phase 06 product form to edit a MySQL catalog product.'));
+  if (mysqlMode()) {
+    if (req.file) upload.safeUnlink(req.file.path);
+    req.flash('info', 'পণ্য সম্পাদনার জন্য ক্যাটালগ ম্যানেজমেন্ট ফর্ম ব্যবহার করুন।');
+    return res.redirect(`/admin/phase06/products/${encodeURIComponent(req.params.id)}/edit`);
   }
   const existing = db.get('SELECT * FROM products WHERE id = ?', req.params.id);
   if (!existing) return res.redirect('/admin/inhouse-products/manage');
