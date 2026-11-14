@@ -181,12 +181,13 @@ const resetLimiter = createRateLimiter({ keyPrefix: 'customer-recovery-reset', w
 
 router.get('/customer/recovery', asyncHandler(async (req, res) => {
   const status = await customerRecoveryService.getRecoveryProviderStatus();
+  const flashError = (res.locals.flash && res.locals.flash.type === 'error') ? res.locals.flash.message : '';
   return res.render('customer/recovery', {
     isEn: isEn(req),
     csrfToken: req.csrfToken ? req.csrfToken() : (res.locals.csrfToken || ''),
     status,
     submitted: req.query.submitted === '1',
-    error: req.flash('error')[0] || '',
+    error: flashError || '',
     customer: req.session.customerUser || null,
   });
 }));
@@ -228,12 +229,13 @@ router.get('/customer/recovery/reset', (req, res) => {
 
   const prefilledToken = req.session.pendingRecoveryToken || '';
   delete req.session.pendingRecoveryToken;
+  const flashError = (res.locals.flash && res.locals.flash.type === 'error') ? res.locals.flash.message : '';
 
   return res.render('customer/recovery-reset', {
     isEn: isEn(req),
     csrfToken: req.csrfToken ? req.csrfToken() : (res.locals.csrfToken || ''),
     prefilledToken,
-    error: req.flash('error')[0] || '',
+    error: flashError || '',
     customer: req.session.customerUser || null,
   });
 });

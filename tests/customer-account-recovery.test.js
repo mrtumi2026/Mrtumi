@@ -152,3 +152,67 @@ test('Customer Recovery: URL query stripping redirect preserves clean browser ad
   assert.match(customerRoutesSource, /router\.post\('\/customer\/recovery',\s*recoveryLimiter/);
   assert.match(customerRoutesSource, /router\.post\('\/customer\/recovery\/reset',\s*resetLimiter/);
 });
+
+test('Customer Recovery: GET routes render safely without TypeError on req.flash', async () => {
+  const express = require('express');
+  const app = express();
+  const repoRoot = path.join(__dirname, '..');
+  app.set('views', path.join(repoRoot, 'views'));
+  app.set('view engine', 'ejs');
+
+  app.use((req, res, next) => {
+    req.session = { cart: [] };
+    req.locale = 'en';
+    res.locals.locale = 'en';
+    res.locals.currentPath = req.path;
+    res.locals.currentUrl = req.originalUrl;
+    res.locals.t = (k) => k;
+    res.locals.siteSettings = {};
+    res.locals.navCategories = [];
+    res.locals.footerPages = [];
+    res.locals.storeFeatures = [];
+    res.locals.socialLinks = [];
+    res.locals.cart = [];
+    res.locals.cartCount = 0;
+    res.locals.cartSubtotal = 0;
+    res.locals.flash = null;
+    res.locals.customerUser = null;
+    res.locals.brand = {};
+    res.locals.sessionToken = 'token';
+    res.locals.mysqlCheckoutEnabled = true;
+
+    // Middleware flash implementation matching src/middleware/auth.js
+    req.flash = (type, message) => {
+      if (typeof message === 'undefined') {
+        return (res.locals.flash && res.locals.flash.type === type) ? [res.locals.flash.message] : [];
+      }
+      req.session.flash = { type, message };
+    };
+    next();
+  });
+
+  const customerAccountRoutes = require('../src/routes/customerAccount');
+  app.use(customerAccountRoutes);
+
+  let capturedError = null;
+  app.use((err, req, res, next) => {
+    capturedError = err;
+    res.status(500).send('Error');
+  });
+
+  const server = app.listen(0);
+  try {
+    const port = server.address().port;
+    const res = await fetch(`http://127.0.0.1:${port}/customer/recovery`);
+    assert.equal(capturedError, null, 'GET /customer/recovery must not throw errors');
+    assert.equal(res.status, 200, 'GET /customer/recovery must return 200 OK');
+    const body = await res.text();
+    assert.ok(body.includes('Account Recovery') || body.includes('Account recovery'));
+
+    const resReset = await fetch(`http://127.0.0.1:${port}/customer/recovery/reset`);
+    assert.equal(capturedError, null, 'GET /customer/recovery/reset must not throw errors');
+    assert.equal(resReset.status, 200, 'GET /customer/recovery/reset must return 200 OK');
+  } finally {
+    server.close();
+  }
+});

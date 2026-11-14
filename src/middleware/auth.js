@@ -103,6 +103,9 @@ async function attachGlobals(req, res, next) {
     res.locals.flash = req.session.flash || null;
     delete req.session.flash;
     req.flash = (type, message) => {
+      if (typeof message === 'undefined') {
+        return (res.locals.flash && res.locals.flash.type === type) ? [res.locals.flash.message] : [];
+      }
       req.session.flash = { type, message };
     };
 
