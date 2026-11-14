@@ -201,6 +201,10 @@ function normalizeMysqlProduct(row, variants = [], locale = 'bn') {
     brand_slug: String(row.brand_slug || ''),
     vendor_id: isVendorProduct ? Number(row.vendor_id) : null,
     vendor_shop_name: String(row.vendor_shop_name || ''),
+    vendor_store_slug: String(row.vendor_store_slug || ''),
+    vendor_logo_url: row.vendor_logo_url ? sanitizeImagePath(row.vendor_logo_url, '') : '',
+    vendor_tagline: String(row.vendor_tagline || ''),
+    vendor_verified: Boolean(Number(row.vendor_verified || 0)),
     old_price_paisa: regularPricePaisa,
     new_price_paisa: salePricePaisa,
     wholesale_price_paisa: hasValidWholesale ? wholesalePricePaisa : 0,
@@ -293,6 +297,10 @@ function normalizeSqliteProduct(row, locale = 'bn') {
     brand_slug: String(row.brand_slug || ''),
     vendor_id: row.vendor_id ? Number(row.vendor_id) : null,
     vendor_shop_name: String(row.vendor_shop_name || ''),
+    vendor_store_slug: String(row.vendor_store_slug || ''),
+    vendor_logo_url: row.vendor_logo_url ? sanitizeImagePath(row.vendor_logo_url, '') : '',
+    vendor_tagline: String(row.vendor_tagline || ''),
+    vendor_verified: Boolean(Number(row.vendor_verified || 0)),
     old_price_paisa: oldPricePaisa,
     new_price_paisa: newPricePaisa,
     wholesale_price_paisa: hasValidWholesale ? wholesalePricePaisa : 0,
@@ -344,7 +352,11 @@ const MYSQL_PRODUCT_SELECT = `
     b.\`name_bn\` AS brand_name_bn,
     b.\`name_en\` AS brand_name_en,
     b.\`slug\` AS brand_slug,
-    v.\`shop_name\` AS vendor_shop_name
+    v.\`shop_name\` AS vendor_shop_name,
+    v.\`slug\` AS vendor_store_slug,
+    v.\`logo_url\` AS vendor_logo_url,
+    v.\`tagline\` AS vendor_tagline,
+    v.\`verified\` AS vendor_verified
   FROM \`products\` p
   LEFT JOIN \`categories\` c ON c.\`id\` = p.\`category_id\`
   LEFT JOIN \`subcategories\` sc ON sc.\`id\` = p.\`subcategory_id\`
@@ -357,7 +369,7 @@ const MYSQL_ACTIVE_PRODUCT_WHERE = `
   p.\`status\` = 1
   AND p.\`is_archived\` = 0
   AND p.\`approval_status\` = 'approved'
-  AND (p.\`vendor_id\` IS NULL OR (v.\`status\` = 1 AND v.\`verified\` = 1))
+  AND (p.\`vendor_id\` IS NULL OR (v.\`status\` = 1 AND v.\`verified\` = 1 AND (v.\`store_status\` = 1 OR v.\`store_status\` IS NULL)))
 `;
 
 const SQLITE_PRODUCT_SELECT = `
@@ -369,7 +381,11 @@ const SQLITE_PRODUCT_SELECT = `
     sc.slug AS subcategory_slug,
     b.name AS brand_name,
     b.slug AS brand_slug,
-    v.shop_name AS vendor_shop_name
+    v.shop_name AS vendor_shop_name,
+    v.slug AS vendor_store_slug,
+    v.logo_url AS vendor_logo_url,
+    v.tagline AS vendor_tagline,
+    v.verified AS vendor_verified
   FROM products p
   LEFT JOIN categories c ON c.id = p.category_id
   LEFT JOIN subcategories sc ON sc.id = p.subcategory_id
@@ -380,7 +396,7 @@ const SQLITE_PRODUCT_SELECT = `
 const SQLITE_ACTIVE_PRODUCT_WHERE = `
   p.status = 1
   AND COALESCE(p.approval_status, 'approved') = 'approved'
-  AND (p.vendor_id IS NULL OR (COALESCE(v.status, 1) = 1 AND COALESCE(v.verified, 1) = 1))
+  AND (p.vendor_id IS NULL OR (COALESCE(v.status, 1) = 1 AND COALESCE(v.verified, 1) = 1 AND COALESCE(v.store_status, 1) = 1))
 `;
 
 async function attachVariantsMysql(rows, client, locale) {
@@ -568,6 +584,9 @@ async function listStorefrontProducts(filters = {}, poolOverride = null, config 
   const subcategorySlug = String(filters.subcategorySlug || '').trim();
   const childcategorySlug = String(filters.childcategorySlug || '').trim();
   const brandSlug = String(filters.brandSlug || '').trim();
+  const vendorSlug = String(filters.vendorSlug || '').trim();
+  const vendorIdRaw = filters.vendorId !== undefined && filters.vendorId !== '' ? Number(filters.vendorId) : null;
+  const vendorId = vendorIdRaw !== null && Number.isInteger(vendorIdRaw) && vendorIdRaw > 0 ? vendorIdRaw : null;
   const dealType = String(filters.dealType || '').trim().toLowerCase();
   const inStockOnly =
     filters.inStockOnly === true ||
@@ -613,6 +632,14 @@ async function listStorefrontProducts(filters = {}, poolOverride = null, config 
     if (brandSlug) {
       clauses.push('b.slug = ?');
       params.push(brandSlug);
+    }
+    if (vendorId !== null) {
+      clauses.push('p.vendor_id = ?');
+      params.push(vendorId);
+    }
+    if (vendorSlug) {
+      clauses.push('v.slug = ?');
+      params.push(vendorSlug);
     }
     if (minPrice !== null) {
       clauses.push('p.new_price >= ?');
@@ -702,6 +729,14 @@ async function listStorefrontProducts(filters = {}, poolOverride = null, config 
   if (brandSlug) {
     clauses.push('b.`slug` = ?');
     params.push(brandSlug);
+  }
+  if (vendorId !== null) {
+    clauses.push('p.`vendor_id` = ?');
+    params.push(vendorId);
+  }
+  if (vendorSlug) {
+    clauses.push('v.`slug` = ?');
+    params.push(vendorSlug);
   }
   if (minPrice !== null) {
     clauses.push('p.`sale_price_paisa` >= ?');
@@ -1320,11 +1355,19 @@ async function getSitemapEntries(poolOverride = null, config = env) {
     );
     const blogs = sqliteDb.all('SELECT slug FROM blogs WHERE status = 1 ORDER BY id DESC');
     const pages = sqliteDb.all('SELECT slug FROM cms_pages WHERE status = 1 ORDER BY id ASC');
-    return { categories, subcategories, childcategories: [], brands: [], products, blogs, pages };
+    let stores = [];
+    try {
+      stores = sqliteDb.all(
+        "SELECT slug FROM vendors WHERE COALESCE(status, 1) = 1 AND COALESCE(verified, 1) = 1 AND COALESCE(store_status, 1) = 1 AND slug IS NOT NULL AND slug != '' ORDER BY id ASC"
+      );
+    } catch (_) {
+      stores = [];
+    }
+    return { categories, subcategories, childcategories: [], brands: [], products, blogs, pages, stores };
   }
 
   const client = getClient(poolOverride);
-  const [categories, subcategories, childcategories, brands, products, blogs, pages] =
+  const [categories, subcategories, childcategories, brands, products, blogs, pages, stores] =
     await Promise.all([
       client.queryAll('SELECT `slug` FROM `categories` WHERE `status` = 1 ORDER BY `id` ASC'),
       client.queryAll('SELECT `slug` FROM `subcategories` WHERE `status` = 1 ORDER BY `id` ASC'),
@@ -1335,8 +1378,11 @@ async function getSitemapEntries(poolOverride = null, config = env) {
       ),
       client.queryAll('SELECT `slug` FROM `blogs` WHERE `status` = 1 ORDER BY `id` DESC'),
       client.queryAll('SELECT `slug` FROM `cms_pages` WHERE `status` = 1 ORDER BY `id` ASC'),
+      client.queryAll(
+        "SELECT `slug` FROM `vendors` WHERE `status` = 1 AND `verified` = 1 AND (`lifecycle_status` = 'active' OR `lifecycle_status` IS NULL) AND (`store_status` = 1 OR `store_status` IS NULL) AND `slug` IS NOT NULL ORDER BY `id` ASC"
+      ),
     ]);
-  return { categories, subcategories, childcategories, brands, products, blogs, pages };
+  return { categories, subcategories, childcategories, brands, products, blogs, pages, stores };
 }
 
 async function getCampaignBySlug(slugInput, locale = 'bn', poolOverride = null, config = env) {
@@ -1365,6 +1411,99 @@ async function getCampaignBySlug(slugInput, locale = 'bn', poolOverride = null, 
   };
 }
 
+async function getStorefrontVendorStore(slugInput, options = {}, poolOverride = null, config = env) {
+  const slug = String(slugInput || '').trim().toLowerCase();
+  if (!slug || slug.length > 100) return null;
+  const locale = options.locale || 'bn';
+
+  if (!isMysqlMode(config) && !poolOverride) {
+    const vendorRow = sqliteDb.get(
+      `SELECT * FROM vendors
+       WHERE slug = ?
+         AND COALESCE(status, 1) = 1
+         AND COALESCE(verified, 1) = 1
+         AND (lifecycle_status IS NULL OR lifecycle_status = 'active')
+         AND (store_status IS NULL OR store_status = 1)
+       LIMIT 1`,
+      slug
+    );
+    if (!vendorRow) return null;
+
+    const productsResult = await listStorefrontProducts(
+      { ...options, vendorSlug: slug, locale },
+      poolOverride,
+      config
+    );
+
+    return {
+      vendor: {
+        id: Number(vendorRow.id),
+        shop_name: String(vendorRow.shop_name || 'Vendor Store'),
+        slug: String(vendorRow.slug || ''),
+        logo_url: vendorRow.logo_url ? sanitizeImagePath(vendorRow.logo_url, '') : '',
+        banner_url: vendorRow.banner_url ? sanitizeImagePath(vendorRow.banner_url, '') : '',
+        tagline: String(vendorRow.tagline || ''),
+        description: String(vendorRow.description || ''),
+        district: String(vendorRow.district || ''),
+        upazila: String(vendorRow.upazila || ''),
+        verified: Boolean(Number(vendorRow.verified ?? 1)),
+        product_count: productsResult.total,
+      },
+      products: productsResult.items,
+      pagination: {
+        page: productsResult.page,
+        perPage: productsResult.perPage,
+        total: productsResult.total,
+        totalPages: productsResult.totalPages,
+        sort: productsResult.sort,
+      },
+    };
+  }
+
+  const client = getClient(poolOverride);
+  const vendorRow = await client.queryOne(
+    `SELECT * FROM \`vendors\`
+     WHERE \`slug\` = ?
+       AND \`status\` = 1
+       AND \`verified\` = 1
+       AND (\`lifecycle_status\` = 'active' OR \`lifecycle_status\` IS NULL)
+       AND (\`store_status\` = 1 OR \`store_status\` IS NULL)
+     LIMIT 1`,
+    [slug]
+  );
+  if (!vendorRow) return null;
+
+  const productsResult = await listStorefrontProducts(
+    { ...options, vendorSlug: slug, locale },
+    poolOverride,
+    config
+  );
+
+  return {
+    vendor: {
+      id: Number(vendorRow.id),
+      shop_name: String(vendorRow.shop_name || 'Vendor Store'),
+      slug: String(vendorRow.slug || ''),
+      logo_url: vendorRow.logo_url ? sanitizeImagePath(vendorRow.logo_url, '') : '',
+      banner_url: vendorRow.banner_url ? sanitizeImagePath(vendorRow.banner_url, '') : '',
+      tagline: String(vendorRow.tagline || ''),
+      description: String(vendorRow.description || ''),
+      district: String(vendorRow.district || ''),
+      upazila: String(vendorRow.upazila || ''),
+      verified: Boolean(Number(vendorRow.verified || 0)),
+      product_count: productsResult.total,
+    },
+    products: productsResult.items,
+    pagination: {
+      page: productsResult.page,
+      perPage: productsResult.perPage,
+      total: productsResult.total,
+      totalPages: productsResult.totalPages,
+      sort: productsResult.sort,
+    },
+  };
+}
+
 module.exports = {
   isMysqlMode,
   parsePromoWindow,
@@ -1374,6 +1513,7 @@ module.exports = {
   getSearchSuggestions,
   getHomepageData,
   getStorefrontProductDetail,
+  getStorefrontVendorStore,
   findProductForCart,
   listBlogs,
   getBlogBySlug,

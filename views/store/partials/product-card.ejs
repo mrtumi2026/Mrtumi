@@ -30,6 +30,22 @@
       </div>
     <% } %>
 
+    <% if (p.vendor_id && p.vendor_store_slug) { %>
+      <div class="mb-1" style="font-size:11px;">
+        <a href="/store/<%= p.vendor_store_slug %>" class="text-decoration-none text-muted d-inline-flex align-items-center gap-1" title="<%= p.vendor_shop_name %>">
+          <i class="fas fa-store fa-xs text-success" aria-hidden="true"></i>
+          <span class="text-truncate fw-medium" style="max-width:130px;"><%= p.vendor_shop_name %></span>
+          <% if (p.vendor_verified) { %><i class="fas fa-check-circle text-primary" style="font-size:9.5px;" title="Verified Store"></i><% } %>
+        </a>
+      </div>
+    <% } else { %>
+      <div class="mb-1" style="font-size:11px;">
+        <span class="badge bg-light text-secondary border fw-normal d-inline-flex align-items-center gap-1" style="font-size:10px;">
+          <i class="fas fa-certificate text-warning fa-xs"></i> Mr. Tumi Select
+        </span>
+      </div>
+    <% } %>
+
     <a href="/product/<%= (p.slug && !String(p.slug).includes('?') && /^[a-zA-Z0-9_-]+$/.test(String(p.slug))) ? p.slug : p.id %>" class="pb-card-title mb-1"><%= p.name %></a>
 
     <div class="mt-auto pt-1">

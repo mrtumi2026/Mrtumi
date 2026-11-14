@@ -1,48 +1,197 @@
-<%- include('partials/layout-top', { title: 'Shop Profile' }) %>
+<%- include('partials/layout-top', { title: 'Store Profile & Branding' }) %>
 
-<div class="tbl-card p-4" style="max-width: 680px;">
-  <h5 class="fw-bold border-bottom pb-2 mb-3">🏪 ভেন্ডর শপ প্রোফাইল ও পাসওয়ার্ড পরিবর্তন</h5>
-  <form action="/vendor/profile" method="POST" class="row g-3">
-    <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
-    <div class="col-md-6">
-      <label class="form-label small fw-semibold">শপ / বাগানের নাম *</label>
-      <input type="text" name="shop_name" value="<%= vendor.shop_name %>" class="form-control" required />
+<div class="row g-4">
+  <div class="col-lg-8">
+    <div class="tbl-card p-4">
+      <div class="d-flex justify-content-between align-items-center border-bottom pb-2 mb-3">
+        <h5 class="fw-bold mb-0">🏪 শপ প্রোফাইল ও স্টোর ব্র্যান্ডিং</h5>
+        <% if (vendor.slug || vendor.id) { %>
+          <a href="/store/<%= vendor.slug || ('store-' + vendor.id) %>" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-success rounded-pill px-3">
+            <i class="fas fa-external-link-alt me-1"></i> লাইভ স্টোর দেখুন
+          </a>
+        <% } %>
+      </div>
+
+      <form action="/vendor/profile" method="POST" enctype="multipart/form-data" class="row g-3">
+        <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
+
+        <!-- Store Identity & Branding Section -->
+        <div class="col-12">
+          <div class="p-3 rounded-3 bg-light border">
+            <h6 class="fw-bold text-success mb-3"><i class="fas fa-store me-1"></i> স্টোর ব্র্যান্ডিং ও কাস্টমার ডিসপ্লে</h6>
+            <div class="row g-3 align-items-center">
+              <div class="col-sm-3 text-center">
+                <img
+                  src="<%= vendor.logo_url || '/uploads/default/store-logo.svg' %>"
+                  alt="<%= vendor.shop_name %>"
+                  class="rounded-circle border p-1 bg-white shadow-sm mb-2"
+                  style="width: 84px; height: 84px; object-fit: cover;"
+                />
+                <div class="small text-muted" style="font-size: 11px;">বর্তমান লোগো</div>
+              </div>
+              <div class="col-sm-9">
+                <label class="form-label small fw-semibold" for="logoInput">নতুন স্টোর লোগো আপলোড (PNG, JPG, WebP - সর্বোচ্চ ২MB)</label>
+                <input id="logoInput" type="file" name="logo" accept="image/png,image/jpeg,image/webp,image/jpg" class="form-control form-control-sm" />
+                <div class="form-text" style="font-size: 11px;">কাস্টমারদের কাছে আপনার স্টোরের বিশ্বস্ততা বাড়াতে স্পষ্ট লোগো দিন।</div>
+              </div>
+            </div>
+
+            <div class="row g-3 mt-1">
+              <div class="col-md-6">
+                <label class="form-label small fw-semibold" for="shopName">শপ / স্টোরের নাম *</label>
+                <input id="shopName" type="text" name="shop_name" value="<%= vendor.shop_name %>" class="form-control" required />
+              </div>
+              <div class="col-md-6">
+                <label class="form-label small fw-semibold" for="storeSlug">স্টোর লিঙ্ক স্লাগ (URL Slug) *</label>
+                <div class="input-group input-group-sm">
+                  <span class="input-group-text bg-white" style="font-size: 12px;">mrtumi.com/store/</span>
+                  <input id="storeSlug" type="text" name="slug" value="<%= vendor.slug || ('store-' + vendor.id) %>" class="form-control" pattern="[a-z0-9\-]+" placeholder="my-shop" required />
+                </div>
+                <div class="form-text" style="font-size: 11px;">শুধুমাত্র ছোট হাতের ইংরেজি অক্ষর, সংখ্যা এবং হাইফেন (-) ব্যবহার করুন।</div>
+              </div>
+
+              <div class="col-12">
+                <label class="form-label small fw-semibold" for="storeTagline">স্টোর ট্যাগলাইন / স্লোগান</label>
+                <input id="storeTagline" type="text" name="tagline" value="<%= vendor.tagline || '' %>" class="form-control" maxlength="255" placeholder="যেমন: তাজা গ্রোসারি ও সেরা মানের নিশ্চয়তা" />
+              </div>
+
+              <div class="col-12">
+                <label class="form-label small fw-semibold" for="storeDesc">স্টোর সম্পর্কে বিবরণ (Store Story / Description)</label>
+                <textarea id="storeDesc" name="description" class="form-control" rows="3" maxlength="2000" placeholder="আপনার স্টোর, খামার বা পণ্যের বিশেষত্ব সম্পর্কে সংক্ষেপে লিখুন..."><%= vendor.description || '' %></textarea>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Owner & Contact Section -->
+        <div class="col-12">
+          <h6 class="fw-bold border-bottom pb-1 text-secondary mb-2"><i class="fas fa-id-card me-1"></i> স্বত্বাধিকারী ও যোগাযোগের তথ্য</h6>
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold">মালিকের নাম *</label>
+          <input type="text" name="owner_name" value="<%= vendor.owner_name %>" class="form-control" required />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold">মোবাইল নম্বর *</label>
+          <input type="text" name="phone" value="<%= vendor.phone %>" class="form-control" required <%= mysqlMode ? 'readonly aria-describedby="phone-help"' : '' %> />
+          <% if(mysqlMode){ %><div class="form-text" id="phone-help" style="font-size: 11px;">ভেরিফায়েড মোবাইল নম্বর সরাসরি পরিবর্তনযোগ্য নয়।</div><% } %>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold">ইমেইল</label>
+          <input type="email" name="email" value="<%= vendor.email %>" class="form-control" />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold" for="address">শপ / গোডাউনের ঠিকানা *</label>
+          <input id="address" type="text" name="address" value="<%= vendor.address || '' %>" class="form-control" required />
+        </div>
+
+        <% if(mysqlMode){ %>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold" for="district">জেলা (District) *</label>
+            <select id="district" name="district" class="form-select" required data-current="<%= vendor.district || '' %>">
+              <option value="">জেলা নির্বাচন করুন</option>
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold" for="upazila">উপজেলা / থানা (Upazila) *</label>
+            <select id="upazila" name="upazila" class="form-select" required data-current="<%= vendor.upazila || '' %>" disabled>
+              <option value="">আগে জেলা নির্বাচন করুন</option>
+            </select>
+          </div>
+        <% } %>
+
+        <!-- Security / Password Section -->
+        <div class="col-12 mt-4">
+          <h6 class="fw-bold border-bottom pb-1 text-secondary mb-2"><i class="fas fa-shield-alt me-1"></i> নিরাপত্তা ও পাসওয়ার্ড পরিবর্তন</h6>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold">বর্তমান পাসওয়ার্ড (পাসওয়ার্ড বদলাতে আবশ্যক)</label>
+          <input type="password" name="current_password" class="form-control" autocomplete="current-password" />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold">নতুন পাসওয়ার্ড (পরিবর্তন করতে চাইলে লিখুন)</label>
+          <input type="password" name="new_password" class="form-control" minlength="<%= mysqlMode ? 10 : 6 %>" maxlength="72" autocomplete="new-password" placeholder="<%= mysqlMode ? 'কমপক্ষে ১০ অক্ষর' : 'কমপক্ষে ৬ অক্ষর' %>" />
+        </div>
+
+        <div class="col-12 mt-4">
+          <button type="submit" class="btn btn-forest px-4 py-2 fw-bold">
+            <i class="fas fa-save me-1"></i> প্রোফাইল ও স্টোর ব্র্যান্ডিং সংরক্ষণ করুন
+          </button>
+        </div>
+      </form>
     </div>
-    <div class="col-md-6">
-      <label class="form-label small fw-semibold">মালিকের নাম *</label>
-      <input type="text" name="owner_name" value="<%= vendor.owner_name %>" class="form-control" required />
+  </div>
+
+  <div class="col-lg-4">
+    <!-- Store Status & Preview Card -->
+    <div class="tbl-card p-3 mb-3">
+      <h6 class="fw-bold mb-2">🏪 আপনার পাবলিক স্টোর</h6>
+      <div class="text-center p-3 bg-light rounded-3 mb-3">
+        <img
+          src="<%= vendor.logo_url || '/uploads/default/store-logo.svg' %>"
+          alt="<%= vendor.shop_name %>"
+          class="rounded-circle border p-1 bg-white shadow-sm mb-2"
+          style="width: 64px; height: 64px; object-fit: cover;"
+        />
+        <h6 class="fw-bold mb-0 text-truncate"><%= vendor.shop_name %></h6>
+        <% if (vendor.tagline) { %>
+          <div class="small text-muted fst-italic mb-1"><%= vendor.tagline %></div>
+        <% } %>
+        <span class="badge <%= (vendor.lifecycle_status === 'active' || vendor.verified) ? 'bg-success' : 'bg-warning text-dark' %> mb-2">
+          <%= (vendor.lifecycle_status === 'active' || vendor.verified) ? '✓ ভেরিফায়েড মার্চেন্ট' : 'পেন্ডিং ভেরিফিকেশন' %>
+        </span>
+        <div class="small text-muted mb-2">
+          📍 <%= vendor.upazila ? vendor.upazila + ', ' : '' %><%= vendor.district || 'বাংলাদেশ' %>
+        </div>
+        <a href="/store/<%= vendor.slug || ('store-' + vendor.id) %>" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-success w-100">
+          স্টোর প্রিভিউ দেখুন →
+        </a>
+      </div>
+      <ul class="list-unstyled small text-muted mb-0">
+        <li class="mb-1">✔ স্টোর স্লাগ আপনার নিজস্ব ব্র্যান্ড পেজের অ্যাড্রেস।</li>
+        <li class="mb-1">✔ আপনার সকল অনুমোদিত পণ্য এই স্টোরে একসঙ্গে প্রদর্শিত হবে।</li>
+        <li>✔ পণ্যের ডিটেইল পেজে কাস্টমাররা "Sold by <%= vendor.shop_name %>" দেখতে পাবেন।</li>
+      </ul>
     </div>
-    <div class="col-md-6">
-      <label class="form-label small fw-semibold">মোবাইল নম্বর *</label>
-      <input type="text" name="phone" value="<%= vendor.phone %>" class="form-control" required <%= mysqlMode ? 'readonly aria-describedby="phone-help"' : '' %> />
-      <% if(mysqlMode){ %><div class="form-text" id="phone-help">Verified phone number cannot be changed from profile settings.</div><% } %>
-    </div>
-    <div class="col-md-6">
-      <label class="form-label small fw-semibold">ইমেইল</label>
-      <input type="email" name="email" value="<%= vendor.email %>" class="form-control" />
-    </div>
-    <div class="col-12">
-      <label class="form-label small fw-semibold" for="address">শপ / বাগানের ঠিকানা</label>
-      <input id="address" type="text" name="address" value="<%= vendor.address || '' %>" class="form-control" required />
-    </div>
-    <% if(mysqlMode){ %>
-    <div class="col-md-6"><label class="form-label small fw-semibold" for="district">District *</label><select id="district" name="district" class="form-select" required data-current="<%= vendor.district || '' %>"><option value="">Select district</option></select></div>
-    <div class="col-md-6"><label class="form-label small fw-semibold" for="upazila">Upazila / Thana *</label><select id="upazila" name="upazila" class="form-select" required data-current="<%= vendor.upazila || '' %>" disabled><option value="">Select district first</option></select></div>
-    <% } %>
-    <div class="col-12">
-      <label class="form-label small fw-semibold">বর্তমান পাসওয়ার্ড (পাসওয়ার্ড পরিবর্তনের জন্য আবশ্যক)</label>
-      <input type="password" name="current_password" class="form-control" autocomplete="current-password" />
-    </div>
-    <div class="col-12">
-      <label class="form-label small fw-semibold">নতুন পাসওয়ার্ড (পরিবর্তন করতে চাইলে লিখুন, নতুবা খালি রাখুন)</label>
-      <input type="password" name="new_password" class="form-control" minlength="<%= mysqlMode ? 10 : 6 %>" maxlength="72" autocomplete="new-password" placeholder="<%= mysqlMode ? 'At least 10 characters' : 'কমপক্ষে ৬ অক্ষর' %>" />
-    </div>
-    <div class="col-12">
-      <button type="submit" class="btn btn-forest px-4 py-2 fw-bold">প্রোফাইল আপডেট করুন</button>
-    </div>
-  </form>
+  </div>
 </div>
-<% if(mysqlMode){ %><script type="application/json" id="bd-geo-data"><%- JSON.stringify(geoData) %></script><script>
-(()=>{const rows=JSON.parse(document.getElementById('bd-geo-data').textContent),isBn=String(<%- JSON.stringify(locale||'bn') %>).startsWith('bn'),district=document.getElementById('district'),upazila=document.getElementById('upazila');const label=x=>isBn?x.nameBn:x.label;rows.forEach(x=>{const o=document.createElement('option');o.value=x.value;o.textContent=label(x);district.appendChild(o);});function render(selected=''){const row=rows.find(x=>x.value===district.value);upazila.replaceChildren();const first=document.createElement('option');first.value='';first.textContent=row?(isBn?'উপজেলা নির্বাচন করুন':'Select upazila'):(isBn?'আগে জেলা নির্বাচন করুন':'Select district first');upazila.appendChild(first);upazila.disabled=!row;if(row)row.upazilas.forEach(x=>{const o=document.createElement('option');o.value=x.value;o.textContent=label(x);upazila.appendChild(o);});upazila.value=row&&row.upazilas.some(x=>x.value===selected)?selected:'';}district.value=district.dataset.current||'';district.addEventListener('change',()=>render());render(upazila.dataset.current||'');})();
-</script><% } %>
+
+<% if(mysqlMode){ %>
+  <script type="application/json" id="bd-geo-data"><%- JSON.stringify(geoData) %></script>
+  <script>
+  (()=>{
+    const rows = JSON.parse(document.getElementById('bd-geo-data').textContent);
+    const isBn = String(<%- JSON.stringify(locale||'bn') %>).startsWith('bn');
+    const district = document.getElementById('district');
+    const upazila = document.getElementById('upazila');
+    const label = x => isBn ? x.nameBn : x.label;
+    rows.forEach(x => {
+      const o = document.createElement('option');
+      o.value = x.value;
+      o.textContent = label(x);
+      district.appendChild(o);
+    });
+    function render(selected=''){
+      const row = rows.find(x => x.value === district.value);
+      upazila.replaceChildren();
+      const first = document.createElement('option');
+      first.value = '';
+      first.textContent = row ? (isBn ? 'উপজেলা নির্বাচন করুন' : 'Select upazila') : (isBn ? 'আগে জেলা নির্বাচন করুন' : 'Select district first');
+      upazila.appendChild(first);
+      upazila.disabled = !row;
+      if (row) row.upazilas.forEach(x => {
+        const o = document.createElement('option');
+        o.value = x.value;
+        o.textContent = label(x);
+        upazila.appendChild(o);
+      });
+      upazila.value = row && row.upazilas.some(x => x.value === selected) ? selected : '';
+    }
+    district.value = district.dataset.current || '';
+    district.addEventListener('change', () => render());
+    render(upazila.dataset.current || '');
+  })();
+  </script>
+<% } %>
 <%- include('partials/layout-bottom') %>

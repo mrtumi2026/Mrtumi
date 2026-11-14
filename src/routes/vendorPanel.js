@@ -1,4 +1,5 @@
 const express = require('express');
+const path = require('path');
 const bcrypt = require('bcryptjs');
 const db = require('../db/database');
 const { requireVendor } = require('../middleware/auth');
@@ -647,29 +648,107 @@ router.post('/vendor/withdrawals/request', requireCsrf, async (req, res, next) =
 
 // ─── Vendor Shop Profile ───
 router.get('/vendor/profile', async (req, res, next) => {
-  if(mysqlActive()){try{return res.render('vendor/profile',{vendor:await require('../repositories/vendorOnboardingRepository').getVendorProfile(req.session.vendorUser.id),mysqlMode:true,geoData:require('../utils/bangladeshGeo').getGeoData()});}catch(error){return next(error);}}
-  const vendor = db.get('SELECT * FROM vendors WHERE id = ?', req.session.vendorUser.id);
-  res.render('vendor/profile', { vendor,mysqlMode:false });
+  if (mysqlActive()) {
+    try {
+      const vendor = await require('../repositories/vendorOnboardingRepository').getVendorProfile(req.session.vendorUser.id);
+      return res.render('vendor/profile', {
+        vendor,
+        mysqlMode: true,
+        geoData: require('../utils/bangladeshGeo').getGeoData(),
+        csrfToken: req.csrfToken ? req.csrfToken() : ''
+      });
+    } catch (error) {
+      return next(error);
+    }
+  }
+  const vendor = db.get('SELECT * FROM vendors WHERE id = ?', req.session.vendorUser.id) || {};
+  if (vendor && !vendor.slug) vendor.slug = `store-${vendor.id}`;
+  if (vendor && !vendor.logo_url) vendor.logo_url = '/uploads/default/store-logo.svg';
+  res.render('vendor/profile', { vendor, mysqlMode: false, csrfToken: req.csrfToken ? req.csrfToken() : '' });
 });
 
-router.post('/vendor/profile', requireCsrf, async (req, res,next) => {
-  if(mysqlActive()){try{await require('../repositories/vendorOnboardingRepository').updateVendorProfile(req.session.vendorUser.id,req.body,{type:'vendor',id:req.session.vendorUser.id,sessionId:req.sessionID,currentPassword:req.body.current_password,ip:req.ip,userAgent:req.get('user-agent')});req.flash('success','Vendor profile updated. Your verified mobile number was not changed.');return res.redirect('/vendor/profile');}catch(error){if(error.code==='VALIDATION_ERROR'||error.code==='CONFLICT'){req.flash('error',error.message);return res.redirect('/vendor/profile');}return next(error);}}
-  const { shop_name, owner_name, phone, email, address, new_password } = req.body;
+router.post('/vendor/profile', upload.single('logo'), requireCsrfAndCleanupUploadedFile, async (req, res, next) => {
   const vendorId = req.session.vendorUser.id;
+  const logoUrl = req.file ? `/uploads/custom/${path.basename(req.file.path)}` : undefined;
+
+  if (mysqlActive()) {
+    try {
+      const payload = { ...req.body };
+      if (logoUrl) payload.logo_url = logoUrl;
+
+      await require('../repositories/vendorOnboardingRepository').updateVendorProfile(
+        vendorId,
+        payload,
+        {
+          type: 'vendor',
+          id: vendorId,
+          sessionId: req.sessionID,
+          currentPassword: req.body.current_password,
+          ip: req.ip,
+          userAgent: req.get('user-agent')
+        }
+      );
+      req.flash('success', 'Vendor store profile and branding updated successfully.');
+      return res.redirect('/vendor/profile');
+    } catch (error) {
+      if (req.file && req.file.path) upload.safeUnlink(req.file.path);
+      if (error.code === 'VALIDATION_ERROR' || error.code === 'CONFLICT') {
+        req.flash('error', error.message);
+        return res.redirect('/vendor/profile');
+      }
+      return next(error);
+    }
+  }
+
+  // SQLite fallback mode
+  const { shop_name, owner_name, phone, email, address, new_password, slug, tagline, description } = req.body;
   const currentVendor = db.get('SELECT password_hash FROM vendors WHERE id=?', vendorId);
   if (new_password && (!currentVendor || !currentVendor.password_hash || !req.body.current_password || !await bcrypt.compare(String(req.body.current_password), currentVendor.password_hash))) {
+    if (req.file && req.file.path) upload.safeUnlink(req.file.path);
     req.flash('error', 'বর্তমান পাসওয়ার্ড সঠিক নয়।');
     return res.redirect('/vendor/profile');
   }
-  db.run(
-    'UPDATE vendors SET shop_name = ?, owner_name = ?, phone = ?, email = ?, address = ? WHERE id = ?',
-    shop_name.trim(),
-    owner_name.trim(),
-    phone.trim(),
-    (email || '').trim(),
-    (address || '').trim(),
-    vendorId
-  );
+
+  const { validateVendorSlug, slugifyText } = require('../utils/vendorSlug');
+  let cleanSlug = slug ? slugifyText(slug) : `store-${vendorId}`;
+  if (slug) {
+    const check = validateVendorSlug(cleanSlug);
+    if (!check.valid) {
+      if (req.file && req.file.path) upload.safeUnlink(req.file.path);
+      req.flash('error', check.error);
+      return res.redirect('/vendor/profile');
+    }
+  }
+
+  try {
+    db.run(
+      'UPDATE vendors SET shop_name = ?, slug = ?, tagline = ?, description = ?, owner_name = ?, phone = ?, email = ?, address = ? WHERE id = ?',
+      shop_name.trim(),
+      cleanSlug,
+      (tagline || '').trim(),
+      (description || '').trim(),
+      owner_name.trim(),
+      phone.trim(),
+      (email || '').trim(),
+      (address || '').trim(),
+      vendorId
+    );
+    if (logoUrl) {
+      db.run('UPDATE vendors SET logo_url = ? WHERE id = ?', logoUrl, vendorId);
+    }
+  } catch (_e) {
+    // Graceful fallback if SQLite schema differs
+    db.run(
+      'UPDATE vendors SET shop_name = ?, owner_name = ?, phone = ?, email = ?, address = ? WHERE id = ?',
+      shop_name.trim(),
+      owner_name.trim(),
+      phone.trim(),
+      (email || '').trim(),
+      (address || '').trim(),
+      vendorId
+    );
+  }
+
   if (new_password && new_password.trim().length >= 6) {
     const hash = bcrypt.hashSync(new_password.trim(), 10);
     db.run('UPDATE vendors SET password_hash = ? WHERE id = ?', hash, vendorId);

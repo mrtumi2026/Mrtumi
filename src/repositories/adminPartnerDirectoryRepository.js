@@ -18,7 +18,7 @@ function pendingFilter(value) {
 async function listVendors({ pendingOnly = false } = {}, { pool = null } = {}) {
   pendingOnly = pendingFilter(pendingOnly);
   const verifiedClause = pendingOnly ? 'WHERE verified=?' : '';
-  return client(pool).queryAll(`SELECT id,shop_name,owner_name,phone,
+  return client(pool).queryAll(`SELECT id,shop_name,owner_name,phone,slug,logo_url,
       commission_rate_bps/100 AS commission_rate,balance_paisa/100 AS balance,verified,trust_level,lifecycle_status
     FROM vendors ${verifiedClause} ORDER BY id DESC`, pendingOnly ? [0] : []);
 }

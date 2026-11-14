@@ -1,0 +1,162 @@
+<%- include('partials/header', { title: pageMeta.title }) %>
+
+<%
+  const fs = (typeof filterState !== 'undefined' && filterState) ? filterState : {};
+  const totalCount = typeof totalProducts === 'number' ? totalProducts : products.length;
+  const formAction = typeof actionPath === 'string' ? actionPath : ('/store/' + vendor.slug);
+  const hasActiveFilters = Boolean(fs.q || fs.min_price || fs.max_price || fs.in_stock);
+%>
+
+<main id="mainContent" class="container py-4">
+  <!-- Breadcrumb Navigation -->
+  <nav aria-label="breadcrumb" class="mb-3 small">
+    <ol class="breadcrumb mb-0">
+      <li class="breadcrumb-item"><a href="/" class="text-success text-decoration-none"><%= t('common.home') %></a></li>
+      <li class="breadcrumb-item"><a href="/all-products" class="text-success text-decoration-none"><%= t('common.allProducts') %></a></li>
+      <li class="breadcrumb-item active" aria-current="page"><%= vendor.shop_name %></li>
+    </ol>
+  </nav>
+
+  <!-- Store Hero Card -->
+  <div class="card border-0 shadow-sm rounded-4 overflow-hidden mb-4" style="background: #ffffff;">
+    <% if (vendor.banner_url) { %>
+      <div style="height: 180px; width: 100%; overflow: hidden; background: #e2e8f0;">
+        <img src="<%= vendor.banner_url %>" alt="<%= vendor.shop_name %> Banner" style="width: 100%; height: 100%; object-fit: cover;" />
+      </div>
+    <% } else { %>
+      <div style="height: 120px; width: 100%; background: linear-gradient(135deg, #0d3b26 0%, #1e5a3a 100%);"></div>
+    <% } %>
+
+    <div class="card-body p-4 pt-0">
+      <div class="d-flex flex-column flex-md-row align-items-md-end gap-3" style="margin-top: -45px;">
+        <!-- Store Logo -->
+        <div class="position-relative">
+          <% if (vendor.logo_url) { %>
+            <img
+              src="<%= vendor.logo_url %>"
+              alt="<%= vendor.shop_name %>"
+              class="rounded-circle border border-4 border-white shadow-sm bg-white"
+              style="width: 90px; height: 90px; object-fit: cover;"
+            />
+          <% } else { %>
+            <div
+              class="rounded-circle border border-4 border-white shadow-sm bg-success text-white d-flex align-items-center justify-content-center fw-bold"
+              style="width: 90px; height: 90px; font-size: 32px;"
+            >
+              <%= (vendor.shop_name || 'V').charAt(0).toUpperCase() %>
+            </div>
+          <% } %>
+        </div>
+
+        <!-- Store Identity & Badges -->
+        <div class="flex-grow-1">
+          <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+            <h1 class="h3 fw-bold mb-0 text-dark"><%= vendor.shop_name %></h1>
+            <% if (vendor.verified) { %>
+              <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-2 py-1 small">
+                ✓ <%= locale === 'bn' ? 'ভেরিফাইড স্টোর' : 'Verified Store' %>
+              </span>
+            <% } %>
+            <span class="badge bg-light text-secondary border rounded-pill px-2 py-1 small">
+              🏪 <%= fmt.number(totalCount) %> <%= locale === 'bn' ? 'টি পণ্য' : 'Products' %>
+            </span>
+          </div>
+
+          <% if (vendor.tagline) { %>
+            <p class="text-secondary mb-1 fw-medium"><%= vendor.tagline %></p>
+          <% } %>
+
+          <div class="d-flex flex-wrap align-items-center gap-3 small text-muted">
+            <% if (vendor.upazila || vendor.district) { %>
+              <span><i class="fas fa-map-marker-alt text-danger me-1"></i><%= [vendor.upazila, vendor.district].filter(Boolean).join(', ') %></span>
+            <% } %>
+            <span><i class="fas fa-shield-alt text-success me-1"></i><%= locale === 'bn' ? 'মিস্টার তুমি নিশ্চিন্ত ডেলিভারি' : 'Mr. Tumi Secured Fulfillment' %></span>
+          </div>
+        </div>
+      </div>
+
+      <% if (vendor.description) { %>
+        <div class="mt-3 pt-3 border-top text-muted small" style="line-height: 1.7; max-width: 900px;">
+          <%= vendor.description %>
+        </div>
+      <% } %>
+    </div>
+  </div>
+
+  <!-- Search, Sort & Filter Strip -->
+  <div class="bg-white rounded-4 border p-3 mb-4 shadow-sm">
+    <form action="<%= formAction %>" method="GET" class="row g-2 align-items-center">
+      <div class="col-md-5">
+        <div class="input-group input-group-sm">
+          <span class="input-group-text bg-light border-end-0"><i class="fas fa-search text-muted"></i></span>
+          <input
+            type="search"
+            name="q"
+            value="<%= fs.q || '' %>"
+            class="form-control border-start-0"
+            placeholder="<%= locale === 'bn' ? 'এই স্টোরে পণ্য খুঁজুন...' : 'Search products in this store...' %>"
+          />
+        </div>
+      </div>
+
+      <div class="col-6 col-md-3">
+        <select name="sort" class="form-select form-select-sm" onchange="this.form.submit()">
+          <option value="newest" <%= sort === 'newest' ? 'selected' : '' %>><%= t('store.sortNewest') %></option>
+          <option value="price_asc" <%= sort === 'price_asc' ? 'selected' : '' %>><%= t('store.sortPriceAsc') %></option>
+          <option value="price_desc" <%= sort === 'price_desc' ? 'selected' : '' %>><%= t('store.sortPriceDesc') %></option>
+          <option value="best_selling" <%= sort === 'best_selling' ? 'selected' : '' %>><%= t('store.sortBestSelling') %></option>
+          <option value="name_asc" <%= sort === 'name_asc' ? 'selected' : '' %>><%= t('store.sortNameAsc') %></option>
+        </select>
+      </div>
+
+      <div class="col-6 col-md-2">
+        <div class="form-check form-check-inline pt-1">
+          <input class="form-check-input" type="checkbox" id="storeInStock" name="in_stock" value="1" <%= fs.in_stock === '1' ? 'checked' : '' %> onchange="this.form.submit()" />
+          <label class="form-check-label small" for="storeInStock"><%= t('store.filterInStockOnly') %></label>
+        </div>
+      </div>
+
+      <div class="col-md-2 text-md-end">
+        <button type="submit" class="btn btn-sm btn-success px-3 rounded-pill"><%= t('store.applyFilters') %></button>
+        <% if (hasActiveFilters) { %>
+          <a href="<%= formAction %>" class="btn btn-sm btn-outline-danger px-2 rounded-pill ms-1" title="<%= t('store.clearFilters') %>">✕</a>
+        <% } %>
+      </div>
+    </form>
+  </div>
+
+  <!-- Products Section -->
+  <section aria-label="<%= vendor.shop_name %> <%= t('common.allProducts') %>">
+    <% if (!products.length) { %>
+      <%- include('../partials/empty-state', {
+        icon: '🏪',
+        title: locale === 'bn' ? 'এই স্টোরে কোনো পণ্য পাওয়া যায়নি' : 'No products found in this store',
+        description: hasActiveFilters
+          ? (locale === 'bn' ? 'আপনার ফিল্টারের সাথে মিলে এমন কোনো পণ্য নেই। ফিল্টার ক্লিয়ার করে দেখুন।' : 'No products matched your search filters. Try clearing filters.')
+          : (locale === 'bn' ? 'ভেন্ডর খুব শীঘ্রই নতুন পণ্য যুক্ত করবেন।' : 'This vendor will add products soon.'),
+        actionUrl: hasActiveFilters ? formAction : '/all-products',
+        actionLabel: hasActiveFilters ? (locale === 'bn' ? 'ফিল্টার ক্লিয়ার করুন' : 'Clear Filters') : t('common.allProducts')
+      }) %>
+    <% } else { %>
+      <div class="row g-3">
+        <% products.forEach(function(p) { %>
+          <div class="col-6 col-md-4 col-lg-3">
+            <%- include('partials/product-card', { p: p, showStockMeta: true }) %>
+          </div>
+        <% }) %>
+      </div>
+
+      <% if (typeof totalPages === 'number' && totalPages > 1) { %>
+        <div class="mt-4">
+          <%- include('../partials/pagination', {
+            currentPage: page,
+            totalPages: totalPages,
+            baseUrl: paginationBaseUrl || formAction
+          }) %>
+        </div>
+      <% } %>
+    <% } %>
+  </section>
+</main>
+
+<%- include('partials/footer') %>

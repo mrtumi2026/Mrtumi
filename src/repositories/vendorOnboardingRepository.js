@@ -10,7 +10,7 @@ const pii=require('../utils/vendorPii');
 const policy=require('./vendorOnboardingPolicy');
 const geo=require('../utils/bangladeshGeo');
 
-function assertMysql(){if(env.db.client!=='mysql')throw new Error('Vendor onboarding requires MySQL/InnoDB.');}
+function assertMysql(pool = null){if(!pool && env.db.client!=='mysql')throw new Error('Vendor onboarding requires MySQL/InnoDB.');}
 function text(value,label,max,required=true){return requireString(value,label,{min:required?1:0,max});}
 function email(value){const result=text(value,'Email',191).toLowerCase();if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(result))throw new ValidationError('Enter a valid email address.');return result;}
 function normalizeNid(value){const nid=String(value||'').replace(/[\s-]/g,'');if(!/^(?:\d{10}|\d{13}|\d{17})$/.test(nid))throw new ValidationError('NID must contain 10, 13, or 17 digits.');return nid;}
@@ -178,10 +178,128 @@ async function listPayoutDetailsForAdmin(vendorId,{pool}={}){assertMysql();const
 async function completeOnboarding(vendorId,termsAccepted,actor={type:'vendor'}, {pool}={}){
  assertMysql();const id=requirePositiveInt(vendorId,'Vendor ID');if(!termsAccepted)throw new ValidationError('Accept the onboarding policy before continuing.');return mysql.withTransaction(async tx=>{const vendor=await tx.queryOne('SELECT id,lifecycle_status,onboarding_completed_at FROM vendors WHERE id=? AND status=1 FOR UPDATE',[id]);if(!vendor)throw new NotFoundError('Vendor account not found.');if(!vendor.onboarding_completed_at)await tx.execute('UPDATE vendors SET onboarding_completed_at=UTC_TIMESTAMP() WHERE id=?',[id]);await audit(tx,actor,'vendor.onboarding.completed',id,{onboarding_completed:Boolean(vendor.onboarding_completed_at)},{onboarding_completed:true});const updated=await tryActivate(tx,id);return{lifecycle_status:updated.lifecycle_status};},{pool});
 }
-async function getVendorProfile(vendorId,{pool}={}){assertMysql();const row=await mysql.createQueryClient(pool||mysql.getPool()).queryOne('SELECT id,shop_name,owner_name,phone,email,address,district,upazila,lifecycle_status FROM vendors WHERE id=?',[requirePositiveInt(vendorId,'Vendor ID')]);if(!row)throw new NotFoundError('Vendor profile not found.');return row;}
-async function updateVendorProfile(vendorId,input,actor={type:'vendor'}, {pool}={}){
- assertMysql();const id=requirePositiveInt(vendorId,'Vendor ID'),shop=text(input.shop_name,'Shop name',191),owner=text(input.owner_name,'Owner name',191),mail=email(input.email),address=text(input.address,'Shop address',1000),location=geo.normalizeLocation(input.district,input.upazila),password=String(input.new_password||'');if(password&&(password.length<10||Buffer.byteLength(password,'utf8')>72))throw new ValidationError('New password must contain at least 10 characters and no more than 72 UTF-8 bytes.');const passwordHash=password?await bcrypt.hash(password,12):null;
- return mysql.withTransaction(async tx=>{const vendor=await tx.queryOne('SELECT id,email,password_hash,lifecycle_status,status FROM vendors WHERE id=? FOR UPDATE',[id]);if(!vendor||Number(vendor.status)!==1)throw new NotFoundError('Vendor profile not found.');if(vendor.lifecycle_status!=='active')throw new ConflictError('Only active vendors may edit their profile.');if(password&&(!actor.currentPassword||!vendor.password_hash||!await bcrypt.compare(String(actor.currentPassword),vendor.password_hash)))throw new ConflictError('Current password is incorrect.');const duplicate=await tx.queryOne('SELECT id FROM vendors WHERE email=? AND id<>? LIMIT 1 FOR UPDATE',[mail,id]);if(duplicate)throw new ConflictError('This email is already used by another vendor.');await tx.execute('UPDATE vendors SET shop_name=?,owner_name=?,email=?,address=?,district=?,upazila=?,password_hash=COALESCE(?,password_hash) WHERE id=?',[shop,owner,mail,address,location.district,location.upazila,passwordHash,id]);if(passwordHash)await tx.execute("DELETE FROM web_sessions WHERE actor_type='vendor' AND actor_id=? AND sid<>?",[id,String(actor.sessionId||'')]);await tx.execute('UPDATE vendor_applications SET district=?,upazila=? WHERE vendor_id=?',[location.district,location.upazila,id]);await audit(tx,actor,'vendor.profile.updated',id,{email:vendor.email},{shop_name:shop,owner_name:owner,district:location.district,upazila:location.upazila,email_changed:vendor.email!==mail,password_changed:Boolean(password)});return{vendorId:id,district:location.district,upazila:location.upazila};},{pool});
+async function getVendorProfile(vendorId, { pool } = {}) {
+  assertMysql(pool);
+  const row = await mysql.createQueryClient(pool || mysql.getPool()).queryOne(
+    'SELECT id, shop_name, slug, logo_url, banner_url, tagline, description, store_status, owner_name, phone, email, address, district, upazila, lifecycle_status, trust_level, verified FROM vendors WHERE id=?',
+    [requirePositiveInt(vendorId, 'Vendor ID')]
+  );
+  if (!row) throw new NotFoundError('Vendor profile not found.');
+  return {
+    ...row,
+    slug: row.slug || `store-${row.id}`,
+    logo_url: row.logo_url || '/uploads/default/store-logo.svg',
+    banner_url: row.banner_url || '',
+    tagline: row.tagline || '',
+    description: row.description || '',
+    store_status: row.store_status !== undefined ? Number(row.store_status) : 1,
+  };
+}
+
+async function updateVendorProfile(vendorId, input, actor = { type: 'vendor' }, { pool } = {}) {
+  assertMysql(pool);
+  const id = requirePositiveInt(vendorId, 'Vendor ID');
+  const shop = text(input.shop_name, 'Shop name', 191);
+  const owner = text(input.owner_name, 'Owner name', 191);
+  const mail = email(input.email);
+  const address = text(input.address, 'Shop address', 1000);
+  const location = geo.normalizeLocation(input.district, input.upazila);
+  const password = String(input.new_password || '');
+
+  // Validate store branding inputs
+  const { validateVendorSlug, slugifyText } = require('../utils/vendorSlug');
+  let cleanSlug = input.slug !== undefined && input.slug !== null ? String(input.slug).trim().toLowerCase() : undefined;
+  if (cleanSlug) {
+    cleanSlug = slugifyText(cleanSlug);
+    const slugCheck = validateVendorSlug(cleanSlug);
+    if (!slugCheck.valid) throw new ValidationError(slugCheck.error);
+    cleanSlug = slugCheck.slug;
+  }
+
+  const cleanTagline = input.tagline !== undefined && input.tagline !== null ? String(input.tagline).trim().slice(0, 255) : undefined;
+  const cleanDescription = input.description !== undefined && input.description !== null ? String(input.description).trim().slice(0, 2000) : undefined;
+  const logoUrl = input.logo_url !== undefined && input.logo_url ? String(input.logo_url).trim().slice(0, 500) : undefined;
+  const bannerUrl = input.banner_url !== undefined && input.banner_url ? String(input.banner_url).trim().slice(0, 500) : undefined;
+
+  if (password && (password.length < 10 || Buffer.byteLength(password, 'utf8') > 72)) {
+    throw new ValidationError('New password must contain at least 10 characters and no more than 72 UTF-8 bytes.');
+  }
+  const passwordHash = password ? await bcrypt.hash(password, 12) : null;
+
+  return mysql.withTransaction(async (tx) => {
+    const vendor = await tx.queryOne(
+      'SELECT id, email, password_hash, lifecycle_status, status, slug, logo_url FROM vendors WHERE id=? FOR UPDATE',
+      [id]
+    );
+    if (!vendor || Number(vendor.status) !== 1) throw new NotFoundError('Vendor profile not found.');
+    if (vendor.lifecycle_status !== 'active') throw new ConflictError('Only active vendors may edit their profile.');
+    if (password && (!actor.currentPassword || !vendor.password_hash || !await bcrypt.compare(String(actor.currentPassword), vendor.password_hash))) {
+      throw new ConflictError('Current password is incorrect.');
+    }
+    const duplicate = await tx.queryOne('SELECT id FROM vendors WHERE email=? AND id<>? LIMIT 1 FOR UPDATE', [mail, id]);
+    if (duplicate) throw new ConflictError('This email is already used by another vendor.');
+
+    if (cleanSlug && cleanSlug !== vendor.slug) {
+      const duplicateSlug = await tx.queryOne('SELECT id FROM vendors WHERE slug=? AND id<>? LIMIT 1 FOR UPDATE', [cleanSlug, id]);
+      if (duplicateSlug) throw new ConflictError(`The store slug "${cleanSlug}" is already taken by another merchant.`);
+    }
+
+    await tx.execute(
+      `UPDATE vendors SET
+         \`shop_name\` = ?,
+         \`slug\` = COALESCE(?, \`slug\`),
+         \`logo_url\` = COALESCE(?, \`logo_url\`),
+         \`banner_url\` = COALESCE(?, \`banner_url\`),
+         \`tagline\` = COALESCE(?, \`tagline\`),
+         \`description\` = COALESCE(?, \`description\`),
+         \`owner_name\` = ?,
+         \`email\` = ?,
+         \`address\` = ?,
+         \`district\` = ?,
+         \`upazila\` = ?,
+         \`password_hash\` = COALESCE(?, \`password_hash\`)
+       WHERE \`id\` = ?`,
+      [
+        shop,
+        cleanSlug !== undefined ? cleanSlug : null,
+        logoUrl !== undefined ? logoUrl : null,
+        bannerUrl !== undefined ? bannerUrl : null,
+        cleanTagline !== undefined ? cleanTagline : null,
+        cleanDescription !== undefined ? cleanDescription : null,
+        owner,
+        mail,
+        address,
+        location.district,
+        location.upazila,
+        passwordHash,
+        id
+      ]
+    );
+
+    if (passwordHash) {
+      await tx.execute("DELETE FROM web_sessions WHERE actor_type='vendor' AND actor_id=? AND sid<>?", [id, String(actor.sessionId || '')]);
+    }
+    await tx.execute('UPDATE vendor_applications SET district=?, upazila=? WHERE vendor_id=?', [location.district, location.upazila, id]);
+
+    await audit(tx, actor, 'vendor.profile.updated', id, { email: vendor.email }, {
+      shop_name: shop,
+      slug: cleanSlug || vendor.slug,
+      logo_url: logoUrl || vendor.logo_url,
+      owner_name: owner,
+      district: location.district,
+      upazila: location.upazila,
+      email_changed: vendor.email !== mail,
+      password_changed: Boolean(password)
+    });
+
+    return {
+      ok: true,
+      vendorId: id,
+      slug: cleanSlug || vendor.slug,
+      district: location.district,
+      upazila: location.upazila
+    };
+  }, { pool });
 }
 
 async function getPortalDashboard(vendorId,{pool}={}){

@@ -106,6 +106,17 @@
               <strong class="text-dark"><%= product.brand_name || brand.defaultProductBrand %></strong>
             <% } %>
           </span>
+          <span>
+            &bull; <%= locale === 'bn' ? 'বিক্রেতা' : 'Sold by' %>:
+            <% if (product.vendor_id && product.vendor_store_slug) { %>
+              <a href="/store/<%= product.vendor_store_slug %>" class="fw-semibold text-success text-decoration-none d-inline-flex align-items-center gap-1">
+                <i class="fas fa-store fa-xs"></i> <%= product.vendor_shop_name %>
+                <% if (product.vendor_verified) { %><i class="fas fa-check-circle text-primary" style="font-size:11px;" title="Verified Store"></i><% } %>
+              </a>
+            <% } else { %>
+              <span class="badge bg-light text-secondary border fw-semibold">Mr. Tumi Select</span>
+            <% } %>
+          </span>
           <% if (product.sku || product.code) { %>
             <span>&bull; <%= t('store.skuLabel') %>: <strong class="text-dark" id="prodSkuText"><%= product.sku || product.code %></strong></span>
           <% } %>
@@ -307,6 +318,34 @@
           <span>📞 <%= t('store.callToOrder') %>: <strong class="text-dark"><%= siteSettings.site_phone %></strong></span>
           <span>🚚 <%= t('store.trustDeliveryTitle') %> &bull; <a href="/faq" class="text-success text-decoration-none"><%= t('store.faqNav') %></a></span>
         </div>
+
+        <% if (product.vendor_id && product.vendor_store_slug) { %>
+          <div class="mt-3 p-3 rounded-3 bg-light border d-flex align-items-center justify-content-between flex-wrap gap-2">
+            <div class="d-flex align-items-center gap-3">
+              <% if (product.vendor_logo_url) { %>
+                <img src="<%= product.vendor_logo_url %>" alt="<%= product.vendor_shop_name %>" class="rounded-circle border" style="width:48px;height:48px;object-fit:cover;" />
+              <% } else { %>
+                <div class="rounded-circle bg-success text-white d-flex align-items-center justify-content-center fw-bold" style="width:48px;height:48px;font-size:18px;">
+                  <%= (product.vendor_shop_name || 'V').charAt(0).toUpperCase() %>
+                </div>
+              <% } %>
+              <div>
+                <div class="d-flex align-items-center gap-1">
+                  <span class="fw-bold text-dark"><%= product.vendor_shop_name %></span>
+                  <% if (product.vendor_verified) { %>
+                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle" style="font-size:10px;">✓ <%= locale === 'bn' ? 'ভেরিফাইড স্টোর' : 'Verified Store' %></span>
+                  <% } %>
+                </div>
+                <% if (product.vendor_tagline) { %>
+                  <div class="text-muted small"><%= product.vendor_tagline %></div>
+                <% } %>
+              </div>
+            </div>
+            <a href="/store/<%= product.vendor_store_slug %>" class="btn btn-outline-success btn-sm px-3 rounded-pill fw-semibold">
+              <i class="fas fa-store me-1"></i> <%= locale === 'bn' ? 'স্টোরে প্রবেশ করুন' : 'Visit Store' %>
+            </a>
+          </div>
+        <% } %>
       </div>
     </div>
   </div>
