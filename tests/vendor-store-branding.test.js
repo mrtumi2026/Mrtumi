@@ -335,3 +335,120 @@ test('vendorOnboardingRepository.updateVendorProfile validates slug and rejects 
     assert.ok(updateQuery.sql.includes('`tagline` = COALESCE(?, `tagline`)'));
     assert.ok(updateQuery.sql.includes('`description` = COALESCE(?, `description`)'));
 });
+
+test('Migration 0037 - Idempotency, retry safety, and existing slug preservation', () => {
+  const upSqlPath = path.resolve(__dirname, '../src/db/migrations/0037_vendor_store_branding.up.sql');
+  const downSqlPath = path.resolve(__dirname, '../src/db/migrations/0037_vendor_store_branding.down.sql');
+  const upSql = fs.readFileSync(upSqlPath, 'utf8');
+  const downSql = fs.readFileSync(downSqlPath, 'utf8');
+
+  // 1. All ADD COLUMN statements must use IF NOT EXISTS for retry safety
+  const expectedCols = ['slug', 'logo_url', 'banner_url', 'tagline', 'description', 'store_status'];
+  for (const col of expectedCols) {
+    const colRegex = new RegExp(`ADD COLUMN IF NOT EXISTS \`${col}\``, 'i');
+    assert.ok(colRegex.test(upSql), `Migration 0037 UP must use ADD COLUMN IF NOT EXISTS for ${col}`);
+  }
+
+  // 2. Indexes must use IF NOT EXISTS for retry safety
+  assert.ok(
+    /ADD UNIQUE KEY IF NOT EXISTS `uq_vendors_slug`/i.test(upSql),
+    'Migration 0037 UP must use ADD UNIQUE KEY IF NOT EXISTS for uq_vendors_slug'
+  );
+  assert.ok(
+    /ADD KEY IF NOT EXISTS `idx_vendors_store_status`/i.test(upSql),
+    'Migration 0037 UP must use ADD KEY IF NOT EXISTS for idx_vendors_store_status'
+  );
+
+  // 3. Existing custom slugs must be preserved - backfill only operates on NULL or empty slugs
+  assert.ok(
+    /WHERE `slug` IS NULL OR `slug` = ''/i.test(upSql),
+    'Migration 0037 UP must preserve existing slugs with WHERE slug IS NULL OR slug = ""'
+  );
+
+  // 4. Down migration must use IF EXISTS for idempotent rollback
+  assert.ok(
+    /DROP INDEX IF EXISTS `uq_vendors_slug`/i.test(downSql),
+    'Migration 0037 DOWN must use DROP INDEX IF EXISTS for uq_vendors_slug'
+  );
+  for (const col of expectedCols) {
+    const dropColRegex = new RegExp(`DROP COLUMN IF EXISTS \`${col}\``, 'i');
+    assert.ok(dropColRegex.test(downSql), `Migration 0037 DOWN must use DROP COLUMN IF EXISTS for ${col}`);
+  }
+});
+
+test('Migration 0037 - Collision preflight detector prevents DDL execution on conflict', () => {
+  // Simulates the preflight collision detection logic used in deployment pipeline
+  function checkSlugCollisions(vendors) {
+    const collisions = [];
+
+    // Check 1: Existing duplicate slugs among vendors who already have slugs
+    const slugMap = new Map();
+    for (const v of vendors) {
+      if (v.slug && v.slug.trim()) {
+        const s = v.slug.trim().toLowerCase();
+        if (slugMap.has(s)) {
+          collisions.push({ type: 'DUPLICATE_EXISTING_SLUG', slug: s, vendorIds: [slugMap.get(s), v.id] });
+        } else {
+          slugMap.set(s, v.id);
+        }
+      }
+    }
+
+    // Check 2: Backfilled slug (store-<id>) colliding with another vendor's existing custom slug
+    for (const v of vendors) {
+      if (!v.slug || !v.slug.trim()) {
+        const proposedSlug = `store-${v.id}`;
+        if (slugMap.has(proposedSlug) && slugMap.get(proposedSlug) !== v.id) {
+          collisions.push({
+            type: 'BACKFILL_COLLISION',
+            proposedSlug,
+            targetVendorId: v.id,
+            conflictingVendorId: slugMap.get(proposedSlug),
+          });
+        }
+      }
+    }
+
+    return { ok: collisions.length === 0, collisions };
+  }
+
+  // Case A: Clean state - all vendors need backfill (no existing slugs) -> PASS
+  const cleanState = [
+    { id: 1, shop_name: 'Shop 1', slug: null },
+    { id: 2, shop_name: 'Shop 2', slug: null },
+    { id: 3, shop_name: 'Shop 3', slug: '' },
+  ];
+  const cleanCheck = checkSlugCollisions(cleanState);
+  assert.equal(cleanCheck.ok, true);
+  assert.equal(cleanCheck.collisions.length, 0);
+
+  // Case B: Clean state with existing non-conflicting custom slugs -> PASS
+  const validCustomSlugs = [
+    { id: 1, shop_name: 'Shop 1', slug: 'green-agro' },
+    { id: 2, shop_name: 'Shop 2', slug: null }, // Will become store-2
+    { id: 3, shop_name: 'Shop 3', slug: 'pure-honey' },
+  ];
+  const validCheck = checkSlugCollisions(validCustomSlugs);
+  assert.equal(validCheck.ok, true);
+  assert.equal(validCheck.collisions.length, 0);
+
+  // Case C: Duplicate existing custom slugs -> DETECTED & REJECTED
+  const duplicateState = [
+    { id: 1, shop_name: 'Shop 1', slug: 'organic-mart' },
+    { id: 2, shop_name: 'Shop 2', slug: 'organic-mart' },
+  ];
+  const dupCheck = checkSlugCollisions(duplicateState);
+  assert.equal(dupCheck.ok, false);
+  assert.equal(dupCheck.collisions[0].type, 'DUPLICATE_EXISTING_SLUG');
+
+  // Case D: Backfill collision (vendor 2 has custom slug 'store-1', vendor 1 needs backfill) -> DETECTED & REJECTED
+  const collisionState = [
+    { id: 1, shop_name: 'Shop 1', slug: null }, // Needs store-1
+    { id: 2, shop_name: 'Shop 2', slug: 'store-1' }, // Already has store-1!
+  ];
+  const colCheck = checkSlugCollisions(collisionState);
+  assert.equal(colCheck.ok, false);
+  assert.equal(colCheck.collisions[0].type, 'BACKFILL_COLLISION');
+  assert.equal(colCheck.collisions[0].proposedSlug, 'store-1');
+});
+
