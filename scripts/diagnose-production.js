@@ -21,15 +21,16 @@ function getGitInfo() {
 
 async function checkDatabase() {
   if (env.db.client !== 'mysql') {
-    return { client: env.db.client, connected: true, note: 'Running in SQLite/prototype mode' };
+    return { client: env.db.client, isMysql: false, connected: true, note: 'Running in SQLite/prototype mode' };
   }
-  const { createPoolFromConfig, closePool } = require('../src/db/mysqlPool');
+  const { createPoolFromConfig } = require('../src/db/mysqlPool');
   const pool = createPoolFromConfig(env.db);
   const start = Date.now();
   try {
     const [rows] = await pool.query('SELECT 1 + 1 AS ping, @@version AS version, @@character_set_database AS charset, @@collation_database AS collation');
     const latencyMs = Date.now() - start;
     return {
+      isMysql: true,
       connected: true,
       latencyMs,
       version: rows[0]?.version || 'Unknown',
@@ -39,6 +40,7 @@ async function checkDatabase() {
     };
   } catch (error) {
     return {
+      isMysql: true,
       connected: false,
       error: error.message,
       pool: null,
@@ -105,7 +107,7 @@ async function main() {
 
   console.log('\n--- 2. DATABASE CONNECTIVITY ---');
   const db = await checkDatabase();
-  if (db.connected) {
+  if (db.isMysql && db.connected) {
     console.log(`  ✔ Connected to MySQL in ${db.latencyMs}ms`);
     console.log(`    Server Version: ${db.version}`);
     console.log(`    Database Charset: ${db.charset} (${db.collation})`);
@@ -123,8 +125,14 @@ async function main() {
 
     const { closePool } = require('../src/db/mysqlPool');
     await closePool(db.pool);
+  } else if (!db.isMysql) {
+    console.log('  ℹ Running in SQLite prototype mode (DB_CLIENT !== "mysql").');
+    console.log('\n--- 3. MIGRATION STATUS ---');
+    console.log('  ℹ MySQL migration inspection skipped in local prototype mode.');
   } else {
     console.log(`  ✖ MySQL connection failed: ${db.error}`);
+    console.log('\n--- 3. MIGRATION STATUS ---');
+    console.log('  ✖ Skipped due to MySQL connection error.');
   }
 
   console.log('\n--- 4. CUSTOMER RECOVERY STATUS ---');
