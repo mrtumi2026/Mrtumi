@@ -7,10 +7,10 @@ const sqliteDb = require('../db/database');
 const DEFAULT_SETTINGS = Object.freeze({
   site_name: 'Mr. Tumi Grocery & Gift',
   site_tagline: 'তাজা গ্রোসারি ও প্রিমিয়াম গিফট শপ',
-  phone: '01700-000000',
-  whatsapp: '8801700000000',
+  phone: '01973437395',
+  whatsapp: '01973437395',
   email: 'support@mrtumi.com',
-  address: 'House 12, Road 5, Dhanmondi, Dhaka-1205',
+  address: '85/9 Eid gha mathe, kajla noton rasta, Jatrabari, Dhaka-1362',
   inside_dhaka_charge: '60',
   dhaka_sub_charge: '100',
   outside_dhaka_charge: '120',

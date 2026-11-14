@@ -91,9 +91,11 @@ async function listCheckoutMethods(){
   const hasBkash = rows.some(r => r.code === 'bkash' || r.code === 'bkash_manual' || r.code === 'bkash_api');
   const hasNagad = rows.some(r => r.code === 'nagad' || r.code === 'nagad_manual' || r.code === 'nagad_api');
   const hasRocket = rows.some(r => r.code === 'rocket' || r.code === 'rocket_manual' || r.code === 'rocket_api');
-  if (!hasBkash) rows.push({ code: 'bkash', name: 'bKash (বিকাশ Send Money)', gateway_type: 'manual', mode: 'manual', account_number: '01711-000000', instructions: 'Send Money to our bKash number and enter TrxID below.', instructions_bn: 'আমাদের বিকাশ নম্বরে Send Money করুন এবং নিচে TrxID দিন।' });
-  if (!hasNagad) rows.push({ code: 'nagad', name: 'Nagad (নগদ Send Money)', gateway_type: 'manual', mode: 'manual', account_number: '01711-000000', instructions: 'Send Money to our Nagad number and enter TrxID below.', instructions_bn: 'আমাদের নগদ নম্বরে Send Money করুন এবং নিচে TrxID দিন।' });
-  if (!hasRocket) rows.push({ code: 'rocket', name: 'Rocket (রকেট Send Money)', gateway_type: 'manual', mode: 'manual', account_number: '01711-000000', instructions: 'Send Money to our Rocket number and enter TrxID below.', instructions_bn: 'আমাদের রকেট নম্বরে Send Money করুন এবং নিচে TrxID দিন।' });
+  const siteSettings = await settingsRepository.getAllSettings().catch(() => ({}));
+  const fallbackPhone = siteSettings.phone || siteSettings.site_phone || '01973437395';
+  if (!hasBkash) rows.push({ code: 'bkash', name: 'bKash (বিকাশ Send Money)', gateway_type: 'manual', mode: 'manual', account_number: fallbackPhone, instructions: 'Send Money to our bKash number and enter TrxID below.', instructions_bn: 'আমাদের বিকাশ নম্বরে Send Money করুন এবং নিচে TrxID দিন।' });
+  if (!hasNagad) rows.push({ code: 'nagad', name: 'Nagad (নগদ Send Money)', gateway_type: 'manual', mode: 'manual', account_number: fallbackPhone, instructions: 'Send Money to our Nagad number and enter TrxID below.', instructions_bn: 'আমাদের নগদ নম্বরে Send Money করুন এবং নিচে TrxID দিন।' });
+  if (!hasRocket) rows.push({ code: 'rocket', name: 'Rocket (রকেট Send Money)', gateway_type: 'manual', mode: 'manual', account_number: fallbackPhone, instructions: 'Send Money to our Rocket number and enter TrxID below.', instructions_bn: 'আমাদের রকেট নম্বরে Send Money করুন এবং নিচে TrxID দিন।' });
   return rows;
 }
 function couponAmount(row,subtotal){

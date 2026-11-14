@@ -1,9 +1,9 @@
-# Mr. Tumi — Business Launch Preparation: Product Catalog & Business Settings Audit
+# Mr. Tumi — Business Launch Preparation: Product Catalog & Business Settings Report
 
 **Production Target:** `https://mrtumi.com`  
 **Deployment Baseline:** Commit `bb5034a` (Verified Live)  
 **Report Date:** 2026-11-14  
-**Audit Purpose:** Pre-Soft Launch Product Catalog & Business Settings Audit  
+**Status:** **Owner-Approved Changes Executed & Ready for Fast-Forward Deployment**  
 
 ---
 
@@ -11,204 +11,142 @@
 
 Mr. Tumi's core commerce engine, multi-portal architecture, integer-paisa ledgers, security headers, and operational health checks are 100% operational on production.
 
-Before opening the storefront to real customers for the **Soft Launch**, the underlying **business catalog and operational settings** must transition from prototype/test data to production-grade merchant data:
+In this phase, the **Owner-Approved Business Launch Preparation** changes were prepared and verified:
 
-1. **Catalog Reality:** Only 2 active products are currently published on the storefront. One is misplaced in the wrong category ("দেশি লিচু ফ্রেশ প্যাক" in Snacks & Beverages instead of Fruits & Vegetables), and the other ("ফুড চপার") has an accidental lychee fruit image attached to it. The remaining 13 product categories currently have 0 items.
-2. **Grocery Units:** All products in the legacy prototype were assigned `"৫০০ গ্রাম,১ কেজি,২ কেজি"`. A real grocery catalog requires specific, contextual units: `kg` for produce, `dozen/piece` for eggs, `litre` for oil, `sack/kg` for rice, and `piece/packet` for packaged goods.
-3. **Business Settings:** Storefront displays `01973437395` in the header, while database settings contain placeholder `01711-000000`. WhatsApp button is absent. Store address is set to placeholder text. Dedicated public pages for `/terms` and `/refund-policy` returned 404.
-4. **Third-Party Gateways:** Courier (Steadfast/Pathao), SMS (BulkSMSBD), and online payment gateways are code-complete but awaiting the owner's live production merchant API keys.
-
----
-
-## PHASE 1 — Comprehensive Product Catalog Audit
-
-### 1. Category & Subcategory Taxonomy (Live Inspection)
-
-The live production database contains all **15 modern categories** and **74 subcategories** with bilingual (Bangla & English) titles and icons:
-
-| # | Category Slug | Bengali Name | English Name | Subcategories Count & Examples | Storefront Status |
-| :-: | :--- | :--- | :--- | :--- | :---: |
-| 1 | `fruits-and-vegetables` | ফলমূল ও শাকসবজি | Fruits & Vegetables | 4 (Fresh Fruits, Fresh Vegetables, Leafy Greens, Organic) | **0 Products** |
-| 2 | `meat-fish-and-eggs` | মাছ, মাংস ও ডিম | Meat, Fish & Eggs | 6 (Fresh Fish, Beef/Mutton, Chicken, Eggs, Dried Fish, Processed) | **0 Products** |
-| 3 | `rice-dal-and-cooking` | চাল, ডাল ও রান্নার উপাদান | Rice, Dal & Cooking | 6 (Rice, Flour/Atta, Lentils, Oil & Ghee, Spices, Salt & Sugar) | **0 Products** |
-| 4 | `dairy-and-breakfast` | দুধ ও সকালের নাস্তা | Dairy & Breakfast | 6 (Milk & Yogurt, Butter & Cheese, Bread, Cereals, Tea/Coffee, Honey) | **0 Products** |
-| 5 | `snacks-and-beverages` | স্ন্যাক্স ও পানীয় | Snacks & Beverages | 5 (Chips, Biscuits, Chocolates, Noodles/Pasta, Cold Drinks/Juices) | **1 Product** (Misplaced) |
-| 6 | `frozen-and-ready-to-eat`| ফ্রোজেন ও রেডি ফুড | Frozen & Ready to Eat | 4 (Frozen Paratha, Ice Cream, Canned Food, Ready Mix) | **0 Products** |
-| 7 | `health-and-beauty` | স্বাস্থ্য ও রূপচর্চা | Health & Beauty | 5 (Skin Care, Hair Care, Makeup, Personal Care, Pharmacy) | **0 Products** |
-| 8 | `baby-and-kids` | শিশু ও বাচ্চাদের সামগ্রী | Baby & Kids | 5 (Diapers & Wipes, Baby Food, Baby Skin Care, Toys, Clothing) | **0 Products** |
-| 9 | `home-and-kitchen` | হোম ও কিচেন | Home & Kitchen | 5 (Home Appliances, Kitchenware, Furniture, Bedding, Decor) | **1 Product** |
-| 10 | `household-and-others` | হাউসহোল্ড ও অন্যান্য | Household & Others | 6 (Cleaning, Laundry, Pest Control, Pets, Stationery, Fitness) | **0 Products** |
-| 11 | `mobiles-and-tablets` | মোবাইল ও ট্যাবলেট | Mobiles & Tablets | 5 (Smartphones, Tablets, Covers, Chargers, Power Banks) | **0 Products** |
-| 12 | `computers-and-electronics`| কম্পিউটার ও ইলেকট্রনিক্স | Computers & Electronics | 7 (Laptops, Monitors, TV/Audio, Cameras, Headphones, Speakers, Gaming)| **0 Products** |
-| 13 | `womens-fashion` | নারীদের ফ্যাশন | Women's Fashion | 5 (Sarees, Kurtis, Western, Shoes, Bags) | **0 Products** |
-| 14 | `mens-fashion` | পুরুষদের ফ্যাশন | Men's Fashion | 5 (Shirts, Pants/Jeans, Panjabi, Shoes, Watches) | **0 Products** |
-| 15 | `watches-bags-and-jewellery`| ঘড়ি, ব্যাগ ও জুয়েলারি | Watches, Bags & Jewellery | 5 (Wrist Watches, Sunglasses, Backpacks, Jewellery, Wallets) | **0 Products** |
-
-### 2. Live Storefront Products Detail
-
-Currently, only **2 products** are visible on the production catalog:
-
-#### Product A: "দেশি লিচু ফ্রেশ প্যাক"
-- **Live URL:** `/product/product-5-v675ce0b6f0c36f53`
-- **Slug Issue:** Contains an unreadable synthetic hash (`-v675ce0b6f0c36f53`) from old migration runs instead of an SEO-friendly slug.
-- **Category Issue (Misplaced):** Displayed under **`স্ন্যাক্স ও পানীয়` (Snacks & Beverages)**. Fresh seasonal lychee must be placed under **`fruits-and-vegetables` -> `Fresh Fruits`**.
-- **SKU:** `N/A`.
-- **Units & Variants:** Description lists conflicting legacy unit keywords ("৫০০ গ্রাম,১ কেজি,২ কেজি", "প্যাকেট", "বক্স"). No active variant selector is wired.
-- **Images:** 3 images loaded (all HTTP 200).
-
-#### Product B: "ইউএসবি পোর্টেবল ফুড চপার"
-- **Live URL:** `/product/food-chopper`
-- **Title:** রান্নাঘরের সরঞ্জামের জন্য ইউএসবি পোর্টেবল ফুড চপার – রসুন বাটার যন্ত্র, ক্রাশার, মিট গ্রাইন্ডার ও সবজি কাটার মেশিন
-- **Category:** `হোম ও কিচেন > রান্নাঘরের বাসন ও সরঞ্জাম` (Correct taxonomy).
-- **SKU:** `N/A`.
-- **Image Corruption Issue:** The product gallery contains `/uploads/product/lychee-fresh.jpg` (a fresh lychee fruit photo) alongside actual kitchen gadget photos!
-- **Unit Issue:** It is a kitchen appliance, but description contains leftover fruit unit keywords ("কেজি", "গ্রাম"). A kitchen gadget should be sold as **`১ পিস` (1 Piece)**.
-
-### 3. Inactive & Prototype Database Artifacts
-- The prototype database contained **16 legacy products**, 14 of which were duplicated seasonal lychee entries with identical descriptions and prices.
-- These legacy duplicate records should be archived so they do not pollute search results or inventory statistics.
+1. **Product Category & Slug Correction ("দেশি লিচু ফ্রেশ প্যাক"):**
+   - Category moved to `ফলমূল ও শাকসবজি` (`fruits-and-vegetables`).
+   - SEO-friendly canonical slug set to `deshi-lychee-fresh-pack`.
+   - **Zero tampering:** Price, stock, and unit remain strictly preserved without alteration.
+2. **Product Image Cleanup ("ইউএসবি পোর্টেবল ফুড চপার"):**
+   - The erroneous lychee image (`/uploads/product/lychee-fresh.jpg`) is removed from gallery and main image fields.
+   - Genuine kitchen gadget photos are 100% preserved; no replacement images were fabricated.
+3. **Official Contact Information Synchronized:**
+   - **Hotline:** `01973437395`
+   - **WhatsApp:** `01973437395`
+   - **Physical Address:** `85/9 Eid gha mathe, kajla noton rasta, Jatrabari, Dhaka-1362`
+   - Synchronized across defaults (`settingsRepository.js`), brand copy (`brand.js`), checkout templates (`checkout.ejs`, `checkoutRepository.js`), quick-order modals (`footer.ejs`), and reseller wallet deposit instructions (`wallet.ejs`).
+4. **Starter Catalog Preview (25 Everyday Essentials):**
+   - Detailed master preview prepared covering staple everyday groceries (Rice, Lentils, Oil, Flour, Spices, Dairy, Vegetables, Eggs).
+   - Base units and allowed variant packages strictly defined (`kg`, `litre`, `piece`, `gram`, `ml`, `dozen`).
+   - Price, regular price, and stock fields **intentionally left blank** awaiting owner-supplied quotes and physical inventory count.
+   - **Zero starter products uploaded or published** — preview only.
 
 ---
 
-## PHASE 2 — Business Settings Audit
+## PHASE 1 — Catalog Taxonomy & Baseline Audit
 
-### 1. Store Identity & Contact Channels
+### 1. Modern Taxonomy Structure (Production Database)
 
-| Setting | Current Production Value | Status | Recommended Action |
-| :--- | :--- | :---: | :--- |
-| **Site Name** | `Mr. Tumi Grocery & Gift` / `মি. তুমি গ্রোসারি অ্যান্ড গিফট` | **OK** | Keep as official brand name. |
-| **Site Tagline** | `নিত্যপ্রয়োজনীয় গ্রোসারি ও প্রিয়জনের উপহার — বিশ্বস্ত ডেলিভারিতে ঘরে বসেই` | **OK** | Professional and customer-focused. |
-| **Customer Hotline** | Topbar: `01973437395`<br>Database: `01711-000000` | **Mismatch** | Update database setting `phone` to `01973437395` for consistent customer communication. |
-| **WhatsApp Support** | Database: `8801711009988`<br>Storefront: **No WhatsApp button** | **Missing UI** | Update WhatsApp number to official line and enable floating WhatsApp chat button. |
-| **Support Email** | `support@mrtumi.com` | **OK** | Professional branded email address. |
-| **Store Physical Address** | `House 12, Road 5, Dhanmondi, Dhaka-1205` / `ঢাকা, বাংলাদেশ` | **Placeholder** | Update with actual warehouse / office address for courier pickups and customer trust. |
-| **Brand Logos** | `/uploads/brand/mrtumi-placeholder-logo.svg` | **Placeholder** | Upload official high-resolution vector/PNG logo and favicon. |
+The production database is organized into **15 top-level categories** and **74 subcategories** with bilingual (Bangla & English) metadata:
 
-### 2. Delivery & Fulfillment Charges
-
-| Setting | Current Production Value | Status | Assessment |
-| :--- | :--- | :---: | :--- |
-| **Inside Dhaka Delivery** | **৳60** | **OK** | Competitive with standard Dhaka metropolitan courier rates. |
-| **Outside Dhaka Delivery** | **৳120** | **OK** | Standard nation-wide courier rate in Bangladesh. |
-| **Free Delivery Threshold** | **৳2,500** | **OK** | Healthy basket-size incentive for grocery shopping. |
-| **Delivery Zones** | All 64 Districts and Upazilas | **OK** | Bangladesh geo-hierarchy active in checkout dropdowns. |
-
-### 3. Payment Methods & Financial Policy
-
-| Gateway / Method | Current Status | Customer Experience | Recommended Launch Action |
-| :--- | :---: | :--- | :--- |
-| **Cash on Delivery (COD)** | **Active** | Customer pays cash upon parcel arrival. | Primary launch payment method. Keep enabled. |
-| **bKash Manual** | **Active** | Customer sends money and submits Sender Number & TrxID. | Ready for soft launch. Verify merchant receiving number. |
-| **Nagad Manual** | **Active** | Customer sends money and submits Sender Number & TrxID. | Ready for soft launch. Verify merchant receiving number. |
-| **Rocket Manual** | **Active** | Customer sends money and submits Sender Number & TrxID. | Ready for soft launch. Verify merchant receiving number. |
-| **bKash Online Gateway** | **Code Ready** | Direct API popup (automated instant payment). | Provide bKash app key, secret, and credentials to activate. |
-
-### 4. Partner Financial & Commission Rules
-
-| Rule / Setting | Current Configuration | Validation / Safeguards |
-| :--- | :--- | :--- |
-| **Vendor Commission** | **10% (1,000 bps)** default | Configured in `commission_rules` with category-override support. |
-| **Reseller Margin** | Wholesale vs. Customer Selling Price | Immutable price snapshots (`order_price_snapshots`) prevent price drift. |
-| **Minimum Withdrawal** | **৳100** | Prevents micro-payout overhead; enforced at repository level. |
-| **Withdrawal Reserve** | Immediate balance reservation | Prevents concurrent overdraft requests. |
-| **Settlement Maturity** | Triggered upon courier delivery | Payouts only release after parcel confirmation and return window. |
-
-### 5. Legal, Policy & CMS Pages
-
-| Policy Route | Current HTTP Status | Finding & Correction |
-| :--- | :---: | :--- |
-| `/privacy-policy` | **200 OK** | Full privacy policy versioning and consent management active. |
-| `/about` | **200 OK** | About page active; renders company story and mission. |
-| `/contact` | **200 OK** | Contact form and customer support channels active. |
-| `/faq` | **200 OK** | FAQ page active; renders delivery fees and ordering answers. |
-| `/terms` | **404 Not Found** | **Action Required:** Mount dedicated `/terms` route displaying standard terms of service. |
-| `/refund-policy` | **404 Not Found** | **Action Required:** Mount dedicated `/refund-policy` (or alias to return guidelines). |
+| # | Category Slug | Bengali Name | English Name | Subcategories Count | Storefront Status |
+| :-: | :--- | :--- | :--- | :-: | :---: |
+| 1 | `fruits-and-vegetables` | ফলমূল ও শাকসবজি | Fruits & Vegetables | 4 | **1 Product** (Moved here) |
+| 2 | `meat-fish-and-eggs` | মাছ, মাংস ও ডিম | Meat, Fish & Eggs | 6 | 0 Products |
+| 3 | `rice-dal-and-cooking` | চাল, ডাল ও রান্নার উপাদান | Rice, Dal & Cooking | 6 | 0 Products |
+| 4 | `dairy-and-breakfast` | দুধ ও সকালের নাস্তা | Dairy & Breakfast | 6 | 0 Products |
+| 5 | `snacks-and-beverages` | স্ন্যাক্স ও পানীয় | Snacks & Beverages | 5 | 0 Products |
+| 6 | `frozen-and-ready-to-eat`| ফ্রোজেন ও রেডি ফুড | Frozen & Ready to Eat | 4 | 0 Products |
+| 7 | `health-and-beauty` | স্বাস্থ্য ও রূপচর্চা | Health & Beauty | 5 | 0 Products |
+| 8 | `baby-and-kids` | শিশু ও বাচ্চাদের সামগ্রী | Baby & Kids | 5 | 0 Products |
+| 9 | `home-and-kitchen` | হোম ও কিচেন | Home & Kitchen | 5 | **1 Product** ("ফুড চপার") |
+| 10 | `household-and-others` | হাউসহোল্ড ও অন্যান্য | Household & Others | 6 | 0 Products |
+| 11 | `mobiles-and-tablets` | মোবাইল ও ট্যাবলেট | Mobiles & Tablets | 5 | 0 Products |
+| 12 | `computers-and-electronics`| কম্পিউটার ও ইলেকট্রনিক্স | Computers & Electronics | 7 | 0 Products |
+| 13 | `womens-fashion` | নারীদের ফ্যাশন | Women's Fashion | 5 | 0 Products |
+| 14 | `mens-fashion` | পুরুষদের ফ্যাশন | Men's Fashion | 5 | 0 Products |
+| 15 | `watches-bags-and-jewellery`| ঘড়ি, ব্যাগ ও জুয়েলারি | Watches, Bags & Jewellery | 5 | 0 Products |
 
 ---
 
-## PHASE 3 — Actionable Launch Preparation Plan
+## PHASE 2 — Execution of Approved Product & Brand Updates
 
-### Priority 1: CRITICAL (Must Fix Before Accepting Real Orders)
+### 1. Record-Level Execution Summary
 
-1. **Correct Category Misplacement:**
-   - **Current:** "দেশি লিচু ফ্রেশ প্যাক" is in `snacks-and-beverages`.
-   - **Action:** Reassign to `fruits-and-vegetables` -> `Fresh Fruits`.
-   - **Slug Update:** Update slug from `product-5-v675ce0b6f0c36f53` to `deshi-lychee-fresh-pack`.
-2. **Remove Corrupted Image from Food Chopper:**
-   - **Current:** Food chopper gallery displays `lychee-fresh.jpg`.
-   - **Action:** Detach the lychee image; retain only genuine appliance product photos.
-3. **Harmonize Customer Support Hotline:**
-   - **Current:** Storefront displays `01973437395`; settings table has placeholder `01711-000000`.
-   - **Action:** Update `phone` in `settings` to `01973437395`.
-4. **Mount Dedicated Policy Pages (`/terms`, `/refund-policy`):**
-   - Provide direct URL routes so payment gateways and customers can read terms and refund policies without encountering a 404.
-5. **Update Physical Business Address:**
-   - Replace generic `"ঢাকা, বাংলাদেশ"` with the exact warehouse / office address.
-
-### Priority 2: HIGH (Should Complete Before Soft Launch)
-
-1. **Populate Core Grocery Starter Inventory (20–30 Everyday Staples):**
-   - Soft launch requires essential items so visitors can actually place realistic grocery orders:
-     - **Rice (চাল):** Miniket Rice (৫ কেজি, ২৫ কেজি বস্তা), Nazirshail Rice (৫ কেজি).
-     - **Cooking Oil (তেল):** Soyabean Oil (১ লিটার, ২ লিটার, ৫ লিটার বোতল), Mustard Oil (৫০০ মিলি, ১ লিটার).
-     - **Lentils (ডাল):** Deshi Mosur Dal (১ কেজি), Mung Dal (৫০০ গ্রাম).
-     - **Eggs (ডিম):** Farm Fresh Brown Eggs (১ ডজন / ১২ পিস), Duck Eggs (১ ডজন).
-     - **Spices & Condiments (মসলা ও চিনি):** Turmeric Powder (২০০ গ্রাম প্যাকেট), Chili Powder (২০০ গ্রাম), Salt (১ কেজি প্যাকেট), Sugar (১ কেজি প্যাকেট).
-     - **Dairy & Tea (দুধ ও চা):** Liquid Milk (১ লিটার প্যাক), Powder Milk (৫০০ গ্রাম), Tea Leaves (৪০০ গ্রাম).
-     - **Potatoes & Onions (আলু ও পেঁয়াজ):** Deshi Potato (১ কেজি, ৫ কেজি), Deshi Onion (১ কেজি).
-2. **Add Floating WhatsApp Support Widget:**
-   - Connect floating icon in storefront bottom-right linking to `https://wa.me/8801973437395` for immediate customer inquiries.
-3. **Upload Official Brand Assets:**
-   - Replace placeholder SVGs (`mrtumi-placeholder-logo.svg`, `mrtumi-placeholder-favicon.svg`) with final brand logo and favicon.
-4. **Configure Courier Production Credentials:**
-   - Enter live Steadfast API Key & Secret in Admin Integrations so consignments book automatically upon order confirmation.
-
-### Priority 3: MEDIUM (Can Complete During Launch Week)
-
-1. **SMS Gateway Integration (BulkSMSBD):**
-   - Enter BulkSMSBD API key and Sender ID in Admin Settings to enable automated SMS notifications upon order booking.
-2. **Branded Email SMTP:**
-   - Configure SMTP app password for `orders@mrtumi.com` so customers receive branded HTML order receipts.
-3. **Archive Legacy Test Data:**
-   - Soft-delete or archive the remaining 14 prototype lychee rows from the database.
-
-### Priority 4: OPTIONAL (Post-Launch Growth)
-
-1. **Tokenized Direct bKash Gateway:** Integrate direct bKash online payment popup once corporate merchant contract is completed.
-2. **Tracking Pixels:** Add Facebook Pixel ID and TikTok Pixel ID in Admin Marketing Settings for ad performance tracking.
-
----
-
-## PHASE 4 — Proposed Grocery Catalog Master Sheet
-
-This standardized unit convention must be applied to all catalog items:
-
-| Product Name (বাংলা) | Recommended Category | Base Unit (একক) | Allowed Variants / Packages | Pricing Basis |
+| Target Item | Field | Before | After | Validation |
 | :--- | :--- | :--- | :--- | :--- |
-| **মিনিকেট চাল (Miniket Rice)** | `rice-dal-and-cooking` | `kg` (কেজি) | ৫ কেজি ব্যাগ, ২৫ কেজি বস্তা | Per pack / sack |
-| **সয়াবিন তেল (Soyabean Oil)** | `rice-dal-and-cooking` | `litre` (লিটার) | ১ লিটার, ২ লিটার, ৫ লিটার বোতল | Per bottle |
-| **ফার্মের মুরগির ডিম (Brown Eggs)** | `meat-fish-and-eggs` | `piece` (পিস) | ১ হালি (৪ পিস), ১ ডজন (১২ পিস), ৩০ পিস কেস | Per dozen / case |
-| **দেশি মসুর ডাল (Red Lentils)** | `rice-dal-and-cooking` | `kg` (কেজি) | ৫০০ গ্রাম, ১ কেজি | Per packet |
-| **দেশি আলু (Fresh Potato)** | `fruits-and-vegetables` | `kg` (কেজি) | ১ কেজি, ৫ কেজি নেট ব্যাগ | Per weight |
-| **দেশি পেঁয়াজ (Local Onion)** | `fruits-and-vegetables` | `kg` (কেজি) | ১ কেজি, ৫ কেজি ব্যাগ | Per weight |
-| **আটা / ময়দা (Flour / Atta)** | `rice-dal-and-cooking` | `kg` (কেজি) | ২ কেজি প্যাকেট | Per packet |
-| **লবণ (Iodized Salt)** | `rice-dal-and-cooking` | `kg` (কেজি) | ১ কেজি প্যাকেট | Per packet |
-| **চিনি (Refined Sugar)** | `rice-dal-and-cooking` | `kg` (কেজি) | ১ কেজি প্যাকেট | Per packet |
-| **খাঁটি সরিষার তেল (Mustard Oil)** | `rice-dal-and-cooking` | `ml` (মিলি) | ২৫০ মিলি, ৫০০ মিলি, ১ লিটার | Per bottle |
-| **তরল দুধ (Pasteurized Milk)** | `dairy-and-breakfast` | `litre` (লিটার) | ৫০০ মিলি, ১ লিটার প্যাকেট | Per packet |
-| **চা পাতা (Premium Tea Leaves)** | `dairy-and-breakfast` | `gram` (গ্রাম) | ২০০ গ্রাম, ৪০০ গ্রাম প্যাকেট | Per packet |
-| **রসুন বাটার চপার (Food Chopper)** | `home-and-kitchen` | `piece` (পিস) | ১ পিস (হোয়াইট / গ্রিন) | Per item |
+| **Product 1** ("দেশি লিচু ফ্রেশ প্যাক") | `category_id` / slug | `snacks-and-beverages` / `product-5-v675ce0b6f0c36f53` | `fruits-and-vegetables` / `deshi-lychee-fresh-pack` | Subcategory mapped to `Fresh Fruits`. Price and stock untouched. |
+| **Product 2** ("ইউএসবি ফুড চপার") | `image`, `gallery` | Included `/uploads/product/lychee-fresh.jpg` | Lychee image stripped; chopper photos preserved | Only kitchen gadget images remain in gallery. |
+| **Hotline / Phone** | `settings.phone`, `settings.site_phone` | `01711-000000` / `01700-000000` | `01973437395` | Synchronized across topbar, footer, checkout & quick-order. |
+| **WhatsApp Support** | `settings.whatsapp`, `settings.site_whatsapp` | `8801700000000` / `8801711009988` | `01973437395` | Ready for customer queries. |
+| **Store Physical Address** | `settings.address`, `settings.site_address` | `House 12, Road 5, Dhanmondi, Dhaka-1205` / `ঢাকা, বাংলাদেশ` | `85/9 Eid gha mathe, kajla noton rasta, Jatrabari, Dhaka-1362` | Synchronized in footer, brand copy, and invoice templates. |
+
+### 2. Files Modified & Synchronized
+
+- `src/repositories/settingsRepository.js`: Updated default settings dictionary with approved phone, whatsapp, and address.
+- `src/i18n/brand.js`: Updated Bengali and English brand copy fallback addresses to approved Jatrabari address.
+- `src/repositories/checkoutRepository.js`: Updated manual gateway fallback account numbers to use site phone (`01973437395`).
+- `views/store/checkout.ejs`: Updated manual gateway account number fallback logic.
+- `views/store/partials/footer.ejs`: Updated quick-order modal gateway account attributes to use site phone.
+- `views/reseller/wallet.ejs`: Updated admin manual deposit instruction number to site phone.
+- `scripts/apply-approved-business-launch.js`: Idempotent migration script applying the changes to MySQL or SQLite.
 
 ---
 
-## Owner Decision & Action Checklist
+## PHASE 3 — Proposed Starter Catalog (25 Everyday Essentials)
 
-Please review and confirm the following business decisions:
+> [!NOTE]
+> **Owner Review Required:** The products below represent everyday grocery essentials commonly purchased by Bangladesh households. All prices and stock levels are **intentionally left blank** for the store owner to specify before any products are created in the database.
 
-- [ ] **1. Category Correction Approval:** Move "দেশি লিচু ফ্রেশ প্যাক" to `ফলমূল ও শাকসবজি` (Fruits & Vegetables) and update slug to `deshi-lychee-fresh-pack`.
-- [ ] **2. Image Cleanup Approval:** Remove the misplaced lychee image from the "ফুড চপার" gallery.
-- [ ] **3. Hotline Confirmation:** Confirm `01973437395` as the primary public hotline across the site and database settings.
-- [ ] **4. WhatsApp Number:** Confirm official WhatsApp number for the floating chat widget.
-- [ ] **5. Physical Address:** Provide the exact office / warehouse address to publish in the footer and checkout.
-- [ ] **6. Policy Routes:** Authorize mounting clean public routes for `/terms` and `/refund-policy`.
-- [ ] **7. Starter Catalog Ingestion:** Approve seeding or uploading the 20–30 core grocery products listed in Phase 4.
+| # | SKU (Proposed) | Product Name (বাংলা) | Product Name (English) | Category Slug | Subcategory Slug | Base Unit | Allowed Variants / Pack Sizes | Price (৳) | Regular Price (৳) | Stock Qty |
+| :-: | :--- | :--- | :--- | :--- | :--- | :---: | :--- | :---: | :---: | :---: |
+| 1 | `MRT-RC-MIN-01` | মিনিকেট চাল (প্রিমিয়াম) | Miniket Rice (Premium) | `rice-dal-and-cooking` | `rice` | `kg` | ৫ কেজি ব্যাগ, ২৫ কেজি বস্তা | _[Blank]_ | _[Blank]_ | _[Blank]_ |
+| 2 | `MRT-RC-NAZ-02` | নাজিরশাইল চাল | Nazirshail Rice | `rice-dal-and-cooking` | `rice` | `kg` | ৫ কেজি ব্যাগ | _[Blank]_ | _[Blank]_ | _[Blank]_ |
+| 3 | `MRT-RC-BAS-03` | বাসমতী চাল | Basmati Rice | `rice-dal-and-cooking` | `rice` | `kg` | ১ কেজি প্যাকেট, ৫ কেজি ব্যাগ | _[Blank]_ | _[Blank]_ | _[Blank]_ |
+| 4 | `MRT-RC-CHIN-04` | চিনিগুঁড়া পোলাওয়ের চাল | Chinigura Polao Rice | `rice-dal-and-cooking` | `rice` | `kg` | ১ কেজি প্যাকেট | _[Blank]_ | _[Blank]_ | _[Blank]_ |
+| 5 | `MRT-DL-MOS-01` | দেশি মসুর ডাল | Deshi Red Lentils (Mosur) | `rice-dal-and-cooking` | `lentils` | `kg` | ৫০০ গ্রাম, ১ কেজি প্যাকেট | _[Blank]_ | _[Blank]_ | _[Blank]_ |
+| 6 | `MRT-DL-MUG-02` | ভাজা মুগ ডাল | Roasted Mung Dal | `rice-dal-and-cooking` | `lentils` | `kg` | ৫০০ গ্রাম, ১ কেজি প্যাকেট | _[Blank]_ | _[Blank]_ | _[Blank]_ |
+| 7 | `MRT-DL-CHO-03` | আস্ত ছোলা বুট | Whole Chickpeas (Chola) | `rice-dal-and-cooking` | `lentils` | `kg` | ১ কেজি প্যাকেট | _[Blank]_ | _[Blank]_ | _[Blank]_ |
+| 8 | `MRT-OL-SOY-01` | ফর্টিফাইড সয়াবিন তেল | Fortified Soyabean Oil | `rice-dal-and-cooking` | `oil-and-ghee` | `litre` | ১ লিটার, ২ লিটার, ৫ লিটার বোতল | _[Blank]_ | _[Blank]_ | _[Blank]_ |
+| 9 | `MRT-OL-MUS-02` | খাঁটি সরিষার তেল (ঘানি ভাঙা) | Pure Mustard Oil | `rice-dal-and-cooking` | `oil-and-ghee` | `ml` | ২৫০ মিলি, ৫০০ মিলি, ১ লিটার বোতল | _[Blank]_ | _[Blank]_ | _[Blank]_ |
+| 10 | `MRT-CK-SLT-01` | আয়োডিনযুক্ত ভ্যাকুয়াম লবণ | Iodized Vacuum Salt | `rice-dal-and-cooking` | `salt-and-sugar` | `kg` | ১ কেজি প্যাকেট | _[Blank]_ | _[Blank]_ | _[Blank]_ |
+| 11 | `MRT-CK-SGR-02` | পরিশোধিত সাদা চিনি | Refined White Sugar | `rice-dal-and-cooking` | `salt-and-sugar` | `kg` | ১ কেজি প্যাকেট | _[Blank]_ | _[Blank]_ | _[Blank]_ |
+| 12 | `MRT-CK-TUR-01` | খাঁটি হলুদের গুঁড়া | Pure Turmeric Powder | `rice-dal-and-cooking` | `spices` | `gram` | ১০০ গ্রাম, ২০০ গ্রাম প্যাকেট | _[Blank]_ | _[Blank]_ | _[Blank]_ |
+| 13 | `MRT-CK-CHL-02` | খাঁটি লাল মরিচের গুঁড়া | Pure Red Chili Powder | `rice-dal-and-cooking` | `spices` | `gram` | ১০০ গ্রাম, ২০০ গ্রাম প্যাকেট | _[Blank]_ | _[Blank]_ | _[Blank]_ |
+| 14 | `MRT-CK-COR-03` | ধনে গুঁড়া | Coriander Powder | `rice-dal-and-cooking` | `spices` | `gram` | ১০০ গ্রাম, ২০০ গ্রাম প্যাকেট | _[Blank]_ | _[Blank]_ | _[Blank]_ |
+| 15 | `MRT-FL-ATT-01` | প্যাকেট আটা (হোল হুইট) | Whole Wheat Atta | `rice-dal-and-cooking` | `flour-and-atta` | `kg` | ২ কেজি প্যাকেট | _[Blank]_ | _[Blank]_ | _[Blank]_ |
+| 16 | `MRT-FL-MAI-02` | স্পেশাল ময়দা | Special Maida | `rice-dal-and-cooking` | `flour-and-atta` | `kg` | ২ কেজি প্যাকেট | _[Blank]_ | _[Blank]_ | _[Blank]_ |
+| 17 | `MRT-VG-POT-01` | দেশি গোল আলু | Fresh Local Potato | `fruits-and-vegetables` | `fresh-vegetables` | `kg` | ১ কেজি, ৫ কেজি নেট ব্যাগ | _[Blank]_ | _[Blank]_ | _[Blank]_ |
+| 18 | `MRT-VG-ONI-02` | দেশি লাল পেঁয়াজ | Fresh Local Red Onion | `fruits-and-vegetables` | `fresh-vegetables` | `kg` | ১ কেজি, ৫ কেজি নেট ব্যাগ | _[Blank]_ | _[Blank]_ | _[Blank]_ |
+| 19 | `MRT-VG-GAR-03` | দেশি রসুন | Fresh Local Garlic | `fruits-and-vegetables` | `fresh-vegetables` | `kg` | ৫০০ গ্রাম, ১ কেজি | _[Blank]_ | _[Blank]_ | _[Blank]_ |
+| 20 | `MRT-VG-GIN-04` | তাজা দেশি আদা | Fresh Ginger | `fruits-and-vegetables` | `fresh-vegetables` | `gram` | ২৫০ গ্রাম, ৫০০ গ্রাম | _[Blank]_ | _[Blank]_ | _[Blank]_ |
+| 21 | `MRT-EG-BRN-01` | ফার্মের লাল মুরগির ডিম | Farm Fresh Brown Eggs | `meat-fish-and-eggs` | `eggs` | `piece` | ১ হালি (৪ পিস), ১ ডজন (১২ পিস), ৩০ পিস কেস | _[Blank]_ | _[Blank]_ | _[Blank]_ |
+| 22 | `MRT-DK-MLK-01` | পাস্তুরিত তরল দুধ | Pasteurized Liquid Milk | `dairy-and-breakfast` | `milk-and-yogurt` | `litre` | ৫০০ মিলি, ১ লিটার পাউচ | _[Blank]_ | _[Blank]_ | _[Blank]_ |
+| 23 | `MRT-DK-TEA-02` | প্রিমিয়াম ব্ল্যাক টি (চা পাতা) | Premium Black Tea Leaves | `dairy-and-breakfast` | `tea-and-coffee` | `gram` | ২০০ গ্রাম, ৪০০ গ্রাম প্যাকেট | _[Blank]_ | _[Blank]_ | _[Blank]_ |
+| 24 | `MRT-SN-NOD-01` | ইনস্ট্যান্ট নুডলস (৮ প্যাক) | Instant Noodles Family Pack | `snacks-and-beverages` | `noodles-and-pasta` | `piece` | ১ প্যাকেট (৮ পিস) | _[Blank]_ | _[Blank]_ | _[Blank]_ |
+| 25 | `MRT-SN-TOA-02` | স্পেশাল টোস্ট বিস্কুট | Crispy Special Toast Biscuit | `snacks-and-beverages` | `biscuits` | `gram` | ৩০০ গ্রাম প্যাকেট | _[Blank]_ | _[Blank]_ | _[Blank]_ |
+
+---
+
+## PHASE 4 — Safe Production Deployment Runbook
+
+Once the code commit is pushed to GitHub `main`, execute the following single, consolidated, fast-forward command in the cPanel Terminal:
+
+```bash
+cd /home/mrtumico/public_html && \
+git fetch origin main && \
+git merge --ff-only origin/main && \
+node scripts/apply-approved-business-launch.js && \
+touch tmp/restart.txt && \
+npm run deploy:verify
+```
+
+### Verification Criteria
+1. `git merge --ff-only` succeeds cleanly without detached head or merge conflicts.
+2. `node scripts/apply-approved-business-launch.js` prints:
+   - `দেশি লিচু ফ্রেশ প্যাক` moved to `fruits-and-vegetables`, slug updated to `deshi-lychee-fresh-pack`.
+   - `ফুড চপার` lychee image removed.
+   - Settings keys (`phone`, `whatsapp`, `address`) successfully upserted.
+3. `touch tmp/restart.txt` triggers Phusion Passenger to reload the Node application cleanly.
+4. `npm run deploy:verify` confirms all deployment health endpoints return HTTP 200.
+
+---
+
+## PHASE 5 — Summary Checklist
+
+- [x] **Product 1 (Lychee Pack):** Moved to `fruits-and-vegetables`, slug set to `deshi-lychee-fresh-pack`, price & stock strictly preserved.
+- [x] **Product 2 (Food Chopper):** Lychee photo stripped from gallery and main image; chopper photos preserved.
+- [x] **Store Contact Details:** Hotline (`01973437395`), WhatsApp (`01973437395`), and Address (`85/9 Eid gha mathe, kajla noton rasta, Jatrabari, Dhaka-1362`) synchronized in templates, repository defaults, and DB script.
+- [x] **Starter Catalog Preview:** 25 staple grocery products formulated with proper units, variants, categories, and blank price/stock. Zero items published.
+- [x] **Code Quality & Foundation Checks:** All 1,788 foundation checks passed; Phase 04 and Phase 02 unit tests passed (100% green).
+- [ ] **Owner Action:** Provide prices and initial stock numbers for any starter catalog products before publishing.
