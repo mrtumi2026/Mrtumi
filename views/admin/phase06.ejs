@@ -36,7 +36,28 @@
       <div class="col-md-3"><label class="form-label" for="p-regular"><%= locale === 'en' ? 'Regular price (BDT)' : 'নিয়মিত মূল্য (টাকা)' %></label><input class="form-control" id="p-regular" name="regular_price_bdt" inputmode="decimal" placeholder="0.00" required></div>
       <div class="col-md-3"><label class="form-label" for="p-sale"><%= locale === 'en' ? 'Sale price (BDT)' : 'বিক্রয় মূল্য (টাকা)' %></label><input class="form-control" id="p-sale" name="sale_price_bdt" inputmode="decimal" placeholder="0.00" required></div>
       <div class="col-md-3"><label class="form-label" for="p-cost"><%= locale === 'en' ? 'Cost price (BDT)' : 'ক্রয়মূল্য (টাকা)' %></label><input class="form-control" id="p-cost" name="cost_price_bdt" inputmode="decimal" placeholder="0.00" required></div>
-      <div class="col-md-3"><label class="form-label" for="p-unit"><%= t('catalogAdmin.unitLabel') %></label><input class="form-control" id="p-unit" name="unit_label" value="1 pc" maxlength="50" required></div>
+      <div class="col-md-3"><label class="form-label" for="p-unit"><%= t('catalogAdmin.unitLabel') %></label><input class="form-control" id="p-unit" name="unit_label" list="standard-units-list" value="1 pc" maxlength="50" required placeholder="1 pc, 1 kg, 1 dozen...">
+        <datalist id="standard-units-list">
+          <option value="1 pc"><%= locale==='en'?'1 Piece (১টি / ১ পিস)':'১টি / ১ পিস (1 Piece)' %></option>
+          <option value="1 packet"><%= locale==='en'?'1 Packet (১ প্যাকেট)':'১ প্যাকেট (1 Packet)' %></option>
+          <option value="1 box"><%= locale==='en'?'1 Box (১ বক্স)':'১ বক্স (1 Box)' %></option>
+          <option value="1 dozen"><%= locale==='en'?'1 Dozen (১ ডজন - ১২টি)':'১ ডজন - ১২টি (1 Dozen)' %></option>
+          <option value="1 hali"><%= locale==='en'?'1 Hali (১ হালি - ৪টি)':'১ হালি - ৪টি (1 Hali)' %></option>
+          <option value="1 pon"><%= locale==='en'?'1 Pon (১ পোঁন - ৮০টি)':'১ পোঁন - ৮০টি (1 Pon)' %></option>
+          <option value="100 pcs"><%= locale==='en'?'100 Pieces (১০০টি)':'১০০টি (100 Pieces)' %></option>
+          <option value="1 kg"><%= locale==='en'?'1 Kilogram (১ কেজি)':'১ কেজি (1 kg)' %></option>
+          <option value="500 g"><%= locale==='en'?'500 Gram (৫০০ গ্রাম)':'৫০০ গ্রাম (500 g)' %></option>
+          <option value="250 g"><%= locale==='en'?'250 Gram (২৫০ গ্রাম)':'২৫০ গ্রাম (250 g)' %></option>
+          <option value="100 g"><%= locale==='en'?'100 Gram (১০০ গ্রাম)':'১০০ গ্রাম (100 g)' %></option>
+          <option value="5 kg"><%= locale==='en'?'5 Kilogram (৫ কেজি)':'৫ কেজি (5 kg)' %></option>
+          <option value="10 kg"><%= locale==='en'?'10 Kilogram (১০ কেজি)':'১০ কেজি (10 kg)' %></option>
+          <option value="1 L"><%= locale==='en'?'1 Litre (১ লিটার)':'১ লিটার (1 Litre)' %></option>
+          <option value="500 ml"><%= locale==='en'?'500 Millilitre (৫০০ মিলি)':'৫০০ মিলি (500 ml)' %></option>
+          <option value="250 ml"><%= locale==='en'?'250 Millilitre (২৫০ মিলি)':'২৫০ মিলি (250 ml)' %></option>
+          <option value="2 L"><%= locale==='en'?'2 Litre (২ লিটার)':'২ লিটার (2 Litre)' %></option>
+          <option value="5 L"><%= locale==='en'?'5 Litre (৫ লিটার)':'৫ লিটার (5 Litre)' %></option>
+        </datalist>
+      </div>
       <div class="col-md-3"><label class="form-label" for="p-stock"><%= t('catalogAdmin.openingStockLabel') %></label><input class="form-control" id="p-stock" name="opening_stock" type="number" min="0" step="1"></div>
       <div class="col-md-3"><label class="form-label" for="p-threshold"><%= t('catalogAdmin.lowStockThreshold') %></label><input class="form-control" id="p-threshold" name="low_stock_threshold" type="number" min="0" value="0"></div>
       <div class="col-md-3"><label class="form-label" for="p-wholesale"><%= locale === 'en' ? 'Wholesale price (BDT)' : 'পাইকারি মূল্য (টাকা)' %></label><input class="form-control" id="p-wholesale" name="wholesale_price_bdt" inputmode="decimal" value="0"></div>

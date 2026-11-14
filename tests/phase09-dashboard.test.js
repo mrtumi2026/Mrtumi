@@ -145,8 +145,8 @@ describe('Phase 09 dashboard repository contract', () => {
 
   test('MySQL catalog routes delegate taxonomy, review and product operations and protect retained references',()=>{
     const catalog=require('../src/repositories/adminCatalogRepository');
-    for(const method of ['listProducts','listTaxonomy','createTaxonomy','toggleProductStatus','approvePendingVendorProduct','listReviews','createReview','approveReview'])assert.equal(typeof catalog[method],'function');
-    for(const method of ['deleteProduct','deleteTaxonomy','deleteReview'])assert.equal(catalog[method],undefined);
+    for(const method of ['listProducts','listTaxonomy','createTaxonomy','updateTaxonomy','toggleTaxonomyStatus','deleteTaxonomy','toggleProductStatus','approvePendingVendorProduct','listReviews','createReview','approveReview'])assert.equal(typeof catalog[method],'function');
+    for(const method of ['deleteProduct','deleteReview'])assert.equal(catalog[method],undefined);
     const routes=fs.readFileSync(path.join(__dirname,'../src/routes/adminCatalog.js'),'utf8');
     assert.match(routes,/catalogRepo\.listTaxonomy\('categories'\)/);assert.match(routes,/catalogRepo\.createTaxonomy\('childcategories'/);
     assert.match(routes,/catalogRepo\.listReviews/);assert.match(routes,/catalogRepo\.approveReview/);

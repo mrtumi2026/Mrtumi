@@ -257,7 +257,10 @@ router.get('/admin/categories/manage', asyncHandler(async (_req, res) => {
     pageTitle: 'Product Categories',
     subtitle: 'প্রোডাক্ট ক্যাটাগরি তৈরি, সম্পাদনা ও সাজিয়ে নিন',
     createAction: '/admin/categories/create',
-    deletePrefix: mysqlMode() ? null : '/admin/categories/delete',
+    updatePrefix: '/admin/categories/update',
+    customActionPrefix: '/admin/categories/toggle',
+    customActionToggleStatus: true,
+    deletePrefix: '/admin/categories/delete',
     columns: [
       { key: 'id', label: '#' },
       { key: 'icon', label: 'Icon' },
@@ -294,12 +297,52 @@ router.post('/admin/categories/create', asyncHandler(async (req, res) => {
   res.redirect('/admin/categories/manage');
 }));
 
-router.post('/admin/categories/delete/:id', (req, res, next) => {
-  if(mysqlMode())return next(new ConflictError('Category deletion is disabled to preserve product and taxonomy references.'));
-  db.run('DELETE FROM categories WHERE id = ?', req.params.id);
+router.post('/admin/categories/update/:id', asyncHandler(async (req, res) => {
+  if (mysqlMode()) {
+    await catalogRepo.updateTaxonomy('categories', req.params.id, req.body, actor(req));
+    req.adminDomainAudit = true;
+  } else {
+    const { name, slug, icon, sort_order } = req.body;
+    db.run(
+      'UPDATE categories SET name=?, slug=?, icon=?, sort_order=? WHERE id=?',
+      name,
+      slug ? makeSlug(slug) : makeSlug(name),
+      icon || '🍒',
+      Number(sort_order || 1),
+      req.params.id
+    );
+  }
+  req.flash('success', 'ক্যাটাগরি তথ্য সফলভাবে আপডেট হয়েছে!');
+  res.redirect('/admin/categories/manage');
+}));
+
+router.post('/admin/categories/toggle/:id', asyncHandler(async (req, res) => {
+  if (mysqlMode()) {
+    await catalogRepo.toggleTaxonomyStatus('categories', req.params.id, actor(req));
+    req.adminDomainAudit = true;
+  } else {
+    const c = db.get('SELECT id, status FROM categories WHERE id=?', req.params.id);
+    if (c) db.run('UPDATE categories SET status=? WHERE id=?', c.status ? 0 : 1, c.id);
+  }
+  req.flash('success', 'ক্যাটাগরি স্ট্যাটাস পরিবর্তন হয়েছে।');
+  res.redirect('/admin/categories/manage');
+}));
+
+router.post('/admin/categories/delete/:id', asyncHandler(async (req, res) => {
+  if (mysqlMode()) {
+    await catalogRepo.deleteTaxonomy('categories', req.params.id, actor(req));
+    req.adminDomainAudit = true;
+  } else {
+    const sub = db.get('SELECT COUNT(*) AS total FROM subcategories WHERE category_id=?', req.params.id);
+    const prod = db.get('SELECT COUNT(*) AS total FROM products WHERE category_id=?', req.params.id);
+    if ((sub && sub.total > 0) || (prod && prod.total > 0)) {
+      throw new ConflictError('Cannot delete category: products or subcategories depend on it. Deactivate it instead.');
+    }
+    db.run('DELETE FROM categories WHERE id = ?', req.params.id);
+  }
   req.flash('success', 'ক্যাটাগরি মুছে ফেলা হয়েছে।');
   res.redirect('/admin/categories/manage');
-});
+}));
 
 // Subcategories
 router.get('/admin/subcategories/manage', asyncHandler(async (_req, res) => {
@@ -314,7 +357,10 @@ router.get('/admin/subcategories/manage', asyncHandler(async (_req, res) => {
     pageTitle: 'Subcategories',
     subtitle: 'ক্যাটাগরির অধীনে সাব-ক্যাটাগরি ব্যবস্থাপনা',
     createAction: '/admin/subcategories/create',
-    deletePrefix: mysqlMode() ? null : '/admin/subcategories/delete',
+    updatePrefix: '/admin/subcategories/update',
+    customActionPrefix: '/admin/subcategories/toggle',
+    customActionToggleStatus: true,
+    deletePrefix: '/admin/subcategories/delete',
     columns: [
       { key: 'id', label: '#' },
       { key: 'name', label: 'Subcategory Name' },
@@ -332,6 +378,7 @@ router.get('/admin/subcategories/manage', asyncHandler(async (_req, res) => {
       },
       { name: 'name', label: 'Subcategory Name (বাংলা)', type: 'text', required: true },
       { name: 'name_en', label: 'Subcategory Name (English)', type: 'text' },
+      { name: 'slug', label: 'URL Slug (optional)', type: 'text' },
     ],
     rows,
   });
@@ -352,12 +399,50 @@ router.post('/admin/subcategories/create', asyncHandler(async (req, res) => {
   res.redirect('/admin/subcategories/manage');
 }));
 
-router.post('/admin/subcategories/delete/:id', (req, res, next) => {
-  if(mysqlMode())return next(new ConflictError('Subcategory deletion is disabled to preserve product and taxonomy references.'));
-  db.run('DELETE FROM subcategories WHERE id = ?', req.params.id);
-  req.flash('success', 'সাব-ক্যাটাগরি ডিলিট হয়েছে।');
+router.post('/admin/subcategories/update/:id', asyncHandler(async (req, res) => {
+  if (mysqlMode()) {
+    await catalogRepo.updateTaxonomy('subcategories', req.params.id, req.body, actor(req));
+    req.adminDomainAudit = true;
+  } else {
+    db.run(
+      'UPDATE subcategories SET category_id=?, name=?, slug=? WHERE id=?',
+      Number(req.body.category_id || 1),
+      req.body.name,
+      req.body.slug ? makeSlug(req.body.slug) : makeSlug(req.body.name),
+      req.params.id
+    );
+  }
+  req.flash('success', 'সাব-ক্যাটাগরি তথ্য আপডেট হয়েছে।');
   res.redirect('/admin/subcategories/manage');
-});
+}));
+
+router.post('/admin/subcategories/toggle/:id', asyncHandler(async (req, res) => {
+  if (mysqlMode()) {
+    await catalogRepo.toggleTaxonomyStatus('subcategories', req.params.id, actor(req));
+    req.adminDomainAudit = true;
+  } else {
+    const s = db.get('SELECT id, status FROM subcategories WHERE id=?', req.params.id);
+    if (s) db.run('UPDATE subcategories SET status=? WHERE id=?', s.status ? 0 : 1, s.id);
+  }
+  req.flash('success', 'সাব-ক্যাটাগরি স্ট্যাটাস পরিবর্তন হয়েছে।');
+  res.redirect('/admin/subcategories/manage');
+}));
+
+router.post('/admin/subcategories/delete/:id', asyncHandler(async (req, res) => {
+  if (mysqlMode()) {
+    await catalogRepo.deleteTaxonomy('subcategories', req.params.id, actor(req));
+    req.adminDomainAudit = true;
+  } else {
+    const ch = db.get('SELECT COUNT(*) AS total FROM childcategories WHERE subcategory_id=?', req.params.id);
+    const prod = db.get('SELECT COUNT(*) AS total FROM products WHERE subcategory_id=?', req.params.id);
+    if ((ch && ch.total > 0) || (prod && prod.total > 0)) {
+      throw new ConflictError('Cannot delete subcategory: products or childcategories depend on it. Deactivate it instead.');
+    }
+    db.run('DELETE FROM subcategories WHERE id = ?', req.params.id);
+  }
+  req.flash('success', 'সাব-ক্যাটাগরি মুছে ফেলা হয়েছে।');
+  res.redirect('/admin/subcategories/manage');
+}));
 
 // Childcategories
 router.get('/admin/childcategories/manage', asyncHandler(async (_req, res) => {
@@ -372,7 +457,10 @@ router.get('/admin/childcategories/manage', asyncHandler(async (_req, res) => {
     pageTitle: 'Childcategories',
     subtitle: 'সাব-ক্যাটাগরির অধীনে চাইল্ড-ক্যাটাগরি ব্যবস্থাপনা',
     createAction: '/admin/childcategories/create',
-    deletePrefix: mysqlMode() ? null : '/admin/childcategories/delete',
+    updatePrefix: '/admin/childcategories/update',
+    customActionPrefix: '/admin/childcategories/toggle',
+    customActionToggleStatus: true,
+    deletePrefix: '/admin/childcategories/delete',
     columns: [
       { key: 'id', label: '#' },
       { key: 'name', label: 'Childcategory Name' },
@@ -390,6 +478,7 @@ router.get('/admin/childcategories/manage', asyncHandler(async (_req, res) => {
       },
       { name: 'name', label: 'Childcategory Name (বাংলা)', type: 'text', required: true },
       { name: 'name_en', label: 'Childcategory Name (English)', type: 'text' },
+      { name: 'slug', label: 'URL Slug (optional)', type: 'text' },
     ],
     rows,
   });
@@ -410,12 +499,49 @@ router.post('/admin/childcategories/create', asyncHandler(async (req, res) => {
   res.redirect('/admin/childcategories/manage');
 }));
 
-router.post('/admin/childcategories/delete/:id', (req, res, next) => {
-  if(mysqlMode())return next(new ConflictError('Childcategory deletion is disabled to preserve product and taxonomy references.'));
-  db.run('DELETE FROM childcategories WHERE id = ?', req.params.id);
-  req.flash('success', 'চাইল্ড-ক্যাটাগরি ডিলিট হয়েছে।');
+router.post('/admin/childcategories/update/:id', asyncHandler(async (req, res) => {
+  if (mysqlMode()) {
+    await catalogRepo.updateTaxonomy('childcategories', req.params.id, req.body, actor(req));
+    req.adminDomainAudit = true;
+  } else {
+    db.run(
+      'UPDATE childcategories SET subcategory_id=?, name=?, slug=? WHERE id=?',
+      Number(req.body.subcategory_id || 1),
+      req.body.name,
+      req.body.slug ? makeSlug(req.body.slug) : makeSlug(req.body.name),
+      req.params.id
+    );
+  }
+  req.flash('success', 'চাইল্ড-ক্যাটাগরি তথ্য আপডেট হয়েছে।');
   res.redirect('/admin/childcategories/manage');
-});
+}));
+
+router.post('/admin/childcategories/toggle/:id', asyncHandler(async (req, res) => {
+  if (mysqlMode()) {
+    await catalogRepo.toggleTaxonomyStatus('childcategories', req.params.id, actor(req));
+    req.adminDomainAudit = true;
+  } else {
+    const ch = db.get('SELECT id, status FROM childcategories WHERE id=?', req.params.id);
+    if (ch) db.run('UPDATE childcategories SET status=? WHERE id=?', ch.status ? 0 : 1, ch.id);
+  }
+  req.flash('success', 'চাইল্ড-ক্যাটাগরি স্ট্যাটাস পরিবর্তন হয়েছে।');
+  res.redirect('/admin/childcategories/manage');
+}));
+
+router.post('/admin/childcategories/delete/:id', asyncHandler(async (req, res) => {
+  if (mysqlMode()) {
+    await catalogRepo.deleteTaxonomy('childcategories', req.params.id, actor(req));
+    req.adminDomainAudit = true;
+  } else {
+    const prod = db.get('SELECT COUNT(*) AS total FROM products WHERE childcategory_id=?', req.params.id);
+    if (prod && prod.total > 0) {
+      throw new ConflictError('Cannot delete child category: products depend on it. Deactivate it instead.');
+    }
+    db.run('DELETE FROM childcategories WHERE id = ?', req.params.id);
+  }
+  req.flash('success', 'চাইল্ড-ক্যাটাগরি মুছে ফেলা হয়েছে।');
+  res.redirect('/admin/childcategories/manage');
+}));
 
 // Brands
 router.get('/admin/brands/manage', asyncHandler(async (_req, res) => {
@@ -424,7 +550,10 @@ router.get('/admin/brands/manage', asyncHandler(async (_req, res) => {
     pageTitle: 'Brands',
     subtitle: 'প্রোডাক্ট ব্র্যান্ড ও অর্গানিক ফার্ম পার্টনার তালিকা',
     createAction: '/admin/brands/create',
-    deletePrefix: mysqlMode() ? null : '/admin/brands/delete',
+    updatePrefix: '/admin/brands/update',
+    customActionPrefix: '/admin/brands/toggle',
+    customActionToggleStatus: true,
+    deletePrefix: '/admin/brands/delete',
     columns: [
       { key: 'id', label: '#' },
       { key: 'name', label: 'Brand Name' },
@@ -434,6 +563,7 @@ router.get('/admin/brands/manage', asyncHandler(async (_req, res) => {
     fields: [
       { name:'name',label:'Brand Name (বাংলা)',type:'text',required:true },
       { name:'name_en',label:'Brand Name (English)',type:'text' },
+      { name:'slug',label:'URL Slug (optional)',type:'text' },
     ],
     rows,
   });
@@ -449,12 +579,48 @@ router.post('/admin/brands/create', asyncHandler(async (req, res) => {
   res.redirect('/admin/brands/manage');
 }));
 
-router.post('/admin/brands/delete/:id', (req, res, next) => {
-  if(mysqlMode())return next(new ConflictError('Brand deletion is disabled to preserve product references.'));
-  db.run('DELETE FROM brands WHERE id = ?', req.params.id);
-  req.flash('success', 'ব্র্যান্ড ডিলিট হয়েছে।');
+router.post('/admin/brands/update/:id', asyncHandler(async (req, res) => {
+  if (mysqlMode()) {
+    await catalogRepo.updateTaxonomy('brands', req.params.id, req.body, actor(req));
+    req.adminDomainAudit = true;
+  } else {
+    db.run(
+      'UPDATE brands SET name=?, slug=? WHERE id=?',
+      req.body.name,
+      req.body.slug ? makeSlug(req.body.slug) : makeSlug(req.body.name),
+      req.params.id
+    );
+  }
+  req.flash('success', 'ব্র্যান্ড তথ্য আপডেট হয়েছে।');
   res.redirect('/admin/brands/manage');
-});
+}));
+
+router.post('/admin/brands/toggle/:id', asyncHandler(async (req, res) => {
+  if (mysqlMode()) {
+    await catalogRepo.toggleTaxonomyStatus('brands', req.params.id, actor(req));
+    req.adminDomainAudit = true;
+  } else {
+    const b = db.get('SELECT id, status FROM brands WHERE id=?', req.params.id);
+    if (b) db.run('UPDATE brands SET status=? WHERE id=?', b.status ? 0 : 1, b.id);
+  }
+  req.flash('success', 'ব্র্যান্ড স্ট্যাটাস পরিবর্তন হয়েছে।');
+  res.redirect('/admin/brands/manage');
+}));
+
+router.post('/admin/brands/delete/:id', asyncHandler(async (req, res) => {
+  if (mysqlMode()) {
+    await catalogRepo.deleteTaxonomy('brands', req.params.id, actor(req));
+    req.adminDomainAudit = true;
+  } else {
+    const prod = db.get('SELECT COUNT(*) AS total FROM products WHERE brand_id=?', req.params.id);
+    if (prod && prod.total > 0) {
+      throw new ConflictError('Cannot delete brand: products depend on it. Deactivate it instead.');
+    }
+    db.run('DELETE FROM brands WHERE id = ?', req.params.id);
+  }
+  req.flash('success', 'ব্র্যান্ড মুছে ফেলা হয়েছে।');
+  res.redirect('/admin/brands/manage');
+}));
 
 // Colors
 router.get('/admin/color/manage', asyncHandler(async (_req, res) => {
@@ -463,7 +629,10 @@ router.get('/admin/color/manage', asyncHandler(async (_req, res) => {
     pageTitle: 'Product Colors',
     subtitle: 'প্রোডাক্ট ভ্যারিয়েন্ট কালার তালিকা',
     createAction: '/admin/color/create',
-    deletePrefix: mysqlMode() ? null : '/admin/color/delete',
+    updatePrefix: '/admin/color/update',
+    customActionPrefix: '/admin/color/toggle',
+    customActionToggleStatus: true,
+    deletePrefix: '/admin/color/delete',
     columns: [
       { key: 'id', label: '#' },
       { key: 'name', label: 'Color Name' },
@@ -489,12 +658,44 @@ router.post('/admin/color/create', asyncHandler(async (req, res) => {
   res.redirect('/admin/color/manage');
 }));
 
-router.post('/admin/color/delete/:id', (req, res, next) => {
-  if(mysqlMode())return next(new ConflictError('Color deletion is disabled to preserve catalog history.'));
-  db.run('DELETE FROM colors WHERE id = ?', req.params.id);
-  req.flash('success', 'কালার ডিলিট হয়েছে।');
+router.post('/admin/color/update/:id', asyncHandler(async (req, res) => {
+  if (mysqlMode()) {
+    await catalogRepo.updateTaxonomy('colors', req.params.id, req.body, actor(req));
+    req.adminDomainAudit = true;
+  } else {
+    db.run(
+      'UPDATE colors SET name=?, hex_code=? WHERE id=?',
+      req.body.name,
+      req.body.hex_code || '#dc2626',
+      req.params.id
+    );
+  }
+  req.flash('success', 'কালার তথ্য আপডেট হয়েছে।');
   res.redirect('/admin/color/manage');
-});
+}));
+
+router.post('/admin/color/toggle/:id', asyncHandler(async (req, res) => {
+  if (mysqlMode()) {
+    await catalogRepo.toggleTaxonomyStatus('colors', req.params.id, actor(req));
+    req.adminDomainAudit = true;
+  } else {
+    const c = db.get('SELECT id, status FROM colors WHERE id=?', req.params.id);
+    if (c) db.run('UPDATE colors SET status=? WHERE id=?', c.status ? 0 : 1, c.id);
+  }
+  req.flash('success', 'কালার স্ট্যাটাস পরিবর্তন হয়েছে।');
+  res.redirect('/admin/color/manage');
+}));
+
+router.post('/admin/color/delete/:id', asyncHandler(async (req, res) => {
+  if (mysqlMode()) {
+    await catalogRepo.deleteTaxonomy('colors', req.params.id, actor(req));
+    req.adminDomainAudit = true;
+  } else {
+    db.run('DELETE FROM colors WHERE id = ?', req.params.id);
+  }
+  req.flash('success', 'কালার মুছে ফেলা হয়েছে।');
+  res.redirect('/admin/color/manage');
+}));
 
 // Sizes / Weights
 router.get('/admin/size/manage', asyncHandler(async (_req, res) => {
@@ -503,7 +704,10 @@ router.get('/admin/size/manage', asyncHandler(async (_req, res) => {
     pageTitle: 'Sizes / Weight Packs',
     subtitle: 'ওজন ও প্যাক সাইজ ভ্যারিয়েন্ট (যেমন ৫০০ গ্রাম, ১ কেজি, ২ কেজি)',
     createAction: '/admin/size/create',
-    deletePrefix: mysqlMode() ? null : '/admin/size/delete',
+    updatePrefix: '/admin/size/update',
+    customActionPrefix: '/admin/size/toggle',
+    customActionToggleStatus: true,
+    deletePrefix: '/admin/size/delete',
     columns: [
       { key: 'id', label: '#' },
       { key: 'name', label: 'Size / Pack Label' },
@@ -527,12 +731,39 @@ router.post('/admin/size/create', asyncHandler(async (req, res) => {
   res.redirect('/admin/size/manage');
 }));
 
-router.post('/admin/size/delete/:id', (req, res, next) => {
-  if(mysqlMode())return next(new ConflictError('Size deletion is disabled to preserve catalog history.'));
-  db.run('DELETE FROM sizes WHERE id = ?', req.params.id);
-  req.flash('success', 'সাইজ ডিলিট হয়েছে।');
+router.post('/admin/size/update/:id', asyncHandler(async (req, res) => {
+  if (mysqlMode()) {
+    await catalogRepo.updateTaxonomy('sizes', req.params.id, req.body, actor(req));
+    req.adminDomainAudit = true;
+  } else {
+    db.run('UPDATE sizes SET name=? WHERE id=?', req.body.name, req.params.id);
+  }
+  req.flash('success', 'সাইজ/ওজন তথ্য আপডেট হয়েছে।');
   res.redirect('/admin/size/manage');
-});
+}));
+
+router.post('/admin/size/toggle/:id', asyncHandler(async (req, res) => {
+  if (mysqlMode()) {
+    await catalogRepo.toggleTaxonomyStatus('sizes', req.params.id, actor(req));
+    req.adminDomainAudit = true;
+  } else {
+    const s = db.get('SELECT id, status FROM sizes WHERE id=?', req.params.id);
+    if (s) db.run('UPDATE sizes SET status=? WHERE id=?', s.status ? 0 : 1, s.id);
+  }
+  req.flash('success', 'সাইজ স্ট্যাটাস পরিবর্তন হয়েছে।');
+  res.redirect('/admin/size/manage');
+}));
+
+router.post('/admin/size/delete/:id', asyncHandler(async (req, res) => {
+  if (mysqlMode()) {
+    await catalogRepo.deleteTaxonomy('sizes', req.params.id, actor(req));
+    req.adminDomainAudit = true;
+  } else {
+    db.run('DELETE FROM sizes WHERE id = ?', req.params.id);
+  }
+  req.flash('success', 'সাইজ মুছে ফেলা হয়েছে।');
+  res.redirect('/admin/size/manage');
+}));
 
 // ─── Coupons ───
 async function renderCoupons(res, openModal = false) {
