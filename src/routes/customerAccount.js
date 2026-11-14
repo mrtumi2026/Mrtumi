@@ -8,6 +8,7 @@ const { requireCustomer } = require('../middleware/auth');
 const { requireCsrf } = require('../middleware/csrf');
 const customers = require('../repositories/customerRepository');
 const privacy = require('../repositories/privacyRepository');
+const customerRecoveryService = require('../services/customerRecoveryService');
 const { env } = require('../config/env');
 const { ValidationError, ConflictError } = require('../utils/errors');
 const { formatBdt } = require('../utils/money');
@@ -176,8 +177,121 @@ router.post('/customer/account/privacy/consents', requireCustomer, requireCsrf, 
 }));
 
 const recoveryLimiter = createRateLimiter({ keyPrefix: 'customer-recovery', windowMs: 60 * 60 * 1000, max: 5 });
-router.get('/customer/recovery', (req, res) => res.render('customer/recovery', { isEn: isEn(req) }));
-router.post('/customer/recovery', recoveryLimiter, requireCsrf, (_req, res) => res.status(503).render('customer/recovery', { isEn: isEn(_req), disabled: true }));
+const resetLimiter = createRateLimiter({ keyPrefix: 'customer-recovery-reset', windowMs: 15 * 60 * 1000, max: 10 });
+
+router.get('/customer/recovery', asyncHandler(async (req, res) => {
+  const status = await customerRecoveryService.getRecoveryProviderStatus();
+  return res.render('customer/recovery', {
+    isEn: isEn(req),
+    csrfToken: req.csrfToken ? req.csrfToken() : (res.locals.csrfToken || ''),
+    status,
+    submitted: req.query.submitted === '1',
+    error: req.flash('error')[0] || '',
+    customer: req.session.customerUser || null,
+  });
+}));
+
+router.post('/customer/recovery', recoveryLimiter, requireCsrf, asyncHandler(async (req, res) => {
+  const status = await customerRecoveryService.getRecoveryProviderStatus();
+  if (!status.enabled) {
+    return res.status(503).render('customer/recovery', {
+      isEn: isEn(req),
+      csrfToken: req.csrfToken ? req.csrfToken() : (res.locals.csrfToken || ''),
+      status,
+      submitted: false,
+      error: isEn(req) ? 'Account recovery is currently disabled.' : 'অ্যাকাউন্ট পুনরুদ্ধার বর্তমানে বন্ধ রয়েছে।',
+      customer: req.session.customerUser || null,
+    });
+  }
+
+  const channel = String(req.body.channel || 'phone').toLowerCase();
+  const identifier = String(req.body.identifier || '').trim();
+
+  // Issue recovery through customerRepository
+  // Anti-enumeration: Returns accepted: true regardless of whether the account exists
+  await customers.issueCustomerRecovery(
+    identifier,
+    channel,
+    customerRecoveryService.deliverRecoveryMessage
+  );
+
+  return res.redirect('/customer/recovery?submitted=1');
+}));
+
+router.get('/customer/recovery/reset', (req, res) => {
+  // Defense-in-depth: if token was passed in query parameter, sanitize to session and redirect
+  // so the token is NEVER exposed in the URL bar, browser history, or server access logs!
+  if (req.query.token) {
+    req.session.pendingRecoveryToken = String(req.query.token).trim();
+    return res.redirect('/customer/recovery/reset');
+  }
+
+  const prefilledToken = req.session.pendingRecoveryToken || '';
+  delete req.session.pendingRecoveryToken;
+
+  return res.render('customer/recovery-reset', {
+    isEn: isEn(req),
+    csrfToken: req.csrfToken ? req.csrfToken() : (res.locals.csrfToken || ''),
+    prefilledToken,
+    error: req.flash('error')[0] || '',
+    customer: req.session.customerUser || null,
+  });
+});
+
+router.post('/customer/recovery/reset', resetLimiter, requireCsrf, asyncHandler(async (req, res) => {
+  const token = String(req.body.recovery_token || '').trim();
+  const password = String(req.body.password || '');
+  const confirmPassword = String(req.body.confirm_password || '');
+
+  if (!token) {
+    return res.status(400).render('customer/recovery-reset', {
+      isEn: isEn(req),
+      csrfToken: req.csrfToken ? req.csrfToken() : (res.locals.csrfToken || ''),
+      prefilledToken: '',
+      error: isEn(req) ? 'Recovery code is required.' : 'রিকভারি কোড প্রদান করা আবশ্যক।',
+      customer: req.session.customerUser || null,
+    });
+  }
+
+  if (password.length < 10 || password.length > 72) {
+    return res.status(400).render('customer/recovery-reset', {
+      isEn: isEn(req),
+      csrfToken: req.csrfToken ? req.csrfToken() : (res.locals.csrfToken || ''),
+      prefilledToken: token,
+      error: isEn(req) ? 'Password must contain 10–72 characters.' : 'পাসওয়ার্ড অবশ্যই ১০ থেকে ৭২ অক্ষরের মধ্যে হতে হবে।',
+      customer: req.session.customerUser || null,
+    });
+  }
+
+  if (password !== confirmPassword) {
+    return res.status(400).render('customer/recovery-reset', {
+      isEn: isEn(req),
+      csrfToken: req.csrfToken ? req.csrfToken() : (res.locals.csrfToken || ''),
+      prefilledToken: token,
+      error: isEn(req) ? 'Passwords do not match.' : 'পাসওয়ার্ড দুটি মেলেনি।',
+      customer: req.session.customerUser || null,
+    });
+  }
+
+  try {
+    await customers.consumeCustomerRecoveryToken(token, password);
+  } catch (err) {
+    if (err instanceof ValidationError) {
+      return res.status(400).render('customer/recovery-reset', {
+        isEn: isEn(req),
+        csrfToken: req.csrfToken ? req.csrfToken() : (res.locals.csrfToken || ''),
+        prefilledToken: '',
+        error: isEn(req) ? 'Recovery code is invalid, expired, or already used.' : 'রিকভারি কোডটি সঠিক নয়, মেয়াদোত্তীর্ণ বা ইতিমধ্যে ব্যবহৃত হয়েছে।',
+        customer: req.session.customerUser || null,
+      });
+    }
+    throw err;
+  }
+
+  await new Promise((resolve, reject) => req.session.regenerate((err) => err ? reject(err) : resolve()));
+  req.flash('success', isEn(req) ? 'Password reset successfully. Please log in with your new password.' : 'পাসওয়ার্ড সফলভাবে পরিবর্তন করা হয়েছে। নতুন পাসওয়ার্ড দিয়ে লগইন করুন।');
+  return res.redirect('/customer/login');
+}));
 router.get('/customer/account/orders', requireCustomer, asyncHandler(async (req, res) => {
   const history = await customers.listOrders(req.session.customerUser.id, req.query.page || 1);
   const orders = history.orders.map((order) => ({ ...order, totalLabel: moneyLabel(order.total_paisa, req.locale), dateLabel: dateLabel(order.created_at, req.locale) }));

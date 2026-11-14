@@ -1,1 +1,153 @@
-<%- include('../store/partials/header', { title: isEn ? 'Account recovery' : 'অ্যাকাউন্ট পুনরুদ্ধার' }) %><main id="mainContent" class="container py-5" style="max-width:720px"><h1 class="h3"><%= isEn?'Account recovery':'অ্যাকাউন্ট পুনরুদ্ধার' %></h1><div class="alert alert-warning"><%= isEn?'Recovery is disabled. Existing customer phone/email channels have no verified status, and no authorized delivery provider is configured. No token is generated and no message is sent. This page does not check whether an account exists.':'পুনরুদ্ধার বন্ধ আছে। গ্রাহকের ফোন/ইমেইল যাচাইকৃত নয় এবং অনুমোদিত delivery provider কনফিগার করা নেই। কোনো token তৈরি বা বার্তা পাঠানো হয় না। এই পৃষ্ঠা কোনো অ্যাকাউন্ট আছে কি না যাচাই করে না।' %></div><a class="btn btn-outline-primary" href="/customer/login"><%= isEn?'Return to login':'লগইনে ফিরুন' %></a></main><%- include('../store/partials/footer') %>
+<%- include('../store/partials/header', { title: isEn ? 'Account recovery' : 'অ্যাকাউন্ট পুনরুদ্ধার' }) %>
+<main id="mainContent" class="container py-5" style="max-width:680px">
+  <div class="mb-4">
+    <a href="/customer/login" class="text-decoration-none small">← <%= isEn ? 'Back to login' : 'লগইনে ফিরুন' %></a>
+    <h1 class="h3 mt-2"><%= isEn ? 'Account recovery' : 'অ্যাকাউন্ট পুনরুদ্ধার' %></h1>
+  </div>
+
+  <% if (submitted) { %>
+    <div class="alert alert-success card card-body border-success gap-2 shadow-sm" role="status">
+      <h2 class="h5 alert-heading mb-1">
+        <%= isEn ? 'Recovery request processed' : 'রিকভারি অনুরোধ প্রক্রিয়াধীন' %>
+      </h2>
+      <p class="mb-1">
+        <%= isEn
+          ? 'If an active account with a verified channel matches this information, recovery instructions have been sent. Please check your SMS or Email messages.'
+          : 'যদি এই তথ্যের সাথে কোনো সক্রিয় এবং যাচাইকৃত অ্যাকাউন্ট মিলে থাকে, তবে পুনরুদ্ধার নির্দেশনা পাঠানো হয়েছে। অনুগ্রহ করে আপনার এসএমএস বা ইমেইল ইনবক্স চেক করুন।' %>
+      </p>
+      <p class="small text-muted mb-3">
+        <%= isEn
+          ? 'Recovery codes are single-use, cryptographically secure, and expire in 20 minutes.'
+          : 'রিকভারি কোডটি একবার ব্যবহারের জন্য প্রযোজ্য, সুরক্ষিত এবং এর মেয়াদ ২০ মিনিট।' %>
+      </p>
+      <div>
+        <a href="/customer/recovery/reset" class="btn btn-primary">
+          <%= isEn ? 'Enter Recovery Code & Reset Password' : 'রিকভারি কোড দিন ও পাসওয়ার্ড রিসেট করুন' %>
+        </a>
+      </div>
+    </div>
+  <% } else if (!status || !status.enabled) { %>
+    <div class="alert alert-warning card card-body border-warning gap-3 shadow-sm" role="region" aria-label="<%= isEn ? 'Recovery status notice' : 'রিকভারি স্ট্যাটাস নোটিশ' %>">
+      <div>
+        <h2 class="h5 alert-heading mb-2">
+          <%= isEn ? 'Account Recovery Currently Inactive' : 'অ্যাকাউন্ট পুনরুদ্ধার বর্তমানে বন্ধ রয়েছে' %>
+        </h2>
+        <p class="mb-2">
+          <%= isEn
+            ? 'Automated self-service password recovery is safely disabled until an approved delivery provider gateway (BulkSMSBD or SMTP) is fully configured and authorized by store administration.'
+            : 'স্টোর অ্যাডমিনিস্ট্রেশনের মাধ্যমে অনুমোদিত ডেলিভারি প্রোভাইডার গেটওয়ে (BulkSMSBD বা SMTP) সম্পূর্ণভাবে কনফিগার এবং অনুমোদিত না হওয়া পর্যন্ত সেলফ-সার্ভিস পাসওয়ার্ড পুনরুদ্ধার নিরাপদে বন্ধ রাখা হয়েছে।' %>
+        </p>
+      </div>
+
+      <div class="bg-white p-3 rounded border small text-muted">
+        <strong class="d-block text-dark mb-1">
+          <%= isEn ? 'Required Production Configuration:' : 'প্রয়োজনীয় প্রোডাকশন কনফিগারেশন:' %>
+        </strong>
+        <ul class="mb-0 ps-3">
+          <li>
+            <strong><%= isEn ? 'SMS Channel (BulkSMSBD):' : 'এসএমএস মাধ্যম (BulkSMSBD):' %></strong>
+            <%= status && status.sms && status.sms.missing && status.sms.missing.length > 0
+              ? status.sms.missing.join(', ')
+              : (isEn ? 'Not configured / pending owner authorization' : 'কনফিগার করা হয়নি / অ্যাডমিন অনুমোদনের অপেক্ষায়') %>
+          </li>
+          <li>
+            <strong><%= isEn ? 'Email Channel (SMTP):' : 'ইমেইল মাধ্যম (SMTP):' %></strong>
+            <%= status && status.email && status.email.missing && status.email.missing.length > 0
+              ? status.email.missing.join(', ')
+              : (isEn ? 'Not configured' : 'কনফিগার করা হয়নি') %>
+          </li>
+          <li>
+            <strong><%= isEn ? 'Verified Contact Security:' : 'যাচাইকৃত যোগাযোগ নিরাপত্তা:' %></strong>
+            <%= isEn
+              ? 'Tokens are only issued to customer accounts with pre-verified phone or email records to prevent unauthorized takeover.'
+              : 'অননুমোদিত অ্যাক্সেস রোধে কেবলমাত্র পূর্বে যাচাইকৃত ফোন বা ইমেইল থাকা অ্যাকাউন্টে রিকভারি কোড পাঠানো হয়।' %>
+          </li>
+        </ul>
+      </div>
+
+      <p class="small text-muted mb-0">
+        <%= isEn
+          ? 'If you have forgotten your password and need immediate access to your account or orders, please contact Mr. Tumi customer support with your registered phone number or order invoice.'
+          : 'আপনি যদি পাসওয়ার্ড ভুলে গিয়ে থাকেন এবং দ্রুত অ্যাক্সেস প্রয়োজন হয়, তবে আপনার নিবন্ধিত ফোন নম্বর বা অর্ডার চালান সহ মি. তুমি কাস্টমার সাপোর্টে যোগাযোগ করুন।' %>
+      </p>
+
+      <div class="d-flex gap-2 flex-wrap pt-2">
+        <a class="btn btn-outline-primary" href="/customer/login">
+          <%= isEn ? 'Return to login' : 'লগইনে ফিরুন' %>
+        </a>
+        <a class="btn btn-outline-secondary" href="/">
+          <%= isEn ? 'Back to storefront' : 'হোমপেজে ফিরুন' %>
+        </a>
+      </div>
+    </div>
+  <% } else { %>
+    <% if (error) { %>
+      <div class="alert alert-danger" role="alert"><%= error %></div>
+    <% } %>
+
+    <form method="post" action="/customer/recovery" class="card card-body gap-3 shadow-sm">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+      <% if (status.availableChannels && status.availableChannels.length > 1) { %>
+        <div>
+          <label class="form-label fw-semibold"><%= isEn ? 'Recovery channel' : 'পুনরুদ্ধারের মাধ্যম' %></label>
+          <div class="d-flex gap-4">
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="channel" id="channelPhone" value="phone" checked>
+              <label class="form-check-label" for="channelPhone"><%= isEn ? 'SMS (Mobile)' : 'এসএমএস (মোবাইল)' %></label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="channel" id="channelEmail" value="email">
+              <label class="form-check-label" for="channelEmail"><%= isEn ? 'Email' : 'ইমেইল' %></label>
+            </div>
+          </div>
+        </div>
+      <% } else if (status.availableChannels && status.availableChannels.includes('phone')) { %>
+        <input type="hidden" name="channel" value="phone">
+        <div class="text-muted small">
+          <%= isEn ? 'Recovery code will be delivered via SMS to your verified Bangladesh mobile number.' : 'আপনার যাচাইকৃত বাংলাদেশি মোবাইল নম্বরে এসএমএসের মাধ্যমে রিকভারি কোড পাঠানো হবে।' %>
+        </div>
+      <% } else { %>
+        <input type="hidden" name="channel" value="email">
+        <div class="text-muted small">
+          <%= isEn ? 'Recovery code will be delivered to your verified email address.' : 'আপনার যাচাইকৃত ইমেইল ঠিকানায় রিকভারি কোড পাঠানো হবে।' %>
+        </div>
+      <% } %>
+
+      <div>
+        <label for="recoveryIdentifier" class="form-label fw-semibold">
+          <%= isEn ? 'Registered Mobile Number or Email' : 'নিবন্ধিত মোবাইল নম্বর বা ইমেইল' %>
+        </label>
+        <input
+          id="recoveryIdentifier"
+          class="form-control"
+          name="identifier"
+          type="text"
+          required
+          maxlength="191"
+          autocomplete="username"
+          placeholder="01XXXXXXXXX"
+        >
+        <div class="form-text">
+          <%= isEn
+            ? 'For mobile, enter an 11-digit Bangladesh number (e.g. 017XXXXXXXX).'
+            : 'মোবাইলের জন্য ১১ ডিজিটের নম্বর লিখুন (যেমন: 017XXXXXXXX)।' %>
+        </div>
+      </div>
+
+      <button class="btn btn-success" type="submit">
+        <%= isEn ? 'Send recovery code' : 'রিকভারি কোড পাঠান' %>
+      </button>
+    </form>
+
+    <p class="mt-3 d-flex justify-content-between flex-wrap gap-2">
+      <a href="/customer/recovery/reset" class="small text-decoration-none">
+        <%= isEn ? 'Already have a code? Reset password' : 'ইতিমধ্যে কোড পেয়েছেন? পাসওয়ার্ড রিসেট করুন' %>
+      </a>
+      <a href="/customer/login" class="small text-secondary text-decoration-none">
+        <%= isEn ? 'Return to login' : 'লগইনে ফিরুন' %>
+      </a>
+    </p>
+  <% } %>
+</main>
+<%- include('../store/partials/footer') %>
