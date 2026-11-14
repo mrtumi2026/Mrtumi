@@ -290,7 +290,8 @@ async function main() {
       if (restoreCheck.ok) {
         console.log(`   ✔ All essential business tables present (vendors, products, orders, categories, users, settings).`);
         console.log(`   ✔ SQL statements & table definitions structurally valid.`);
-        console.log(`   ✔ Status: VERIFIED & READY FOR RESTORE IF REQUIRED.`);
+        console.log(`   - Structural & Parsing Verification: PASS ✔`);
+        console.log(`   - Full In-Database Restore Test: NOT VERIFIED (Live DB overwrite blocked for data safety; cPanel user cannot create scratch databases)`);
       } else {
         console.warn(`   ✖ Missing tables in dump: ${restoreCheck.missingTables.join(', ')}`);
         throw new Error('Backup failed structural integrity check.');
