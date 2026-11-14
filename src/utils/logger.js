@@ -6,10 +6,11 @@
  */
 
 const SENSITIVE_KEY_REGEX =
-  /(password|pass|secret|token|api_?key|authorization|cookie|csrf|private_?key|trx_secret|trx_?id|transaction_?id|provider_?trx_?id|account_?number|account_?no|bank_?account|payout_?account|sender_?number|destination|e-?mail|address|street|customer_?name|recipient_?name|owner_?name)/i;
+  /(password|pass|secret|token|otp|pin|recovery_?token|api_?key|authorization|cookie|csrf|bearer|private_?key|trx_secret|trx_?id|transaction_?id|provider_?trx_?id|account_?number|account_?no|bank_?account|payout_?account|sender_?number|destination|e-?mail|address|street|customer_?name|recipient_?name|owner_?name|card_?number|cvv)/i;
 
 const BD_PHONE_IN_TEXT_REGEX = /\b(\+?8801[3-9]\d{2}|01[3-9]\d{2})\d{4}(\d{2})\b/g;
 const EMAIL_IN_TEXT_REGEX = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
+const BEARER_AUTH_REGEX = /Bearer\s+[A-Za-z0-9\-._~+/]+=*/gi;
 const FINANCIAL_LOG_KEY_REGEX = /(amount|balance|paisa|price|payment|subtotal|total|commission|withdrawal|payout|transaction|financial)/i;
 
 function maskPhone(str) {
@@ -17,7 +18,9 @@ function maskPhone(str) {
 }
 
 function maskSensitiveText(str) {
-  return maskPhone(str).replace(EMAIL_IN_TEXT_REGEX, '[REDACTED_EMAIL]');
+  return maskPhone(str)
+    .replace(EMAIL_IN_TEXT_REGEX, '[REDACTED_EMAIL]')
+    .replace(BEARER_AUTH_REGEX, 'Bearer [REDACTED_SECRET]');
 }
 
 function redactValue(val, depth = 0, redactFinancial = false) {
@@ -87,6 +90,7 @@ const logger = {
   redactValue,
   redactObject: redactValue,
   maskPhone,
+  maskSensitiveText,
 };
 
 logger.logger = logger;
