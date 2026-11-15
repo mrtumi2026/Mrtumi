@@ -1,9 +1,16 @@
 -- ============================================================================
 -- Migration 0037 (UP): Vendor Store Branding, Store Slugs & Canonical Public Storefront
--- Target: MariaDB 10.3+ / MySQL 8.0+
--- All DDL statements are additive and idempotent (IF NOT EXISTS);
--- columns appended to end of table to avoid full table copy in MariaDB.
--- Safe against re-runs after partial DDL interruption.
+-- Target Engine: MariaDB 10.3+ ONLY (Production: CloudLinux MariaDB 10.6.18+)
+-- Engine Note: Uses MariaDB-specific idempotent DDL extensions:
+--   - ADD COLUMN IF NOT EXISTS
+--   - ADD UNIQUE KEY IF NOT EXISTS
+--   - ADD KEY IF NOT EXISTS
+-- MySQL 8.0 does NOT support IF NOT EXISTS on indexes; Gate 1 strictly blocks non-MariaDB.
+-- CAUTION / LOCKING NOTICE:
+-- In MariaDB, ALTER TABLE operations acquire exclusive metadata locks (MDL).
+-- While appending columns (without AFTER clause) may allow INSTANT operations in compatible
+-- storage formats, index creation (ADD UNIQUE KEY, ADD KEY) may require table rebuild or lock wait.
+-- Do not run during peak traffic; execute during low-traffic maintenance windows.
 -- ============================================================================
 
 ALTER TABLE `vendors`
@@ -25,4 +32,3 @@ WHERE `slug` IS NULL OR `slug` = '';
 ALTER TABLE `vendors`
   ADD UNIQUE KEY IF NOT EXISTS `uq_vendors_slug` (`slug`),
   ADD KEY IF NOT EXISTS `idx_vendors_store_status` (`store_status`, `lifecycle_status`);
-

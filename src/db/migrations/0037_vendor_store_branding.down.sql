@@ -1,8 +1,10 @@
 -- ============================================================================
 -- Migration 0037 (DOWN): Rollback Vendor Store Branding
--- Target: MariaDB 10.3+ / MySQL 8.0+
+-- Target Engine: MariaDB 10.3+ ONLY (Production: CloudLinux MariaDB 10.6.18+)
+-- Engine Note: Uses MariaDB-specific idempotent DDL extensions:
+--   - DROP INDEX IF EXISTS
+--   - DROP COLUMN IF EXISTS
 -- CAUTION: Drops store branding columns. Run ONLY upon explicit owner decision.
--- Uses IF EXISTS for idempotent rollback safety.
 -- ============================================================================
 
 ALTER TABLE `vendors`
@@ -14,4 +16,3 @@ ALTER TABLE `vendors`
   DROP COLUMN IF EXISTS `banner_url`,
   DROP COLUMN IF EXISTS `logo_url`,
   DROP COLUMN IF EXISTS `slug`;
-
