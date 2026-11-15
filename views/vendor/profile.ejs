@@ -6,7 +6,7 @@
       <div class="d-flex justify-content-between align-items-center border-bottom pb-2 mb-3">
         <h5 class="fw-bold mb-0">🏪 শপ প্রোফাইল ও স্টোর ব্র্যান্ডিং</h5>
         <% if (vendor.slug || vendor.id) { %>
-          <a href="/store/<%= vendor.slug || ('store-' + vendor.id) %>" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-success rounded-pill px-3">
+          <a href="/<%= vendor.slug || ('store-' + vendor.id) %>" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-success rounded-pill px-3">
             <i class="fas fa-external-link-alt me-1"></i> লাইভ স্টোর দেখুন
           </a>
         <% } %>
@@ -44,7 +44,7 @@
               <div class="col-md-6">
                 <label class="form-label small fw-semibold" for="storeSlug">স্টোর লিঙ্ক স্লাগ (URL Slug) *</label>
                 <div class="input-group input-group-sm">
-                  <span class="input-group-text bg-white" style="font-size: 12px;">mrtumi.com/store/</span>
+                  <span class="input-group-text bg-white" style="font-size: 12px;">mrtumi.com/</span>
                   <input id="storeSlug" type="text" name="slug" value="<%= vendor.slug || ('store-' + vendor.id) %>" class="form-control" pattern="[a-z0-9\-]+" placeholder="my-shop" required />
                 </div>
                 <div class="form-text" style="font-size: 11px;">শুধুমাত্র ছোট হাতের ইংরেজি অক্ষর, সংখ্যা এবং হাইফেন (-) ব্যবহার করুন।</div>
@@ -144,7 +144,7 @@
         <div class="small text-muted mb-2">
           📍 <%= vendor.upazila ? vendor.upazila + ', ' : '' %><%= vendor.district || 'বাংলাদেশ' %>
         </div>
-        <a href="/store/<%= vendor.slug || ('store-' + vendor.id) %>" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-success w-100">
+        <a href="/<%= vendor.slug || ('store-' + vendor.id) %>" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-success w-100">
           স্টোর প্রিভিউ দেখুন →
         </a>
       </div>

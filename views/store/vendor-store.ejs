@@ -3,7 +3,7 @@
 <%
   const fs = (typeof filterState !== 'undefined' && filterState) ? filterState : {};
   const totalCount = typeof totalProducts === 'number' ? totalProducts : products.length;
-  const formAction = typeof actionPath === 'string' ? actionPath : ('/store/' + vendor.slug);
+  const formAction = typeof actionPath === 'string' ? actionPath : ('/' + vendor.slug);
   const hasActiveFilters = Boolean(fs.q || fs.min_price || fs.max_price || fs.in_stock);
 %>
 

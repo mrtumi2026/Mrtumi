@@ -109,7 +109,7 @@
           <span>
             &bull; <%= locale === 'bn' ? 'বিক্রেতা' : 'Sold by' %>:
             <% if (product.vendor_id && product.vendor_store_slug) { %>
-              <a href="/store/<%= product.vendor_store_slug %>" class="fw-semibold text-success text-decoration-none d-inline-flex align-items-center gap-1">
+              <a href="/<%= product.vendor_store_slug %>" class="fw-semibold text-success text-decoration-none d-inline-flex align-items-center gap-1">
                 <i class="fas fa-store fa-xs"></i> <%= product.vendor_shop_name %>
                 <% if (product.vendor_verified) { %><i class="fas fa-check-circle text-primary" style="font-size:11px;" title="Verified Store"></i><% } %>
               </a>
@@ -341,7 +341,7 @@
                 <% } %>
               </div>
             </div>
-            <a href="/store/<%= product.vendor_store_slug %>" class="btn btn-outline-success btn-sm px-3 rounded-pill fw-semibold">
+            <a href="/<%= product.vendor_store_slug %>" class="btn btn-outline-success btn-sm px-3 rounded-pill fw-semibold">
               <i class="fas fa-store me-1"></i> <%= locale === 'bn' ? 'স্টোরে প্রবেশ করুন' : 'Visit Store' %>
             </a>
           </div>

@@ -1,12 +1,18 @@
 'use strict';
 
 const RESERVED_SLUGS = Object.freeze(new Set([
-  'admin', 'vendor', 'reseller', 'customer', 'api', 'cart', 'checkout',
-  'terms', 'privacy-policy', 'all-products', 'search', 'login', 'register',
-  'logout', 'store', 'stores', 'shop', 'shops', 'category', 'subcategory',
-  'childcategory', 'brand', 'product', 'locale', 'auth', 'uploads', 'assets',
+  'admin', 'admins', 'vendor', 'vendors', 'reseller', 'resellers', 'customer', 'customers',
+  'api', 'cart', 'checkout', 'terms', 'privacy-policy', 'all-products', 'search',
+  'login', 'register', 'logout', 'store', 'stores', 'shop', 'shops',
+  'category', 'categories', 'subcategory', 'subcategories', 'childcategory', 'childcategories',
+  'brand', 'brands', 'product', 'products', 'locale', 'auth', 'uploads', 'assets',
   'static', 'default', 'public', 'home', 'order', 'orders', 'track-order',
-  'order-success', 'campaign', 'flash-sales', 'hot-deals', 'faq', 'about', 'contact', 'affiliate'
+  'order-success', 'campaign', 'flash-sales', 'hot-deals', 'faq', 'about', 'contact', 'affiliate',
+  'blogs', 'blog', 'page', 'pages', 'wishlist', 'robots.txt', 'sitemap.xml', 'favicon.ico',
+  'health', 'status', 'webhook', 'webhooks', 'ping', 'sw.js', 'manifest.json', 'service-worker.js',
+  'deal', 'deals', 'sale', 'sales', 'support', 'help', 'help-center',
+  'account', 'profile', 'my-account', 'dashboard', 'courier', 'delivery',
+  'feed', 'rss', 'atom', 'fulfillment', 'payment', 'payments', 'settings', 'notifications'
 ]));
 
 const SLUG_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;

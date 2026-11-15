@@ -1,0 +1,208 @@
+<%- include('partials/head', { title: pageTitle }) %>
+<%- include('partials/topbar') %>
+<%- include('partials/sidebar') %>
+
+<div class="content-page">
+  <div class="content container-fluid py-3">
+    <!-- Header -->
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+      <div>
+        <h4 class="fw-bold mb-1"><i class="fas fa-truck-ramp-box text-success me-2"></i><%= locale === 'bn' ? 'ভেন্ডর কুরিয়ার বুকিং অনুমোদন কিউ' : 'Vendor Courier Booking Approval Queue' %></h4>
+        <p class="text-muted mb-0"><%= locale === 'bn' ? 'ভেন্ডরদের পাঠানো কুরিয়ার বুকিং অনুরোধ যাচাই, অনুমোদন এবং নিরাপদ ডিসপ্যাচ ব্যবস্থাপনা' : 'Review, approve, and safely dispatch vendor courier booking requests' %></p>
+      </div>
+      <div class="d-flex gap-2">
+        <a href="/admin/courier/requests?status=all" class="btn btn-sm btn-outline-secondary">
+          <i class="fas fa-arrows-rotate me-1"></i><%= locale === 'bn' ? 'রিফ্রেশ' : 'Refresh' %>
+        </a>
+      </div>
+    </div>
+
+    <% if (flash && flash.message) { %>
+      <div class="alert alert-<%= flash.type === 'success' ? 'success' : 'danger' %> alert-dismissible fade show" role="alert">
+        <i class="fas fa-<%= flash.type === 'success' ? 'check-circle' : 'exclamation-circle' %> me-2"></i><%= flash.message %>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+      </div>
+    <% } %>
+
+    <!-- Filter Tabs -->
+    <div class="card shadow-sm border-0 mb-3">
+      <div class="card-body p-2 px-3">
+        <ul class="nav nav-pills gap-2">
+          <li class="nav-item">
+            <a class="nav-link <%= filterStatus === 'all' ? 'active' : '' %> py-1 px-3" href="/admin/courier/requests?status=all">
+              <%= locale === 'bn' ? 'সকল অনুরোধ' : 'All Requests' %>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link <%= filterStatus === 'pending' ? 'active' : '' %> py-1 px-3" href="/admin/courier/requests?status=pending">
+              <span class="badge bg-warning text-dark me-1">●</span><%= locale === 'bn' ? 'অপেক্ষমাণ' : 'Pending' %>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link <%= filterStatus === 'booked' ? 'active' : '' %> py-1 px-3" href="/admin/courier/requests?status=booked">
+              <span class="badge bg-success me-1">✓</span><%= locale === 'bn' ? 'বুকড / সফল' : 'Booked' %>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link <%= filterStatus === 'failed' ? 'active' : '' %> py-1 px-3" href="/admin/courier/requests?status=failed">
+              <span class="badge bg-danger me-1">!</span><%= locale === 'bn' ? 'ব্যর্থ (পুনরায় চেষ্টা)' : 'Failed (Retryable)' %>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link <%= filterStatus === 'rejected' ? 'active' : '' %> py-1 px-3" href="/admin/courier/requests?status=rejected">
+              <span class="badge bg-secondary me-1">✕</span><%= locale === 'bn' ? 'প্রত্যাখ্যাত' : 'Rejected' %>
+            </a>
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Requests Table -->
+    <div class="card shadow-sm border-0">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light text-muted small">
+            <tr>
+              <th>ID</th>
+              <th><%= locale === 'bn' ? 'অর্ডার ইনভয়েস' : 'Order Invoice' %></th>
+              <th><%= locale === 'bn' ? 'ভেন্ডর' : 'Vendor' %></th>
+              <th><%= locale === 'bn' ? 'গ্রাহক ও ডেলিভারি তথ্য' : 'Customer & Delivery' %></th>
+              <th><%= locale === 'bn' ? 'পছন্দের কুরিয়ার' : 'Preferred Courier' %></th>
+              <th><%= locale === 'bn' ? 'অবস্থা' : 'Status' %></th>
+              <th><%= locale === 'bn' ? 'তারিখ' : 'Requested At' %></th>
+              <th class="text-end"><%= locale === 'bn' ? 'অ্যাকশন' : 'Actions' %></th>
+            </tr>
+          </thead>
+          <tbody>
+            <% if (!requests || requests.length === 0) { %>
+              <tr>
+                <td colspan="8" class="text-center py-4 text-muted">
+                  <i class="fas fa-inbox fa-2x mb-2 d-block"></i>
+                  <%= locale === 'bn' ? 'কোন কুরিয়ার বুকিং অনুরোধ পাওয়া যায়নি।' : 'No courier booking requests found.' %>
+                </td>
+              </tr>
+            <% } else { %>
+              <% requests.forEach(function(reqItem) { %>
+                <tr>
+                  <td><strong>#<%= reqItem.id %></strong></td>
+                  <td>
+                    <div><strong><%= reqItem.invoice_no || ('#' + reqItem.order_id) %></strong></div>
+                    <div class="small text-muted">Sub-order #<%= reqItem.sub_order_id %></div>
+                  </td>
+                  <td>
+                    <div class="fw-semibold"><%= reqItem.shop_name || ('Vendor #' + reqItem.vendor_id) %></div>
+                    <% if (reqItem.vendor_phone) { %><div class="small text-muted"><%= reqItem.vendor_phone %></div><% } %>
+                  </td>
+                  <td>
+                    <div><strong><%= reqItem.customer_name || 'N/A' %></strong></div>
+                    <div class="small text-muted"><%= reqItem.customer_phone || '' %></div>
+                    <div class="small text-truncate" style="max-width: 220px;" title="<%= reqItem.shipping_address || '' %>"><%= reqItem.shipping_address || '' %></div>
+                  </td>
+                  <td>
+                    <span class="badge bg-light text-dark border text-uppercase">
+                      <%= reqItem.courier_code || 'Auto-Recommend' %>
+                    </span>
+                    <% if (reqItem.vendor_notes) { %>
+                      <div class="small text-muted mt-1" title="<%= reqItem.vendor_notes %>">📝 <%= reqItem.vendor_notes %></div>
+                    <% } %>
+                  </td>
+                  <td>
+                    <% if (reqItem.status === 'pending') { %>
+                      <span class="badge bg-warning text-dark"><i class="fas fa-clock me-1"></i>অপেক্ষমাণ</span>
+                    <% } else if (reqItem.status === 'booking') { %>
+                      <span class="badge bg-info"><i class="fas fa-spinner fa-spin me-1"></i>বুকিং চলছে</span>
+                    <% } else if (reqItem.status === 'booked') { %>
+                      <span class="badge bg-success"><i class="fas fa-check-circle me-1"></i>বুকড</span>
+                      <% if (reqItem.tracking_id) { %>
+                        <div class="small fw-bold text-success mt-1"><i class="fas fa-barcode me-1"></i><%= reqItem.tracking_id %></div>
+                      <% } %>
+                    <% } else if (reqItem.status === 'failed') { %>
+                      <span class="badge bg-danger"><i class="fas fa-exclamation-triangle me-1"></i>ব্যর্থ</span>
+                      <% if (reqItem.failure_reason) { %>
+                        <div class="small text-danger mt-1 text-truncate" style="max-width:180px;" title="<%= reqItem.failure_reason %>"><%= reqItem.failure_reason %></div>
+                      <% } %>
+                    <% } else if (reqItem.status === 'rejected') { %>
+                      <span class="badge bg-secondary"><i class="fas fa-ban me-1"></i>প্রত্যাখ্যাত</span>
+                      <% if (reqItem.rejection_reason) { %>
+                        <div class="small text-muted mt-1 text-truncate" style="max-width:180px;" title="<%= reqItem.rejection_reason %>"><%= reqItem.rejection_reason %></div>
+                      <% } %>
+                    <% } %>
+                  </td>
+                  <td class="small text-muted">
+                    <%= new Date(reqItem.created_at).toLocaleDateString('bn-BD', { hour: '2-digit', minute: '2-digit' }) %>
+                  </td>
+                  <td class="text-end">
+                    <% if (reqItem.status === 'pending' || reqItem.status === 'failed') { %>
+                      <div class="d-inline-flex gap-1">
+                        <!-- Approve Form -->
+                        <form action="/admin/courier/requests/<%= reqItem.id %>/approve" method="POST" class="d-inline">
+                          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                          <button type="submit" class="btn btn-sm btn-success fw-bold px-2" title="<%= locale === 'bn' ? 'অনুমোদন ও বুক করুন' : 'Approve & Book' %>">
+                            <i class="fas fa-check me-1"></i><%= reqItem.status === 'failed' ? (locale === 'bn' ? 'পুনরায় চেষ্টা' : 'Retry') : (locale === 'bn' ? 'অনুমোদন' : 'Approve') %>
+                          </button>
+                        </form>
+
+                        <!-- Reject Modal Trigger -->
+                        <button type="button" class="btn btn-sm btn-outline-danger px-2" onclick="openRejectModal('<%= reqItem.id %>', '<%= reqItem.invoice_no || reqItem.order_id %>')" title="<%= locale === 'bn' ? 'প্রত্যাখ্যান করুন' : 'Reject' %>">
+                          <i class="fas fa-times"></i>
+                        </button>
+                      </div>
+                    <% } else if (reqItem.status === 'booked') { %>
+                      <span class="text-success small fw-semibold"><i class="fas fa-check-double me-1"></i>সম্পন্ন</span>
+                    <% } else { %>
+                      <span class="text-muted small">—</span>
+                    <% } %>
+                  </td>
+                </tr>
+              <% }); %>
+            <% } %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Reject Modal -->
+<div class="modal fade" id="rejectRequestModal" tabindex="-1" aria-labelledby="rejectRequestModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <form id="rejectRequestForm" method="POST" action="">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+        <div class="modal-header bg-light">
+          <h5 class="modal-title fw-bold text-danger" id="rejectRequestModalLabel">
+            <i class="fas fa-ban me-2"></i><%= locale === 'bn' ? 'কুরিয়ার বুকিং অনুরোধ প্রত্যাখ্যান' : 'Reject Courier Request' %>
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body p-3">
+          <p class="small text-muted mb-3" id="rejectModalInvoiceText"></p>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold" for="rejectionReason"><%= locale === 'bn' ? 'প্রত্যাখ্যানের কারণ লিখুন *' : 'Rejection Reason *' %></label>
+            <textarea id="rejectionReason" name="rejection_reason" class="form-control form-control-sm" rows="3" required placeholder="<%= locale === 'bn' ? 'যেমন: পণ্যের প্যাকেজিং সঠিক নয় বা ঠিকানা স্পষ্ট নয়' : 'Enter rejection reason' %>"></textarea>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold" for="rejectAdminNote"><%= locale === 'bn' ? 'অভ্যন্তরীণ অ্যাডমিন নোট (ঐচ্ছিক)' : 'Admin Internal Note (Optional)' %></label>
+            <input id="rejectAdminNote" type="text" name="note" class="form-control form-control-sm" placeholder="<%= locale === 'bn' ? 'অভ্যন্তরীণ তথ্য' : 'Internal notes' %>" />
+          </div>
+        </div>
+        <div class="modal-footer bg-light py-2">
+          <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal"><%= locale === 'bn' ? 'বাতিল' : 'Cancel' %></button>
+          <button type="submit" class="btn btn-sm btn-danger fw-bold"><%= locale === 'bn' ? 'প্রত্যাখ্যান নিশ্চিত করুন' : 'Confirm Rejection' %></button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+function openRejectModal(requestId, invoiceNo) {
+  document.getElementById('rejectRequestForm').action = '/admin/courier/requests/' + encodeURIComponent(requestId) + '/reject';
+  document.getElementById('rejectModalInvoiceText').innerText = 'অর্ডার: #' + invoiceNo + ' (অনুরোধ #' + requestId + ')';
+  document.getElementById('rejectionReason').value = '';
+  const modal = new bootstrap.Modal(document.getElementById('rejectRequestModal'));
+  modal.show();
+}
+</script>
+
+<%- include('partials/footer') %>

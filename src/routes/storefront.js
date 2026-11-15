@@ -15,6 +15,7 @@ const { env } = require('../config/env');
 const { ValidationError } = require('../utils/errors');
 const { captureAttribution, consentGranted } = require('../analytics/attribution');
 const { safeReferrer } = require('../utils/urlSecurity');
+const { isReservedRoute, SLUG_REGEX } = require('../utils/vendorSlug');
 
 const router = express.Router();
 
@@ -541,62 +542,13 @@ router.get(
   )
 );
 
-// ─── Vendor Storefront (/store/:slug) ───
-router.get(
-  '/store/:slug',
-  asyncHandler(async (req, res) => {
-    const rawSlug = String(req.params.slug || '').trim().toLowerCase();
-    if (!rawSlug) return renderStoreNotFound(req, res);
-
-    const storeData = await storefrontRepo.getStorefrontVendorStore(rawSlug, {
-      locale: req.locale,
-      page: req.query.page || 1,
-      perPage: req.query.per_page || 12,
-      sort: req.query.sort || 'newest',
-      q: req.query.q,
-      categorySlug: req.query.category,
-      minPrice: req.query.min_price,
-      maxPrice: req.query.max_price,
-      inStockOnly: req.query.in_stock,
-    });
-
-    if (!storeData || !storeData.vendor) {
-      return renderStoreNotFound(req, res);
-    }
-
-    const baseUrl = buildBaseUrl(req);
-    const actionPath = `/store/${encodeURIComponent(rawSlug)}`;
-    const paginationBaseUrl = buildPaginationBaseUrl(actionPath, req.query);
-
-    return res.render('store/vendor-store', {
-      vendor: storeData.vendor,
-      products: storeData.products,
-      totalProducts: storeData.pagination.total,
-      page: storeData.pagination.page,
-      perPage: storeData.pagination.perPage,
-      totalPages: storeData.pagination.totalPages,
-      paginationBaseUrl,
-      actionPath,
-      searchQuery: String(req.query.q || '').trim(),
-      sort: storeData.pagination.sort,
-      filterState: {
-        q: req.query.q || '',
-        category: req.query.category || '',
-        min_price: req.query.min_price ? String(req.query.min_price).trim() : '',
-        max_price: req.query.max_price ? String(req.query.max_price).trim() : '',
-        in_stock: req.query.in_stock === '1' || req.query.in_stock === 'true' ? '1' : '',
-        sort: storeData.pagination.sort,
-      },
-      pageMeta: {
-        title: `${storeData.vendor.shop_name} - ${res.locals.siteSettings?.site_name || 'Mr. Tumi'}`,
-        description: storeData.vendor.tagline || storeData.vendor.description || `${storeData.vendor.shop_name} on Mr. Tumi`,
-        canonicalUrl: `${baseUrl}${actionPath}`,
-        ogType: 'website',
-        ogImage: storeData.vendor.logo_url || undefined,
-      },
-    });
-  })
-);
+// ─── Legacy Vendor Storefront Redirect (/store/:slug -> /:slug) ───
+router.get('/store/:slug', (req, res) => {
+  const rawSlug = String(req.params.slug || '').trim().toLowerCase();
+  if (!rawSlug) return res.redirect(301, '/');
+  const queryStr = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
+  return res.redirect(301, `/${encodeURIComponent(rawSlug)}${queryStr}`);
+});
 
 // ─── Single Product Detail (/product/:slug) ───
 router.get(
@@ -2030,7 +1982,7 @@ router.get(
       ...entries.childcategories.map((cc) => `${baseUrl}/childcategory/${encodeURIComponent(cc.slug)}`),
       ...entries.brands.map((b) => `${baseUrl}/brand/${encodeURIComponent(b.slug)}`),
       ...entries.products.map((p) => `${baseUrl}${safeProductPath(p)}`),
-      ...((entries.stores || []).map((s) => `${baseUrl}/store/${encodeURIComponent(s.slug)}`)),
+      ...((entries.stores || []).map((s) => `${baseUrl}/${encodeURIComponent(s.slug)}`)),
       ...entries.blogs.map((b) => `${baseUrl}/blog/${encodeURIComponent(b.slug)}`),
       ...entries.pages.map((pg) => `${baseUrl}/page/${encodeURIComponent(pg.slug)}`),
     ];
@@ -2043,5 +1995,64 @@ ${urls.map((u) => `  <url><loc>${escapeXml(u)}</loc></url>`).join('\n')}
 );
 
 router.get('/wishlist', (req, res) => res.redirect('/customer/account/wishlist'));
+
+// ─── Canonical Root-Level Vendor Storefront (/:slug) ───
+router.get(
+  '/:slug',
+  asyncHandler(async (req, res, next) => {
+    const rawSlug = String(req.params.slug || '').trim().toLowerCase();
+    if (!rawSlug || !SLUG_REGEX.test(rawSlug) || isReservedRoute(rawSlug)) {
+      return next();
+    }
+
+    const storeData = await storefrontRepo.getStorefrontVendorStore(rawSlug, {
+      locale: req.locale,
+      page: req.query.page || 1,
+      perPage: req.query.per_page || 12,
+      sort: req.query.sort || 'newest',
+      q: req.query.q,
+      categorySlug: req.query.category,
+      minPrice: req.query.min_price,
+      maxPrice: req.query.max_price,
+      inStockOnly: req.query.in_stock,
+    });
+
+    if (!storeData || !storeData.vendor) {
+      return renderStoreNotFound(req, res);
+    }
+
+    const baseUrl = buildBaseUrl(req);
+    const actionPath = `/${encodeURIComponent(rawSlug)}`;
+    const paginationBaseUrl = buildPaginationBaseUrl(actionPath, req.query);
+
+    return res.render('store/vendor-store', {
+      vendor: storeData.vendor,
+      products: storeData.products,
+      totalProducts: storeData.pagination.total,
+      page: storeData.pagination.page,
+      perPage: storeData.pagination.perPage,
+      totalPages: storeData.pagination.totalPages,
+      paginationBaseUrl,
+      actionPath,
+      searchQuery: String(req.query.q || '').trim(),
+      sort: storeData.pagination.sort,
+      filterState: {
+        q: req.query.q || '',
+        category: req.query.category || '',
+        min_price: req.query.min_price ? String(req.query.min_price).trim() : '',
+        max_price: req.query.max_price ? String(req.query.max_price).trim() : '',
+        in_stock: req.query.in_stock === '1' || req.query.in_stock === 'true' ? '1' : '',
+        sort: storeData.pagination.sort,
+      },
+      pageMeta: {
+        title: `${storeData.vendor.shop_name} - ${res.locals.siteSettings?.site_name || 'Mr. Tumi'}`,
+        description: storeData.vendor.tagline || storeData.vendor.description || `${storeData.vendor.shop_name} on Mr. Tumi`,
+        canonicalUrl: `${baseUrl}${actionPath}`,
+        ogType: 'website',
+        ogImage: storeData.vendor.logo_url || undefined,
+      },
+    });
+  })
+);
 
 module.exports = router;

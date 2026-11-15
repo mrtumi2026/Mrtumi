@@ -36,6 +36,65 @@ router.post('/admin/fulfillment/sub-orders/:subOrderId/status', requirePermissio
   return req.accepts('json')?res.json({data:result}):res.redirect('/admin/reseller-commerce');
 }));
 
+// ─── Vendor Courier Booking Approval Queue ───
+router.get('/admin/courier/requests', requirePermission('orders.manage'), asyncHandler(async (req, res) => {
+  const approvalRepo = require('../repositories/vendorCourierApprovalRepository');
+  const status = req.query.status || 'all';
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  const data = await approvalRepo.listBookingRequests({ status, page, perPage: 25 });
+
+  if (req.accepts('json') && !req.query.html) {
+    return res.json({ success: true, data: data.requests, pagination: data.pagination });
+  }
+
+  return res.render('admin/courier-requests', {
+    pageTitle: req.locale === 'bn' ? 'ভেন্ডর কুরিয়ার বুকিং অনুমোদন কিউ' : 'Vendor Courier Booking Approvals',
+    requests: data.requests,
+    pagination: data.pagination,
+    filterStatus: status,
+    flash: req.flash ? {
+      message: (req.flash('success') || [])[0] || (req.flash('error') || [])[0],
+      type: req.flash('success')?.length ? 'success' : 'danger'
+    } : null,
+    csrfToken: req.csrfToken ? req.csrfToken() : '',
+  });
+}));
+
+router.post('/admin/courier/requests/:id/approve', requirePermission('orders.manage'), requireCsrf, asyncHandler(async (req, res) => {
+  const approvalRepo = require('../repositories/vendorCourierApprovalRepository');
+  const adminId = req.session?.adminUser?.id || 1;
+  try {
+    const result = await approvalRepo.approveBookingRequest({
+      requestId: req.params.id,
+      adminId,
+      courierCodeOverride: req.body.courier_code,
+      note: req.body.note,
+    });
+    const tracking = result.request?.tracking_id || result.booking?.trackingId || '';
+    req.flash('success', `কুরিয়ার বুকিং সফলভাবে অনুমোদিত ও সম্পন্ন হয়েছে (ট্র্যাকিং: ${tracking})।`);
+  } catch (err) {
+    req.flash('error', `কুরিয়ার বুকিং ব্যর্থ হয়েছে: ${err.message}`);
+  }
+  return res.redirect('/admin/courier/requests');
+}));
+
+router.post('/admin/courier/requests/:id/reject', requirePermission('orders.manage'), requireCsrf, asyncHandler(async (req, res) => {
+  const approvalRepo = require('../repositories/vendorCourierApprovalRepository');
+  const adminId = req.session?.adminUser?.id || 1;
+  try {
+    await approvalRepo.rejectBookingRequest({
+      requestId: req.params.id,
+      adminId,
+      rejectionReason: req.body.rejection_reason || req.body.reason || 'Admin rejected the request',
+      note: req.body.note,
+    });
+    req.flash('success', 'কুরিয়ার বুকিং অনুরোধ সফলভাবে প্রত্যাখ্যান করা হয়েছে।');
+  } catch (err) {
+    req.flash('error', `প্রত্যাখ্যান ব্যর্থ হয়েছে: ${err.message}`);
+  }
+  return res.redirect('/admin/courier/requests');
+}));
+
 // Multi-courier quote comparison and recommendation
 router.get('/admin/fulfillment/sub-orders/:subOrderId/courier-quotes', requirePermission('orders.manage'), asyncHandler(async (req, res) => {
   const courierRepo = require('../repositories/courierIntegrationRepository');

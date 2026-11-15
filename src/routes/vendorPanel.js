@@ -455,6 +455,33 @@ router.get('/vendor/sub-orders/:subOrderId/courier-quotes', async (req, res, nex
   } catch (error) { return next(error); }
 });
 
+// Vendor submits courier booking request to Admin approval queue
+router.post('/vendor/sub-orders/:subOrderId/request-courier-booking', requireCsrf, async (req, res, next) => {
+  try {
+    const approvalRepo = require('../repositories/vendorCourierApprovalRepository');
+    const result = await approvalRepo.createBookingRequest({
+      subOrderId: req.params.subOrderId,
+      vendorId: req.session.vendorUser.id,
+      courierCode: req.body.courier_code,
+      note: req.body.note,
+      idempotencyKey: req.body.idempotency_key,
+    });
+
+    if (req.accepts('json') && !req.body.redirect) {
+      return res.json({ success: true, data: result.request, idempotentReplay: result.idempotentReplay });
+    }
+
+    req.flash('success', 'কুরিয়ার বুকিং অনুরোধ সফলভাবে জমা দেওয়া হয়েছে। অ্যাডমিন অনুমোদনের পর ট্র্যাকিং আইডি প্রদান করা হবে।');
+    return res.redirect('/vendor/orders');
+  } catch (error) {
+    if (req.accepts('json') && !req.body.redirect) {
+      return res.status(error.statusCode || 400).json({ success: false, error: error.message });
+    }
+    req.flash('error', error.message);
+    return res.redirect('/vendor/orders');
+  }
+});
+
 // Multi-courier one-click booking for vendor
 router.post('/vendor/sub-orders/:subOrderId/one-click-book', requireCsrf, async (req, res, next) => {
   if (!mysqlActive()) { req.flash('error', 'Requires MySQL workflow.'); return res.redirect('/vendor/orders'); }

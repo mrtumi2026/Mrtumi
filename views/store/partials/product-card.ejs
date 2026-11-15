@@ -32,7 +32,7 @@
 
     <% if (p.vendor_id && p.vendor_store_slug) { %>
       <div class="mb-1" style="font-size:11px;">
-        <a href="/store/<%= p.vendor_store_slug %>" class="text-decoration-none text-muted d-inline-flex align-items-center gap-1" title="<%= p.vendor_shop_name %>">
+        <a href="/<%= p.vendor_store_slug %>" class="text-decoration-none text-muted d-inline-flex align-items-center gap-1" title="<%= p.vendor_shop_name %>">
           <i class="fas fa-store fa-xs text-success" aria-hidden="true"></i>
           <span class="text-truncate fw-medium" style="max-width:130px;"><%= p.vendor_shop_name %></span>
           <% if (p.vendor_verified) { %><i class="fas fa-check-circle text-primary" style="font-size:9.5px;" title="Verified Store"></i><% } %>
