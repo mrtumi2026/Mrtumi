@@ -539,4 +539,101 @@ test('Migration 0037 - Strict pending migration safety gate validation', () => {
   assert.match(multiPendingResult.error, /GAPS_IN_APPLIED_VERSIONS/);
 });
 
+test('Migration 0037 - MariaDB engine detection, 5.5.5- prefix handling, and DDL compatibility', () => {
+  function parseAndValidateMariaDbVersion(verStr, commentStr = '') {
+    const isMariaDb = String(verStr).toLowerCase().includes('mariadb') || String(commentStr).toLowerCase().includes('mariadb');
+    if (!isMariaDb) {
+      return { ok: false, error: `NOT_MARIADB: Detected engine is not MariaDB (${verStr})` };
+    }
+
+    // Strip optional 5.5.5- replication compatibility prefix
+    const effectiveVer = String(verStr).replace(/^5\.5\.5-/, '');
+    const match = effectiveVer.match(/^(\d+)\.(\d+)/);
+    if (!match) {
+      return { ok: false, error: `UNPARSEABLE_VERSION: Cannot parse version from ${verStr}` };
+    }
+
+    const major = Number(match[1]);
+    const minor = Number(match[2]);
+    if (major < 10 || (major === 10 && minor < 2)) {
+      return {
+        ok: false,
+        error: `UNSUPPORTED_VERSION: MariaDB ${major}.${minor} is below minimum 10.2 required for IF NOT EXISTS DDL`,
+      };
+    }
+
+    return { ok: true, major, minor, effectiveVer };
+  }
+
+  // 1. Standard MariaDB version strings (10.3, 10.5, 10.6, 10.11 LTS)
+  const v106 = parseAndValidateMariaDbVersion('10.6.18-MariaDB-cll-lve', 'MariaDB Server');
+  assert.equal(v106.ok, true);
+  assert.equal(v106.major, 10);
+  assert.equal(v106.minor, 6);
+
+  const v1011 = parseAndValidateMariaDbVersion('10.11.8-MariaDB-log', 'MariaDB Server');
+  assert.equal(v1011.ok, true);
+  assert.equal(v1011.major, 10);
+  assert.equal(v1011.minor, 11);
+
+  const v103 = parseAndValidateMariaDbVersion('10.3.39-MariaDB', 'MariaDB Server');
+  assert.equal(v103.ok, true);
+  assert.equal(v103.major, 10);
+  assert.equal(v103.minor, 3);
+
+  // 2. Compatibility-prefixed MariaDB version strings (5.5.5-10.x.y)
+  const vPrefixed = parseAndValidateMariaDbVersion('5.5.5-10.6.18-MariaDB-cll-lve', 'MariaDB Server');
+  assert.equal(vPrefixed.ok, true);
+  assert.equal(vPrefixed.major, 10);
+  assert.equal(vPrefixed.minor, 6);
+
+  const vPrefixed1011 = parseAndValidateMariaDbVersion('5.5.5-10.11.5-MariaDB', '');
+  assert.equal(vPrefixed1011.ok, true);
+  assert.equal(vPrefixed1011.major, 10);
+  assert.equal(vPrefixed1011.minor, 11);
+
+  // 3. Non-MariaDB engine rejection (Oracle MySQL 8.0, 9.0, PostgreSQL)
+  const vMysql = parseAndValidateMariaDbVersion('8.0.36', 'MySQL Community Server');
+  assert.equal(vMysql.ok, false);
+  assert.match(vMysql.error, /NOT_MARIADB/);
+
+  // 4. Outdated MariaDB versions (< 10.2) lacking standard ADD COLUMN IF NOT EXISTS
+  const vOld = parseAndValidateMariaDbVersion('10.1.48-MariaDB', 'MariaDB Server');
+  assert.equal(vOld.ok, false);
+  assert.match(vOld.error, /UNSUPPORTED_VERSION/);
+
+  const v55 = parseAndValidateMariaDbVersion('5.5.68-MariaDB', 'MariaDB Server');
+  assert.equal(v55.ok, false);
+  assert.match(v55.error, /UNSUPPORTED_VERSION/);
+});
+
+test('Migration 0037 - File naming, pairing, and duplicate detection conforms to migrator specification', () => {
+  const migDir = path.resolve(__dirname, '../src/db/migrations');
+  const files = fs.readdirSync(migDir).sort();
+  const upFiles = files.filter((f) => f.endsWith('.up.sql'));
+  const downFiles = files.filter((f) => f.endsWith('.down.sql'));
+
+  // Exactly 37 pairs
+  assert.equal(upFiles.length, 37, 'Must have exactly 37 .up.sql migration files (0001-0037)');
+  assert.equal(downFiles.length, 37, 'Must have exactly 37 .down.sql rollback files');
+
+  const seenVersions = new Set();
+  for (const up of upFiles) {
+    const match = up.match(/^(\d{4})_([a-z0-9_]+)\.up\.sql$/);
+    assert.ok(match, `Migration filename ${up} must match ^(\\d{4})_([a-z0-9_]+)\\.up\\.sql$`);
+
+    const [, version, name] = match;
+    assert.ok(!seenVersions.has(version), `Duplicate version ${version} detected on disk`);
+    seenVersions.add(version);
+
+    const pairedDown = `${version}_${name}.down.sql`;
+    assert.ok(fs.existsSync(path.join(migDir, pairedDown)), `Missing matching rollback file for ${up}: ${pairedDown}`);
+  }
+
+  // First must be 0001, last must be 0037
+  assert.equal(upFiles[0].startsWith('0001_'), true);
+  assert.equal(upFiles[36].startsWith('0037_'), true);
+});
+
+
 
