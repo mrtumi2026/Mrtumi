@@ -452,3 +452,91 @@ test('Migration 0037 - Collision preflight detector prevents DDL execution on co
   assert.equal(colCheck.collisions[0].proposedSlug, 'store-1');
 });
 
+test('Migration 0037 - Strict pending migration safety gate validation', () => {
+  function verifyStrictPendingMigrations(appliedVersions, diskFiles) {
+    const diskVersions = diskFiles
+      .map((f) => {
+        const m = f.match(/^(\d{4})_/);
+        return m ? m[1] : null;
+      })
+      .filter(Boolean)
+      .sort();
+
+    const diskSet = new Set(diskVersions);
+    const appliedSet = new Set(appliedVersions);
+
+    // 1. Missing disk files corresponding to applied versions
+    const missingDisk = appliedVersions.filter((v) => !diskSet.has(v));
+    if (missingDisk.length > 0) {
+      return {
+        ok: false,
+        error: `MISSING_DISK_FILES: Applied versions missing on disk: ${missingDisk.join(', ')}`,
+      };
+    }
+
+    // 2. Expected applied versions strictly 0001 through 0036
+    const expectedApplied = Array.from({ length: 36 }, (_, i) => String(i + 1).padStart(4, '0'));
+    const unexpectedApplied = appliedVersions.filter((v) => !expectedApplied.includes(v));
+    if (unexpectedApplied.length > 0) {
+      return {
+        ok: false,
+        error: `UNEXPECTED_APPLIED_VERSIONS: Database contains unapproved applied versions: ${unexpectedApplied.join(', ')}`,
+      };
+    }
+
+    const missingApplied = expectedApplied.filter((v) => !appliedSet.has(v));
+    if (missingApplied.length > 0) {
+      return {
+        ok: false,
+        error: `GAPS_IN_APPLIED_VERSIONS: Baseline migrations missing from database: ${missingApplied.join(', ')}`,
+      };
+    }
+
+    // 3. Exactly 0037 must be pending
+    const pending = diskVersions.filter((v) => !appliedSet.has(v));
+    if (pending.length !== 1 || pending[0] !== '0037') {
+      return {
+        ok: false,
+        error: `INVALID_PENDING_MIGRATIONS: Expected strictly ONLY [0037] to be pending, but found: ${JSON.stringify(pending)}`,
+      };
+    }
+
+    return { ok: true, pending: ['0037'], appliedCount: appliedVersions.length };
+  }
+
+  // Disk files mock with all 37 migrations
+  const validDiskFiles = Array.from({ length: 37 }, (_, i) => `${String(i + 1).padStart(4, '0')}_test.up.sql`);
+  const baselineApplied = Array.from({ length: 36 }, (_, i) => String(i + 1).padStart(4, '0'));
+
+  // Scenario 1: Nominal production state -> PASS (0001-0036 applied, only 0037 pending)
+  const nominal = verifyStrictPendingMigrations(baselineApplied, validDiskFiles);
+  assert.equal(nominal.ok, true);
+  assert.deepEqual(nominal.pending, ['0037']);
+  assert.equal(nominal.appliedCount, 36);
+
+  // Scenario 2: Missing disk file for applied version -> FAIL-CLOSED
+  const appliedWithUnknown = [...baselineApplied, '0099'];
+  const missingDiskResult = verifyStrictPendingMigrations(appliedWithUnknown, validDiskFiles);
+  assert.equal(missingDiskResult.ok, false);
+  assert.match(missingDiskResult.error, /MISSING_DISK_FILES/);
+
+  // Scenario 3: Unexpected applied version (e.g. 0037 already applied) -> FAIL-CLOSED
+  const alreadyApplied37 = [...baselineApplied, '0037'];
+  const unexpectedResult = verifyStrictPendingMigrations(alreadyApplied37, validDiskFiles);
+  assert.equal(unexpectedResult.ok, false);
+  assert.match(unexpectedResult.error, /UNEXPECTED_APPLIED_VERSIONS/);
+
+  // Scenario 4: Gap in applied versions (e.g. 0012 missing from database) -> FAIL-CLOSED
+  const withGap = baselineApplied.filter((v) => v !== '0012');
+  const gapResult = verifyStrictPendingMigrations(withGap, validDiskFiles);
+  assert.equal(gapResult.ok, false);
+  assert.match(gapResult.error, /GAPS_IN_APPLIED_VERSIONS/);
+
+  // Scenario 5: Multiple pending migrations (e.g. 0036 and 0037 both pending) -> FAIL-CLOSED
+  const partialApplied = Array.from({ length: 35 }, (_, i) => String(i + 1).padStart(4, '0'));
+  const multiPendingResult = verifyStrictPendingMigrations(partialApplied, validDiskFiles);
+  assert.equal(multiPendingResult.ok, false);
+  assert.match(multiPendingResult.error, /GAPS_IN_APPLIED_VERSIONS/);
+});
+
+
