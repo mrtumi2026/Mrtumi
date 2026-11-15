@@ -633,7 +633,34 @@ test('Migration 0037 - File naming, pairing, and duplicate detection conforms to
   // First must be 0001, last must be 0037
   assert.equal(upFiles[0].startsWith('0001_'), true);
   assert.equal(upFiles[36].startsWith('0037_'), true);
+
+  // Regex strictness against malformed filenames
+  const migrationRegex = /^(\d{4})_([a-z0-9_]+)\.up\.sql$/;
+  assert.equal(migrationRegex.test('0038-invalid.up.sql'), false);
+  assert.equal(migrationRegex.test('038_short.up.sql'), false);
+  assert.equal(migrationRegex.test('0038_UPPERCASE.up.sql'), false);
+  assert.equal(migrationRegex.test('invalid.sql'), false);
+  assert.equal(migrationRegex.test('0038_valid_name.up.sql'), true);
 });
+
+test('Node runtime bounds - verifies >=22.5.0 enforcement logic', () => {
+  function checkNodeVersion(versionStr) {
+    const clean = versionStr.replace(/^v/, '');
+    const [maj, min] = clean.split('.').map(Number);
+    if (maj < 22 || (maj === 22 && min < 5)) {
+      return { ok: false, error: `NODE_VERSION_BELOW_MINIMUM: ${versionStr}` };
+    }
+    return { ok: true, maj, min };
+  }
+
+  assert.equal(checkNodeVersion('v22.23.4').ok, true); // cPanel pinned target
+  assert.equal(checkNodeVersion('v22.5.0').ok, true);  // engines boundary
+  assert.equal(checkNodeVersion('v26.12.1').ok, true); // local tool version
+  assert.equal(checkNodeVersion('v20.10.0').ok, false);
+  assert.equal(checkNodeVersion('v22.4.9').ok, false);
+  assert.equal(checkNodeVersion('v18.19.0').ok, false);
+});
+
 
 test('Migration 0037 - Post-migration data integrity validator enforces single-column index and zero null/empty slugs', () => {
   function validatePostMigrationIntegrity({ migrationRow, columnFound, indexRows, counts, emptyCheck, duplicates }) {
