@@ -18,37 +18,157 @@ function toPositiveInt(val, label) {
 
 /**
  * Audit log recorder for vendor courier booking lifecycle events.
+ * Writes inside an active transaction (tx) when provided, or standalone.
+ * Fail-closed: Never swallows errors. If an audit log write fails, the
+ * error propagates and forces rollback of the enclosing transaction.
  */
-async function recordAuditLog({ bookingRequestId, subOrderId, action, actorType, actorId, fromStatus, toStatus, details = {} }) {
-  const detailsJson = JSON.stringify(details);
-  if (env.db.client === 'mysql') {
-    try {
-      const pool = getPool();
-      await pool.query(
-        `INSERT INTO vendor_courier_booking_audit_logs
-         (booking_request_id, sub_order_id, action, actor_type, actor_id, from_status, to_status, details_json, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP())`,
-        [bookingRequestId, subOrderId, action, actorType, actorId, fromStatus || null, toStatus || null, detailsJson]
-      );
-    } catch (err) {
-      // Non-fatal if audit write fails
-      console.error('[WARN] Failed to write courier booking audit log:', err.message);
-    }
+async function recordAuditLog({ bookingRequestId, subOrderId, action, actorType, actorId, fromStatus, toStatus, details = {} }, tx = null) {
+  const detailsJson = JSON.stringify(details || {});
+  const reqId = Number(bookingRequestId);
+  const subId = Number(subOrderId);
+  const aId = Number(actorId);
+
+  if (tx && typeof tx.execute === 'function') {
+    // MySQL withTransaction client
+    await tx.execute(
+      `INSERT INTO vendor_courier_booking_audit_logs
+       (booking_request_id, sub_order_id, action, actor_type, actor_id, from_status, to_status, details_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP())`,
+      [reqId, subId, action, actorType, aId, fromStatus || null, toStatus || null, detailsJson]
+    );
+  } else if (env.db.client === 'mysql') {
+    const pool = getPool();
+    await pool.query(
+      `INSERT INTO vendor_courier_booking_audit_logs
+       (booking_request_id, sub_order_id, action, actor_type, actor_id, from_status, to_status, details_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP())`,
+      [reqId, subId, action, actorType, aId, fromStatus || null, toStatus || null, detailsJson]
+    );
   } else {
+    // SQLite
+    sqliteDb.run(
+      `INSERT INTO vendor_courier_booking_audit_logs
+       (booking_request_id, sub_order_id, action, actor_type, actor_id, from_status, to_status, details_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))`,
+      reqId, subId, action, actorType, aId, fromStatus || null, toStatus || null, detailsJson
+    );
+  }
+}
+
+/**
+ * Atomically updates a booking request's status and records an audit log entry
+ * within a single database transaction. If the audit log or update fails, changes roll back.
+ */
+async function updateRequestStatusWithAudit({
+  requestId,
+  subOrderId,
+  toStatus,
+  fromStatus = null,
+  adminId = null,
+  trackingId = null,
+  consignmentId = null,
+  responseJson = null,
+  failureReason = null,
+  rejectionReason = null,
+  adminNotes = null,
+  action,
+  details = {}
+}) {
+  const reqId = toPositiveInt(requestId, 'booking request ID');
+  const subId = toPositiveInt(subOrderId, 'sub-order ID');
+  const aId = adminId ? Number(adminId) : null;
+  const auditDetails = { ...details };
+  if (failureReason) auditDetails.failureReason = failureReason;
+  if (rejectionReason) auditDetails.rejectionReason = rejectionReason;
+  if (adminNotes) auditDetails.adminNotes = adminNotes;
+
+  if (env.db.client === 'mysql') {
+    return withTransaction(async (tx) => {
+      await tx.execute(
+        `UPDATE vendor_courier_booking_requests
+         SET status = ?,
+             tracking_id = COALESCE(?, tracking_id),
+             consignment_id = COALESCE(?, consignment_id),
+             courier_response_json = COALESCE(?, courier_response_json),
+             failure_reason = ?,
+             rejection_reason = COALESCE(?, rejection_reason),
+             approved_by_admin_id = COALESCE(?, approved_by_admin_id),
+             admin_notes = COALESCE(?, admin_notes),
+             updated_at = UTC_TIMESTAMP()
+         WHERE id = ?`,
+        [
+          toStatus,
+          trackingId || null,
+          consignmentId || null,
+          responseJson || null,
+          failureReason || null,
+          rejectionReason || null,
+          aId,
+          adminNotes || null,
+          reqId
+        ]
+      );
+
+      await module.exports.recordAuditLog({
+        bookingRequestId: reqId,
+        subOrderId: subId,
+        action,
+        actorType: 'admin',
+        actorId: aId || 0,
+        fromStatus,
+        toStatus,
+        details: auditDetails
+      }, tx);
+    });
+  } else {
+    // SQLite atomic execution with rollback on audit failure
+    sqliteDb.exec('BEGIN IMMEDIATE');
     try {
       sqliteDb.run(
-        `INSERT INTO vendor_courier_booking_audit_logs
-         (booking_request_id, sub_order_id, action, actor_type, actor_id, from_status, to_status, details_json, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))`,
-        bookingRequestId, subOrderId, action, actorType, actorId, fromStatus || null, toStatus || null, detailsJson
+        `UPDATE vendor_courier_booking_requests
+         SET status = ?,
+             tracking_id = COALESCE(?, tracking_id),
+             consignment_id = COALESCE(?, consignment_id),
+             courier_response_json = COALESCE(?, courier_response_json),
+             failure_reason = ?,
+             rejection_reason = COALESCE(?, rejection_reason),
+             approved_by_admin_id = COALESCE(?, approved_by_admin_id),
+             admin_notes = COALESCE(?, admin_notes),
+             updated_at = datetime('now', 'localtime')
+         WHERE id = ?`,
+        toStatus,
+        trackingId || null,
+        consignmentId || null,
+        responseJson || null,
+        failureReason || null,
+        rejectionReason || null,
+        aId,
+        adminNotes || null,
+        reqId
       );
-    } catch (_) {}
+
+      await module.exports.recordAuditLog({
+        bookingRequestId: reqId,
+        subOrderId: subId,
+        action,
+        actorType: 'admin',
+        actorId: aId || 0,
+        fromStatus,
+        toStatus,
+        details: auditDetails
+      });
+      sqliteDb.exec('COMMIT');
+    } catch (err) {
+      try { sqliteDb.exec('ROLLBACK'); } catch (_) {}
+      throw err;
+    }
   }
 }
 
 /**
  * Submits a new courier booking request from vendor to Admin approval queue.
  * Concurrency-safe: uses database-enforced unique constraints and atomic checks.
+ * Enforces ownership-first validation before checking idempotency replay.
  */
 async function createBookingRequest({ subOrderId, vendorId, courierCode = '', note = '', idempotencyKey = '' }) {
   const subId = toPositiveInt(subOrderId, 'sub-order ID');
@@ -57,17 +177,9 @@ async function createBookingRequest({ subOrderId, vendorId, courierCode = '', no
   const cleanNote = String(note || '').trim().slice(0, 500);
   const cleanIdemp = String(idempotencyKey || '').trim().slice(0, 120);
 
-  // 1. Check idempotency if key provided
-  if (cleanIdemp) {
-    const existing = await getBookingRequestByIdempotencyKey(cleanIdemp);
-    if (existing) {
-      return { request: existing, idempotentReplay: true };
-    }
-  }
-
-  // 2. Query and validate suborder ownership & state
   if (env.db.client === 'mysql') {
     return withTransaction(async (tx) => {
+      // 1. Query and lock sub-order FOR UPDATE
       const subOrder = await tx.queryOne(
         `SELECT vso.id, vso.order_id, vso.vendor_id, vso.status, vso.delivery_mode, vso.cod_due_paisa,
                 o.invoice_no, o.customer_name, o.customer_phone, o.shipping_address, o.order_status
@@ -81,18 +193,35 @@ async function createBookingRequest({ subOrderId, vendorId, courierCode = '', no
         throw new NotFoundError('Vendor sub-order not found.');
       }
 
+      // 2. FIRST: Validate vendor ownership before any idempotency lookup or replay
       if (Number(subOrder.vendor_id) !== vId) {
         throw new AuthorizationError('You are not authorized to request courier booking for this sub-order.');
       }
 
+      // 3. SECOND: Check idempotency key replay if provided
+      if (cleanIdemp) {
+        const existing = await tx.queryOne(
+          `SELECT * FROM vendor_courier_booking_requests WHERE idempotency_key = ?`,
+          [cleanIdemp]
+        );
+        if (existing) {
+          // Replay verification: both vendor_id and sub_order_id must match
+          if (Number(existing.vendor_id) !== vId || Number(existing.sub_order_id) !== subId) {
+            throw new ConflictError('Idempotency key collision or unauthorized replay detected.');
+          }
+          return { request: existing, idempotentReplay: true };
+        }
+      }
+
+      // 4. Validate sub-order state
       if (['cancelled', 'delivered', 'returned'].includes(subOrder.status)) {
         throw new ValidationError(`Sub-order in '${subOrder.status}' status cannot be booked with courier.`);
       }
 
-      // Check for existing active requests with row lock
+      // 5. Check for existing active requests with row lock
       const existingReq = await tx.queryOne(
         `SELECT id, status, tracking_id, rejection_reason FROM vendor_courier_booking_requests
-         WHERE sub_order_id = ? AND status IN ('pending', 'booking', 'booked')
+         WHERE sub_order_id = ? AND status IN ('pending', 'booking', 'booked', 'in_review')
          ORDER BY id DESC LIMIT 1 FOR UPDATE`,
         [subId]
       );
@@ -100,6 +229,9 @@ async function createBookingRequest({ subOrderId, vendorId, courierCode = '', no
       if (existingReq) {
         if (existingReq.status === 'booked') {
           throw new ConflictError('Courier has already been booked for this sub-order.');
+        }
+        if (existingReq.status === 'in_review') {
+          throw new ConflictError('A courier booking request for this sub-order is currently under review due to an uncertain provider outcome.');
         }
         throw new ConflictError('A courier booking request is already pending or being processed for this sub-order.');
       }
@@ -114,9 +246,9 @@ async function createBookingRequest({ subOrderId, vendorId, courierCode = '', no
         );
 
         const reqId = res.insertId;
-        const created = await tx.queryOne('SELECT * FROM vendor_courier_booking_requests WHERE id = ?', [reqId]);
 
-        await recordAuditLog({
+        // Transactional audit log recording
+        await module.exports.recordAuditLog({
           bookingRequestId: reqId,
           subOrderId: subId,
           action: 'request_created',
@@ -125,8 +257,9 @@ async function createBookingRequest({ subOrderId, vendorId, courierCode = '', no
           fromStatus: null,
           toStatus: 'pending',
           details: { courierCode: cleanCourier, note: cleanNote, idempotencyKey: cleanIdemp }
-        });
+        }, tx);
 
+        const created = await tx.queryOne('SELECT * FROM vendor_courier_booking_requests WHERE id = ?', [reqId]);
         return { request: created, idempotentReplay: false };
       } catch (insertErr) {
         if (insertErr.code === 'ER_DUP_ENTRY' || String(insertErr.message).includes('uq_vcbr_active_sub_order')) {
@@ -137,9 +270,39 @@ async function createBookingRequest({ subOrderId, vendorId, courierCode = '', no
     });
   } else {
     // SQLite implementation (test runner)
+    const hasVso = sqliteDb.get("SELECT name FROM sqlite_master WHERE type='table' AND name='vendor_sub_orders'");
+    let orderId = 1;
+    if (hasVso) {
+      const subOrder = sqliteDb.get(
+        'SELECT id, order_id, vendor_id, status FROM vendor_sub_orders WHERE id = ?',
+        subId
+      );
+      if (!subOrder) {
+        throw new NotFoundError('Vendor sub-order not found.');
+      }
+      if (Number(subOrder.vendor_id) !== vId) {
+        throw new AuthorizationError('You are not authorized to request courier booking for this sub-order.');
+      }
+      if (['cancelled', 'delivered', 'returned'].includes(subOrder.status)) {
+        throw new ValidationError(`Sub-order in '${subOrder.status}' status cannot be booked with courier.`);
+      }
+      orderId = Number(subOrder.order_id) || 1;
+    }
+
+    // 2. Check idempotency replay if key provided
+    if (cleanIdemp) {
+      const existing = sqliteDb.get('SELECT * FROM vendor_courier_booking_requests WHERE idempotency_key = ?', cleanIdemp);
+      if (existing) {
+        if (Number(existing.vendor_id) !== vId || Number(existing.sub_order_id) !== subId) {
+          throw new ConflictError('Idempotency key collision or unauthorized replay detected.');
+        }
+        return { request: existing, idempotentReplay: true };
+      }
+    }
+
     const existingReq = sqliteDb.get(
       `SELECT id, status FROM vendor_courier_booking_requests
-       WHERE sub_order_id = ? AND status IN ('pending', 'booking', 'booked')
+       WHERE sub_order_id = ? AND status IN ('pending', 'booking', 'booked', 'in_review')
        ORDER BY id DESC LIMIT 1`,
       subId
     );
@@ -148,19 +311,23 @@ async function createBookingRequest({ subOrderId, vendorId, courierCode = '', no
       if (existingReq.status === 'booked') {
         throw new ConflictError('Courier has already been booked for this sub-order.');
       }
+      if (existingReq.status === 'in_review') {
+        throw new ConflictError('A courier booking request for this sub-order is currently under review due to an uncertain provider outcome.');
+      }
       throw new ConflictError('A courier booking request is already pending or being processed for this sub-order.');
     }
 
+    sqliteDb.exec('BEGIN IMMEDIATE');
     try {
       const res = sqliteDb.run(
         `INSERT INTO vendor_courier_booking_requests
          (sub_order_id, order_id, vendor_id, courier_code, status, vendor_notes, idempotency_key)
          VALUES (?, ?, ?, ?, 'pending', ?, ?)`,
-        subId, 1, vId, cleanCourier || null, cleanNote || null, cleanIdemp || null
+        subId, orderId, vId, cleanCourier || null, cleanNote || null, cleanIdemp || null
       );
 
       const created = await getBookingRequestById(res.lastInsertRowid);
-      await recordAuditLog({
+      await module.exports.recordAuditLog({
         bookingRequestId: res.lastInsertRowid,
         subOrderId: subId,
         action: 'request_created',
@@ -168,10 +335,12 @@ async function createBookingRequest({ subOrderId, vendorId, courierCode = '', no
         actorId: vId,
         fromStatus: null,
         toStatus: 'pending',
-        details: { courierCode: cleanCourier, note: cleanNote }
+        details: { courierCode: cleanCourier, note: cleanNote, idempotencyKey: cleanIdemp }
       });
+      sqliteDb.exec('COMMIT');
       return { request: created, idempotentReplay: false };
     } catch (insertErr) {
+      try { sqliteDb.exec('ROLLBACK'); } catch (_) {}
       if (String(insertErr.message).includes('UNIQUE constraint failed')) {
         throw new ConflictError('A courier booking request is already pending or being processed for this sub-order.');
       }
@@ -345,9 +514,9 @@ async function getBookingRequestBySubOrderId(subOrderId, vendorId = null) {
 
 /**
  * Approves a vendor courier booking request and executes one-click courier integration.
- * Concurrency-safe: atomically flips status from ('pending', 'failed') to 'booking'
+ * Concurrency-safe: atomically flips status from ('pending', 'failed', 'in_review') to 'booking'
  * and checks affectedRows before invoking the courier API. Only one request acquires the lock.
- * Uses a stable, deterministic idempotency key and safe reconciliation strategy.
+ * Uses a stable, deterministic idempotency key and safe fail-closed reconciliation strategy.
  */
 async function approveBookingRequest({ requestId, adminId, courierCodeOverride = '', note = '' }) {
   const reqId = toPositiveInt(requestId, 'booking request ID');
@@ -363,31 +532,72 @@ async function approveBookingRequest({ requestId, adminId, courierCodeOverride =
     throw new ConflictError('This booking request has already been booked with courier.');
   }
   if (current.status === 'booking') {
-    throw new ConflictError('Courier booking is currently in progress for this request.');
+    throw new ConflictError('Courier booking lock could not be acquired: another admin request is currently processing this booking.');
   }
   if (current.status === 'rejected') {
     throw new ConflictError('Cannot approve a rejected booking request.');
   }
+  if (!['pending', 'failed', 'in_review'].includes(current.status)) {
+    throw new ConflictError(`Cannot approve request in current status '${current.status}'.`);
+  }
 
-  // 1. Atomic conditional state transition to 'booking'
+  // 1. Atomic conditional state transition to 'booking' with transactional audit logging
   let lockAcquired = false;
   if (env.db.client === 'mysql') {
-    const pool = getPool();
-    const [updateRes] = await pool.query(
-      `UPDATE vendor_courier_booking_requests
-       SET status = 'booking', approved_by_admin_id = ?, admin_notes = ?, updated_at = UTC_TIMESTAMP()
-       WHERE id = ? AND status IN ('pending', 'failed')`,
-      [aId, adminNote || null, reqId]
-    );
-    lockAcquired = (updateRes && updateRes.affectedRows === 1);
+    lockAcquired = await withTransaction(async (tx) => {
+      const updateRes = await tx.execute(
+        `UPDATE vendor_courier_booking_requests
+         SET status = 'booking', approved_by_admin_id = ?, admin_notes = ?, updated_at = UTC_TIMESTAMP()
+         WHERE id = ? AND status IN ('pending', 'failed', 'in_review')`,
+        [aId, adminNote || null, reqId]
+      );
+      if (!updateRes || updateRes.affectedRows !== 1) {
+        return false;
+      }
+      await module.exports.recordAuditLog({
+        bookingRequestId: reqId,
+        subOrderId: current.sub_order_id,
+        action: 'approval_lock_acquired',
+        actorType: 'admin',
+        actorId: aId,
+        fromStatus: current.status,
+        toStatus: 'booking',
+        details: { note: adminNote }
+      }, tx);
+      return true;
+    });
   } else {
+    // SQLite atomic lock acquisition: update status first, then record audit log
+    // If audit log fails, revert state and rethrow
     const res = sqliteDb.run(
       `UPDATE vendor_courier_booking_requests
        SET status = 'booking', approved_by_admin_id = ?, admin_notes = ?, updated_at = datetime('now', 'localtime')
-       WHERE id = ? AND status IN ('pending', 'failed')`,
+       WHERE id = ? AND status IN ('pending', 'failed', 'in_review')`,
       aId, adminNote || null, reqId
     );
     lockAcquired = (res && res.changes === 1);
+    if (lockAcquired) {
+      try {
+        await module.exports.recordAuditLog({
+          bookingRequestId: reqId,
+          subOrderId: current.sub_order_id,
+          action: 'approval_lock_acquired',
+          actorType: 'admin',
+          actorId: aId,
+          fromStatus: current.status,
+          toStatus: 'booking',
+          details: { note: adminNote }
+        });
+      } catch (auditErr) {
+        sqliteDb.run(
+          `UPDATE vendor_courier_booking_requests
+           SET status = ?, approved_by_admin_id = ?, updated_at = datetime('now', 'localtime')
+           WHERE id = ?`,
+          current.status, current.approved_by_admin_id || null, reqId
+        );
+        throw auditErr;
+      }
+    }
   }
 
   // If lock was not acquired, another concurrent admin request already acquired it
@@ -403,66 +613,116 @@ async function approveBookingRequest({ requestId, adminId, courierCodeOverride =
     throw new ConflictError(`Cannot approve request in current status '${fresh.status}'.`);
   }
 
-  await recordAuditLog({
-    bookingRequestId: reqId,
-    subOrderId: current.sub_order_id,
-    action: 'approval_lock_acquired',
-    actorType: 'admin',
-    actorId: aId,
-    fromStatus: current.status,
-    toStatus: 'booking',
-    details: { note: adminNote }
-  });
-
   const selectedCourier = String(courierCodeOverride || current.courier_code || '').trim().toLowerCase();
   const courierRepo = require('./courierIntegrationRepository');
 
   // Stable deterministic idempotency key per booking request
   const stableIdempotencyKey = `vcbr:${reqId}:suborder:${current.sub_order_id}`;
 
-  // 2. Ambiguity & reconciliation check before booking
-  // If the shipment was previously left in unknown_timeout / in_review, reconcile before re-booking
-  try {
-    if (env.db.client === 'mysql') {
-      const pool = getPool();
-      const [shipRows] = await pool.query(
-        'SELECT booking_status, tracking_id, external_consignment_id FROM fulfillment_shipments WHERE vendor_sub_order_id = ? ORDER BY id DESC LIMIT 1',
-        [current.sub_order_id]
-      );
-      const ship = shipRows && shipRows[0];
-      if (ship && ['unknown_timeout', 'in_review'].includes(ship.booking_status)) {
-        // Attempt reconciliation first
-        const rec = await courierRepo.reconcileBookingResult({
-          subOrderId: current.sub_order_id,
-          actor: { userId: aId, platformAdmin: true }
-        });
-        if (rec.reconciled && rec.status === 'succeeded' && rec.trackingId) {
-          // Parcel exists at provider! Mark booked directly without duplicate call
-          await pool.query(
-            `UPDATE vendor_courier_booking_requests
-             SET status = 'booked', tracking_id = ?, consignment_id = ?, courier_response_json = ?, failure_reason = NULL, updated_at = UTC_TIMESTAMP()
-             WHERE id = ?`,
-            [rec.trackingId, rec.externalConsignmentId || rec.trackingId, JSON.stringify(rec), reqId]
-          );
-
-          await recordAuditLog({
-            bookingRequestId: reqId,
-            subOrderId: current.sub_order_id,
-            action: 'booking_reconciled',
-            actorType: 'admin',
-            actorId: aId,
-            fromStatus: 'booking',
-            toStatus: 'booked',
-            details: { trackingId: rec.trackingId, note: 'Reconciled from uncertain provider state' }
-          });
-
-          const bookedReq = await getBookingRequestById(reqId);
-          return { success: true, request: bookedReq, booking: rec, reconciled: true };
-        }
-      }
+  // 2. Ambiguity & reconciliation check before booking (FAIL-CLOSED)
+  // Check if shipment exists and was left in unknown_timeout or in_review
+  let existingShipment = null;
+  if (env.db.client === 'mysql') {
+    const pool = getPool();
+    const [shipRows] = await pool.query(
+      'SELECT id, booking_status, tracking_id, external_consignment_id, courier_code FROM fulfillment_shipments WHERE vendor_sub_order_id = ? ORDER BY id DESC LIMIT 1',
+      [current.sub_order_id]
+    );
+    existingShipment = shipRows && shipRows[0] ? shipRows[0] : null;
+  } else {
+    const hasFulfillment = sqliteDb.get("SELECT name FROM sqlite_master WHERE type='table' AND name='fulfillment_shipments'");
+    if (hasFulfillment) {
+      existingShipment = sqliteDb.get(
+        'SELECT id, booking_status, tracking_id, external_consignment_id, courier_code FROM fulfillment_shipments WHERE vendor_sub_order_id = ? ORDER BY id DESC LIMIT 1',
+        current.sub_order_id
+      ) || null;
     }
-  } catch (recErr) {
-    console.error('[WARN] Pre-booking reconciliation check encountered an error:', recErr.message);
+  }
+
+  const needsReconciliation = (existingShipment && ['unknown_timeout', 'in_review'].includes(existingShipment.booking_status)) ||
+    current.status === 'in_review' ||
+    Boolean(current.tracking_id || current.consignment_id);
+
+  if (needsReconciliation) {
+    let rec = null;
+    let recErr = null;
+    try {
+      rec = await courierRepo.reconcileBookingResult({
+        subOrderId: current.sub_order_id,
+        actor: { userId: aId, platformAdmin: true }
+      });
+    } catch (err) {
+      recErr = err;
+    }
+
+    if (recErr || !rec || !rec.reconciled) {
+      const reasonMsg = recErr ? recErr.message : (rec?.message || 'Carrier reconciliation inconclusive; parcel absence not confirmed');
+      // FAIL-CLOSED: transition request from 'booking' to 'in_review'
+      await updateRequestStatusWithAudit({
+        requestId: reqId,
+        subOrderId: current.sub_order_id,
+        toStatus: 'in_review',
+        fromStatus: 'booking',
+        adminId: aId,
+        action: 'reconciliation_uncertain_blocked',
+        failureReason: reasonMsg,
+        adminNotes: adminNote
+      });
+
+      throw new ConflictError(
+        `Cannot proceed with courier booking: previous provider outcome for sub-order #${current.sub_order_id} is uncertain (${reasonMsg}). Request placed in 'in_review' status. Reconcile provider status before retry.`
+      );
+    }
+
+    if (rec.outcome === 'found' || (rec.bookingStatus === 'succeeded' && rec.trackingId)) {
+      // Parcel already exists at provider! Recovered!
+      const recTrackingId = rec.trackingId;
+      const recConsignmentId = rec.externalConsignmentId || rec.consignmentId || recTrackingId;
+      await updateRequestStatusWithAudit({
+        requestId: reqId,
+        subOrderId: current.sub_order_id,
+        toStatus: 'booked',
+        fromStatus: 'booking',
+        adminId: aId,
+        trackingId: recTrackingId,
+        consignmentId: recConsignmentId,
+        responseJson: JSON.stringify(rec),
+        action: 'booking_reconciled',
+        details: { trackingId: recTrackingId, note: 'Reconciled from uncertain provider state; parcel confirmed at provider.' }
+      });
+
+      const bookedReq = await getBookingRequestById(reqId);
+      return { success: true, request: bookedReq, booking: rec, reconciled: true };
+    } else if (rec.outcome === 'confirmed_absent' || (rec.bookingStatus === 'failed' && rec.reconciled)) {
+      // Confirmed absent: record audit log and safely proceed to booking
+      await module.exports.recordAuditLog({
+        bookingRequestId: reqId,
+        subOrderId: current.sub_order_id,
+        action: 'reconciliation_confirmed_absent',
+        actorType: 'admin',
+        actorId: aId,
+        fromStatus: 'booking',
+        toStatus: 'booking',
+        details: { message: rec.message || 'Carrier confirmed no parcel exists; cleared for safe retry.' }
+      });
+      // Safe to proceed to executeOneClickBooking!
+    } else {
+      // Any other inconclusive result: FAIL-CLOSED!
+      const reasonMsg = rec.message || 'Carrier reconciliation outcome is inconclusive; parcel absence not confirmed';
+      await updateRequestStatusWithAudit({
+        requestId: reqId,
+        subOrderId: current.sub_order_id,
+        toStatus: 'in_review',
+        fromStatus: 'booking',
+        adminId: aId,
+        action: 'reconciliation_uncertain_blocked',
+        failureReason: reasonMsg,
+        adminNotes: adminNote
+      });
+      throw new ConflictError(
+        `Cannot proceed with courier booking: previous provider outcome is uncertain (${reasonMsg}). Request placed in 'in_review' status.`
+      );
+    }
   }
 
   // 3. Trigger courier integration
@@ -479,86 +739,47 @@ async function approveBookingRequest({ requestId, adminId, courierCodeOverride =
     const consignmentId = bookingResult.consignmentId || trackingId;
     const responseJson = JSON.stringify(bookingResult);
 
-    // Update request to 'booked'
-    if (env.db.client === 'mysql') {
-      const pool = getPool();
-      await pool.query(
-        `UPDATE vendor_courier_booking_requests
-         SET status = 'booked',
-             tracking_id = ?,
-             consignment_id = ?,
-             courier_response_json = ?,
-             failure_reason = NULL,
-             updated_at = UTC_TIMESTAMP()
-         WHERE id = ?`,
-        [trackingId, consignmentId, responseJson, reqId]
-      );
-    } else {
-      sqliteDb.run(
-        `UPDATE vendor_courier_booking_requests
-         SET status = 'booked',
-             tracking_id = ?,
-             consignment_id = ?,
-             courier_response_json = ?,
-             failure_reason = NULL,
-             updated_at = datetime('now', 'localtime')
-         WHERE id = ?`,
-        trackingId, consignmentId, responseJson, reqId
-      );
-    }
-
-    await recordAuditLog({
-      bookingRequestId: reqId,
+    // Atomically update request to 'booked' with audit log
+    await updateRequestStatusWithAudit({
+      requestId: reqId,
       subOrderId: current.sub_order_id,
-      action: 'booking_succeeded',
-      actorType: 'admin',
-      actorId: aId,
-      fromStatus: 'booking',
       toStatus: 'booked',
+      fromStatus: 'booking',
+      adminId: aId,
+      trackingId,
+      consignmentId,
+      responseJson,
+      action: 'booking_succeeded',
       details: { trackingId, consignmentId, courierName: bookingResult.courierName }
     });
 
     const updated = await getBookingRequestById(reqId);
     return { success: true, request: updated, booking: bookingResult };
   } catch (err) {
-    // Record failure on the request, preserving it for safe retry
+    const isTimeoutOrUncertain = err.code === 'PROVIDER_TIMEOUT' ||
+      String(err.message || '').toLowerCase().includes('timeout') ||
+      String(err.message || '').toLowerCase().includes('econnreset') ||
+      err.status === 'unknown_timeout';
+
+    const newStatus = isTimeoutOrUncertain ? 'in_review' : 'failed';
+    const actionName = isTimeoutOrUncertain ? 'booking_timeout_in_review' : 'booking_failed';
     const errorMsg = String(err.message || 'Courier API execution failed').slice(0, 500);
 
-    if (env.db.client === 'mysql') {
-      const pool = getPool();
-      await pool.query(
-        `UPDATE vendor_courier_booking_requests
-         SET status = 'failed',
-             failure_reason = ?,
-             updated_at = UTC_TIMESTAMP()
-         WHERE id = ?`,
-        [errorMsg, reqId]
-      );
-    } else {
-      sqliteDb.run(
-        `UPDATE vendor_courier_booking_requests
-         SET status = 'failed',
-             failure_reason = ?,
-             updated_at = datetime('now', 'localtime')
-         WHERE id = ?`,
-        errorMsg, reqId
-      );
-    }
-
-    await recordAuditLog({
-      bookingRequestId: reqId,
+    // Atomically transition status with audit log
+    await updateRequestStatusWithAudit({
+      requestId: reqId,
       subOrderId: current.sub_order_id,
-      action: 'booking_failed',
-      actorType: 'admin',
-      actorId: aId,
+      toStatus: newStatus,
       fromStatus: 'booking',
-      toStatus: 'failed',
-      details: { error: errorMsg }
+      adminId: aId,
+      action: actionName,
+      failureReason: errorMsg,
+      details: { error: errorMsg, isTimeout: isTimeoutOrUncertain }
     });
 
     const failedReq = await getBookingRequestById(reqId);
     const failureError = new Error(`Courier booking failed: ${errorMsg}`);
-    failureError.code = 'COURIER_BOOKING_FAILED';
+    failureError.code = isTimeoutOrUncertain ? 'COURIER_BOOKING_UNCERTAIN' : 'COURIER_BOOKING_FAILED';
     failureError.request = failedReq;
     throw failureError;
   }
@@ -566,8 +787,9 @@ async function approveBookingRequest({ requestId, adminId, courierCodeOverride =
 
 /**
  * Rejects a vendor courier booking request with a recorded reason.
- * Concurrency-safe: atomically updates from eligible states ('pending', 'failed')
+ * Concurrency-safe: atomically updates from eligible states ('pending', 'failed', 'in_review')
  * and checks affectedRows. Never permits rejection of 'booking' or 'booked' requests.
+ * Executes within a database transaction with audit logging.
  */
 async function rejectBookingRequest({ requestId, adminId, rejectionReason, note = '' }) {
   const reqId = toPositiveInt(requestId, 'booking request ID');
@@ -593,33 +815,73 @@ async function rejectBookingRequest({ requestId, adminId, rejectionReason, note 
   if (current.status === 'rejected') {
     throw new ConflictError('Request has already been rejected.');
   }
+  if (!['pending', 'failed', 'in_review'].includes(current.status)) {
+    throw new ConflictError(`Cannot reject request in status '${current.status}'.`);
+  }
 
   let rejectSuccess = false;
   if (env.db.client === 'mysql') {
-    const pool = getPool();
-    const [updateRes] = await pool.query(
-      `UPDATE vendor_courier_booking_requests
-       SET status = 'rejected',
-           rejection_reason = ?,
-           approved_by_admin_id = ?,
-           admin_notes = ?,
-           updated_at = UTC_TIMESTAMP()
-       WHERE id = ? AND status IN ('pending', 'failed')`,
-      [reason, aId, adminNote || null, reqId]
-    );
-    rejectSuccess = (updateRes && updateRes.affectedRows === 1);
+    rejectSuccess = await withTransaction(async (tx) => {
+      const updateRes = await tx.execute(
+        `UPDATE vendor_courier_booking_requests
+         SET status = 'rejected',
+             rejection_reason = ?,
+             approved_by_admin_id = ?,
+             admin_notes = ?,
+             updated_at = UTC_TIMESTAMP()
+         WHERE id = ? AND status IN ('pending', 'failed', 'in_review')`,
+        [reason, aId, adminNote || null, reqId]
+      );
+      if (!updateRes || updateRes.affectedRows !== 1) {
+        return false;
+      }
+      await module.exports.recordAuditLog({
+        bookingRequestId: reqId,
+        subOrderId: current.sub_order_id,
+        action: 'request_rejected',
+        actorType: 'admin',
+        actorId: aId,
+        fromStatus: current.status,
+        toStatus: 'rejected',
+        details: { reason, note: adminNote }
+      }, tx);
+      return true;
+    });
   } else {
-    const res = sqliteDb.run(
-      `UPDATE vendor_courier_booking_requests
-       SET status = 'rejected',
-           rejection_reason = ?,
-           approved_by_admin_id = ?,
-           admin_notes = ?,
-           updated_at = datetime('now', 'localtime')
-       WHERE id = ? AND status IN ('pending', 'failed')`,
-      reason, aId, adminNote || null, reqId
-    );
-    rejectSuccess = (res && res.changes === 1);
+    // SQLite atomic rejection with transaction rollback on audit failure
+    sqliteDb.exec('BEGIN IMMEDIATE');
+    try {
+      const res = sqliteDb.run(
+        `UPDATE vendor_courier_booking_requests
+         SET status = 'rejected',
+             rejection_reason = ?,
+             approved_by_admin_id = ?,
+             admin_notes = ?,
+             updated_at = datetime('now', 'localtime')
+         WHERE id = ? AND status IN ('pending', 'failed', 'in_review')`,
+        reason, aId, adminNote || null, reqId
+      );
+      if (res && res.changes === 1) {
+        await module.exports.recordAuditLog({
+          bookingRequestId: reqId,
+          subOrderId: current.sub_order_id,
+          action: 'request_rejected',
+          actorType: 'admin',
+          actorId: aId,
+          fromStatus: current.status,
+          toStatus: 'rejected',
+          details: { reason, note: adminNote }
+        });
+        sqliteDb.exec('COMMIT');
+        rejectSuccess = true;
+      } else {
+        sqliteDb.exec('ROLLBACK');
+        rejectSuccess = false;
+      }
+    } catch (err) {
+      try { sqliteDb.exec('ROLLBACK'); } catch (_) {}
+      throw err;
+    }
   }
 
   if (!rejectSuccess) {
@@ -634,17 +896,6 @@ async function rejectBookingRequest({ requestId, adminId, rejectionReason, note 
     throw new ConflictError(`Cannot reject request in status '${fresh.status}'.`);
   }
 
-  await recordAuditLog({
-    bookingRequestId: reqId,
-    subOrderId: current.sub_order_id,
-    action: 'request_rejected',
-    actorType: 'admin',
-    actorId: aId,
-    fromStatus: current.status,
-    toStatus: 'rejected',
-    details: { reason, note: adminNote }
-  });
-
   const updated = await getBookingRequestById(reqId);
   return { success: true, request: updated };
 }
@@ -658,4 +909,5 @@ module.exports = {
   approveBookingRequest,
   rejectBookingRequest,
   recordAuditLog,
+  updateRequestStatusWithAudit,
 };

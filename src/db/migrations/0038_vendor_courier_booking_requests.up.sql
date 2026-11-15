@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS `vendor_courier_booking_requests` (
   `courier_response_json` LONGTEXT DEFAULT NULL,
   `approved_by_admin_id` INT DEFAULT NULL,
   `active_sub_order_id` BIGINT GENERATED ALWAYS AS (
-    CASE WHEN `status` IN ('pending', 'booking', 'booked') THEN `sub_order_id` ELSE NULL END
+    CASE WHEN `status` IN ('pending', 'booking', 'booked', 'in_review') THEN `sub_order_id` ELSE NULL END
   ) VIRTUAL,
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
