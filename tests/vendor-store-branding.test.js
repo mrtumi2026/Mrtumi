@@ -613,9 +613,9 @@ test('Migration 0037 - File naming, pairing, and duplicate detection conforms to
   const upFiles = files.filter((f) => f.endsWith('.up.sql'));
   const downFiles = files.filter((f) => f.endsWith('.down.sql'));
 
-  // Exactly 37 pairs
-  assert.equal(upFiles.length, 37, 'Must have exactly 37 .up.sql migration files (0001-0037)');
-  assert.equal(downFiles.length, 37, 'Must have exactly 37 .down.sql rollback files');
+  // Exactly 38 pairs (0001-0038)
+  assert.equal(upFiles.length, 38, 'Must have continuous .up.sql migration files (0001-0038)');
+  assert.equal(downFiles.length, 38, 'Must have matching .down.sql rollback files');
 
   const seenVersions = new Set();
   for (const up of upFiles) {
@@ -630,9 +630,9 @@ test('Migration 0037 - File naming, pairing, and duplicate detection conforms to
     assert.ok(fs.existsSync(path.join(migDir, pairedDown)), `Missing matching rollback file for ${up}: ${pairedDown}`);
   }
 
-  // First must be 0001, last must be 0037
+  // First must be 0001, last must be 0038
   assert.equal(upFiles[0].startsWith('0001_'), true);
-  assert.equal(upFiles[36].startsWith('0037_'), true);
+  assert.equal(upFiles[37].startsWith('0038_'), true);
 
   // Regex strictness against malformed filenames
   const migrationRegex = /^(\d{4})_([a-z0-9_]+)\.up\.sql$/;

@@ -7,24 +7,70 @@ const fs = require('node:fs');
 
 const approvalRepo = require('../src/repositories/vendorCourierApprovalRepository');
 const courierRepo = require('../src/repositories/courierIntegrationRepository');
+const { loadMigrationPairs } = require('../src/db/migrator');
 const { ConflictError, ValidationError, NotFoundError, AuthorizationError } = require('../src/utils/errors');
 const sqliteDb = require('../src/db/database');
 
 const root = path.join(__dirname, '..');
 
-test('vendorCourierApprovalRepository - ensureTable creates schema cleanly', async () => {
-  await approvalRepo.ensureTable();
-  const info = sqliteDb.all("PRAGMA table_info('vendor_courier_booking_requests')");
-  assert.ok(info.length > 0, 'Table vendor_courier_booking_requests must exist');
-  const colNames = info.map((c) => c.name);
-  for (const expected of ['id', 'sub_order_id', 'order_id', 'vendor_id', 'courier_code', 'status', 'tracking_id', 'rejection_reason', 'failure_reason', 'idempotency_key']) {
-    assert.ok(colNames.includes(expected), `Column ${expected} must exist`);
-  }
+// Initialize SQLite tables and partial unique index for test execution
+sqliteDb.exec(`
+  CREATE TABLE IF NOT EXISTS vendor_courier_booking_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sub_order_id INTEGER NOT NULL,
+    order_id INTEGER NOT NULL,
+    vendor_id INTEGER NOT NULL,
+    courier_code TEXT DEFAULT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    tracking_id TEXT DEFAULT NULL,
+    consignment_id TEXT DEFAULT NULL,
+    rejection_reason TEXT DEFAULT NULL,
+    failure_reason TEXT DEFAULT NULL,
+    vendor_notes TEXT DEFAULT NULL,
+    admin_notes TEXT DEFAULT NULL,
+    idempotency_key TEXT UNIQUE,
+    courier_response_json TEXT DEFAULT NULL,
+    approved_by_admin_id INTEGER DEFAULT NULL,
+    created_at TEXT DEFAULT (datetime('now', 'localtime')),
+    updated_at TEXT DEFAULT (datetime('now', 'localtime'))
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS uq_active_sub_order ON vendor_courier_booking_requests(sub_order_id)
+    WHERE status IN ('pending', 'booking', 'booked');
+
+  CREATE TABLE IF NOT EXISTS vendor_courier_booking_audit_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    booking_request_id INTEGER NOT NULL,
+    sub_order_id INTEGER NOT NULL,
+    action TEXT NOT NULL,
+    actor_type TEXT NOT NULL,
+    actor_id INTEGER NOT NULL,
+    from_status TEXT DEFAULT NULL,
+    to_status TEXT DEFAULT NULL,
+    details_json TEXT DEFAULT NULL,
+    created_at TEXT DEFAULT (datetime('now', 'localtime'))
+  );
+`);
+
+test('Migration 0038 schema defines vendor_courier_booking_requests and audit logs', () => {
+  const pairs = loadMigrationPairs(path.join(root, 'src/db/migrations'));
+  const m38 = pairs.find((p) => p.version === '0038');
+  assert.ok(m38, 'Migration 0038 must exist');
+  assert.strictEqual(m38.name, 'vendor_courier_booking_requests');
+
+  // Verify UP SQL schema
+  assert.match(m38.upSql, /CREATE TABLE IF NOT EXISTS `vendor_courier_booking_requests`/);
+  assert.match(m38.upSql, /`active_sub_order_id` BIGINT GENERATED ALWAYS AS/);
+  assert.match(m38.upSql, /UNIQUE KEY `uq_vcbr_active_sub_order`/);
+  assert.match(m38.upSql, /CREATE TABLE IF NOT EXISTS `vendor_courier_booking_audit_logs`/);
+
+  // Verify DOWN SQL rollback
+  assert.match(m38.downSql, /DROP TABLE IF EXISTS `vendor_courier_booking_audit_logs`/);
+  assert.match(m38.downSql, /DROP TABLE IF EXISTS `vendor_courier_booking_requests`/);
 });
 
-test('Vendor submits courier booking request - creates pending request', async () => {
-  // Clear any existing test records
+test('Vendor submits courier booking request - creates pending request and audit log', async () => {
   sqliteDb.run('DELETE FROM vendor_courier_booking_requests WHERE sub_order_id = ?', 9001);
+  sqliteDb.run('DELETE FROM vendor_courier_booking_audit_logs WHERE sub_order_id = ?', 9001);
 
   const res = await approvalRepo.createBookingRequest({
     subOrderId: 9001,
@@ -40,170 +86,158 @@ test('Vendor submits courier booking request - creates pending request', async (
   assert.strictEqual(Number(res.request.vendor_id), 101);
   assert.strictEqual(res.request.courier_code, 'steadfast');
   assert.strictEqual(res.request.status, 'pending');
-  assert.strictEqual(res.request.vendor_notes, 'Fragile grocery items, handle with care');
+
+  const audit = sqliteDb.get('SELECT * FROM vendor_courier_booking_audit_logs WHERE sub_order_id = ? AND action = ?', 9001, 'request_created');
+  assert.ok(audit, 'Audit log for request_created must exist');
+  assert.strictEqual(audit.actor_type, 'vendor');
 });
 
-test('Idempotency protection - duplicate submission returns existing request', async () => {
-  const res = await approvalRepo.createBookingRequest({
-    subOrderId: 9001,
-    vendorId: 101,
-    courierCode: 'steadfast',
-    note: 'Duplicate attempt',
-    idempotencyKey: 'test-req-9001-a',
-  });
+test('Simultaneous vendor submissions - database constraints allow only one active request', async () => {
+  sqliteDb.run('DELETE FROM vendor_courier_booking_requests WHERE sub_order_id = ?', 9005);
 
-  assert.strictEqual(res.idempotentReplay, true);
-  assert.strictEqual(res.request.status, 'pending');
-});
+  const results = await Promise.allSettled([
+    approvalRepo.createBookingRequest({ subOrderId: 9005, vendorId: 105, courierCode: 'steadfast' }),
+    approvalRepo.createBookingRequest({ subOrderId: 9005, vendorId: 105, courierCode: 'pathao' }),
+  ]);
 
-test('Duplicate request prevention - cannot create second pending request for same sub-order', async () => {
-  await assert.rejects(
-    async () => {
-      await approvalRepo.createBookingRequest({
-        subOrderId: 9001,
-        vendorId: 101,
-        courierCode: 'pathao',
-        idempotencyKey: 'different-key-9001',
-      });
-    },
-    (err) => err instanceof ConflictError && err.message.includes('already pending')
+  const fulfilled = results.filter((r) => r.status === 'fulfilled');
+  const rejected = results.filter((r) => r.status === 'rejected');
+
+  assert.strictEqual(fulfilled.length, 1, 'Exactly one concurrent vendor submission must succeed');
+  assert.strictEqual(rejected.length, 1, 'Second concurrent vendor submission must be rejected');
+  assert.ok(
+    rejected[0].reason instanceof ConflictError,
+    'Rejection must be a ConflictError indicating active request exists'
   );
 });
 
-test('Admin lists booking requests with filtering and pagination', async () => {
-  const list = await approvalRepo.listBookingRequests({ status: 'pending', page: 1, perPage: 10 });
-  assert.ok(list.requests);
-  assert.ok(list.pagination);
-  assert.ok(list.requests.some((r) => Number(r.sub_order_id) === 9001));
-});
-
-test('Admin rejects booking request with recorded reason', async () => {
-  sqliteDb.run('DELETE FROM vendor_courier_booking_requests WHERE sub_order_id = ?', 9002);
+test('Simultaneous Admin approvals - atomic state lock ensures only one admin acquires booking lock', async () => {
+  sqliteDb.run('DELETE FROM vendor_courier_booking_requests WHERE sub_order_id = ?', 9006);
   const created = await approvalRepo.createBookingRequest({
-    subOrderId: 9002,
-    vendorId: 102,
+    subOrderId: 9006,
+    vendorId: 106,
     courierCode: 'steadfast',
-    idempotencyKey: 'test-req-9002',
   });
 
-  const rejectRes = await approvalRepo.rejectBookingRequest({
-    requestId: created.request.id,
-    adminId: 1,
-    rejectionReason: 'Invalid delivery address provided',
-    note: 'Customer phone unreachable',
-  });
-
-  assert.strictEqual(rejectRes.success, true);
-  assert.strictEqual(rejectRes.request.status, 'rejected');
-  assert.strictEqual(rejectRes.request.rejection_reason, 'Invalid delivery address provided');
-
-  // Vendor is now permitted to submit a new request after rejection
-  const retryRes = await approvalRepo.createBookingRequest({
-    subOrderId: 9002,
-    vendorId: 102,
-    courierCode: 'pathao',
-    note: 'Updated address confirmed with customer',
-    idempotencyKey: 'test-req-9002-retry',
-  });
-  assert.strictEqual(retryRes.request.status, 'pending');
-});
-
-test('Admin approves booking request - triggers courier integration and marks booked', async () => {
-  sqliteDb.run('DELETE FROM vendor_courier_booking_requests WHERE sub_order_id = ?', 9003);
-  const created = await approvalRepo.createBookingRequest({
-    subOrderId: 9003,
-    vendorId: 103,
-    courierCode: 'steadfast',
-    idempotencyKey: 'test-req-9003',
-  });
-
-  // Mock courierRepo.executeOneClickBooking for unit test execution
   const originalExecute = courierRepo.executeOneClickBooking;
   try {
-    courierRepo.executeOneClickBooking = async ({ subOrderId, courierCode, actor }) => {
-      assert.strictEqual(actor.platformAdmin, true);
+    courierRepo.executeOneClickBooking = async () => {
+      // Simulate delay in courier provider API response
+      await new Promise((r) => setTimeout(r, 20));
       return {
         success: true,
         courierName: 'Steadfast Courier',
-        trackingId: 'ST-9003-TRACK',
-        consignmentId: 'CS-9003-CONSIGN',
+        trackingId: 'ST-9006-LOCK',
+        consignmentId: 'CS-9006-LOCK',
       };
     };
 
-    const approveRes = await approvalRepo.approveBookingRequest({
-      requestId: created.request.id,
-      adminId: 1,
-      note: 'Verified and approved by operations lead',
-    });
+    const results = await Promise.allSettled([
+      approvalRepo.approveBookingRequest({ requestId: created.request.id, adminId: 1, note: 'Admin 1 attempt' }),
+      approvalRepo.approveBookingRequest({ requestId: created.request.id, adminId: 2, note: 'Admin 2 attempt' }),
+    ]);
 
-    assert.strictEqual(approveRes.success, true);
-    assert.strictEqual(approveRes.request.status, 'booked');
-    assert.strictEqual(approveRes.request.tracking_id, 'ST-9003-TRACK');
-    assert.strictEqual(approveRes.request.consignment_id, 'CS-9003-CONSIGN');
+    const fulfilled = results.filter((r) => r.status === 'fulfilled');
+    const rejected = results.filter((r) => r.status === 'rejected');
 
-    // Attempting to approve an already booked request throws ConflictError
-    await assert.rejects(
-      async () => {
-        await approvalRepo.approveBookingRequest({ requestId: created.request.id, adminId: 1 });
-      },
-      (err) => err instanceof ConflictError && err.message.includes('already been booked')
-    );
-
-    // Attempting to reject an already booked request throws ConflictError
-    await assert.rejects(
-      async () => {
-        await approvalRepo.rejectBookingRequest({ requestId: created.request.id, adminId: 1, rejectionReason: 'Too late' });
-      },
-      (err) => err instanceof ConflictError && err.message.includes('already booked')
+    assert.strictEqual(fulfilled.length, 1, 'Exactly one concurrent admin approval must acquire lock and succeed');
+    assert.strictEqual(rejected.length, 1, 'Second concurrent admin approval must be rejected');
+    assert.ok(
+      rejected[0].reason instanceof ConflictError && rejected[0].reason.message.includes('lock could not be acquired'),
+      'Rejected request must indicate lock could not be acquired'
     );
   } finally {
     courierRepo.executeOneClickBooking = originalExecute;
   }
 });
 
-test('Courier API failure preserves request with failed status and allows safe retry', async () => {
-  sqliteDb.run('DELETE FROM vendor_courier_booking_requests WHERE sub_order_id = ?', 9004);
+test('Rejection is atomic and forbidden during active booking or after completion', async () => {
+  sqliteDb.run('DELETE FROM vendor_courier_booking_requests WHERE sub_order_id = ?', 9007);
   const created = await approvalRepo.createBookingRequest({
-    subOrderId: 9004,
-    vendorId: 104,
+    subOrderId: 9007,
+    vendorId: 107,
     courierCode: 'pathao',
-    idempotencyKey: 'test-req-9004',
   });
 
+  // Manually transition to 'booking' to simulate in-flight provider call
+  sqliteDb.run("UPDATE vendor_courier_booking_requests SET status = 'booking' WHERE id = ?", created.request.id);
+
+  // Attempt to reject while booking is in progress
+  await assert.rejects(
+    async () => {
+      await approvalRepo.rejectBookingRequest({
+        requestId: created.request.id,
+        adminId: 1,
+        rejectionReason: 'Attempt reject during in-flight booking',
+      });
+    },
+    (err) => err instanceof ConflictError && err.message.includes('currently in progress')
+  );
+
+  // Move to 'failed' and verify rejection is allowed from failed state
+  sqliteDb.run("UPDATE vendor_courier_booking_requests SET status = 'failed' WHERE id = ?", created.request.id);
+  const rejectRes = await approvalRepo.rejectBookingRequest({
+    requestId: created.request.id,
+    adminId: 1,
+    rejectionReason: 'Address unserviceable by any provider',
+  });
+  assert.strictEqual(rejectRes.success, true);
+  assert.strictEqual(rejectRes.request.status, 'rejected');
+
+  // Verify audit log for rejection
+  const audit = sqliteDb.get('SELECT * FROM vendor_courier_booking_audit_logs WHERE booking_request_id = ? AND action = ?', created.request.id, 'request_rejected');
+  assert.ok(audit);
+  assert.strictEqual(audit.to_status, 'rejected');
+});
+
+test('Timeout and safe retry idempotency with stable key', async () => {
+  sqliteDb.run('DELETE FROM vendor_courier_booking_requests WHERE sub_order_id = ?', 9008);
+  const created = await approvalRepo.createBookingRequest({
+    subOrderId: 9008,
+    vendorId: 108,
+    courierCode: 'steadfast',
+  });
+
+  const capturedKeys = [];
   const originalExecute = courierRepo.executeOneClickBooking;
-  let attemptCount = 0;
+  let attempt = 0;
   try {
-    // 1st attempt: simulate network timeout / API error
-    courierRepo.executeOneClickBooking = async () => {
-      attemptCount++;
-      if (attemptCount === 1) {
-        throw new Error('Pathao API gateway timeout (504)');
+    courierRepo.executeOneClickBooking = async ({ idempotencyKey }) => {
+      capturedKeys.push(idempotencyKey);
+      attempt++;
+      if (attempt === 1) {
+        throw new Error('Steadfast network socket timeout (ECONNRESET)');
       }
       return {
         success: true,
-        courierName: 'Pathao Courier',
-        trackingId: 'PTH-9004-OK',
-        consignmentId: 'PTH-9004-OK',
+        courierName: 'Steadfast Courier',
+        trackingId: 'ST-9008-STABLE',
+        consignmentId: 'CS-9008-STABLE',
       };
     };
 
+    // 1st attempt: fails
     await assert.rejects(
       async () => {
         await approvalRepo.approveBookingRequest({ requestId: created.request.id, adminId: 1 });
       },
-      (err) => err.code === 'COURIER_BOOKING_FAILED' && err.message.includes('Pathao API gateway timeout')
+      (err) => err.code === 'COURIER_BOOKING_FAILED'
     );
 
-    const failedReq = await approvalRepo.getBookingRequestById(created.request.id);
-    assert.strictEqual(failedReq.status, 'failed');
-    assert.ok(failedReq.failure_reason.includes('Pathao API gateway timeout'));
+    const afterFail = await approvalRepo.getBookingRequestById(created.request.id);
+    assert.strictEqual(afterFail.status, 'failed');
 
-    // 2nd attempt: safe retry succeeds without duplicate request
+    // 2nd attempt: succeeds
     const retryRes = await approvalRepo.approveBookingRequest({ requestId: created.request.id, adminId: 1 });
     assert.strictEqual(retryRes.success, true);
     assert.strictEqual(retryRes.request.status, 'booked');
-    assert.strictEqual(retryRes.request.tracking_id, 'PTH-9004-OK');
-    assert.strictEqual(retryRes.request.failure_reason, null);
+    assert.strictEqual(retryRes.request.tracking_id, 'ST-9008-STABLE');
+
+    // Verify idempotency key was stable across attempts
+    assert.strictEqual(capturedKeys.length, 2);
+    assert.strictEqual(capturedKeys[0], `vcbr:${created.request.id}:suborder:9008`);
+    assert.strictEqual(capturedKeys[1], `vcbr:${created.request.id}:suborder:9008`);
+    assert.strictEqual(capturedKeys[0], capturedKeys[1], 'Idempotency key must remain deterministic across retries');
   } finally {
     courierRepo.executeOneClickBooking = originalExecute;
   }

@@ -5,73 +5,6 @@ const { getPool, withTransaction } = require('../db/mysqlPool');
 const sqliteDb = require('../db/database');
 const { ValidationError, NotFoundError, ConflictError, AuthorizationError } = require('../utils/errors');
 
-let tableEnsured = false;
-
-/**
- * Ensures the vendor_courier_booking_requests table exists.
- */
-async function ensureTable() {
-  if (tableEnsured) return;
-
-  if (env.db.client === 'mysql') {
-    try {
-      const pool = getPool();
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS vendor_courier_booking_requests (
-          id BIGINT AUTO_INCREMENT PRIMARY KEY,
-          sub_order_id BIGINT NOT NULL,
-          order_id BIGINT NOT NULL,
-          vendor_id INT NOT NULL,
-          courier_code VARCHAR(50) DEFAULT NULL,
-          status VARCHAR(30) NOT NULL DEFAULT 'pending',
-          tracking_id VARCHAR(120) DEFAULT NULL,
-          consignment_id VARCHAR(120) DEFAULT NULL,
-          rejection_reason TEXT DEFAULT NULL,
-          failure_reason TEXT DEFAULT NULL,
-          vendor_notes TEXT DEFAULT NULL,
-          admin_notes TEXT DEFAULT NULL,
-          idempotency_key VARCHAR(120) DEFAULT NULL,
-          courier_response_json LONGTEXT DEFAULT NULL,
-          approved_by_admin_id INT DEFAULT NULL,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-          INDEX idx_vcbr_vendor_status (vendor_id, status),
-          INDEX idx_vcbr_sub_order (sub_order_id),
-          UNIQUE KEY uq_vcbr_idempotency (idempotency_key)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-      `);
-      tableEnsured = true;
-    } catch (err) {
-      // In case pool is not ready or during isolated unit testing
-    }
-  } else {
-    try {
-      sqliteDb.exec(`
-        CREATE TABLE IF NOT EXISTS vendor_courier_booking_requests (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          sub_order_id INTEGER NOT NULL,
-          order_id INTEGER NOT NULL,
-          vendor_id INTEGER NOT NULL,
-          courier_code TEXT DEFAULT NULL,
-          status TEXT NOT NULL DEFAULT 'pending',
-          tracking_id TEXT DEFAULT NULL,
-          consignment_id TEXT DEFAULT NULL,
-          rejection_reason TEXT DEFAULT NULL,
-          failure_reason TEXT DEFAULT NULL,
-          vendor_notes TEXT DEFAULT NULL,
-          admin_notes TEXT DEFAULT NULL,
-          idempotency_key TEXT UNIQUE,
-          courier_response_json TEXT DEFAULT NULL,
-          approved_by_admin_id INTEGER DEFAULT NULL,
-          created_at TEXT DEFAULT (datetime('now', 'localtime')),
-          updated_at TEXT DEFAULT (datetime('now', 'localtime'))
-        );
-      `);
-      tableEnsured = true;
-    } catch (_) {}
-  }
-}
-
 /**
  * Validates a positive integer identifier.
  */
@@ -84,10 +17,40 @@ function toPositiveInt(val, label) {
 }
 
 /**
+ * Audit log recorder for vendor courier booking lifecycle events.
+ */
+async function recordAuditLog({ bookingRequestId, subOrderId, action, actorType, actorId, fromStatus, toStatus, details = {} }) {
+  const detailsJson = JSON.stringify(details);
+  if (env.db.client === 'mysql') {
+    try {
+      const pool = getPool();
+      await pool.query(
+        `INSERT INTO vendor_courier_booking_audit_logs
+         (booking_request_id, sub_order_id, action, actor_type, actor_id, from_status, to_status, details_json, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP())`,
+        [bookingRequestId, subOrderId, action, actorType, actorId, fromStatus || null, toStatus || null, detailsJson]
+      );
+    } catch (err) {
+      // Non-fatal if audit write fails
+      console.error('[WARN] Failed to write courier booking audit log:', err.message);
+    }
+  } else {
+    try {
+      sqliteDb.run(
+        `INSERT INTO vendor_courier_booking_audit_logs
+         (booking_request_id, sub_order_id, action, actor_type, actor_id, from_status, to_status, details_json, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))`,
+        bookingRequestId, subOrderId, action, actorType, actorId, fromStatus || null, toStatus || null, detailsJson
+      );
+    } catch (_) {}
+  }
+}
+
+/**
  * Submits a new courier booking request from vendor to Admin approval queue.
+ * Concurrency-safe: uses database-enforced unique constraints and atomic checks.
  */
 async function createBookingRequest({ subOrderId, vendorId, courierCode = '', note = '', idempotencyKey = '' }) {
-  await ensureTable();
   const subId = toPositiveInt(subOrderId, 'sub-order ID');
   const vId = toPositiveInt(vendorId, 'vendor ID');
   const cleanCourier = String(courierCode || '').trim().toLowerCase().slice(0, 50);
@@ -104,62 +67,80 @@ async function createBookingRequest({ subOrderId, vendorId, courierCode = '', no
 
   // 2. Query and validate suborder ownership & state
   if (env.db.client === 'mysql') {
-    const pool = getPool();
-    const [subRows] = await pool.query(
-      `SELECT vso.id, vso.order_id, vso.vendor_id, vso.status, vso.delivery_mode, vso.cod_due_paisa,
-              o.invoice_no, o.customer_name, o.customer_phone, o.shipping_address, o.order_status
-       FROM vendor_sub_orders vso
-       JOIN orders o ON o.id = vso.order_id
-       WHERE vso.id = ?`,
-      [subId]
-    );
+    return withTransaction(async (tx) => {
+      const subOrder = await tx.queryOne(
+        `SELECT vso.id, vso.order_id, vso.vendor_id, vso.status, vso.delivery_mode, vso.cod_due_paisa,
+                o.invoice_no, o.customer_name, o.customer_phone, o.shipping_address, o.order_status
+         FROM vendor_sub_orders vso
+         JOIN orders o ON o.id = vso.order_id
+         WHERE vso.id = ? FOR UPDATE`,
+        [subId]
+      );
 
-    const subOrder = subRows && subRows[0];
-    if (!subOrder) {
-      throw new NotFoundError('Vendor sub-order not found.');
-    }
-
-    if (Number(subOrder.vendor_id) !== vId) {
-      throw new AuthorizationError('You are not authorized to request courier booking for this sub-order.');
-    }
-
-    if (['cancelled', 'delivered', 'returned'].includes(subOrder.status)) {
-      throw new ValidationError(`Sub-order in '${subOrder.status}' status cannot be booked with courier.`);
-    }
-
-    // Check for existing active requests
-    const [reqRows] = await pool.query(
-      `SELECT id, status, tracking_id, rejection_reason FROM vendor_courier_booking_requests
-       WHERE sub_order_id = ? ORDER BY id DESC LIMIT 1`,
-      [subId]
-    );
-
-    const existingReq = reqRows && reqRows[0];
-    if (existingReq) {
-      if (existingReq.status === 'booked') {
-        throw new ConflictError('Courier has already been booked for this sub-order.');
+      if (!subOrder) {
+        throw new NotFoundError('Vendor sub-order not found.');
       }
-      if (['pending', 'booking'].includes(existingReq.status)) {
+
+      if (Number(subOrder.vendor_id) !== vId) {
+        throw new AuthorizationError('You are not authorized to request courier booking for this sub-order.');
+      }
+
+      if (['cancelled', 'delivered', 'returned'].includes(subOrder.status)) {
+        throw new ValidationError(`Sub-order in '${subOrder.status}' status cannot be booked with courier.`);
+      }
+
+      // Check for existing active requests with row lock
+      const existingReq = await tx.queryOne(
+        `SELECT id, status, tracking_id, rejection_reason FROM vendor_courier_booking_requests
+         WHERE sub_order_id = ? AND status IN ('pending', 'booking', 'booked')
+         ORDER BY id DESC LIMIT 1 FOR UPDATE`,
+        [subId]
+      );
+
+      if (existingReq) {
+        if (existingReq.status === 'booked') {
+          throw new ConflictError('Courier has already been booked for this sub-order.');
+        }
         throw new ConflictError('A courier booking request is already pending or being processed for this sub-order.');
       }
-      // If status is 'failed' or 'rejected', vendor is allowed to submit a new request
-    }
 
-    const orderId = Number(subOrder.order_id);
-    const [insertResult] = await pool.query(
-      `INSERT INTO vendor_courier_booking_requests
-       (sub_order_id, order_id, vendor_id, courier_code, status, vendor_notes, idempotency_key, created_at, updated_at)
-       VALUES (?, ?, ?, ?, 'pending', ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
-      [subId, orderId, vId, cleanCourier || null, cleanNote || null, cleanIdemp || null]
-    );
+      const orderId = Number(subOrder.order_id);
+      try {
+        const res = await tx.execute(
+          `INSERT INTO vendor_courier_booking_requests
+           (sub_order_id, order_id, vendor_id, courier_code, status, vendor_notes, idempotency_key, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 'pending', ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
+          [subId, orderId, vId, cleanCourier || null, cleanNote || null, cleanIdemp || null]
+        );
 
-    const reqId = insertResult.insertId;
-    const created = await getBookingRequestById(reqId);
-    return { request: created, idempotentReplay: false };
+        const reqId = res.insertId;
+        const created = await tx.queryOne('SELECT * FROM vendor_courier_booking_requests WHERE id = ?', [reqId]);
+
+        await recordAuditLog({
+          bookingRequestId: reqId,
+          subOrderId: subId,
+          action: 'request_created',
+          actorType: 'vendor',
+          actorId: vId,
+          fromStatus: null,
+          toStatus: 'pending',
+          details: { courierCode: cleanCourier, note: cleanNote, idempotencyKey: cleanIdemp }
+        });
+
+        return { request: created, idempotentReplay: false };
+      } catch (insertErr) {
+        if (insertErr.code === 'ER_DUP_ENTRY' || String(insertErr.message).includes('uq_vcbr_active_sub_order')) {
+          throw new ConflictError('A courier booking request is already pending or being processed for this sub-order.');
+        }
+        throw insertErr;
+      }
+    });
   } else {
-    // SQLite implementation (primarily for unit/e2e test runner without MySQL)
+    // SQLite implementation (test runner)
     const existingReq = sqliteDb.get(
-      'SELECT id, status FROM vendor_courier_booking_requests WHERE sub_order_id = ? ORDER BY id DESC LIMIT 1',
+      `SELECT id, status FROM vendor_courier_booking_requests
+       WHERE sub_order_id = ? AND status IN ('pending', 'booking', 'booked')
+       ORDER BY id DESC LIMIT 1`,
       subId
     );
 
@@ -167,20 +148,35 @@ async function createBookingRequest({ subOrderId, vendorId, courierCode = '', no
       if (existingReq.status === 'booked') {
         throw new ConflictError('Courier has already been booked for this sub-order.');
       }
-      if (['pending', 'booking'].includes(existingReq.status)) {
-        throw new ConflictError('A courier booking request is already pending or being processed for this sub-order.');
-      }
+      throw new ConflictError('A courier booking request is already pending or being processed for this sub-order.');
     }
 
-    const res = sqliteDb.run(
-      `INSERT INTO vendor_courier_booking_requests
-       (sub_order_id, order_id, vendor_id, courier_code, status, vendor_notes, idempotency_key)
-       VALUES (?, ?, ?, ?, 'pending', ?, ?)`,
-      subId, 1, vId, cleanCourier || null, cleanNote || null, cleanIdemp || null
-    );
+    try {
+      const res = sqliteDb.run(
+        `INSERT INTO vendor_courier_booking_requests
+         (sub_order_id, order_id, vendor_id, courier_code, status, vendor_notes, idempotency_key)
+         VALUES (?, ?, ?, ?, 'pending', ?, ?)`,
+        subId, 1, vId, cleanCourier || null, cleanNote || null, cleanIdemp || null
+      );
 
-    const created = await getBookingRequestById(res.lastInsertRowid);
-    return { request: created, idempotentReplay: false };
+      const created = await getBookingRequestById(res.lastInsertRowid);
+      await recordAuditLog({
+        bookingRequestId: res.lastInsertRowid,
+        subOrderId: subId,
+        action: 'request_created',
+        actorType: 'vendor',
+        actorId: vId,
+        fromStatus: null,
+        toStatus: 'pending',
+        details: { courierCode: cleanCourier, note: cleanNote }
+      });
+      return { request: created, idempotentReplay: false };
+    } catch (insertErr) {
+      if (String(insertErr.message).includes('UNIQUE constraint failed')) {
+        throw new ConflictError('A courier booking request is already pending or being processed for this sub-order.');
+      }
+      throw insertErr;
+    }
   }
 }
 
@@ -188,7 +184,6 @@ async function createBookingRequest({ subOrderId, vendorId, courierCode = '', no
  * Lists booking requests with optional status and vendor filtering.
  */
 async function listBookingRequests({ status = 'all', vendorId = null, page = 1, perPage = 20 } = {}) {
-  await ensureTable();
   const pageNum = Math.max(1, Number(page) || 1);
   const limit = Math.min(100, Math.max(1, Number(perPage) || 20));
   const offset = (pageNum - 1) * limit;
@@ -275,7 +270,6 @@ async function listBookingRequests({ status = 'all', vendorId = null, page = 1, 
  * Retrieves a single booking request by its ID.
  */
 async function getBookingRequestById(id) {
-  await ensureTable();
   const reqId = toPositiveInt(id, 'booking request ID');
 
   if (env.db.client === 'mysql') {
@@ -301,7 +295,6 @@ async function getBookingRequestById(id) {
  * Retrieves a booking request by idempotency key.
  */
 async function getBookingRequestByIdempotencyKey(key) {
-  await ensureTable();
   const cleanKey = String(key || '').trim();
   if (!cleanKey) return null;
 
@@ -321,7 +314,6 @@ async function getBookingRequestByIdempotencyKey(key) {
  * Retrieves the latest booking request for a sub-order.
  */
 async function getBookingRequestBySubOrderId(subOrderId, vendorId = null) {
-  await ensureTable();
   const subId = toPositiveInt(subOrderId, 'sub-order ID');
 
   if (env.db.client === 'mysql') {
@@ -353,9 +345,11 @@ async function getBookingRequestBySubOrderId(subOrderId, vendorId = null) {
 
 /**
  * Approves a vendor courier booking request and executes one-click courier integration.
+ * Concurrency-safe: atomically flips status from ('pending', 'failed') to 'booking'
+ * and checks affectedRows before invoking the courier API. Only one request acquires the lock.
+ * Uses a stable, deterministic idempotency key and safe reconciliation strategy.
  */
 async function approveBookingRequest({ requestId, adminId, courierCodeOverride = '', note = '' }) {
-  await ensureTable();
   const reqId = toPositiveInt(requestId, 'booking request ID');
   const aId = toPositiveInt(adminId, 'admin ID');
   const adminNote = String(note || '').trim().slice(0, 500);
@@ -375,34 +369,109 @@ async function approveBookingRequest({ requestId, adminId, courierCodeOverride =
     throw new ConflictError('Cannot approve a rejected booking request.');
   }
 
-  const selectedCourier = String(courierCodeOverride || current.courier_code || '').trim().toLowerCase();
-
-  // Set status to 'booking' to lock against duplicate concurrent approvals
+  // 1. Atomic conditional state transition to 'booking'
+  let lockAcquired = false;
   if (env.db.client === 'mysql') {
     const pool = getPool();
-    await pool.query(
+    const [updateRes] = await pool.query(
       `UPDATE vendor_courier_booking_requests
        SET status = 'booking', approved_by_admin_id = ?, admin_notes = ?, updated_at = UTC_TIMESTAMP()
        WHERE id = ? AND status IN ('pending', 'failed')`,
       [aId, adminNote || null, reqId]
     );
+    lockAcquired = (updateRes && updateRes.affectedRows === 1);
   } else {
-    sqliteDb.run(
+    const res = sqliteDb.run(
       `UPDATE vendor_courier_booking_requests
        SET status = 'booking', approved_by_admin_id = ?, admin_notes = ?, updated_at = datetime('now', 'localtime')
        WHERE id = ? AND status IN ('pending', 'failed')`,
       aId, adminNote || null, reqId
     );
+    lockAcquired = (res && res.changes === 1);
   }
 
-  // Trigger existing courier integration
+  // If lock was not acquired, another concurrent admin request already acquired it
+  if (!lockAcquired) {
+    const fresh = await getBookingRequestById(reqId);
+    if (!fresh) throw new NotFoundError('Courier booking request not found.');
+    if (fresh.status === 'booking') {
+      throw new ConflictError('Courier booking lock could not be acquired: another admin request is currently processing this booking.');
+    }
+    if (fresh.status === 'booked') {
+      throw new ConflictError('This booking request has already been booked with courier.');
+    }
+    throw new ConflictError(`Cannot approve request in current status '${fresh.status}'.`);
+  }
+
+  await recordAuditLog({
+    bookingRequestId: reqId,
+    subOrderId: current.sub_order_id,
+    action: 'approval_lock_acquired',
+    actorType: 'admin',
+    actorId: aId,
+    fromStatus: current.status,
+    toStatus: 'booking',
+    details: { note: adminNote }
+  });
+
+  const selectedCourier = String(courierCodeOverride || current.courier_code || '').trim().toLowerCase();
+  const courierRepo = require('./courierIntegrationRepository');
+
+  // Stable deterministic idempotency key per booking request
+  const stableIdempotencyKey = `vcbr:${reqId}:suborder:${current.sub_order_id}`;
+
+  // 2. Ambiguity & reconciliation check before booking
+  // If the shipment was previously left in unknown_timeout / in_review, reconcile before re-booking
   try {
-    const courierRepo = require('./courierIntegrationRepository');
+    if (env.db.client === 'mysql') {
+      const pool = getPool();
+      const [shipRows] = await pool.query(
+        'SELECT booking_status, tracking_id, external_consignment_id FROM fulfillment_shipments WHERE vendor_sub_order_id = ? ORDER BY id DESC LIMIT 1',
+        [current.sub_order_id]
+      );
+      const ship = shipRows && shipRows[0];
+      if (ship && ['unknown_timeout', 'in_review'].includes(ship.booking_status)) {
+        // Attempt reconciliation first
+        const rec = await courierRepo.reconcileBookingResult({
+          subOrderId: current.sub_order_id,
+          actor: { userId: aId, platformAdmin: true }
+        });
+        if (rec.reconciled && rec.status === 'succeeded' && rec.trackingId) {
+          // Parcel exists at provider! Mark booked directly without duplicate call
+          await pool.query(
+            `UPDATE vendor_courier_booking_requests
+             SET status = 'booked', tracking_id = ?, consignment_id = ?, courier_response_json = ?, failure_reason = NULL, updated_at = UTC_TIMESTAMP()
+             WHERE id = ?`,
+            [rec.trackingId, rec.externalConsignmentId || rec.trackingId, JSON.stringify(rec), reqId]
+          );
+
+          await recordAuditLog({
+            bookingRequestId: reqId,
+            subOrderId: current.sub_order_id,
+            action: 'booking_reconciled',
+            actorType: 'admin',
+            actorId: aId,
+            fromStatus: 'booking',
+            toStatus: 'booked',
+            details: { trackingId: rec.trackingId, note: 'Reconciled from uncertain provider state' }
+          });
+
+          const bookedReq = await getBookingRequestById(reqId);
+          return { success: true, request: bookedReq, booking: rec, reconciled: true };
+        }
+      }
+    }
+  } catch (recErr) {
+    console.error('[WARN] Pre-booking reconciliation check encountered an error:', recErr.message);
+  }
+
+  // 3. Trigger courier integration
+  try {
     const bookingResult = await courierRepo.executeOneClickBooking({
       subOrderId: current.sub_order_id,
       courierCode: selectedCourier || undefined,
       actor: { userId: aId, role: 'admin', platformAdmin: true },
-      idempotencyKey: `req-${reqId}-${Date.now()}`,
+      idempotencyKey: stableIdempotencyKey,
       note: adminNote || `Approved by Admin #${aId}`,
     });
 
@@ -438,6 +507,17 @@ async function approveBookingRequest({ requestId, adminId, courierCodeOverride =
       );
     }
 
+    await recordAuditLog({
+      bookingRequestId: reqId,
+      subOrderId: current.sub_order_id,
+      action: 'booking_succeeded',
+      actorType: 'admin',
+      actorId: aId,
+      fromStatus: 'booking',
+      toStatus: 'booked',
+      details: { trackingId, consignmentId, courierName: bookingResult.courierName }
+    });
+
     const updated = await getBookingRequestById(reqId);
     return { success: true, request: updated, booking: bookingResult };
   } catch (err) {
@@ -465,6 +545,17 @@ async function approveBookingRequest({ requestId, adminId, courierCodeOverride =
       );
     }
 
+    await recordAuditLog({
+      bookingRequestId: reqId,
+      subOrderId: current.sub_order_id,
+      action: 'booking_failed',
+      actorType: 'admin',
+      actorId: aId,
+      fromStatus: 'booking',
+      toStatus: 'failed',
+      details: { error: errorMsg }
+    });
+
     const failedReq = await getBookingRequestById(reqId);
     const failureError = new Error(`Courier booking failed: ${errorMsg}`);
     failureError.code = 'COURIER_BOOKING_FAILED';
@@ -475,9 +566,10 @@ async function approveBookingRequest({ requestId, adminId, courierCodeOverride =
 
 /**
  * Rejects a vendor courier booking request with a recorded reason.
+ * Concurrency-safe: atomically updates from eligible states ('pending', 'failed')
+ * and checks affectedRows. Never permits rejection of 'booking' or 'booked' requests.
  */
 async function rejectBookingRequest({ requestId, adminId, rejectionReason, note = '' }) {
-  await ensureTable();
   const reqId = toPositiveInt(requestId, 'booking request ID');
   const aId = toPositiveInt(adminId, 'admin ID');
   const reason = String(rejectionReason || '').trim();
@@ -493,40 +585,71 @@ async function rejectBookingRequest({ requestId, adminId, rejectionReason, note 
   }
 
   if (current.status === 'booked') {
-    throw new ConflictError('Cannot reject an already booked request.');
+    throw new ConflictError('Cannot reject request: shipment has already been booked with courier.');
+  }
+  if (current.status === 'booking') {
+    throw new ConflictError('Cannot reject request: courier booking is currently in progress.');
+  }
+  if (current.status === 'rejected') {
+    throw new ConflictError('Request has already been rejected.');
   }
 
+  let rejectSuccess = false;
   if (env.db.client === 'mysql') {
     const pool = getPool();
-    await pool.query(
+    const [updateRes] = await pool.query(
       `UPDATE vendor_courier_booking_requests
        SET status = 'rejected',
            rejection_reason = ?,
            approved_by_admin_id = ?,
            admin_notes = ?,
            updated_at = UTC_TIMESTAMP()
-       WHERE id = ?`,
+       WHERE id = ? AND status IN ('pending', 'failed')`,
       [reason, aId, adminNote || null, reqId]
     );
+    rejectSuccess = (updateRes && updateRes.affectedRows === 1);
   } else {
-    sqliteDb.run(
+    const res = sqliteDb.run(
       `UPDATE vendor_courier_booking_requests
        SET status = 'rejected',
            rejection_reason = ?,
            approved_by_admin_id = ?,
            admin_notes = ?,
            updated_at = datetime('now', 'localtime')
-       WHERE id = ?`,
+       WHERE id = ? AND status IN ('pending', 'failed')`,
       reason, aId, adminNote || null, reqId
     );
+    rejectSuccess = (res && res.changes === 1);
   }
+
+  if (!rejectSuccess) {
+    const fresh = await getBookingRequestById(reqId);
+    if (!fresh) throw new NotFoundError('Courier booking request not found.');
+    if (fresh.status === 'booking') {
+      throw new ConflictError('Cannot reject request: courier booking is currently in progress.');
+    }
+    if (fresh.status === 'booked') {
+      throw new ConflictError('Cannot reject request: shipment has already been booked with courier.');
+    }
+    throw new ConflictError(`Cannot reject request in status '${fresh.status}'.`);
+  }
+
+  await recordAuditLog({
+    bookingRequestId: reqId,
+    subOrderId: current.sub_order_id,
+    action: 'request_rejected',
+    actorType: 'admin',
+    actorId: aId,
+    fromStatus: current.status,
+    toStatus: 'rejected',
+    details: { reason, note: adminNote }
+  });
 
   const updated = await getBookingRequestById(reqId);
   return { success: true, request: updated };
 }
 
 module.exports = {
-  ensureTable,
   createBookingRequest,
   listBookingRequests,
   getBookingRequestById,
@@ -534,4 +657,5 @@ module.exports = {
   getBookingRequestBySubOrderId,
   approveBookingRequest,
   rejectBookingRequest,
+  recordAuditLog,
 };
