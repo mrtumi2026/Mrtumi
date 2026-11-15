@@ -238,87 +238,61 @@ async function main() {
     });
 
     if (fullDumpProc.error || fullDumpProc.status !== 0) {
-      console.warn(`   ⚠ mysqldump binary exited with code ${fullDumpProc.status || 'ERR'}:`);
-      console.warn(`   ${fullDumpProc.stderr ? fullDumpProc.stderr.trim() : fullDumpProc.error?.message}`);
-      console.log('   Executing verified multi-table programmatic backup...');
+      const errMsg = fullDumpProc.stderr ? fullDumpProc.stderr.trim() : (fullDumpProc.error ? fullDumpProc.error.message : `Exit code ${fullDumpProc.status}`);
+      console.error(`   ✖ FATAL: mysqldump execution failed (code: ${fullDumpProc.status || 'ERR'}): ${errMsg}`);
+      console.error(`   ✖ Full database SQL dump is mandatory. JSON fallback is prohibited for production migration safety.`);
+      throw new Error(`BACKUP_FAILED: mysqldump execution failed (${errMsg}). Halting deployment before migration.`);
+    }
 
-      // Programmatic full database export
-      const fullExport = {
-        metadata: {
-          timestamp: new Date().toISOString(),
-          database: env.db.database,
-          engineVersion: audit.versionInfo.version,
-          tableCount: audit.allTables.length,
-        },
-        tables: {},
-      };
+    fs.writeFileSync(fullBackupFile, fullDumpProc.stdout, 'utf8');
+    const stats = fs.statSync(fullBackupFile);
+    if (stats.size < 1024) {
+      throw new Error(`BACKUP_FAILED: Generated SQL dump is suspiciously small (${stats.size} bytes). Halting.`);
+    }
 
-      for (const t of audit.allTables) {
-        const tblName = t.TABLE_NAME;
-        const [rows] = await pool.query(`SELECT * FROM \`${tblName}\``);
-        fullExport.tables[tblName] = {
-          rowCount: rows.length,
-          rows,
-        };
-      }
+    const sha = sha256File(fullBackupFile);
 
-      const jsonDumpStr = JSON.stringify(fullExport, null, 2);
-      const jsonBackupFile = path.join(backupDir, `mrtumi_full_database_${timestamp}.json`);
-      fs.writeFileSync(jsonBackupFile, jsonDumpStr, 'utf8');
+    console.log(`   ✔ Full Database mysqldump Created Successfully:`);
+    console.log(`   - File: ${fullBackupFile}`);
+    console.log(`   - Size: ${stats.size} bytes (${(stats.size / 1024 / 1024).toFixed(2)} MB)`);
+    console.log(`   - SHA256: ${sha}`);
 
-      const sha = sha256Buffer(Buffer.from(jsonDumpStr));
-      const stats = fs.statSync(jsonBackupFile);
+    // STEP 3: RESTORE STRUCTURE INTEGRITY CHECK
+    console.log('\n6. Running Backup Restore Integrity Check:');
+    const restoreCheck = await verifyRestoreStructure(fullBackupFile);
+    if (!restoreCheck.ok) {
+      console.error(`   ✖ Missing core business tables in SQL dump: ${restoreCheck.missingTables.join(', ')}`);
+      throw new Error(`BACKUP_INTEGRITY_FAILED: Core tables missing from SQL dump (${restoreCheck.missingTables.join(', ')}).`);
+    }
 
-      console.log(`   ✔ Full Programmatic JSON Backup Created: ${jsonBackupFile}`);
-      console.log(`   - Size: ${stats.size} bytes (${(stats.size / 1024 / 1024).toFixed(2)} MB)`);
-      console.log(`   - SHA256: ${sha}`);
-      console.log(`   - Tables Preserved: ${Object.keys(fullExport.tables).length}`);
-      console.log(`   - Vendors Rows: ${fullExport.tables.vendors?.rowCount || 0}`);
+    console.log(`   ✔ All essential business tables present (vendors, products, orders, categories, users, settings).`);
+    console.log(`   ✔ SQL statements & table definitions structurally valid.`);
+    console.log(`   - Structural & Parsing Verification: PASS ✔`);
+    console.log(`   - Full In-Database Restore Test: NOT VERIFIED (Live DB overwrite blocked for data safety; cPanel user cannot create scratch databases)`);
+
+    // Dedicated vendors table backup
+    const vendorDumpArgs = [
+      `-h${env.db.host}`,
+      `-P${env.db.port}`,
+      `-u${env.db.user}`,
+      `--single-transaction`,
+      `--quick`,
+      `--no-tablespaces`,
+      env.db.database,
+      'vendors',
+    ];
+    const vendorDumpProc = spawnSync('mysqldump', vendorDumpArgs, {
+      env: { ...process.env, MYSQL_PWD: env.db.password },
+      maxBuffer: 32 * 1024 * 1024,
+      encoding: 'utf8',
+    });
+    if (vendorDumpProc.error || vendorDumpProc.status !== 0) {
+      console.warn(`   ⚠ Warning: Dedicated vendors table mysqldump exited with code ${vendorDumpProc.status || 'ERR'}`);
     } else {
-      fs.writeFileSync(fullBackupFile, fullDumpProc.stdout, 'utf8');
-      const sha = sha256File(fullBackupFile);
-      const stats = fs.statSync(fullBackupFile);
-
-      console.log(`   ✔ Full Database mysqldump Created Successfully:`);
-      console.log(`   - File: ${fullBackupFile}`);
-      console.log(`   - Size: ${stats.size} bytes (${(stats.size / 1024 / 1024).toFixed(2)} MB)`);
-      console.log(`   - SHA256: ${sha}`);
-
-      // STEP 3: RESTORE STRUCTURE INTEGRITY CHECK
-      console.log('\n6. Running Backup Restore Integrity Check:');
-      const restoreCheck = await verifyRestoreStructure(fullBackupFile);
-      if (restoreCheck.ok) {
-        console.log(`   ✔ All essential business tables present (vendors, products, orders, categories, users, settings).`);
-        console.log(`   ✔ SQL statements & table definitions structurally valid.`);
-        console.log(`   - Structural & Parsing Verification: PASS ✔`);
-        console.log(`   - Full In-Database Restore Test: NOT VERIFIED (Live DB overwrite blocked for data safety; cPanel user cannot create scratch databases)`);
-      } else {
-        console.warn(`   ✖ Missing tables in dump: ${restoreCheck.missingTables.join(', ')}`);
-        throw new Error('Backup failed structural integrity check.');
-      }
-
-      // Also generate dedicated vendors table backup
-      const vendorDumpArgs = [
-        `-h${env.db.host}`,
-        `-P${env.db.port}`,
-        `-u${env.db.user}`,
-        `--single-transaction`,
-        `--quick`,
-        `--no-tablespaces`,
-        env.db.database,
-        'vendors',
-      ];
-      const vendorDumpProc = spawnSync('mysqldump', vendorDumpArgs, {
-        env: { ...process.env, MYSQL_PWD: env.db.password },
-        maxBuffer: 32 * 1024 * 1024,
-        encoding: 'utf8',
-      });
-      if (!vendorDumpProc.error && vendorDumpProc.status === 0) {
-        fs.writeFileSync(vendorsBackupFile, vendorDumpProc.stdout, 'utf8');
-        const vSha = sha256File(vendorsBackupFile);
-        const vStat = fs.statSync(vendorsBackupFile);
-        console.log(`   ✔ Dedicated \`vendors\` Table Backup Created: ${vendorsBackupFile} (${vStat.size} bytes, SHA256: ${vSha})`);
-      }
+      fs.writeFileSync(vendorsBackupFile, vendorDumpProc.stdout, 'utf8');
+      const vSha = sha256File(vendorsBackupFile);
+      const vStat = fs.statSync(vendorsBackupFile);
+      console.log(`   ✔ Dedicated \`vendors\` Table Backup Created: ${vendorsBackupFile} (${vStat.size} bytes, SHA256: ${vSha})`);
     }
 
     console.log('\n===============================================================');

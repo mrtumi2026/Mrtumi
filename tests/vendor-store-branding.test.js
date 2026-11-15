@@ -635,5 +635,106 @@ test('Migration 0037 - File naming, pairing, and duplicate detection conforms to
   assert.equal(upFiles[36].startsWith('0037_'), true);
 });
 
+test('Migration 0037 - Post-migration data integrity validator enforces single-column index and zero null/empty slugs', () => {
+  function validatePostMigrationIntegrity({ migrationRow, columnFound, indexRows, counts, emptyCheck, duplicates }) {
+    if (!migrationRow || migrationRow.version !== '0037' || migrationRow.name !== 'vendor_store_branding') {
+      return { ok: false, error: 'MIGRATION_HISTORY_MISSING_OR_CORRUPT' };
+    }
+    if (!columnFound) {
+      return { ok: false, error: 'SLUG_COLUMN_MISSING' };
+    }
+    // uq_vendors_slug must be a single-column unique index strictly on the slug column
+    if (
+      !Array.isArray(indexRows) ||
+      indexRows.length !== 1 ||
+      Number(indexRows[0].NON_UNIQUE) !== 0 ||
+      indexRows[0].COLUMN_NAME !== 'slug' ||
+      Number(indexRows[0].SEQ_IN_INDEX) !== 1
+    ) {
+      return { ok: false, error: 'INDEX_NOT_SINGLE_COLUMN_UNIQUE_ON_SLUG' };
+    }
+    // Total vendor count must equal slug count
+    if (Number(counts.total) !== Number(counts.withSlug)) {
+      return { ok: false, error: 'SLUG_COUNT_MISMATCH' };
+    }
+    // Both NULL and empty string must be strictly 0
+    if (Number(emptyCheck.invalidCount) !== 0) {
+      return { ok: false, error: 'NULL_OR_EMPTY_SLUG_DETECTED' };
+    }
+    // Duplicates must be strictly 0
+    if (duplicates.length > 0) {
+      return { ok: false, error: 'DUPLICATE_SLUGS_DETECTED' };
+    }
+    return { ok: true };
+  }
+
+  const validNominal = {
+    migrationRow: { version: '0037', name: 'vendor_store_branding' },
+    columnFound: true,
+    indexRows: [{ COLUMN_NAME: 'slug', NON_UNIQUE: 0, SEQ_IN_INDEX: 1 }],
+    counts: { total: 15, withSlug: 15 },
+    emptyCheck: { invalidCount: 0 },
+    duplicates: [],
+  };
+  assert.equal(validatePostMigrationIntegrity(validNominal).ok, true);
+
+  // Failure: Multi-column composite index instead of single-column
+  const compositeIndex = {
+    ...validNominal,
+    indexRows: [
+      { COLUMN_NAME: 'slug', NON_UNIQUE: 0, SEQ_IN_INDEX: 1 },
+      { COLUMN_NAME: 'shop_name', NON_UNIQUE: 0, SEQ_IN_INDEX: 2 },
+    ],
+  };
+  assert.equal(validatePostMigrationIntegrity(compositeIndex).ok, false);
+  assert.equal(validatePostMigrationIntegrity(compositeIndex).error, 'INDEX_NOT_SINGLE_COLUMN_UNIQUE_ON_SLUG');
+
+  // Failure: Index on wrong column
+  const wrongColumnIndex = {
+    ...validNominal,
+    indexRows: [{ COLUMN_NAME: 'shop_name', NON_UNIQUE: 0, SEQ_IN_INDEX: 1 }],
+  };
+  assert.equal(validatePostMigrationIntegrity(wrongColumnIndex).ok, false);
+
+  // Failure: Empty string slugs present
+  const withEmptySlugs = {
+    ...validNominal,
+    emptyCheck: { invalidCount: 2 },
+  };
+  assert.equal(validatePostMigrationIntegrity(withEmptySlugs).ok, false);
+  assert.equal(validatePostMigrationIntegrity(withEmptySlugs).error, 'NULL_OR_EMPTY_SLUG_DETECTED');
+
+  // Failure: Duplicate slugs present
+  const withDups = {
+    ...validNominal,
+    duplicates: [{ slug: 'store-1', c: 2 }],
+  };
+  assert.equal(validatePostMigrationIntegrity(withDups).ok, false);
+  assert.equal(validatePostMigrationIntegrity(withDups).error, 'DUPLICATE_SLUGS_DETECTED');
+});
+
+test('Backup integrity - production backup script source requires mandatory mysqldump and forbids JSON fallback', () => {
+  const backupScriptPath = path.resolve(__dirname, '../scripts/ops/production-db-audit-and-backup.js');
+  const backupSrc = fs.readFileSync(backupScriptPath, 'utf8');
+
+  assert.ok(
+    backupSrc.includes('BACKUP_FAILED: mysqldump execution failed'),
+    'Backup script must throw BACKUP_FAILED on mysqldump error'
+  );
+  assert.ok(
+    backupSrc.includes('JSON fallback is prohibited for production migration safety'),
+    'Backup script must explicitly forbid JSON fallback'
+  );
+  assert.ok(
+    !backupSrc.includes('fullExport.tables'),
+    'Backup script must not contain programmatic JSON table exporter fallback'
+  );
+  assert.ok(
+    backupSrc.includes('verifyRestoreStructure(fullBackupFile)'),
+    'Backup script must verify SQL dump core table structure'
+  );
+});
+
+
 
 
