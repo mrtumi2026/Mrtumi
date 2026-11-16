@@ -627,10 +627,12 @@ test('Routes and views integration verification', () => {
   assert.match(adminRoutes, /\/admin\/courier\/requests/);
   assert.match(adminRoutes, /\/admin\/courier\/requests\/:id\/approve/);
   assert.match(adminRoutes, /\/admin\/courier\/requests\/:id\/reject/);
+  assert.match(adminRoutes, /\/admin\/courier\/requests\/recover-stale/);
 
   const adminView = fs.readFileSync(path.join(root, 'views/admin/courier-requests.ejs'), 'utf8');
   assert.match(adminView, /rejectRequestModal/);
   assert.match(adminView, /action="\/admin\/courier\/requests\/<%= reqItem\.id %>\/approve"/);
+  assert.match(adminView, /action="\/admin\/courier\/requests\/recover-stale"/);
 
   const vendorOrdersView = fs.readFileSync(path.join(root, 'views/vendor/orders.ejs'), 'utf8');
   assert.match(vendorOrdersView, /request-courier-booking/);
@@ -638,4 +640,252 @@ test('Routes and views integration verification', () => {
 
   const adminSidebar = fs.readFileSync(path.join(root, 'views/admin/partials/sidebar.ejs'), 'utf8');
   assert.match(adminSidebar, /href="\/admin\/courier\/requests"/);
+});
+
+test('Stale booking recovery: carrier success + total DB crash leaves request in booking, recovered to booked', async () => {
+  sqliteDb.run('DELETE FROM vendor_courier_booking_requests WHERE sub_order_id = ?', 9020);
+  sqliteDb.run('DELETE FROM vendor_courier_booking_audit_logs WHERE sub_order_id = ?', 9020);
+  sqliteDb.run('INSERT OR REPLACE INTO vendor_sub_orders (id, order_id, vendor_id, status) VALUES (?, ?, ?, ?)', 9020, 1, 120, 'processing');
+
+  const created = await approvalRepo.createBookingRequest({
+    subOrderId: 9020,
+    vendorId: 120,
+    courierCode: 'steadfast',
+  });
+
+  const originalExecute = courierRepo.executeOneClickBooking;
+  const originalReconcile = courierRepo.reconcileBookingResult;
+  const originalUpdate = approvalRepo.updateRequestStatusWithAudit;
+
+  let executeCallCount = 0;
+  let reconcileCallCount = 0;
+
+  try {
+    courierRepo.executeOneClickBooking = async () => {
+      executeCallCount++;
+      return {
+        trackingId: 'ST-CRASH-RECOVER-9020',
+        consignmentId: 'CID-CRASH-9020',
+        courierName: 'Steadfast'
+      };
+    };
+
+    // Inject DB outage on persistence: both booked and in_review updates throw total DB crash
+    approvalRepo.updateRequestStatusWithAudit = async (params) => {
+      if (params.toStatus === 'booked' || params.toStatus === 'in_review') {
+        throw new Error('Database server crashed: connection terminated');
+      }
+      return originalUpdate.call(approvalRepo, params);
+    };
+
+    // Admin attempts approval -> carrier creates parcel -> DB crashes on write
+    await assert.rejects(
+      async () => {
+        await approvalRepo.approveBookingRequest({
+          requestId: created.request.id,
+          adminId: 1
+        });
+      },
+      (err) => err.message.includes('Carrier created parcel (ST-CRASH-RECOVER-9020)')
+    );
+
+    // Request is left stuck in 'booking' status
+    const stuck = await approvalRepo.getBookingRequestById(created.request.id);
+    assert.strictEqual(stuck.status, 'booking');
+
+    // Simulate time passing: mark updated_at as 10 minutes ago
+    sqliteDb.run(
+      "UPDATE vendor_courier_booking_requests SET updated_at = datetime('now', 'localtime', '-10 minutes') WHERE id = ?",
+      created.request.id
+    );
+
+    // Another admin tries to approve immediately -> blocked by stale 'booking' lock
+    await assert.rejects(
+      async () => {
+        await approvalRepo.approveBookingRequest({
+          requestId: created.request.id,
+          adminId: 2
+        });
+      },
+      (err) => err instanceof ConflictError && err.message.includes('currently processing')
+    );
+
+    // Restore DB and configure reconciliation to discover the carrier parcel
+    approvalRepo.updateRequestStatusWithAudit = originalUpdate;
+    courierRepo.reconcileBookingResult = async ({ subOrderId }) => {
+      reconcileCallCount++;
+      assert.strictEqual(subOrderId, 9020);
+      return {
+        reconciled: true,
+        outcome: 'found',
+        bookingStatus: 'succeeded',
+        trackingId: 'ST-CRASH-RECOVER-9020',
+        externalConsignmentId: 'CID-CRASH-9020'
+      };
+    };
+
+    // Run automated stale booking recovery!
+    const recoveryResult = await approvalRepo.recoverStaleBookingRequests({
+      olderThanMinutes: 5,
+      actorId: 1
+    });
+
+    assert.strictEqual(recoveryResult.scanned, 1);
+    assert.strictEqual(recoveryResult.recovered, 1);
+    assert.strictEqual(executeCallCount, 1, 'Carrier booking API must NEVER be invoked a second time');
+    assert.strictEqual(reconcileCallCount, 1, 'Reconciliation must be invoked to verify provider parcel');
+
+    // Request is now safely transitioned to 'booked' with recovered tracking ID
+    const recoveredReq = await approvalRepo.getBookingRequestById(created.request.id);
+    assert.strictEqual(recoveredReq.status, 'booked');
+    assert.strictEqual(recoveredReq.tracking_id, 'ST-CRASH-RECOVER-9020');
+    assert.strictEqual(recoveredReq.consignment_id, 'CID-CRASH-9020');
+
+    // Verify audit log has 'stale_booking_recovered'
+    const audit = sqliteDb.get(
+      'SELECT * FROM vendor_courier_booking_audit_logs WHERE booking_request_id = ? AND action = ?',
+      created.request.id, 'stale_booking_recovered'
+    );
+    assert.ok(audit, 'Audit log must record stale_booking_recovered');
+  } finally {
+    courierRepo.executeOneClickBooking = originalExecute;
+    courierRepo.reconcileBookingResult = originalReconcile;
+    approvalRepo.updateRequestStatusWithAudit = originalUpdate;
+  }
+});
+
+test('Stale booking recovery: provider strictly confirms absence -> unlocks request for safe retry', async () => {
+  sqliteDb.run('DELETE FROM vendor_courier_booking_requests WHERE sub_order_id = ?', 9021);
+  sqliteDb.run('DELETE FROM vendor_courier_booking_audit_logs WHERE sub_order_id = ?', 9021);
+  sqliteDb.run('INSERT OR REPLACE INTO vendor_sub_orders (id, order_id, vendor_id, status) VALUES (?, ?, ?, ?)', 9021, 1, 121, 'processing');
+
+  const created = await approvalRepo.createBookingRequest({
+    subOrderId: 9021,
+    vendorId: 121,
+    courierCode: 'pathao',
+  });
+
+  // Put request into 'booking' status and make it 10 minutes stale
+  sqliteDb.run(
+    "UPDATE vendor_courier_booking_requests SET status = 'booking', updated_at = datetime('now', 'localtime', '-10 minutes') WHERE id = ?",
+    created.request.id
+  );
+
+  const originalReconcile = courierRepo.reconcileBookingResult;
+  try {
+    courierRepo.reconcileBookingResult = async () => {
+      return {
+        reconciled: true,
+        outcome: 'confirmed_absent',
+        message: 'Carrier verified no order exists for this invoice'
+      };
+    };
+
+    const recoveryResult = await approvalRepo.recoverStaleBookingRequests({
+      olderThanMinutes: 5,
+      actorId: 1
+    });
+
+    assert.strictEqual(recoveryResult.scanned, 1);
+    assert.strictEqual(recoveryResult.cleared, 1);
+
+    const updated = await approvalRepo.getBookingRequestById(created.request.id);
+    assert.strictEqual(updated.status, 'failed', 'Request must transition to failed so admin can safely retry');
+
+    const audit = sqliteDb.get(
+      'SELECT * FROM vendor_courier_booking_audit_logs WHERE booking_request_id = ? AND action = ?',
+      created.request.id, 'stale_booking_cleared_absent'
+    );
+    assert.ok(audit, 'Audit log must record stale_booking_cleared_absent');
+  } finally {
+    courierRepo.reconcileBookingResult = originalReconcile;
+  }
+});
+
+test('Stale booking recovery: provider inconclusive / error -> fail-closed to in_review', async () => {
+  sqliteDb.run('DELETE FROM vendor_courier_booking_requests WHERE sub_order_id = ?', 9022);
+  sqliteDb.run('DELETE FROM vendor_courier_booking_audit_logs WHERE sub_order_id = ?', 9022);
+  sqliteDb.run('INSERT OR REPLACE INTO vendor_sub_orders (id, order_id, vendor_id, status) VALUES (?, ?, ?, ?)', 9022, 1, 122, 'processing');
+
+  const created = await approvalRepo.createBookingRequest({
+    subOrderId: 9022,
+    vendorId: 122,
+    courierCode: 'steadfast',
+  });
+
+  sqliteDb.run(
+    "UPDATE vendor_courier_booking_requests SET status = 'booking', updated_at = datetime('now', 'localtime', '-10 minutes') WHERE id = ?",
+    created.request.id
+  );
+
+  const originalReconcile = courierRepo.reconcileBookingResult;
+  try {
+    courierRepo.reconcileBookingResult = async () => {
+      throw new Error('Carrier gateway timeout during status check');
+    };
+
+    const recoveryResult = await approvalRepo.recoverStaleBookingRequests({
+      olderThanMinutes: 5,
+      actorId: 1
+    });
+
+    assert.strictEqual(recoveryResult.scanned, 1);
+    assert.strictEqual(recoveryResult.inReview, 1);
+
+    const updated = await approvalRepo.getBookingRequestById(created.request.id);
+    assert.strictEqual(updated.status, 'in_review', 'Uncertain provider state must fail-closed to in_review');
+
+    const audit = sqliteDb.get(
+      'SELECT * FROM vendor_courier_booking_audit_logs WHERE booking_request_id = ? AND action = ?',
+      created.request.id, 'stale_booking_uncertain_in_review'
+    );
+    assert.ok(audit, 'Audit log must record stale_booking_uncertain_in_review');
+  } finally {
+    courierRepo.reconcileBookingResult = originalReconcile;
+  }
+});
+
+test('Stale booking recovery: multi-worker concurrency lease ensures single processing', async () => {
+  sqliteDb.run('DELETE FROM vendor_courier_booking_requests WHERE sub_order_id = ?', 9023);
+  sqliteDb.run('DELETE FROM vendor_courier_booking_audit_logs WHERE sub_order_id = ?', 9023);
+  sqliteDb.run('INSERT OR REPLACE INTO vendor_sub_orders (id, order_id, vendor_id, status) VALUES (?, ?, ?, ?)', 9023, 1, 123, 'processing');
+
+  const created = await approvalRepo.createBookingRequest({
+    subOrderId: 9023,
+    vendorId: 123,
+    courierCode: 'steadfast',
+  });
+
+  sqliteDb.run(
+    "UPDATE vendor_courier_booking_requests SET status = 'booking', updated_at = datetime('now', 'localtime', '-10 minutes') WHERE id = ?",
+    created.request.id
+  );
+
+  const originalReconcile = courierRepo.reconcileBookingResult;
+  let reconcileCount = 0;
+  try {
+    courierRepo.reconcileBookingResult = async () => {
+      reconcileCount++;
+      return {
+        reconciled: true,
+        outcome: 'found',
+        trackingId: 'ST-MULTI-WORKER-9023'
+      };
+    };
+
+    // Run two recovery workers simultaneously
+    const [resA, resB] = await Promise.all([
+      approvalRepo.recoverStaleBookingRequests({ olderThanMinutes: 5 }),
+      approvalRepo.recoverStaleBookingRequests({ olderThanMinutes: 5 })
+    ]);
+
+    const totalProcessed = resA.processed + resB.processed;
+    assert.strictEqual(totalProcessed, 1, 'Exactly one worker must acquire the lease and process the stale request');
+    assert.strictEqual(reconcileCount, 1, 'Carrier reconciliation must execute only once');
+
+    const finalReq = await approvalRepo.getBookingRequestById(created.request.id);
+    assert.strictEqual(finalReq.status, 'booked');
+  } finally {
+    courierRepo.reconcileBookingResult = originalReconcile;
+  }
 });

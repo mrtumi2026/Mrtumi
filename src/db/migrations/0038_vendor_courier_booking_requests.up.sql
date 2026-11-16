@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS `vendor_courier_booking_requests` (
   `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX `idx_vcbr_vendor_status` (`vendor_id`, `status`),
   INDEX `idx_vcbr_sub_order` (`sub_order_id`),
+  INDEX `idx_vcbr_status_updated` (`status`, `updated_at`),
   UNIQUE KEY `uq_vcbr_idempotency` (`idempotency_key`),
   UNIQUE KEY `uq_vcbr_active_sub_order` (`active_sub_order_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

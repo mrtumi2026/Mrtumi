@@ -959,6 +959,196 @@ async function rejectBookingRequest({ requestId, adminId, rejectionReason, note 
   return { success: true, request: updated };
 }
 
+/**
+ * Recovers stale booking requests that were left stuck in 'booking' status
+ * due to worker crash, network partition, or unhandled persistence error.
+ * Concurrency-safe: atomically leases candidate rows to prevent duplicate
+ * processing by concurrent workers or schedulers.
+ * Reconciles provider outcome using deterministic reference:
+ * - If parcel found at provider: transitions to 'booked' (with tracking ID).
+ * - If provider strictly confirms absence: transitions to 'failed' (cleared for retry).
+ * - If provider outcome is uncertain/inconclusive: fail-closed to 'in_review'.
+ */
+async function recoverStaleBookingRequests({
+  olderThanMinutes = 5,
+  limit = 50,
+  actorId = 1,
+  courierRepoOverride = null
+} = {}) {
+  const olderMins = Math.max(1, parseInt(olderThanMinutes, 10) || 5);
+  const limitNum = Math.max(1, Math.min(200, parseInt(limit, 10) || 50));
+  const aId = Number(actorId) || 1;
+  const courierRepo = courierRepoOverride || require('./courierIntegrationRepository');
+
+  let staleRequests = [];
+
+  if (env.db.client === 'mysql') {
+    const pool = getPool();
+    const [rows] = await pool.query(
+      `SELECT id, sub_order_id, order_id, vendor_id, courier_code, status,
+              tracking_id, consignment_id, idempotency_key, updated_at
+       FROM vendor_courier_booking_requests
+       WHERE status = 'booking'
+         AND updated_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? MINUTE)
+       ORDER BY updated_at ASC
+       LIMIT ?`,
+      [olderMins, limitNum]
+    );
+    staleRequests = rows || [];
+  } else {
+    // SQLite: format matches datetime('now', 'localtime') used across writes
+    staleRequests = sqliteDb.all(
+      `SELECT id, sub_order_id, order_id, vendor_id, courier_code, status,
+              tracking_id, consignment_id, idempotency_key, updated_at
+       FROM vendor_courier_booking_requests
+       WHERE status = 'booking'
+         AND datetime(updated_at) < datetime('now', 'localtime', '-' || ? || ' minute')
+       ORDER BY updated_at ASC
+       LIMIT ?`,
+      olderMins, limitNum
+    ) || [];
+  }
+
+  const results = [];
+
+  for (const req of staleRequests) {
+    try {
+      // 1. Atomic lease / claim: advance updated_at to NOW() so no concurrent worker grabs this row
+      let leased = false;
+      if (env.db.client === 'mysql') {
+        const pool = getPool();
+        const [leaseRes] = await pool.query(
+          `UPDATE vendor_courier_booking_requests
+           SET updated_at = UTC_TIMESTAMP()
+           WHERE id = ? AND status = 'booking' AND updated_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? MINUTE)`,
+          [req.id, olderMins]
+        );
+        leased = Boolean(leaseRes && leaseRes.affectedRows === 1);
+      } else {
+        const leaseRes = sqliteDb.run(
+          `UPDATE vendor_courier_booking_requests
+           SET updated_at = datetime('now', 'localtime')
+           WHERE id = ? AND status = 'booking' AND datetime(updated_at) < datetime('now', 'localtime', '-' || ? || ' minute')`,
+          req.id, olderMins
+        );
+        leased = Boolean(leaseRes && leaseRes.changes === 1);
+      }
+
+      if (!leased) {
+        // Row already claimed or updated by a concurrent recovery worker
+        continue;
+      }
+
+      // 2. Reconcile provider outcome using stable reference
+      let rec = null;
+      let recErr = null;
+      try {
+        rec = await courierRepo.reconcileBookingResult({
+          subOrderId: req.sub_order_id,
+          actor: { userId: aId, platformAdmin: true }
+        });
+      } catch (err) {
+        recErr = err;
+      }
+
+      // 3. Process outcome
+      if (rec && !recErr && (rec.outcome === 'found' || (rec.bookingStatus === 'succeeded' && rec.trackingId))) {
+        // Parcel was created at provider before the outage!
+        const recTrackingId = rec.trackingId;
+        const recConsignmentId = rec.externalConsignmentId || rec.consignmentId || recTrackingId;
+        await module.exports.updateRequestStatusWithAudit({
+          requestId: req.id,
+          subOrderId: req.sub_order_id,
+          toStatus: 'booked',
+          fromStatus: 'booking',
+          adminId: aId,
+          trackingId: recTrackingId,
+          consignmentId: recConsignmentId,
+          responseJson: JSON.stringify(rec),
+          action: 'stale_booking_recovered',
+          details: {
+            trackingId: recTrackingId,
+            consignmentId: recConsignmentId,
+            courierCode: req.courier_code,
+            recoveredAt: new Date().toISOString(),
+            note: 'Stale booking recovered: parcel confirmed at provider.'
+          }
+        });
+        results.push({
+          requestId: req.id,
+          subOrderId: req.sub_order_id,
+          status: 'booked',
+          trackingId: recTrackingId,
+          consignmentId: recConsignmentId,
+          outcome: 'recovered_parcel_found'
+        });
+      } else if (rec && !recErr && rec.reconciled === true && rec.outcome === 'confirmed_absent') {
+        // Provider strictly confirmed no parcel exists. Clear lock so it can be safely retried.
+        await module.exports.updateRequestStatusWithAudit({
+          requestId: req.id,
+          subOrderId: req.sub_order_id,
+          toStatus: 'failed',
+          fromStatus: 'booking',
+          adminId: aId,
+          action: 'stale_booking_cleared_absent',
+          failureReason: rec.message || 'Carrier confirmed absence of parcel during stale booking recovery; unlocked for retry.',
+          details: {
+            recoveredAt: new Date().toISOString(),
+            note: 'Stale booking cleared: carrier confirmed parcel absent; unlocked for retry.'
+          }
+        });
+        results.push({
+          requestId: req.id,
+          subOrderId: req.sub_order_id,
+          status: 'failed',
+          outcome: 'cleared_for_retry'
+        });
+      } else {
+        // Provider outcome uncertain, unknown, or error -> Fail closed to in_review
+        const reasonMsg = recErr ? recErr.message : (rec?.message || `Carrier reconciliation outcome is '${rec?.outcome || 'unknown'}'; parcel status inconclusive`);
+        await module.exports.updateRequestStatusWithAudit({
+          requestId: req.id,
+          subOrderId: req.sub_order_id,
+          toStatus: 'in_review',
+          fromStatus: 'booking',
+          adminId: aId,
+          action: 'stale_booking_uncertain_in_review',
+          failureReason: reasonMsg,
+          details: {
+            error: reasonMsg,
+            recoveredAt: new Date().toISOString(),
+            note: 'Stale booking placed in in_review: carrier reconciliation inconclusive.'
+          }
+        });
+        results.push({
+          requestId: req.id,
+          subOrderId: req.sub_order_id,
+          status: 'in_review',
+          outcome: 'uncertain_in_review',
+          reason: reasonMsg
+        });
+      }
+    } catch (itemErr) {
+      results.push({
+        requestId: req.id,
+        subOrderId: req.sub_order_id,
+        status: 'booking',
+        outcome: 'recovery_failed',
+        error: itemErr.message
+      });
+    }
+  }
+
+  return {
+    scanned: staleRequests.length,
+    processed: results.length,
+    recovered: results.filter((r) => r.status === 'booked').length,
+    cleared: results.filter((r) => r.status === 'failed').length,
+    inReview: results.filter((r) => r.status === 'in_review').length,
+    results
+  };
+}
+
 module.exports = {
   createBookingRequest,
   listBookingRequests,
@@ -967,6 +1157,7 @@ module.exports = {
   getBookingRequestBySubOrderId,
   approveBookingRequest,
   rejectBookingRequest,
+  recoverStaleBookingRequests,
   recordAuditLog,
   updateRequestStatusWithAudit,
 };

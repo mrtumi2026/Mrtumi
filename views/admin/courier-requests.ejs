@@ -11,6 +11,13 @@
         <p class="text-muted mb-0"><%= locale === 'bn' ? 'ভেন্ডরদের পাঠানো কুরিয়ার বুকিং অনুরোধ যাচাই, অনুমোদন এবং নিরাপদ ডিসপ্যাচ ব্যবস্থাপনা' : 'Review, approve, and safely dispatch vendor courier booking requests' %></p>
       </div>
       <div class="d-flex gap-2">
+        <form method="POST" action="/admin/courier/requests/recover-stale" class="d-inline" onsubmit="return confirm('<%= locale === 'bn' ? 'আটকে থাকা বুকিং রিকভারি চালাতে চান?' : 'Trigger stale booking recovery check?' %>');">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <input type="hidden" name="older_than_minutes" value="5">
+          <button type="submit" class="btn btn-sm btn-outline-warning" title="<%= locale === 'bn' ? 'আটকে থাকা বুকিং চেক ও উদ্ধার করুন' : 'Recover stuck/stale bookings' %>">
+            <i class="fas fa-wrench me-1"></i><%= locale === 'bn' ? 'স্টেল রিকভারি' : 'Recover Stale' %>
+          </button>
+        </form>
         <a href="/admin/courier/requests?status=all" class="btn btn-sm btn-outline-secondary">
           <i class="fas fa-arrows-rotate me-1"></i><%= locale === 'bn' ? 'রিফ্রেশ' : 'Refresh' %>
         </a>
@@ -46,6 +53,11 @@
           <li class="nav-item">
             <a class="nav-link <%= filterStatus === 'failed' ? 'active' : '' %> py-1 px-3" href="/admin/courier/requests?status=failed">
               <span class="badge bg-danger me-1">!</span><%= locale === 'bn' ? 'ব্যর্থ (পুনরায় চেষ্টা)' : 'Failed (Retryable)' %>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link <%= filterStatus === 'in_review' ? 'active' : '' %> py-1 px-3" href="/admin/courier/requests?status=in_review">
+              <span class="badge bg-warning text-dark me-1">?</span><%= locale === 'bn' ? 'পর্যালোচনাধীন' : 'In Review' %>
             </a>
           </li>
           <li class="nav-item">
@@ -121,6 +133,11 @@
                       <% if (reqItem.failure_reason) { %>
                         <div class="small text-danger mt-1 text-truncate" style="max-width:180px;" title="<%= reqItem.failure_reason %>"><%= reqItem.failure_reason %></div>
                       <% } %>
+                    <% } else if (reqItem.status === 'in_review') { %>
+                      <span class="badge bg-warning text-dark"><i class="fas fa-search me-1"></i>পর্যালোচনাধীন</span>
+                      <% if (reqItem.failure_reason) { %>
+                        <div class="small text-warning-emphasis mt-1 text-truncate" style="max-width:180px;" title="<%= reqItem.failure_reason %>"><%= reqItem.failure_reason %></div>
+                      <% } %>
                     <% } else if (reqItem.status === 'rejected') { %>
                       <span class="badge bg-secondary"><i class="fas fa-ban me-1"></i>প্রত্যাখ্যাত</span>
                       <% if (reqItem.rejection_reason) { %>
@@ -132,13 +149,13 @@
                     <%= new Date(reqItem.created_at).toLocaleDateString('bn-BD', { hour: '2-digit', minute: '2-digit' }) %>
                   </td>
                   <td class="text-end">
-                    <% if (reqItem.status === 'pending' || reqItem.status === 'failed') { %>
+                    <% if (reqItem.status === 'pending' || reqItem.status === 'failed' || reqItem.status === 'in_review') { %>
                       <div class="d-inline-flex gap-1">
                         <!-- Approve Form -->
                         <form action="/admin/courier/requests/<%= reqItem.id %>/approve" method="POST" class="d-inline">
                           <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                           <button type="submit" class="btn btn-sm btn-success fw-bold px-2" title="<%= locale === 'bn' ? 'অনুমোদন ও বুক করুন' : 'Approve & Book' %>">
-                            <i class="fas fa-check me-1"></i><%= reqItem.status === 'failed' ? (locale === 'bn' ? 'পুনরায় চেষ্টা' : 'Retry') : (locale === 'bn' ? 'অনুমোদন' : 'Approve') %>
+                            <i class="fas fa-check me-1"></i><%= reqItem.status === 'failed' ? (locale === 'bn' ? 'পুনরায় চেষ্টা' : 'Retry') : (reqItem.status === 'in_review' ? (locale === 'bn' ? 'রিকনসাইল/বুক' : 'Reconcile/Book') : (locale === 'bn' ? 'অনুমোদন' : 'Approve')) %>
                           </button>
                         </form>
 

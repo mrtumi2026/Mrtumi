@@ -95,6 +95,28 @@ router.post('/admin/courier/requests/:id/reject', requirePermission('orders.mana
   return res.redirect('/admin/courier/requests');
 }));
 
+router.post('/admin/courier/requests/recover-stale', requirePermission('orders.manage'), requireCsrf, asyncHandler(async (req, res) => {
+  const approvalRepo = require('../repositories/vendorCourierApprovalRepository');
+  const adminId = req.session?.adminUser?.id || 1;
+  const olderThanMinutes = parseInt(req.body.older_than_minutes, 10) || 5;
+  try {
+    const result = await approvalRepo.recoverStaleBookingRequests({
+      olderThanMinutes,
+      actorId: adminId
+    });
+    if (req.accepts('json') && !req.query.html) {
+      return res.json({ success: true, ...result });
+    }
+    req.flash('success', `স্টেল বুকিং রিকভারি সম্পন্ন হয়েছে (মোট: ${result.scanned}, উদ্ধার: ${result.recovered}, ইন-রিভিউ: ${result.inReview}, ক্লিয়ার: ${result.cleared})।`);
+  } catch (err) {
+    if (req.accepts('json') && !req.query.html) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
+    req.flash('error', `স্টেল বুকিং রিকভারি ব্যর্থ হয়েছে: ${err.message}`);
+  }
+  return res.redirect('/admin/courier/requests');
+}));
+
 // Multi-courier quote comparison and recommendation
 router.get('/admin/fulfillment/sub-orders/:subOrderId/courier-quotes', requirePermission('orders.manage'), asyncHandler(async (req, res) => {
   const courierRepo = require('../repositories/courierIntegrationRepository');
