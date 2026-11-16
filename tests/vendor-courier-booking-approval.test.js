@@ -301,6 +301,133 @@ test('Reconciliation fail-closed: uncertain or failed reconciliation halts booki
   }
 });
 
+test('Reconciliation strictness: bookingStatus failed with unverified absence halts booking and sets in_review', async () => {
+  sqliteDb.run('DELETE FROM vendor_courier_booking_requests WHERE sub_order_id = ?', 9012);
+  sqliteDb.run('DELETE FROM fulfillment_shipments WHERE vendor_sub_order_id = ?', 9012);
+  sqliteDb.run('INSERT OR REPLACE INTO vendor_sub_orders (id, order_id, vendor_id, status) VALUES (?, ?, ?, ?)', 9012, 1, 112, 'processing');
+
+  sqliteDb.run(
+    'INSERT INTO fulfillment_shipments (vendor_sub_order_id, courier_code, booking_status) VALUES (?, ?, ?)',
+    9012, 'steadfast', 'unknown_timeout'
+  );
+
+  const req = await approvalRepo.createBookingRequest({
+    subOrderId: 9012,
+    vendorId: 112,
+    courierCode: 'steadfast',
+  });
+
+  const originalReconcile = courierRepo.reconcileBookingResult;
+  const originalExecute = courierRepo.executeOneClickBooking;
+  let bookingCallAttempted = false;
+
+  try {
+    // Carrier reconciliation returns bookingStatus 'failed', but outcome is 'unknown_error' (absence NOT confirmed)
+    courierRepo.reconcileBookingResult = async () => ({
+      reconciled: true,
+      outcome: 'unknown_error',
+      bookingStatus: 'failed',
+      message: 'Network glitch while verifying carrier state',
+    });
+
+    courierRepo.executeOneClickBooking = async () => {
+      bookingCallAttempted = true;
+      return { success: true, trackingId: 'ST-UNVERIFIED-CALL' };
+    };
+
+    // Must FAIL CLOSED because outcome is NOT strictly confirmed_absent!
+    await assert.rejects(
+      async () => {
+        await approvalRepo.approveBookingRequest({ requestId: req.request.id, adminId: 1 });
+      },
+      (err) => err instanceof ConflictError && err.message.includes('previous provider outcome is uncertain')
+    );
+
+    assert.strictEqual(bookingCallAttempted, false, 'Carrier API must NOT be called unless outcome is strictly confirmed_absent');
+    const checked = await approvalRepo.getBookingRequestById(req.request.id);
+    assert.strictEqual(checked.status, 'in_review');
+  } finally {
+    courierRepo.reconcileBookingResult = originalReconcile;
+    courierRepo.executeOneClickBooking = originalExecute;
+  }
+});
+
+test('Carrier success with DB persistence failure places request in in_review and prevents duplicate booking on retry', async () => {
+  sqliteDb.run('DELETE FROM vendor_courier_booking_requests WHERE sub_order_id = ?', 9013);
+  sqliteDb.run('DELETE FROM fulfillment_shipments WHERE vendor_sub_order_id = ?', 9013);
+  sqliteDb.run('INSERT OR REPLACE INTO vendor_sub_orders (id, order_id, vendor_id, status) VALUES (?, ?, ?, ?)', 9013, 1, 113, 'processing');
+
+  const req = await approvalRepo.createBookingRequest({
+    subOrderId: 9013,
+    vendorId: 113,
+    courierCode: 'steadfast',
+  });
+
+  const originalExecute = courierRepo.executeOneClickBooking;
+  const originalUpdate = approvalRepo.updateRequestStatusWithAudit;
+  const originalReconcile = courierRepo.reconcileBookingResult;
+
+  let executeCalls = 0;
+  try {
+    courierRepo.executeOneClickBooking = async () => {
+      executeCalls++;
+      return {
+        success: true,
+        courierName: 'Steadfast Courier',
+        trackingId: 'ST-PERSIST-9013',
+        consignmentId: 'CS-PERSIST-9013',
+      };
+    };
+
+    let failPersistenceOnce = true;
+    approvalRepo.updateRequestStatusWithAudit = async (opts) => {
+      if (opts.toStatus === 'booked' && failPersistenceOnce) {
+        failPersistenceOnce = false;
+        throw new Error('Database disk I/O error during booked persistence');
+      }
+      return originalUpdate(opts);
+    };
+
+    // Attempt approval: carrier booking succeeds, but persistence to 'booked' fails
+    await assert.rejects(
+      async () => {
+        await approvalRepo.approveBookingRequest({ requestId: req.request.id, adminId: 1 });
+      },
+      (err) => err.code === 'COURIER_PERSISTENCE_FAILED' && err.trackingId === 'ST-PERSIST-9013'
+    );
+
+    // Verify request is NOT failed; it must be in_review with the known tracking ID
+    const afterPersistFail = await approvalRepo.getBookingRequestById(req.request.id);
+    assert.strictEqual(afterPersistFail.status, 'in_review');
+    assert.strictEqual(afterPersistFail.tracking_id, 'ST-PERSIST-9013');
+
+    // Restore updateRequestStatusWithAudit for retry
+    approvalRepo.updateRequestStatusWithAudit = originalUpdate;
+
+    // Admin retries approval: reconciliation sees the parcel already exists at carrier
+    courierRepo.reconcileBookingResult = async () => ({
+      reconciled: true,
+      outcome: 'found',
+      bookingStatus: 'succeeded',
+      trackingId: 'ST-PERSIST-9013',
+      consignmentId: 'CS-PERSIST-9013',
+    });
+
+    const retryRes = await approvalRepo.approveBookingRequest({ requestId: req.request.id, adminId: 1 });
+    assert.strictEqual(retryRes.success, true);
+    assert.strictEqual(retryRes.reconciled, true);
+    assert.strictEqual(retryRes.request.status, 'booked');
+    assert.strictEqual(retryRes.request.tracking_id, 'ST-PERSIST-9013');
+
+    // Crucial check: executeOneClickBooking was called EXACTLY ONCE across the entire lifecycle! Zero duplicate parcels!
+    assert.strictEqual(executeCalls, 1, 'Carrier API must NEVER be called twice for the same parcel');
+  } finally {
+    courierRepo.executeOneClickBooking = originalExecute;
+    approvalRepo.updateRequestStatusWithAudit = originalUpdate;
+    courierRepo.reconcileBookingResult = originalReconcile;
+  }
+});
+
 test('Reconciliation confirmed absence: clears request for safe retry and proceeds to booking', async () => {
   sqliteDb.run('DELETE FROM vendor_courier_booking_requests WHERE sub_order_id = ?', 9011);
   sqliteDb.run('DELETE FROM fulfillment_shipments WHERE vendor_sub_order_id = ?', 9011);

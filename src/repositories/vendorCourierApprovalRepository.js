@@ -3,7 +3,7 @@
 const { env } = require('../config/env');
 const { getPool, withTransaction } = require('../db/mysqlPool');
 const sqliteDb = require('../db/database');
-const { ValidationError, NotFoundError, ConflictError, AuthorizationError } = require('../utils/errors');
+const { ValidationError, NotFoundError, ConflictError, AuthorizationError, DatabaseError } = require('../utils/errors');
 
 /**
  * Validates a positive integer identifier.
@@ -269,27 +269,29 @@ async function createBookingRequest({ subOrderId, vendorId, courierCode = '', no
       }
     });
   } else {
-    // SQLite implementation (test runner)
+    // SQLite implementation (test runner) - strictly enforces vendor_sub_orders ownership
     const hasVso = sqliteDb.get("SELECT name FROM sqlite_master WHERE type='table' AND name='vendor_sub_orders'");
-    let orderId = 1;
-    if (hasVso) {
-      const subOrder = sqliteDb.get(
-        'SELECT id, order_id, vendor_id, status FROM vendor_sub_orders WHERE id = ?',
-        subId
-      );
-      if (!subOrder) {
-        throw new NotFoundError('Vendor sub-order not found.');
-      }
-      if (Number(subOrder.vendor_id) !== vId) {
-        throw new AuthorizationError('You are not authorized to request courier booking for this sub-order.');
-      }
-      if (['cancelled', 'delivered', 'returned'].includes(subOrder.status)) {
-        throw new ValidationError(`Sub-order in '${subOrder.status}' status cannot be booked with courier.`);
-      }
-      orderId = Number(subOrder.order_id) || 1;
+    if (!hasVso) {
+      throw new DatabaseError('SCHEMA_VALIDATION_ERROR', 'vendor_sub_orders table is required for vendor authorization verification.');
     }
 
-    // 2. Check idempotency replay if key provided
+    const subOrder = sqliteDb.get(
+      'SELECT id, order_id, vendor_id, status FROM vendor_sub_orders WHERE id = ?',
+      subId
+    );
+    if (!subOrder) {
+      throw new NotFoundError('Vendor sub-order not found.');
+    }
+    // 1. FIRST: Validate vendor ownership before any idempotency lookup or replay
+    if (Number(subOrder.vendor_id) !== vId) {
+      throw new AuthorizationError('You are not authorized to request courier booking for this sub-order.');
+    }
+    if (['cancelled', 'delivered', 'returned'].includes(subOrder.status)) {
+      throw new ValidationError(`Sub-order in '${subOrder.status}' status cannot be booked with courier.`);
+    }
+    const orderId = Number(subOrder.order_id) || 1;
+
+    // 2. SECOND: Check idempotency replay if key provided
     if (cleanIdemp) {
       const existing = sqliteDb.get('SELECT * FROM vendor_courier_booking_requests WHERE idempotency_key = ?', cleanIdemp);
       if (existing) {
@@ -517,6 +519,7 @@ async function getBookingRequestBySubOrderId(subOrderId, vendorId = null) {
  * Concurrency-safe: atomically flips status from ('pending', 'failed', 'in_review') to 'booking'
  * and checks affectedRows before invoking the courier API. Only one request acquires the lock.
  * Uses a stable, deterministic idempotency key and safe fail-closed reconciliation strategy.
+ * Separates provider booking execution from DB persistence to guarantee zero duplicate parcels.
  */
 async function approveBookingRequest({ requestId, adminId, courierCodeOverride = '', note = '' }) {
   const reqId = toPositiveInt(requestId, 'booking request ID');
@@ -658,7 +661,7 @@ async function approveBookingRequest({ requestId, adminId, courierCodeOverride =
     if (recErr || !rec || !rec.reconciled) {
       const reasonMsg = recErr ? recErr.message : (rec?.message || 'Carrier reconciliation inconclusive; parcel absence not confirmed');
       // FAIL-CLOSED: transition request from 'booking' to 'in_review'
-      await updateRequestStatusWithAudit({
+      await module.exports.updateRequestStatusWithAudit({
         requestId: reqId,
         subOrderId: current.sub_order_id,
         toStatus: 'in_review',
@@ -678,7 +681,7 @@ async function approveBookingRequest({ requestId, adminId, courierCodeOverride =
       // Parcel already exists at provider! Recovered!
       const recTrackingId = rec.trackingId;
       const recConsignmentId = rec.externalConsignmentId || rec.consignmentId || recTrackingId;
-      await updateRequestStatusWithAudit({
+      await module.exports.updateRequestStatusWithAudit({
         requestId: reqId,
         subOrderId: current.sub_order_id,
         toStatus: 'booked',
@@ -693,23 +696,48 @@ async function approveBookingRequest({ requestId, adminId, courierCodeOverride =
 
       const bookedReq = await getBookingRequestById(reqId);
       return { success: true, request: bookedReq, booking: rec, reconciled: true };
-    } else if (rec.outcome === 'confirmed_absent' || (rec.bookingStatus === 'failed' && rec.reconciled)) {
-      // Confirmed absent: record audit log and safely proceed to booking
-      await module.exports.recordAuditLog({
-        bookingRequestId: reqId,
-        subOrderId: current.sub_order_id,
-        action: 'reconciliation_confirmed_absent',
-        actorType: 'admin',
-        actorId: aId,
-        fromStatus: 'booking',
-        toStatus: 'booking',
-        details: { message: rec.message || 'Carrier confirmed no parcel exists; cleared for safe retry.' }
-      });
+    } else if (rec.reconciled === true && rec.outcome === 'confirmed_absent') {
+      // ONLY rec.reconciled === true && rec.outcome === 'confirmed_absent' is allowed to proceed to fresh booking!
+      // Write the confirmed-absence audit log inside a transaction to prevent untracked state changes
+      if (env.db.client === 'mysql') {
+        await withTransaction(async (tx) => {
+          await module.exports.recordAuditLog({
+            bookingRequestId: reqId,
+            subOrderId: current.sub_order_id,
+            action: 'reconciliation_confirmed_absent',
+            actorType: 'admin',
+            actorId: aId,
+            fromStatus: 'booking',
+            toStatus: 'booking',
+            details: { message: rec.message || 'Carrier confirmed no parcel exists; cleared for safe retry.' }
+          }, tx);
+        });
+      } else {
+        try {
+          await module.exports.recordAuditLog({
+            bookingRequestId: reqId,
+            subOrderId: current.sub_order_id,
+            action: 'reconciliation_confirmed_absent',
+            actorType: 'admin',
+            actorId: aId,
+            fromStatus: 'booking',
+            toStatus: 'booking',
+            details: { message: rec.message || 'Carrier confirmed no parcel exists; cleared for safe retry.' }
+          });
+        } catch (auditErr) {
+          sqliteDb.run(
+            `UPDATE vendor_courier_booking_requests SET status = 'in_review', updated_at = datetime('now', 'localtime') WHERE id = ?`,
+            reqId
+          );
+          throw auditErr;
+        }
+      }
       // Safe to proceed to executeOneClickBooking!
     } else {
-      // Any other inconclusive result: FAIL-CLOSED!
-      const reasonMsg = rec.message || 'Carrier reconciliation outcome is inconclusive; parcel absence not confirmed';
-      await updateRequestStatusWithAudit({
+      // Any other inconclusive outcome (including bookingStatus === 'failed' without confirmed_absent outcome):
+      // FAIL-CLOSED: transition to 'in_review' and block booking!
+      const reasonMsg = rec.message || `Carrier reconciliation outcome is '${rec.outcome || 'unknown'}'; parcel absence not confirmed`;
+      await module.exports.updateRequestStatusWithAudit({
         requestId: reqId,
         subOrderId: current.sub_order_id,
         toStatus: 'in_review',
@@ -720,53 +748,33 @@ async function approveBookingRequest({ requestId, adminId, courierCodeOverride =
         adminNotes: adminNote
       });
       throw new ConflictError(
-        `Cannot proceed with courier booking: previous provider outcome is uncertain (${reasonMsg}). Request placed in 'in_review' status.`
+        `Cannot proceed with courier booking: previous provider outcome is uncertain (${reasonMsg}). Request placed in 'in_review' status. Reconcile provider status before retry.`
       );
     }
   }
 
-  // 3. Trigger courier integration
+  // 3. Trigger courier provider API
+  let bookingResult;
   try {
-    const bookingResult = await courierRepo.executeOneClickBooking({
+    bookingResult = await courierRepo.executeOneClickBooking({
       subOrderId: current.sub_order_id,
       courierCode: selectedCourier || undefined,
       actor: { userId: aId, role: 'admin', platformAdmin: true },
       idempotencyKey: stableIdempotencyKey,
       note: adminNote || `Approved by Admin #${aId}`,
     });
-
-    const trackingId = bookingResult.trackingId || bookingResult.consignmentId || '';
-    const consignmentId = bookingResult.consignmentId || trackingId;
-    const responseJson = JSON.stringify(bookingResult);
-
-    // Atomically update request to 'booked' with audit log
-    await updateRequestStatusWithAudit({
-      requestId: reqId,
-      subOrderId: current.sub_order_id,
-      toStatus: 'booked',
-      fromStatus: 'booking',
-      adminId: aId,
-      trackingId,
-      consignmentId,
-      responseJson,
-      action: 'booking_succeeded',
-      details: { trackingId, consignmentId, courierName: bookingResult.courierName }
-    });
-
-    const updated = await getBookingRequestById(reqId);
-    return { success: true, request: updated, booking: bookingResult };
-  } catch (err) {
-    const isTimeoutOrUncertain = err.code === 'PROVIDER_TIMEOUT' ||
-      String(err.message || '').toLowerCase().includes('timeout') ||
-      String(err.message || '').toLowerCase().includes('econnreset') ||
-      err.status === 'unknown_timeout';
+  } catch (apiErr) {
+    // Courier API itself failed or timed out
+    const isTimeoutOrUncertain = apiErr.code === 'PROVIDER_TIMEOUT' ||
+      String(apiErr.message || '').toLowerCase().includes('timeout') ||
+      String(apiErr.message || '').toLowerCase().includes('econnreset') ||
+      apiErr.status === 'unknown_timeout';
 
     const newStatus = isTimeoutOrUncertain ? 'in_review' : 'failed';
     const actionName = isTimeoutOrUncertain ? 'booking_timeout_in_review' : 'booking_failed';
-    const errorMsg = String(err.message || 'Courier API execution failed').slice(0, 500);
+    const errorMsg = String(apiErr.message || 'Courier API execution failed').slice(0, 500);
 
-    // Atomically transition status with audit log
-    await updateRequestStatusWithAudit({
+    await module.exports.updateRequestStatusWithAudit({
       requestId: reqId,
       subOrderId: current.sub_order_id,
       toStatus: newStatus,
@@ -782,6 +790,57 @@ async function approveBookingRequest({ requestId, adminId, courierCodeOverride =
     failureError.code = isTimeoutOrUncertain ? 'COURIER_BOOKING_UNCERTAIN' : 'COURIER_BOOKING_FAILED';
     failureError.request = failedReq;
     throw failureError;
+  }
+
+  // 4. Provider booking SUCCEEDED. Persist 'booked' status to local database.
+  const trackingId = bookingResult.trackingId || bookingResult.consignmentId || '';
+  const consignmentId = bookingResult.consignmentId || trackingId;
+  const responseJson = JSON.stringify(bookingResult);
+
+  try {
+    await module.exports.updateRequestStatusWithAudit({
+      requestId: reqId,
+      subOrderId: current.sub_order_id,
+      toStatus: 'booked',
+      fromStatus: 'booking',
+      adminId: aId,
+      trackingId,
+      consignmentId,
+      responseJson,
+      action: 'booking_succeeded',
+      details: { trackingId, consignmentId, courierName: bookingResult.courierName }
+    });
+
+    const updated = await getBookingRequestById(reqId);
+    return { success: true, request: updated, booking: bookingResult };
+  } catch (persistenceErr) {
+    // Carrier parcel was created successfully, but DB persistence failed!
+    // NEVER mark as 'failed' (which would allow duplicate parcel booking on retry).
+    // Mark as 'in_review' with tracking ID so subsequent operations reconcile with carrier!
+    console.error(`[CRITICAL] Provider parcel was created (${trackingId}) but DB persistence failed:`, persistenceErr.message);
+    try {
+      await module.exports.updateRequestStatusWithAudit({
+        requestId: reqId,
+        subOrderId: current.sub_order_id,
+        toStatus: 'in_review',
+        fromStatus: 'booking',
+        adminId: aId,
+        trackingId,
+        consignmentId,
+        responseJson,
+        action: 'booking_persistence_failed_in_review',
+        failureReason: `Parcel booked at provider (${trackingId}) but local persistence failed: ${persistenceErr.message}`,
+        details: { trackingId, consignmentId, persistenceError: persistenceErr.message }
+      });
+    } catch (_) {}
+
+    const persError = new Error(
+      `Carrier created parcel (${trackingId}), but database persistence encountered an error: ${persistenceErr.message}. Request placed in 'in_review' status to prevent duplicate booking.`
+    );
+    persError.code = 'COURIER_PERSISTENCE_FAILED';
+    persError.trackingId = trackingId;
+    persError.consignmentId = consignmentId;
+    throw persError;
   }
 }
 
