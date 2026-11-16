@@ -285,11 +285,17 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
     assert.equal(resellers.text.includes('/admin/resellers/delete/'),false,'MySQL reseller directory has no delete control');
     const pendingResellers=await request('/admin/reseller-verifications',{accept:'text/html'});assert.equal(pendingResellers.status,200);assert.match(pendingResellers.text,new RegExp(`P09 Pending Reseller ${suffix}`));assert.doesNotMatch(pendingResellers.text,new RegExp(`P09 Verified Reseller ${suffix}`));
 
+    const noCsrfVerify=await request(`/admin/vendors/verify/${vendorPending.insertId}`,{method:'POST',token:null});assert.equal(noCsrfVerify.status,403,'vendor verification requires CSRF token');
     const deniedVerify=await request(`/admin/vendors/verify/${vendorPending.insertId}`,{method:'POST',cookie:noGrantCookie,token:noGrantToken});assert.equal(deniedVerify.status,403,'vendor verification remains permission-gated');
+    const deniedResellerVerify=await request(`/admin/resellers/verify/${resellerPending.insertId}`,{method:'POST',cookie:noGrantCookie,token:noGrantToken});assert.equal(deniedResellerVerify.status,403,'reseller verification remains permission-gated');
     const approvedVerify=await request(`/admin/vendors/verify/${vendorPending.insertId}`,{method:'POST'});assert.equal(approvedVerify.status,302,'vendor verification succeeds in MySQL with redirect');
     const approvedResellerVerify=await request(`/admin/resellers/verify/${resellerPending.insertId}`,{method:'POST'});assert.equal(approvedResellerVerify.status,302,'reseller verification succeeds in MySQL with redirect');
     assert.equal(Number((await db.queryOne('SELECT verified FROM vendors WHERE id=?',[vendorPending.insertId])).verified),1);
     assert.equal(Number((await db.queryOne('SELECT verified FROM resellers WHERE id=?',[resellerPending.insertId])).verified),1);
+    const vendorAudit=await db.queryOne("SELECT id, action, entity_id FROM audit_logs WHERE action='vendor.verified' AND entity_id=?",[String(vendorPending.insertId)]);
+    assert.ok(vendorAudit,'audit log was written for vendor verification in MySQL');
+    const resellerAudit=await db.queryOne("SELECT id, action, entity_id FROM audit_logs WHERE action='reseller.approve' AND entity_id=?",[String(resellerPending.insertId)]);
+    assert.ok(resellerAudit,'audit log was written for reseller verification in MySQL');
     assert.ok(await db.queryOne('SELECT id FROM vendors WHERE id=?',[vendorVerified.insertId]));assert.ok(await db.queryOne('SELECT id FROM resellers WHERE id=?',[resellerVerified.insertId]));
   });
 
