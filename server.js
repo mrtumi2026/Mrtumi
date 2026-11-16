@@ -48,6 +48,7 @@ const phase08AdminRoutes = require('./src/routes/phase08Admin');
 const d7AdminRoutes = require('./src/routes/d7Admin');
 const paymentRoutes = require('./src/routes/paymentRoutes');
 const logisticsRoutes = require('./src/routes/logisticsRoutes');
+const adminTestDataRoutes = require('./src/routes/adminTestData');
 const { createSecurityHeaders } = require('./src/middleware/securityHeaders');
 const { corsMiddleware } = require('./src/middleware/corsConfig');
 const { sanitizeRequestMiddleware } = require('./src/middleware/validator');
@@ -155,6 +156,7 @@ app.use(adminResellerCommerceRoutes);
 app.use(customerAccountRoutes);
 app.use(paymentRoutes);
 app.use(logisticsRoutes);
+app.use(adminTestDataRoutes);
 app.use(storefrontRoutes);
 
 // 404 Handler (JSON envelope for API paths, HTML/redirects for portal paths)
