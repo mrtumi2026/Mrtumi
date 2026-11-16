@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS `vendor_courier_booking_requests` (
   `idempotency_key` VARCHAR(120) DEFAULT NULL,
   `courier_response_json` LONGTEXT DEFAULT NULL,
   `approved_by_admin_id` INT DEFAULT NULL,
+  `lease_token` VARCHAR(64) DEFAULT NULL,
   `active_sub_order_id` BIGINT GENERATED ALWAYS AS (
     CASE WHEN `status` IN ('pending', 'booking', 'booked', 'in_review') THEN `sub_order_id` ELSE NULL END
   ) VIRTUAL,

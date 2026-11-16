@@ -47,6 +47,7 @@ sqliteDb.exec(`
     idempotency_key TEXT UNIQUE,
     courier_response_json TEXT DEFAULT NULL,
     approved_by_admin_id INTEGER DEFAULT NULL,
+    lease_token TEXT DEFAULT NULL,
     created_at TEXT DEFAULT (datetime('now', 'localtime')),
     updated_at TEXT DEFAULT (datetime('now', 'localtime'))
   );
@@ -68,6 +69,10 @@ sqliteDb.exec(`
   );
 `);
 
+try {
+  sqliteDb.exec('ALTER TABLE vendor_courier_booking_requests ADD COLUMN lease_token TEXT DEFAULT NULL;');
+} catch (_) {}
+
 test('Migration 0038 schema defines vendor_courier_booking_requests and audit logs', () => {
   const pairs = loadMigrationPairs(path.join(root, 'src/db/migrations'));
   const m38 = pairs.find((p) => p.version === '0038');
@@ -79,6 +84,7 @@ test('Migration 0038 schema defines vendor_courier_booking_requests and audit lo
   assert.match(m38.upSql, /`active_sub_order_id` BIGINT GENERATED ALWAYS AS/);
   assert.match(m38.upSql, /'in_review'/);
   assert.match(m38.upSql, /UNIQUE KEY `uq_vcbr_active_sub_order`/);
+  assert.match(m38.upSql, /`lease_token` VARCHAR\(64\) DEFAULT NULL/);
   assert.match(m38.upSql, /CREATE TABLE IF NOT EXISTS `vendor_courier_booking_audit_logs`/);
 
   // Verify DOWN SQL rollback with data-destructive warning
@@ -643,6 +649,7 @@ test('Routes and views integration verification', () => {
 });
 
 test('Stale booking recovery: carrier success + total DB crash leaves request in booking, recovered to booked', async () => {
+  sqliteDb.run("DELETE FROM vendor_courier_booking_requests WHERE status = 'booking'");
   sqliteDb.run('DELETE FROM vendor_courier_booking_requests WHERE sub_order_id = ?', 9020);
   sqliteDb.run('DELETE FROM vendor_courier_booking_audit_logs WHERE sub_order_id = ?', 9020);
   sqliteDb.run('INSERT OR REPLACE INTO vendor_sub_orders (id, order_id, vendor_id, status) VALUES (?, ?, ?, ?)', 9020, 1, 120, 'processing');
@@ -755,6 +762,7 @@ test('Stale booking recovery: carrier success + total DB crash leaves request in
 });
 
 test('Stale booking recovery: provider strictly confirms absence -> unlocks request for safe retry', async () => {
+  sqliteDb.run("DELETE FROM vendor_courier_booking_requests WHERE status = 'booking'");
   sqliteDb.run('DELETE FROM vendor_courier_booking_requests WHERE sub_order_id = ?', 9021);
   sqliteDb.run('DELETE FROM vendor_courier_booking_audit_logs WHERE sub_order_id = ?', 9021);
   sqliteDb.run('INSERT OR REPLACE INTO vendor_sub_orders (id, order_id, vendor_id, status) VALUES (?, ?, ?, ?)', 9021, 1, 121, 'processing');
@@ -803,6 +811,7 @@ test('Stale booking recovery: provider strictly confirms absence -> unlocks requ
 });
 
 test('Stale booking recovery: provider inconclusive / error -> fail-closed to in_review', async () => {
+  sqliteDb.run("DELETE FROM vendor_courier_booking_requests WHERE status = 'booking'");
   sqliteDb.run('DELETE FROM vendor_courier_booking_requests WHERE sub_order_id = ?', 9022);
   sqliteDb.run('DELETE FROM vendor_courier_booking_audit_logs WHERE sub_order_id = ?', 9022);
   sqliteDb.run('INSERT OR REPLACE INTO vendor_sub_orders (id, order_id, vendor_id, status) VALUES (?, ?, ?, ?)', 9022, 1, 122, 'processing');
@@ -846,6 +855,7 @@ test('Stale booking recovery: provider inconclusive / error -> fail-closed to in
 });
 
 test('Stale booking recovery: multi-worker concurrency lease ensures single processing', async () => {
+  sqliteDb.run("DELETE FROM vendor_courier_booking_requests WHERE status = 'booking'");
   sqliteDb.run('DELETE FROM vendor_courier_booking_requests WHERE sub_order_id = ?', 9023);
   sqliteDb.run('DELETE FROM vendor_courier_booking_audit_logs WHERE sub_order_id = ?', 9023);
   sqliteDb.run('INSERT OR REPLACE INTO vendor_sub_orders (id, order_id, vendor_id, status) VALUES (?, ?, ?, ?)', 9023, 1, 123, 'processing');
@@ -888,4 +898,294 @@ test('Stale booking recovery: multi-worker concurrency lease ensures single proc
   } finally {
     courierRepo.reconcileBookingResult = originalReconcile;
   }
+});
+
+test('Recovery worker lease safety: expired worker with stale lease token cannot overwrite newer worker result', async () => {
+  sqliteDb.run("DELETE FROM vendor_courier_booking_requests WHERE status = 'booking'");
+  sqliteDb.run('DELETE FROM vendor_courier_booking_requests WHERE sub_order_id = ?', 9024);
+  sqliteDb.run('DELETE FROM vendor_courier_booking_audit_logs WHERE sub_order_id = ?', 9024);
+  sqliteDb.run('INSERT OR REPLACE INTO vendor_sub_orders (id, order_id, vendor_id, status) VALUES (?, ?, ?, ?)', 9024, 1, 124, 'processing');
+
+  const created = await approvalRepo.createBookingRequest({
+    subOrderId: 9024,
+    vendorId: 124,
+    courierCode: 'steadfast',
+  });
+
+  // 1. Worker 1 leases the row with lease token A
+  sqliteDb.run(
+    "UPDATE vendor_courier_booking_requests SET status = 'booking', lease_token = 'worker-1-lease-token', updated_at = datetime('now', 'localtime', '-10 minutes') WHERE id = ?",
+    created.request.id
+  );
+
+  // 2. Worker 1 experiences a long delay (> 5 minutes). Meanwhile, Worker 2 runs recoverStaleBookingRequests
+  const originalReconcile = courierRepo.reconcileBookingResult;
+  try {
+    courierRepo.reconcileBookingResult = async () => {
+      return {
+        reconciled: true,
+        outcome: 'found',
+        trackingId: 'ST-WORKER-2-WINNER'
+      };
+    };
+
+    // Worker 2 runs and acquires a new lease, recovering the parcel to 'booked'
+    const worker2Result = await approvalRepo.recoverStaleBookingRequests({ olderThanMinutes: 5 });
+    assert.strictEqual(worker2Result.recovered, 1);
+
+    const stateAfterWorker2 = await approvalRepo.getBookingRequestById(created.request.id);
+    assert.strictEqual(stateAfterWorker2.status, 'booked');
+    assert.strictEqual(stateAfterWorker2.tracking_id, 'ST-WORKER-2-WINNER');
+
+    // 3. Now Worker 1 (expired lease token) wakes up and attempts to write its stale result
+    await assert.rejects(
+      async () => {
+        await approvalRepo.updateRequestStatusWithAudit({
+          requestId: created.request.id,
+          subOrderId: 9024,
+          toStatus: 'failed',
+          fromStatus: 'booking',
+          action: 'stale_booking_cleared_absent',
+          leaseToken: 'worker-1-lease-token', // Stale lease token!
+          failureReason: 'Worker 1 thought it had confirmed absence'
+        });
+      },
+      (err) => err instanceof ConflictError && err.message.includes('lease ownership lost')
+    );
+
+    // Verify row was NOT overwritten by expired Worker 1
+    const finalState = await approvalRepo.getBookingRequestById(created.request.id);
+    assert.strictEqual(finalState.status, 'booked');
+    assert.strictEqual(finalState.tracking_id, 'ST-WORKER-2-WINNER');
+
+    // Verify NO conflicting audit log from Worker 1 was written
+    const staleAudit = sqliteDb.get(
+      "SELECT * FROM vendor_courier_booking_audit_logs WHERE booking_request_id = ? AND action = 'stale_booking_cleared_absent'",
+      created.request.id
+    );
+    assert.strictEqual(Boolean(staleAudit), false, 'Fencing token must prevent expired worker from inserting audit logs');
+  } finally {
+    courierRepo.reconcileBookingResult = originalReconcile;
+  }
+});
+
+test('Complete database outage recovery (Steadfast): parcel recovered by deterministic invoice with zero duplicate creation', async () => {
+  sqliteDb.run("DELETE FROM vendor_courier_booking_requests WHERE status = 'booking'");
+  sqliteDb.run('DELETE FROM vendor_courier_booking_requests WHERE sub_order_id = ?', 9031);
+  sqliteDb.run('DELETE FROM vendor_courier_booking_audit_logs WHERE sub_order_id = ?', 9031);
+  sqliteDb.run('INSERT OR REPLACE INTO vendor_sub_orders (id, order_id, vendor_id, status) VALUES (?, ?, ?, ?)', 9031, 1, 131, 'processing');
+
+  const created = await approvalRepo.createBookingRequest({
+    subOrderId: 9031,
+    vendorId: 131,
+    courierCode: 'steadfast',
+  });
+
+  const originalExecute = courierRepo.executeOneClickBooking;
+  const originalReconcile = courierRepo.reconcileBookingResult;
+  const originalUpdate = approvalRepo.updateRequestStatusWithAudit;
+
+  let executeCount = 0;
+  let reconcileCount = 0;
+
+  try {
+    courierRepo.executeOneClickBooking = async () => {
+      executeCount++;
+      return {
+        trackingId: 'SF-OUTAGE-TRK-9031',
+        consignmentId: 'SF-OUTAGE-CID-9031',
+        courierName: 'Steadfast Courier'
+      };
+    };
+
+    // Total database crash during approval write
+    approvalRepo.updateRequestStatusWithAudit = async (params) => {
+      if (params.toStatus === 'booked' || params.toStatus === 'in_review') {
+        throw new Error('Database server rebooting: all writes rejected');
+      }
+      return originalUpdate.call(approvalRepo, params);
+    };
+
+    // Admin approve initiates booking -> Carrier creates parcel -> DB crashes
+    await assert.rejects(
+      async () => {
+        await approvalRepo.approveBookingRequest({
+          requestId: created.request.id,
+          adminId: 1
+        });
+      },
+      (err) => err.message.includes('Carrier created parcel (SF-OUTAGE-TRK-9031)')
+    );
+
+    // Request is left stuck in 'booking' status with no tracking_id in DB
+    const stuck = await approvalRepo.getBookingRequestById(created.request.id);
+    assert.strictEqual(stuck.status, 'booking');
+    assert.strictEqual(stuck.tracking_id, null, 'No tracking ID could be saved during total DB outage');
+
+    // Simulate process restart and passage of 10 minutes
+    sqliteDb.run(
+      "UPDATE vendor_courier_booking_requests SET updated_at = datetime('now', 'localtime', '-10 minutes') WHERE id = ?",
+      created.request.id
+    );
+
+    // DB is back online: restore normal update function
+    approvalRepo.updateRequestStatusWithAudit = originalUpdate;
+
+    // Reconciliation finds parcel by deterministic invoice reference
+    courierRepo.reconcileBookingResult = async ({ subOrderId }) => {
+      reconcileCount++;
+      assert.strictEqual(subOrderId, 9031);
+      return {
+        reconciled: true,
+        outcome: 'found',
+        bookingStatus: 'succeeded',
+        trackingId: 'SF-OUTAGE-TRK-9031',
+        externalConsignmentId: 'SF-OUTAGE-CID-9031'
+      };
+    };
+
+    // Run recovery engine
+    const recResult = await approvalRepo.recoverStaleBookingRequests({ olderThanMinutes: 5 });
+    assert.strictEqual(recResult.recovered, 1);
+    assert.strictEqual(executeCount, 1, 'Carrier booking API must execute exactly ONCE (zero duplicate parcels)');
+    assert.strictEqual(reconcileCount, 1, 'Reconciliation must query provider by deterministic invoice');
+
+    const finalReq = await approvalRepo.getBookingRequestById(created.request.id);
+    assert.strictEqual(finalReq.status, 'booked');
+    assert.strictEqual(finalReq.tracking_id, 'SF-OUTAGE-TRK-9031');
+    assert.strictEqual(finalReq.consignment_id, 'SF-OUTAGE-CID-9031');
+  } finally {
+    courierRepo.executeOneClickBooking = originalExecute;
+    courierRepo.reconcileBookingResult = originalReconcile;
+    approvalRepo.updateRequestStatusWithAudit = originalUpdate;
+  }
+});
+
+test('Complete database outage recovery (Pathao): parcel recovered by exact merchant_order_id match with zero duplicate creation', async () => {
+  sqliteDb.run("DELETE FROM vendor_courier_booking_requests WHERE status = 'booking'");
+  sqliteDb.run('DELETE FROM vendor_courier_booking_requests WHERE sub_order_id = ?', 9032);
+  sqliteDb.run('DELETE FROM vendor_courier_booking_audit_logs WHERE sub_order_id = ?', 9032);
+  sqliteDb.run('INSERT OR REPLACE INTO vendor_sub_orders (id, order_id, vendor_id, status) VALUES (?, ?, ?, ?)', 9032, 1, 132, 'processing');
+
+  const created = await approvalRepo.createBookingRequest({
+    subOrderId: 9032,
+    vendorId: 132,
+    courierCode: 'pathao',
+  });
+
+  const originalExecute = courierRepo.executeOneClickBooking;
+  const originalReconcile = courierRepo.reconcileBookingResult;
+  const originalUpdate = approvalRepo.updateRequestStatusWithAudit;
+
+  let executeCount = 0;
+  let reconcileCount = 0;
+
+  try {
+    courierRepo.executeOneClickBooking = async () => {
+      executeCount++;
+      return {
+        trackingId: 'PT-OUTAGE-CID-9032',
+        consignmentId: 'PT-OUTAGE-CID-9032',
+        courierName: 'Pathao Courier'
+      };
+    };
+
+    // Total database crash during approval write
+    approvalRepo.updateRequestStatusWithAudit = async (params) => {
+      if (params.toStatus === 'booked' || params.toStatus === 'in_review') {
+        throw new Error('Database server panic: kernel panic on disk write');
+      }
+      return originalUpdate.call(approvalRepo, params);
+    };
+
+    await assert.rejects(
+      async () => {
+        await approvalRepo.approveBookingRequest({
+          requestId: created.request.id,
+          adminId: 1
+        });
+      },
+      (err) => err.message.includes('Carrier created parcel (PT-OUTAGE-CID-9032)')
+    );
+
+    const stuck = await approvalRepo.getBookingRequestById(created.request.id);
+    assert.strictEqual(stuck.status, 'booking');
+    assert.strictEqual(stuck.tracking_id, null);
+
+    // Simulate process restart and 10 minutes elapsed
+    sqliteDb.run(
+      "UPDATE vendor_courier_booking_requests SET updated_at = datetime('now', 'localtime', '-10 minutes') WHERE id = ?",
+      created.request.id
+    );
+
+    approvalRepo.updateRequestStatusWithAudit = originalUpdate;
+
+    courierRepo.reconcileBookingResult = async ({ subOrderId }) => {
+      reconcileCount++;
+      assert.strictEqual(subOrderId, 9032);
+      return {
+        reconciled: true,
+        outcome: 'found',
+        bookingStatus: 'succeeded',
+        trackingId: 'PT-OUTAGE-CID-9032',
+        externalConsignmentId: 'PT-OUTAGE-CID-9032'
+      };
+    };
+
+    const recResult = await approvalRepo.recoverStaleBookingRequests({ olderThanMinutes: 5 });
+    assert.strictEqual(recResult.recovered, 1);
+    assert.strictEqual(executeCount, 1, 'Carrier booking API must execute exactly ONCE');
+    assert.strictEqual(reconcileCount, 1, 'Reconciliation queries provider using exact merchant_order_id match');
+
+    const finalReq = await approvalRepo.getBookingRequestById(created.request.id);
+    assert.strictEqual(finalReq.status, 'booked');
+    assert.strictEqual(finalReq.tracking_id, 'PT-OUTAGE-CID-9032');
+  } finally {
+    courierRepo.executeOneClickBooking = originalExecute;
+    courierRepo.reconcileBookingResult = originalReconcile;
+    approvalRepo.updateRequestStatusWithAudit = originalUpdate;
+  }
+});
+
+test('PathaoAdapter reconciliation requires exact merchant_order_id match and rejects mismatched search items', async () => {
+  const PathaoAdapter = require('../src/services/courier/adapters/PathaoAdapter');
+  const adapter = new PathaoAdapter({ apiKey: 'mock-key', baseUrl: 'https://mock.pathao.com' });
+
+  adapter.authenticatedFetch = async (url) => {
+    if (url.includes('orders?merchant_order_id=INV-TARGET-101')) {
+      return {
+        ok: true,
+        json: async () => ({
+          data: {
+            data: [
+              { consignment_id: 'PT-WRONG-99', merchant_order_id: 'INV-PREFIX-ONLY' },
+              { consignment_id: 'PT-EXACT-101', merchant_order_id: 'INV-TARGET-101', order_status: 'In Transit' }
+            ]
+          }
+        })
+      };
+    } else if (url.includes('orders?merchant_order_id=INV-NOT-FOUND')) {
+      return {
+        ok: true,
+        json: async () => ({
+          data: {
+            data: [
+              { consignment_id: 'PT-OTHER-55', merchant_order_id: 'SOME-OTHER-ID' }
+            ]
+          }
+        })
+      };
+    }
+    return { ok: false };
+  };
+
+  // 1. Should select PT-EXACT-101 because merchant_order_id matches exactly
+  const matchResult = await adapter.reconcileBooking({ invoiceNo: 'INV-TARGET-101' });
+  assert.strictEqual(matchResult.outcome, 'found');
+  assert.strictEqual(matchResult.consignmentId, 'PT-EXACT-101');
+
+  // 2. Should reject and return unknown_error when returned list has no exact match
+  const noMatchResult = await adapter.reconcileBooking({ invoiceNo: 'INV-NOT-FOUND' });
+  assert.strictEqual(noMatchResult.outcome, 'unknown_error');
+  assert.strictEqual(noMatchResult.found, false);
 });

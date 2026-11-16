@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('crypto');
 const { env } = require('../config/env');
 const { getPool, withTransaction } = require('../db/mysqlPool');
 const sqliteDb = require('../db/database');
@@ -72,6 +73,7 @@ async function updateRequestStatusWithAudit({
   rejectionReason = null,
   adminNotes = null,
   action,
+  leaseToken = null,
   details = {}
 }) {
   const reqId = toPositiveInt(requestId, 'booking request ID');
@@ -84,9 +86,17 @@ async function updateRequestStatusWithAudit({
 
   if (env.db.client === 'mysql') {
     return withTransaction(async (tx) => {
-      await tx.execute(
+      const whereClauses = ['id = ?'];
+      const whereParams = [reqId];
+      if (leaseToken) {
+        whereClauses.push('lease_token = ?');
+        whereParams.push(leaseToken);
+      }
+
+      const updateRes = await tx.execute(
         `UPDATE vendor_courier_booking_requests
          SET status = ?,
+             lease_token = NULL,
              tracking_id = COALESCE(?, tracking_id),
              consignment_id = COALESCE(?, consignment_id),
              courier_response_json = COALESCE(?, courier_response_json),
@@ -95,7 +105,7 @@ async function updateRequestStatusWithAudit({
              approved_by_admin_id = COALESCE(?, approved_by_admin_id),
              admin_notes = COALESCE(?, admin_notes),
              updated_at = UTC_TIMESTAMP()
-         WHERE id = ?`,
+         WHERE ${whereClauses.join(' AND ')}`,
         [
           toStatus,
           trackingId || null,
@@ -105,9 +115,13 @@ async function updateRequestStatusWithAudit({
           rejectionReason || null,
           aId,
           adminNotes || null,
-          reqId
+          ...whereParams
         ]
       );
+
+      if (!updateRes || updateRes.affectedRows !== 1) {
+        throw new ConflictError(`Update failed: lease ownership lost or row modified concurrently (requestId=${reqId}).`);
+      }
 
       await module.exports.recordAuditLog({
         bookingRequestId: reqId,
@@ -124,18 +138,8 @@ async function updateRequestStatusWithAudit({
     // SQLite atomic execution with rollback on audit failure
     sqliteDb.exec('BEGIN IMMEDIATE');
     try {
-      sqliteDb.run(
-        `UPDATE vendor_courier_booking_requests
-         SET status = ?,
-             tracking_id = COALESCE(?, tracking_id),
-             consignment_id = COALESCE(?, consignment_id),
-             courier_response_json = COALESCE(?, courier_response_json),
-             failure_reason = ?,
-             rejection_reason = COALESCE(?, rejection_reason),
-             approved_by_admin_id = COALESCE(?, approved_by_admin_id),
-             admin_notes = COALESCE(?, admin_notes),
-             updated_at = datetime('now', 'localtime')
-         WHERE id = ?`,
+      const whereClauses = ['id = ?'];
+      const updateParams = [
         toStatus,
         trackingId || null,
         consignmentId || null,
@@ -145,7 +149,31 @@ async function updateRequestStatusWithAudit({
         aId,
         adminNotes || null,
         reqId
+      ];
+      if (leaseToken) {
+        whereClauses.push('lease_token = ?');
+        updateParams.push(leaseToken);
+      }
+
+      const res = sqliteDb.run(
+        `UPDATE vendor_courier_booking_requests
+         SET status = ?,
+             lease_token = NULL,
+             tracking_id = COALESCE(?, tracking_id),
+             consignment_id = COALESCE(?, consignment_id),
+             courier_response_json = COALESCE(?, courier_response_json),
+             failure_reason = ?,
+             rejection_reason = COALESCE(?, rejection_reason),
+             approved_by_admin_id = COALESCE(?, approved_by_admin_id),
+             admin_notes = COALESCE(?, admin_notes),
+             updated_at = datetime('now', 'localtime')
+         WHERE ${whereClauses.join(' AND ')}`,
+        ...updateParams
       );
+
+      if (!res || res.changes !== 1) {
+        throw new ConflictError(`Update failed: lease ownership lost or row modified concurrently (requestId=${reqId}).`);
+      }
 
       await module.exports.recordAuditLog({
         bookingRequestId: reqId,
@@ -1013,23 +1041,24 @@ async function recoverStaleBookingRequests({
 
   for (const req of staleRequests) {
     try {
-      // 1. Atomic lease / claim: advance updated_at to NOW() so no concurrent worker grabs this row
+      // 1. Atomic lease / claim with fencing token: advance updated_at and store unique lease_token
+      const leaseToken = `lease_${Date.now()}_${crypto.randomBytes(6).toString('hex')}`;
       let leased = false;
       if (env.db.client === 'mysql') {
         const pool = getPool();
         const [leaseRes] = await pool.query(
           `UPDATE vendor_courier_booking_requests
-           SET updated_at = UTC_TIMESTAMP()
+           SET lease_token = ?, updated_at = UTC_TIMESTAMP()
            WHERE id = ? AND status = 'booking' AND updated_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? MINUTE)`,
-          [req.id, olderMins]
+          [leaseToken, req.id, olderMins]
         );
         leased = Boolean(leaseRes && leaseRes.affectedRows === 1);
       } else {
         const leaseRes = sqliteDb.run(
           `UPDATE vendor_courier_booking_requests
-           SET updated_at = datetime('now', 'localtime')
+           SET lease_token = ?, updated_at = datetime('now', 'localtime')
            WHERE id = ? AND status = 'booking' AND datetime(updated_at) < datetime('now', 'localtime', '-' || ? || ' minute')`,
-          req.id, olderMins
+          leaseToken, req.id, olderMins
         );
         leased = Boolean(leaseRes && leaseRes.changes === 1);
       }
@@ -1051,7 +1080,7 @@ async function recoverStaleBookingRequests({
         recErr = err;
       }
 
-      // 3. Process outcome
+      // 3. Process outcome (all transitions require valid leaseToken fencing)
       if (rec && !recErr && (rec.outcome === 'found' || (rec.bookingStatus === 'succeeded' && rec.trackingId))) {
         // Parcel was created at provider before the outage!
         const recTrackingId = rec.trackingId;
@@ -1066,10 +1095,12 @@ async function recoverStaleBookingRequests({
           consignmentId: recConsignmentId,
           responseJson: JSON.stringify(rec),
           action: 'stale_booking_recovered',
+          leaseToken,
           details: {
             trackingId: recTrackingId,
             consignmentId: recConsignmentId,
             courierCode: req.courier_code,
+            leaseToken,
             recoveredAt: new Date().toISOString(),
             note: 'Stale booking recovered: parcel confirmed at provider.'
           }
@@ -1092,7 +1123,9 @@ async function recoverStaleBookingRequests({
           adminId: aId,
           action: 'stale_booking_cleared_absent',
           failureReason: rec.message || 'Carrier confirmed absence of parcel during stale booking recovery; unlocked for retry.',
+          leaseToken,
           details: {
+            leaseToken,
             recoveredAt: new Date().toISOString(),
             note: 'Stale booking cleared: carrier confirmed parcel absent; unlocked for retry.'
           }
@@ -1114,8 +1147,10 @@ async function recoverStaleBookingRequests({
           adminId: aId,
           action: 'stale_booking_uncertain_in_review',
           failureReason: reasonMsg,
+          leaseToken,
           details: {
             error: reasonMsg,
+            leaseToken,
             recoveredAt: new Date().toISOString(),
             note: 'Stale booking placed in in_review: carrier reconciliation inconclusive.'
           }

@@ -723,15 +723,23 @@ class PathaoAdapter extends CourierBaseAdapter {
 
         if (altResponse.ok) {
           const altData = await altResponse.json();
-          const match = altData?.data?.data?.[0] || altData?.data?.[0] || (altData?.data?.consignment_id ? altData.data : null);
-          if (match && match.consignment_id) {
+          const items = Array.isArray(altData?.data?.data)
+            ? altData.data.data
+            : (Array.isArray(altData?.data) ? altData.data : [altData?.data].filter(Boolean));
+          // Strict verification: verify returned record's merchant_order_id matches queryMerchantOrder exactly
+          const exactMatch = items.find((item) =>
+            item &&
+            item.consignment_id &&
+            String(item.merchant_order_id || '').trim() === String(queryMerchantOrder).trim()
+          );
+          if (exactMatch && exactMatch.consignment_id) {
             return {
               outcome: 'found',
               found: true,
               confirmedAbsent: false,
-              trackingId: String(match.consignment_id),
-              consignmentId: String(match.consignment_id),
-              status: match.order_status,
+              trackingId: String(exactMatch.consignment_id),
+              consignmentId: String(exactMatch.consignment_id),
+              status: exactMatch.order_status,
               rawResponse: CourierBaseAdapter.sanitize(altData),
               error: null
             };

@@ -144,6 +144,19 @@ class SteadfastAdapter extends CourierBaseAdapter {
       if (response.ok) {
         const data = await response.json();
         if (data && (data.status === 200 || data.delivery_status)) {
+          // Strict verification: if provider returns invoice field, verify exact invoice match
+          if (invoiceNo && data.invoice && String(data.invoice).trim() !== String(invoiceNo).trim()) {
+            return {
+              outcome: 'unknown_error',
+              found: false,
+              confirmedAbsent: false,
+              trackingId: null,
+              consignmentId: null,
+              status: null,
+              rawResponse: null,
+              error: `Steadfast invoice reference mismatch: returned '${data.invoice}' vs expected '${invoiceNo}'`
+            };
+          }
           return {
             outcome: 'found',
             found: true,
