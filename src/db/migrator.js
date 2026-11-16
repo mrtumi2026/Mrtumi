@@ -315,6 +315,33 @@ async function getMigrationStatus(pool, { migrationsDir = DEFAULT_MIGRATIONS_DIR
   }
 }
 
+async function detectIsMariaDB(conn) {
+  try {
+    const [rows] = await conn.query('SELECT VERSION() AS version, @@version_comment AS version_comment');
+    const ver = String(rows && rows[0] && rows[0].version ? rows[0].version : '');
+    const comment = String(rows && rows[0] && rows[0].version_comment ? rows[0].version_comment : '');
+    return /mariadb/i.test(ver) || /mariadb/i.test(comment);
+  } catch {
+    return false;
+  }
+}
+
+function adaptStatementForEngine(sql, isMariaDB) {
+  if (isMariaDB) return sql;
+  // MySQL 8.0 does not support MariaDB-specific IF [NOT] EXISTS clauses on ALTER TABLE statements
+  let adapted = sql;
+  if (/^\s*ALTER\s+TABLE/i.test(adapted)) {
+    adapted = adapted
+      .replace(/\bADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\b/gi, 'ADD COLUMN')
+      .replace(/\bADD\s+UNIQUE\s+KEY\s+IF\s+NOT\s+EXISTS\b/gi, 'ADD UNIQUE KEY')
+      .replace(/\bADD\s+KEY\s+IF\s+NOT\s+EXISTS\b/gi, 'ADD KEY')
+      .replace(/\bDROP\s+INDEX\s+IF\s+EXISTS\b/gi, 'DROP KEY')
+      .replace(/\bDROP\s+KEY\s+IF\s+EXISTS\b/gi, 'DROP KEY')
+      .replace(/\bDROP\s+COLUMN\s+IF\s+EXISTS\b/gi, 'DROP COLUMN');
+  }
+  return adapted;
+}
+
 async function migrateUp(pool, { migrationsDir = DEFAULT_MIGRATIONS_DIR, targetVersion = null, lockTimeoutSec = 15 } = {}) {
   const pairs = loadMigrationPairs(migrationsDir);
   const conn = await pool.getConnection();
@@ -322,6 +349,7 @@ async function migrateUp(pool, { migrationsDir = DEFAULT_MIGRATIONS_DIR, targetV
 
   try {
     await acquireAdvisoryLock(conn, lockTimeoutSec);
+    const isMariaDB = await detectIsMariaDB(conn);
     const appliedMap = await getAppliedMigrationsMap(conn);
     verifyIntegrity(pairs, appliedMap);
 
@@ -336,8 +364,9 @@ async function migrateUp(pool, { migrationsDir = DEFAULT_MIGRATIONS_DIR, targetV
 
       const started = Date.now();
       for (let idx = 0; idx < statements.length; idx++) {
+        const stmt = adaptStatementForEngine(statements[idx], isMariaDB);
         try {
-          await conn.query(statements[idx]);
+          await conn.query(stmt);
         } catch (err) {
           throw new MigrationError(
             'MIGRATION_STATEMENT_FAILED',
@@ -380,6 +409,7 @@ async function migrateDown(pool, { migrationsDir = DEFAULT_MIGRATIONS_DIR, steps
 
   try {
     await acquireAdvisoryLock(conn, lockTimeoutSec);
+    const isMariaDB = await detectIsMariaDB(conn);
     const appliedMap = await getAppliedMigrationsMap(conn);
     verifyIntegrity(pairs, appliedMap);
 
@@ -393,8 +423,9 @@ async function migrateDown(pool, { migrationsDir = DEFAULT_MIGRATIONS_DIR, steps
 
       const started = Date.now();
       for (let idx = 0; idx < statements.length; idx++) {
+        const stmt = adaptStatementForEngine(statements[idx], isMariaDB);
         try {
-          await conn.query(statements[idx]);
+          await conn.query(stmt);
         } catch (err) {
           throw new MigrationError(
             'ROLLBACK_STATEMENT_FAILED',
@@ -433,4 +464,6 @@ module.exports = {
   getMigrationStatus,
   migrateUp,
   migrateDown,
+  detectIsMariaDB,
+  adaptStatementForEngine,
 };

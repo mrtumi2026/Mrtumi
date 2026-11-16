@@ -10,6 +10,7 @@ const {
   loadMigrationPairs,
   sha256Hex,
   MigrationError,
+  adaptStatementForEngine,
 } = require('../src/db/migrator');
 
 test('Migration Checksums: KNOWN_CHECKSUM_ALIASES contains verified production LF and CRLF hashes', () => {
@@ -163,4 +164,24 @@ test('All disk migration pairs from 0001 to 0036 load and have valid paired down
   assert.ok(v34.downSql.trim().length > 0, '0034 down migration must not be empty');
   assert.ok(v35.downSql.trim().length > 0, '0035 down migration must not be empty');
   assert.ok(v36.downSql.trim().length > 0, '0036 down migration must not be empty');
+});
+
+test('adaptStatementForEngine: preserves MariaDB IF NOT EXISTS and adapts for MySQL 8.0', () => {
+  const mariaUp = 'ALTER TABLE `vendors` ADD COLUMN IF NOT EXISTS `slug` VARCHAR(191) DEFAULT NULL, ADD UNIQUE KEY IF NOT EXISTS `uq_slug` (`slug`)';
+  const mariaDown = 'ALTER TABLE `vendors` DROP INDEX IF EXISTS `uq_slug`, DROP COLUMN IF EXISTS `slug`';
+
+  // 1. MariaDB mode leaves DDL completely unchanged
+  assert.equal(adaptStatementForEngine(mariaUp, true), mariaUp);
+  assert.equal(adaptStatementForEngine(mariaDown, true), mariaDown);
+
+  // 2. MySQL mode adapts clauses that MySQL 8.0 rejects
+  const expectedMysqlUp = 'ALTER TABLE `vendors` ADD COLUMN `slug` VARCHAR(191) DEFAULT NULL, ADD UNIQUE KEY `uq_slug` (`slug`)';
+  const expectedMysqlDown = 'ALTER TABLE `vendors` DROP KEY `uq_slug`, DROP COLUMN `slug`';
+  assert.equal(adaptStatementForEngine(mariaUp, false), expectedMysqlUp);
+  assert.equal(adaptStatementForEngine(mariaDown, false), expectedMysqlDown);
+
+  // 3. Non-ALTER TABLE statements (CREATE TABLE IF NOT EXISTS) remain untouched on both
+  const createSql = 'CREATE TABLE IF NOT EXISTS `foo` (`id` INT PRIMARY KEY)';
+  assert.equal(adaptStatementForEngine(createSql, true), createSql);
+  assert.equal(adaptStatementForEngine(createSql, false), createSql);
 });
