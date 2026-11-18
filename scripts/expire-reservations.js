@@ -3,6 +3,7 @@
 /** One-shot reservation expiry runner. Dry-run is the default; use --apply only after operational approval. */
 const phase08 = require('../src/repositories/phase08Repository');
 const mysql = require('../src/db/mysqlPool');
+const { guardWorkerExecution } = require('./ops/maintenance-guard');
 
 function parseArgs(argv) {
   const options = { apply: false, limit: 100 };
@@ -18,6 +19,7 @@ function parseArgs(argv) {
 }
 
 (async () => {
+  guardWorkerExecution('expire-reservations');
   const options = parseArgs(process.argv.slice(2));
   if (!options.apply) {
     const candidates = await phase08.listExpiredOrderReservationCandidates({ limit: options.limit });

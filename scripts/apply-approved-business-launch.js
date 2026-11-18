@@ -18,6 +18,7 @@
  */
 
 const { env } = require('../src/config/env');
+const { guardWorkerExecution } = require('./ops/maintenance-guard');
 
 async function applyMysqlUpdates({ pool = null, transaction = null } = {}) {
   const { getPool, withTransaction } = require('../src/db/mysqlPool');
@@ -176,6 +177,7 @@ async function applySqliteUpdates() {
 }
 
 async function main() {
+  guardWorkerExecution('apply-approved-business-launch');
   console.log('=== APPLYING APPROVED BUSINESS LAUNCH UPDATES ===\n');
   console.log(`Target Database Client: ${env.db.client}\n`);
 

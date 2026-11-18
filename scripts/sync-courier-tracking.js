@@ -16,8 +16,10 @@
 const { env } = require('../src/config/env');
 const { getPool, closePool } = require('../src/db/mysqlPool');
 const courierRepo = require('../src/repositories/courierIntegrationRepository');
+const { guardWorkerExecution } = require('./ops/maintenance-guard');
 
 async function run(opts = {}) {
+  guardWorkerExecution('sync-courier-tracking');
   const isMysql = env.db.client === 'mysql' || process.env.DB_CLIENT === 'mysql' || Boolean(process.env.MYSQL_TEST_HOST);
   if (!isMysql) {
     console.log('[courier-sync] Skipped: MySQL database required for tracking synchronization.');
