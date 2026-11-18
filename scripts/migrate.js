@@ -12,8 +12,13 @@
 const { env } = require('../src/config/env');
 const { createPoolFromConfig, closePool } = require('../src/db/mysqlPool');
 const { getMigrationStatus, migrateUp, migrateDown } = require('../src/db/migrator');
+const { guardWorkerExecution } = require('./ops/maintenance-guard');
 
 async function main() {
+  if (process.env.CONFIRM_PRODUCTION_MIGRATION !== 'true' && process.env.ALLOW_MIGRATION_DURING_MAINTENANCE !== 'true') {
+    guardWorkerExecution('migrate');
+  }
+
   const command = String(process.argv[2] || 'status').toLowerCase();
 
   // Safety guard against accidental production runs without explicit confirmation flag

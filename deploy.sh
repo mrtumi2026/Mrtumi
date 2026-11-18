@@ -2,17 +2,17 @@
 # ==============================================================================
 # MR. TUMI MARKETPLACE — CANONICAL PRODUCTION DEPLOYMENT & GOVERNANCE PIPELINE
 # ==============================================================================
-# Release Target: 5285d82e7e233c50561222c419fc163d79d74c5d
-# Baseline SHA:   1b3c9a1950c2e8de7b76efb0d86717b02f64f100
-# Target Engine:  MariaDB 10.3+ InnoDB (CloudLinux / cPanel)
-# Node.js:        >= 22.5.0
+# Verifiable Release Target Mechanism:
+# Usage:
+#   ./deploy.sh <TARGET_COMMIT_SHA>
+#   OR: APPROVED_RELEASE_SHA=<TARGET_COMMIT_SHA> ./deploy.sh
 #
 # GUARANTEES:
 # 1. Zero destructive Git operations (NO git reset --hard, NO git clean).
-# 2. Strict exact target SHA enforcement.
+# 2. Reversible .htaccess preservation (never wipes pre-existing rules).
 # 3. Complete web & worker traffic isolation (503 .htaccess + .mrtumi_maintenance.lock).
 # 4. Mandatory pre-deployment database & uploads backup with cryptographic v3 manifest.
-# 5. Non-destructive detached recovery upon any migration or deployment failure.
+# 5. Non-destructive fail-closed recovery (NEVER automatically drops tables).
 # 6. Never executes mutating E2E tests against live production database.
 # ==============================================================================
 
@@ -21,16 +21,35 @@ set -eo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-APPROVED_TARGET_SHA="5285d82e7e233c50561222c419fc163d79d74c5d"
-PRE_DEPLOY_BASELINE_SHA="1b3c9a1950c2e8de7b76efb0d86717b02f64f100"
+# ------------------------------------------------------------------------------
+# STEP 0: Release Target Verification (Non-Self-Referential Pin)
+# ------------------------------------------------------------------------------
+TARGET_COMMIT_SHA="${1:-${APPROVED_RELEASE_SHA:-}}"
+
+if [ -z "$TARGET_COMMIT_SHA" ]; then
+  echo "❌ FATAL: Missing required release target commit SHA." >&2
+  echo "   Usage: ./deploy.sh <TARGET_COMMIT_SHA>" >&2
+  echo "   Or:    APPROVED_RELEASE_SHA=<TARGET_COMMIT_SHA> ./deploy.sh" >&2
+  exit 1
+fi
+
+# Validate 40-character hex SHA format
+if [[ ! "$TARGET_COMMIT_SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
+  echo "❌ FATAL: Target release commit '$TARGET_COMMIT_SHA' is not a valid 40-character hexadecimal Git SHA." >&2
+  exit 1
+fi
+
+PRE_DEPLOY_BASELINE_SHA="$(git rev-parse HEAD 2>/dev/null || echo 'unknown')"
 BACKUP_DIR="${HOME}/db_backups"
+DEPLOYMENT_STAGE="INITIALIZATION"
 
 echo "======================================================================"
-echo "   🚀 MR. TUMI MARKETPLACE — PRODUCTION DEPLOYMENT PIPELINE (v3)"
+echo "   🚀 MR. TUMI MARKETPLACE — PRODUCTION DEPLOYMENT PIPELINE (v3.1)"
 echo "======================================================================"
-echo "Started at: $(date -u +"%Y-%m-%d %H:%M:%SZ")"
-echo "Working directory: $SCRIPT_DIR"
-echo "Target Release SHA: $APPROVED_TARGET_SHA"
+echo "Started at:         $(date -u +"%Y-%m-%d %H:%M:%SZ")"
+echo "Working directory:  $SCRIPT_DIR"
+echo "Pre-Deploy HEAD:    $PRE_DEPLOY_BASELINE_SHA"
+echo "Target Release SHA: $TARGET_COMMIT_SHA"
 
 # ------------------------------------------------------------------------------
 # STEP 1: Node.js Runtime & Virtual Environment Verification
@@ -41,9 +60,6 @@ echo "🔍 [1/8] Verifying Node.js runtime environment..."
 if [ -f "$HOME/nodevenv/mrtumi/22/bin/activate" ]; then
   # shellcheck source=/dev/null
   source "$HOME/nodevenv/mrtumi/22/bin/activate"
-elif [ -n "$1" ] && [ -f "$1" ]; then
-  # shellcheck source=/dev/null
-  source "$1"
 fi
 
 if ! command -v node >/dev/null 2>&1; then
@@ -83,15 +99,15 @@ fi
 git fetch origin main
 
 # Verify target commit exists in repository
-if ! git cat-file -e "${APPROVED_TARGET_SHA}^{commit}" 2>/dev/null; then
-  echo "❌ FATAL: Approved target commit $APPROVED_TARGET_SHA not found in Git object store!" >&2
+if ! git cat-file -e "${TARGET_COMMIT_SHA}^{commit}" 2>/dev/null; then
+  echo "❌ FATAL: Approved target commit $TARGET_COMMIT_SHA not found in Git object store!" >&2
   exit 1
 fi
 
 # Check for untracked path collisions with release diff
 node -e '
 const { execSync } = require("child_process");
-const target = "'"${APPROVED_TARGET_SHA}"'";
+const target = "'"${TARGET_COMMIT_SHA}"'";
 const changed = execSync("git diff --name-only HEAD " + target, { encoding: "utf8" })
   .split("\n").map(s => s.trim()).filter(Boolean);
 const untracked = execSync("git status --porcelain", { encoding: "utf8" })
@@ -116,47 +132,54 @@ console.log("✔ Git preflight: 0 untracked conflicts detected. Working tree saf
 '
 
 # ------------------------------------------------------------------------------
-# STEP 3: Maintenance & Worker Traffic Isolation
+# STEP 3: Maintenance & Worker Traffic Isolation (Reversible)
 # ------------------------------------------------------------------------------
 echo ""
 echo "🔒 [3/8] Engaging maintenance mode & isolating worker processes..."
 
 node -e '
 const mg = require("./scripts/ops/maintenance-guard");
-const res = mg.engageMaintenance("Production Deployment to " + "'"${APPROVED_TARGET_SHA}"'");
-console.log(`✔ Maintenance mode active: 503 .htaccess deployed & ${res.lockPath} locked.`);
+const res = mg.engageMaintenance("Production Deployment to " + "'"${TARGET_COMMIT_SHA}"'");
+console.log(`✔ Maintenance mode active: 503 rules deployed (original .htaccess preserved) & lock active.`);
 '
 
-# Error trap function for non-destructive fail-closed recovery
+DEPLOYMENT_STAGE="PRE_MIGRATION"
+
+# Error trap function for fail-closed non-destructive recovery
 handle_deployment_failure() {
   echo ""
   echo "💥 ======================================================================"
-  echo "💥 CRITICAL DEPLOYMENT FAILURE ENCOUNTERED! INITIATING SAFE RECOVERY..."
+  echo "💥 CRITICAL DEPLOYMENT FAILURE ENCOUNTERED!"
+  echo "💥 Deployment Stage Reached: $DEPLOYMENT_STAGE"
   echo "💥 ======================================================================"
 
   # Preserve maintenance mode permanently
   node -e '
     const mg = require("./scripts/ops/maintenance-guard");
-    mg.persistOnFailure(new Error("Deployment aborted due to error"));
+    mg.persistOnFailure(new Error("Deployment aborted in stage: '"${DEPLOYMENT_STAGE}"'"));
   ' || true
 
-  # Detached recovery of code tree to pre-deploy baseline
-  echo "  Realigning code tree to pre-deploy baseline (${PRE_DEPLOY_BASELINE_SHA})..."
-  git checkout --detach "${PRE_DEPLOY_BASELINE_SHA}" || true
-
-  echo "  Recycling Passenger workers to clear cached release..."
-  mkdir -p tmp && touch tmp/restart.txt || true
+  if [ "$DEPLOYMENT_STAGE" = "PRE_MIGRATION" ]; then
+    echo "  Stage was PRE_MIGRATION: Safely realigning code tree to baseline ($PRE_DEPLOY_BASELINE_SHA)..."
+    git checkout --detach "${PRE_DEPLOY_BASELINE_SHA}" || true
+    mkdir -p tmp && touch tmp/restart.txt || true
+  else
+    echo "  Stage was POST_MIGRATION: Code rollback is HELD to prevent code/schema divergence!"
+    echo "  Database may contain newer or partial migrations. DO NOT automatically rollback code."
+  fi
 
   echo ""
-  echo "❌ DEPLOYMENT HALTED. System remains in 503 Maintenance Mode for operator review."
-  echo "   Inspect $BACKUP_DIR/.latest_verified_manifest to execute database restore if needed."
+  echo "❌ DEPLOYMENT HALTED. System remains in 503 Maintenance Mode for operator investigation."
+  echo "   To review pinned manifest: cat $BACKUP_DIR/.latest_verified_manifest"
+  echo "   To perform verified DB recovery (if approved by operator):"
+  echo "     CONFIRM_DESTRUCTIVE_DATABASE_RECOVERY=I_CONFIRM_DESTRUCTIVE_DATABASE_RECOVERY node -e '...'"
   exit 1
 }
 
 trap 'handle_deployment_failure' ERR
 
 # ------------------------------------------------------------------------------
-# STEP 4: Mandatory Pre-Deployment Backup & Cryptographic Manifest (v3)
+# STEP 4: Mandatory Pre-Deployment Backup & Cryptographic Manifest (v3.1)
 # ------------------------------------------------------------------------------
 echo ""
 echo "📦 [4/8] Generating pre-deployment database dump & cryptographic manifest..."
@@ -167,7 +190,7 @@ chmod 700 "$BACKUP_DIR"
 # 4a. Execute verified database dump via production backup runner
 node scripts/ops/production-db-audit-and-backup.js
 
-# 4b. Authoritative UPLOAD_DIR archive & Manifest Pining
+# 4b. Authoritative UPLOAD_DIR archive & Manifest Pinning
 node -e '
 const fs = require("fs");
 const path = require("path");
@@ -177,7 +200,6 @@ const { createHardenedManifest } = require("./scripts/ops/recovery-protocol");
 
 (async () => {
   const backupDir = "'"${BACKUP_DIR}"'";
-  const appDir = process.cwd();
 
   // 1. Verify UPLOAD_DIR
   if (!env.uploadDir || !fs.existsSync(env.uploadDir)) {
@@ -219,7 +241,7 @@ const { createHardenedManifest } = require("./scripts/ops/recovery-protocol");
     upArchive,
     {
       pre_deploy_head: "'"${PRE_DEPLOY_BASELINE_SHA}"'",
-      target_commit: "'"${APPROVED_TARGET_SHA}"'"
+      target_commit: "'"${TARGET_COMMIT_SHA}"'"
     }
   );
 
@@ -237,11 +259,11 @@ echo ""
 echo "📥 [5/8] Updating repository to approved release commit..."
 
 # Safe fast-forward merge without hard reset
-git merge --ff-only "$APPROVED_TARGET_SHA"
+git merge --ff-only "$TARGET_COMMIT_SHA"
 
 CURRENT_COMMIT="$(git rev-parse HEAD)"
-if [ "$CURRENT_COMMIT" != "$APPROVED_TARGET_SHA" ]; then
-  echo "❌ FATAL: HEAD commit mismatch! Expected $APPROVED_TARGET_SHA, got $CURRENT_COMMIT" >&2
+if [ "$CURRENT_COMMIT" != "$TARGET_COMMIT_SHA" ]; then
+  echo "❌ FATAL: HEAD commit mismatch! Expected $TARGET_COMMIT_SHA, got $CURRENT_COMMIT" >&2
   exit 1
 fi
 
@@ -263,6 +285,7 @@ echo "✔ Production dependencies installed."
 echo ""
 echo "🗄️  [7/8] Executing database migrations up to 0038..."
 
+DEPLOYMENT_STAGE="MIGRATION_IN_PROGRESS"
 export CONFIRM_PRODUCTION_MIGRATION=true
 
 node -e '
@@ -295,6 +318,8 @@ const { loadMigrationPairs, migrateUp } = require("./src/db/migrator");
   process.exit(1);
 });
 '
+
+DEPLOYMENT_STAGE="POST_MIGRATION"
 
 # ------------------------------------------------------------------------------
 # STEP 8: Post-Migration Integrity Gates & Health Verification
@@ -373,12 +398,12 @@ chmod 666 tmp/restart.txt 2>/dev/null || true
 echo "  Running read-only application health check..."
 node scripts/health-check.js
 
-# 8d. Disengage maintenance mode cleanly
+# 8d. Disengage maintenance mode cleanly (restoring original .htaccess byte-for-byte)
 echo "  Disengaging maintenance mode & resuming worker traffic..."
 node -e '
 const mg = require("./scripts/ops/maintenance-guard");
 mg.disengageMaintenance();
-console.log("✔ Maintenance mode lifted successfully.");
+console.log("✔ Maintenance mode lifted successfully (original .htaccess restored).");
 '
 
 trap - ERR
@@ -387,7 +412,7 @@ echo ""
 echo "======================================================================"
 echo "   ✅ DEPLOYMENT FINISHED SUCCESSFULLY!"
 echo "======================================================================"
-echo "Commit deployed:  $APPROVED_TARGET_SHA"
+echo "Commit deployed:  $TARGET_COMMIT_SHA"
 echo "Completed at:     $(date -u +"%Y-%m-%d %H:%M:%SZ")"
 echo "Status:           100% Production Ready & Audited"
 echo "======================================================================"

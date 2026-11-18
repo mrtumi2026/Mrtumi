@@ -1,13 +1,16 @@
 'use strict';
 
 /**
- * Workstream B — Full 0037/0038 Recovery Proof Suite
+ * Workstream B — Full 0037/0038 Recovery Proof Suite (v3.1 Hardened)
  *
  * Verifies that the canonical recovery procedure:
- * 1. Removes all 0037 branding columns and indexes by dropping and recreating vendors.
- * 2. Removes all 0038 courier tables, generated columns, and indexes.
- * 3. Restores original vendor data, constraints, indexes, and schema_migrations to exact baseline.
- * 4. Runs across all 5 partial-DDL failure scenarios.
+ * 1. Requires explicit confirmation flag CONFIRM_DESTRUCTIVE_DATABASE_RECOVERY.
+ * 2. Employs real disposable MariaDB/MySQL database with real migrator 0001–0036.
+ * 3. Uses genuine mysqldump output with verified footer.
+ * 4. Removes all 0037 branding columns and indexes by dropping and recreating vendors.
+ * 5. Removes all 0038 courier tables, generated columns, and indexes.
+ * 6. Restores original vendor data, constraints, indexes, and schema_migrations to exact baseline.
+ * 7. Verified across all 5 partial-DDL failure scenarios with ZERO schema or data diffs.
  */
 
 const { test, describe, before, after } = require('node:test');
@@ -15,30 +18,49 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { spawnSync } = require('child_process');
+const mysql = require('mysql2/promise');
 const {
   executeCanonicalRecovery,
-  streamRestore
+  verifyDumpFooter
 } = require('../scripts/ops/recovery-protocol');
 const { createPoolFromConfig, closePool } = require('../src/db/mysqlPool');
+const { migrateUp } = require('../src/db/migrator');
 
-// Check test database connection
 const MYSQL_HOST = (process.env.MYSQL_TEST_HOST || (fs.existsSync('C:/Users/Bappi/.gemini/antigravity/scratch/mariadb-data') ? '127.0.0.1' : '')).trim();
-const testDbConfig = MYSQL_HOST
-  ? {
-      host: MYSQL_HOST,
-      port: Number(process.env.MYSQL_TEST_PORT || 3306),
-      name: process.env.MYSQL_TEST_DB || 'mrtumi_backup_test',
-      user: process.env.MYSQL_TEST_USER || 'mrtumi_test',
-      password: process.env.MYSQL_TEST_PASSWORD || 'mrtumi_test_pw',
-      charset: 'utf8mb4'
-    }
-  : null;
+const MYSQL_PORT = Number(process.env.MYSQL_TEST_PORT || 3306);
+const MYSQL_USER = process.env.MYSQL_TEST_USER || 'mrtumi_test';
+const MYSQL_PASSWORD = process.env.MYSQL_TEST_PASSWORD || 'mrtumi_test_pw';
+const hasDbService = Boolean(MYSQL_HOST);
 
-describe('Workstream B — Full 0037/0038 Recovery Proof Suite', () => {
-  let pool = null;
+function getMysqlBin() {
+  if (process.platform === 'win32' && fs.existsSync('C:/Users/Bappi/.gemini/antigravity/scratch/mariadb-10.11/mariadb-10.11.10-winx64/bin/mysql.exe')) {
+    return 'C:/Users/Bappi/.gemini/antigravity/scratch/mariadb-10.11/mariadb-10.11.10-winx64/bin/mysql.exe';
+  }
+  return 'mysql';
+}
+
+function getMysqldumpBin() {
+  if (process.platform === 'win32' && fs.existsSync('C:/Users/Bappi/.gemini/antigravity/scratch/mariadb-10.11/mariadb-10.11.10-winx64/bin/mysqldump.exe')) {
+    return 'C:/Users/Bappi/.gemini/antigravity/scratch/mariadb-10.11/mariadb-10.11.10-winx64/bin/mysqldump.exe';
+  }
+  return 'mysqldump';
+}
+
+describe('Workstream B — Full 0037/0038 Real Baseline Dump Recovery Suite', () => {
+  const disposableDbName = `mrtumi_disp_recov_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
   const backupDir = path.join(__dirname, 'helpers', 'tmp-recovery-sandbox');
+  let pool = null;
   let baselineDumpPath = null;
   let baselineSnapshot = null;
+  const targetDbConfig = {
+    host: MYSQL_HOST,
+    port: MYSQL_PORT,
+    user: MYSQL_USER,
+    password: MYSQL_PASSWORD,
+    name: disposableDbName,
+    database: disposableDbName
+  };
 
   async function takeSnapshot(conn, dbName) {
     const [tables] = await conn.query(
@@ -79,99 +101,118 @@ describe('Workstream B — Full 0037/0038 Recovery Proof Suite', () => {
   }
 
   before(async () => {
-    if (!testDbConfig) return;
+    if (!hasDbService) return;
     if (fs.existsSync(backupDir)) fs.rmSync(backupDir, { recursive: true, force: true });
     fs.mkdirSync(backupDir, { recursive: true });
 
-    pool = createPoolFromConfig(testDbConfig);
+    // 1. Create isolated disposable database
+    const adminConn = await mysql.createConnection({
+      host: MYSQL_HOST,
+      port: MYSQL_PORT,
+      user: MYSQL_USER,
+      password: MYSQL_PASSWORD
+    });
+    try {
+      await adminConn.query(`CREATE DATABASE IF NOT EXISTS \`${disposableDbName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+    } finally {
+      await adminConn.end();
+    }
 
-    // Setup pristine 0036 baseline table state
+    // 2. Connect pool to the disposable database
+    pool = createPoolFromConfig({
+      host: MYSQL_HOST,
+      port: MYSQL_PORT,
+      user: MYSQL_USER,
+      password: MYSQL_PASSWORD,
+      name: disposableDbName,
+      database: disposableDbName,
+      charset: 'utf8mb4'
+    });
+
+    // 3. Run real migrations 0001–0036 via migrator
+    const migrationsDir = path.join(__dirname, '..', 'src', 'db', 'migrations');
+    await migrateUp(pool, { migrationsDir, targetVersion: '0036' });
+
+    // 4. Insert representative production-like baseline records
     const conn = await pool.getConnection();
     try {
-      await conn.query('SET FOREIGN_KEY_CHECKS = 0');
-      await conn.query('DROP TABLE IF EXISTS vendor_courier_booking_audit_logs');
-      await conn.query('DROP TABLE IF EXISTS vendor_courier_booking_requests');
-      await conn.query('DROP TABLE IF EXISTS vendors');
-      await conn.query('DROP TABLE IF EXISTS schema_migrations');
-      await conn.query('SET FOREIGN_KEY_CHECKS = 1');
+      await conn.query(
+        'INSERT INTO `vendors` (`shop_name`,`owner_name`,`phone`,`email`,`password_hash`,`status`,`verified`) VALUES (?,?,?,?,?,1,1)',
+        ['Apex Baseline Store', 'Mr. Apex', '01711000001', 'apex@example.com', 'bcrypt_hash_1']
+      );
+      await conn.query(
+        'INSERT INTO `vendors` (`shop_name`,`owner_name`,`phone`,`email`,`password_hash`,`status`,`verified`) VALUES (?,?,?,?,?,1,1)',
+        ['Bata Baseline Store', 'Mr. Bata', '01711000002', 'bata@example.com', 'bcrypt_hash_2']
+      );
 
-      await conn.query(`
-        CREATE TABLE vendors (
-          id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-          user_id BIGINT UNSIGNED NOT NULL,
-          shop_name VARCHAR(255) NOT NULL,
-          phone VARCHAR(30) NOT NULL,
-          status TINYINT NOT NULL DEFAULT 1,
-          lifecycle_status VARCHAR(30) NOT NULL DEFAULT 'active',
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-      `);
+      // Capture strict baseline snapshot
+      baselineSnapshot = await takeSnapshot(conn, disposableDbName);
+      assert.equal(baselineSnapshot.migrations.length, 36, 'Baseline must have exactly 36 migrations applied');
+      assert.equal(baselineSnapshot.vendorRowsCount, 2, 'Baseline must contain representative vendor rows');
+    } finally {
+      conn.release();
+    }
 
-      await conn.query(`
-        INSERT INTO vendors (id, user_id, shop_name, phone, status, lifecycle_status, created_at) VALUES
-        (1, 101, 'Baseline Vendor 1', '01711111111', 1, 'active', '2026-11-18 10:00:00'),
-        (2, 102, 'Baseline Vendor 2', '01722222222', 1, 'active', '2026-11-18 10:00:00')
-      `);
+    // 5. Generate genuine mysqldump baseline
+    baselineDumpPath = path.join(backupDir, 'real_baseline_0036.sql');
+    const dumpRes = spawnSync(getMysqldumpBin(), [
+      `-h${MYSQL_HOST}`,
+      `-P${MYSQL_PORT}`,
+      `-u${MYSQL_USER}`,
+      `--password=${MYSQL_PASSWORD}`,
+      '--single-transaction',
+      '--quick',
+      '--routines',
+      '--triggers',
+      disposableDbName
+    ], { maxBuffer: 100 * 1024 * 1024, encoding: 'utf8' });
 
-      await conn.query(`
-        CREATE TABLE schema_migrations (
-          version VARCHAR(64) NOT NULL PRIMARY KEY,
-          name VARCHAR(191) NOT NULL,
-          checksum CHAR(64) NOT NULL DEFAULT 'mock_checksum'
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-      `);
+    if (dumpRes.status !== 0) {
+      throw new Error(`mysqldump failed with status ${dumpRes.status}: ${dumpRes.stderr}`);
+    }
 
-      for (let i = 1; i <= 36; i++) {
-        const v = String(i).padStart(4, '0');
-        await conn.query('INSERT INTO schema_migrations (version, name) VALUES (?, ?)', [v, `mig_${v}`]);
-      }
+    fs.writeFileSync(baselineDumpPath, dumpRes.stdout, { mode: 0o600 });
+    assert.ok(fs.existsSync(baselineDumpPath), 'Dump file must exist');
+    assert.equal(verifyDumpFooter(baselineDumpPath), true, 'Real mysqldump must contain valid completion footer');
+  });
 
-      baselineSnapshot = await takeSnapshot(conn, testDbConfig.name);
+  after(async () => {
+    if (pool) {
+      await closePool(pool);
+    }
+    if (hasDbService) {
+      // Drop isolated disposable database
+      try {
+        const adminConn = await mysql.createConnection({
+          host: MYSQL_HOST,
+          port: MYSQL_PORT,
+          user: MYSQL_USER,
+          password: MYSQL_PASSWORD
+        });
+        await adminConn.query(`DROP DATABASE IF EXISTS \`${disposableDbName}\``);
+        await adminConn.end();
+      } catch (_) {}
+    }
+    if (fs.existsSync(backupDir)) fs.rmSync(backupDir, { recursive: true, force: true });
+  });
 
-      // Create SQL dump for testing
-      baselineDumpPath = path.join(backupDir, 'baseline_0036.sql');
-      const dumpSql = [
-        '/*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;',
-        'DROP TABLE IF EXISTS `vendors`;',
-        'CREATE TABLE `vendors` (',
-        '  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,',
-        '  `user_id` bigint(20) unsigned NOT NULL,',
-        '  `shop_name` varchar(255) NOT NULL,',
-        '  `phone` varchar(30) NOT NULL,',
-        '  `status` tinyint(4) NOT NULL DEFAULT 1,',
-        '  `lifecycle_status` varchar(30) NOT NULL DEFAULT \'active\',',
-        '  `created_at` datetime DEFAULT current_timestamp(),',
-        '  PRIMARY KEY (`id`)',
-        ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;',
-        'INSERT INTO `vendors` VALUES (1,101,\'Baseline Vendor 1\',\'01711111111\',1,\'active\',\'2026-11-18 10:00:00\'),(2,102,\'Baseline Vendor 2\',\'01722222222\',1,\'active\',\'2026-11-18 10:00:00\');',
-        'DROP TABLE IF EXISTS `schema_migrations`;',
-        'CREATE TABLE `schema_migrations` (',
-        '  `version` varchar(64) NOT NULL,',
-        '  `name` varchar(191) NOT NULL,',
-        '  `checksum` char(64) NOT NULL DEFAULT \'mock_checksum\',',
-        '  PRIMARY KEY (`version`)',
-        ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;',
-        ...Array.from({ length: 36 }, (_, i) => {
-          const v = String(i + 1).padStart(4, '0');
-          return `INSERT INTO \`schema_migrations\` VALUES ('${v}','mig_${v}','mock_checksum');`;
-        }),
-        '/*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;',
-        '-- Dump completed'
-      ].join('\n');
+  test('Workstream 3: executeCanonicalRecovery rejects fail-closed without explicit confirmation flag', async (t) => {
+    if (!hasDbService) return t.skip('No disposable MariaDB/MySQL service detected');
 
-      fs.writeFileSync(baselineDumpPath, dumpSql, { mode: 0o600 });
+    const conn = await pool.getConnection();
+    try {
+      const mysqlBin = getMysqlBin();
+      await assert.rejects(
+        async () => executeCanonicalRecovery(conn, baselineDumpPath, targetDbConfig, { mysqlBin }),
+        /FAIL_CLOSED_APPROVAL_REQUIRED/
+      );
     } finally {
       conn.release();
     }
   });
 
-  after(async () => {
-    if (pool) await closePool(pool);
-    if (fs.existsSync(backupDir)) fs.rmSync(backupDir, { recursive: true, force: true });
-  });
-
   test('Scenario 1: Partial 0037 columns added -> Canonical recovery purges columns & restores baseline', async (t) => {
-    if (!testDbConfig) return t.skip('No disposable MariaDB/MySQL service detected');
+    if (!hasDbService) return t.skip('No disposable MariaDB/MySQL service detected');
 
     const conn = await pool.getConnection();
     try {
@@ -180,53 +221,54 @@ describe('Workstream B — Full 0037/0038 Recovery Proof Suite', () => {
       await conn.query("UPDATE vendors SET slug = 'store-1' WHERE id = 1");
 
       // Verify dirty state
-      const [dirtyCols] = await conn.query('SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = "vendors"', [testDbConfig.name]);
+      const [dirtyCols] = await conn.query('SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = "vendors"', [disposableDbName]);
       assert.ok(dirtyCols.some(c => c.COLUMN_NAME === 'slug'));
 
-      // Execute canonical recovery
-      const targetDb = { host: testDbConfig.host, port: testDbConfig.port, user: testDbConfig.user, password: testDbConfig.password, database: testDbConfig.name };
-      const mysqlBin = process.platform === 'win32' && fs.existsSync('C:/Users/Bappi/.gemini/antigravity/scratch/mariadb-10.11/mariadb-10.11.10-winx64/bin/mysql.exe')
-        ? 'C:/Users/Bappi/.gemini/antigravity/scratch/mariadb-10.11/mariadb-10.11.10-winx64/bin/mysql.exe'
-        : 'mysql';
+      // Execute canonical recovery with required approval flag
+      const mysqlBin = getMysqlBin();
+      await executeCanonicalRecovery(conn, baselineDumpPath, targetDbConfig, {
+        mysqlBin,
+        confirmationFlag: 'I_CONFIRM_DESTRUCTIVE_DATABASE_RECOVERY'
+      });
 
-      await executeCanonicalRecovery(conn, baselineDumpPath, targetDb, { mysqlBin });
-
-      // Verify exact baseline restored
-      const postSnap = await takeSnapshot(conn, testDbConfig.name);
+      // Verify exact baseline restored: 0 diffs
+      const postSnap = await takeSnapshot(conn, disposableDbName);
       assert.equal(postSnap.columns.includes('vendors.slug'), false, 'slug column must be gone');
       assert.equal(postSnap.columns.includes('vendors.logo_url'), false, 'logo_url column must be gone');
-      assert.equal(postSnap.columnCount, baselineSnapshot.columnCount);
-      assert.equal(postSnap.vendorHash, baselineSnapshot.vendorHash);
+      assert.equal(postSnap.columnCount, baselineSnapshot.columnCount, 'Column count must match baseline exactly');
+      assert.equal(postSnap.vendorHash, baselineSnapshot.vendorHash, 'Vendor data hash must match baseline exactly');
+      assert.deepEqual(postSnap.tables.sort(), baselineSnapshot.tables.sort(), 'Tables must match baseline exactly');
     } finally {
       conn.release();
     }
   });
 
   test('Scenario 2: Partial 0037 index failure -> Canonical recovery restores clean table', async (t) => {
-    if (!testDbConfig) return t.skip('No disposable MariaDB/MySQL service detected');
+    if (!hasDbService) return t.skip('No disposable MariaDB/MySQL service detected');
 
     const conn = await pool.getConnection();
     try {
       await conn.query('ALTER TABLE vendors ADD COLUMN slug VARCHAR(191)');
       await conn.query('ALTER TABLE vendors ADD KEY idx_vendors_temp (status)');
 
-      const targetDb = { host: testDbConfig.host, port: testDbConfig.port, user: testDbConfig.user, password: testDbConfig.password, database: testDbConfig.name };
-      const mysqlBin = process.platform === 'win32' && fs.existsSync('C:/Users/Bappi/.gemini/antigravity/scratch/mariadb-10.11/mariadb-10.11.10-winx64/bin/mysql.exe')
-        ? 'C:/Users/Bappi/.gemini/antigravity/scratch/mariadb-10.11/mariadb-10.11.10-winx64/bin/mysql.exe'
-        : 'mysql';
+      const mysqlBin = getMysqlBin();
+      await executeCanonicalRecovery(conn, baselineDumpPath, targetDbConfig, {
+        mysqlBin,
+        confirmationFlag: 'I_CONFIRM_DESTRUCTIVE_DATABASE_RECOVERY'
+      });
 
-      await executeCanonicalRecovery(conn, baselineDumpPath, targetDb, { mysqlBin });
-
-      const postSnap = await takeSnapshot(conn, testDbConfig.name);
+      const postSnap = await takeSnapshot(conn, disposableDbName);
       assert.equal(postSnap.indexes.includes('vendors.idx_vendors_temp.status'), false);
       assert.equal(postSnap.indexCount, baselineSnapshot.indexCount);
+      assert.equal(postSnap.vendorHash, baselineSnapshot.vendorHash);
+      assert.deepEqual(postSnap.indexes.sort(), baselineSnapshot.indexes.sort());
     } finally {
       conn.release();
     }
   });
 
   test('Scenario 3: Partial 0038 table creation crash -> Canonical recovery removes table and virtual columns', async (t) => {
-    if (!testDbConfig) return t.skip('No disposable MariaDB/MySQL service detected');
+    if (!hasDbService) return t.skip('No disposable MariaDB/MySQL service detected');
 
     const conn = await pool.getConnection();
     try {
@@ -241,23 +283,24 @@ describe('Workstream B — Full 0037/0038 Recovery Proof Suite', () => {
         ) ENGINE=InnoDB
       `);
 
-      const targetDb = { host: testDbConfig.host, port: testDbConfig.port, user: testDbConfig.user, password: testDbConfig.password, database: testDbConfig.name };
-      const mysqlBin = process.platform === 'win32' && fs.existsSync('C:/Users/Bappi/.gemini/antigravity/scratch/mariadb-10.11/mariadb-10.11.10-winx64/bin/mysql.exe')
-        ? 'C:/Users/Bappi/.gemini/antigravity/scratch/mariadb-10.11/mariadb-10.11.10-winx64/bin/mysql.exe'
-        : 'mysql';
+      const mysqlBin = getMysqlBin();
+      await executeCanonicalRecovery(conn, baselineDumpPath, targetDbConfig, {
+        mysqlBin,
+        confirmationFlag: 'I_CONFIRM_DESTRUCTIVE_DATABASE_RECOVERY'
+      });
 
-      await executeCanonicalRecovery(conn, baselineDumpPath, targetDb, { mysqlBin });
-
-      const postSnap = await takeSnapshot(conn, testDbConfig.name);
+      const postSnap = await takeSnapshot(conn, disposableDbName);
       assert.equal(postSnap.tables.includes('vendor_courier_booking_requests'), false);
       assert.equal(postSnap.tableCount, baselineSnapshot.tableCount);
+      assert.equal(postSnap.vendorHash, baselineSnapshot.vendorHash);
+      assert.deepEqual(postSnap.tables.sort(), baselineSnapshot.tables.sort());
     } finally {
       conn.release();
     }
   });
 
   test('Scenario 4: 0038 Generated column failure and corrupt migration record -> Restores clean 0036', async (t) => {
-    if (!testDbConfig) return t.skip('No disposable MariaDB/MySQL service detected');
+    if (!hasDbService) return t.skip('No disposable MariaDB/MySQL service detected');
 
     const conn = await pool.getConnection();
     try {
@@ -267,51 +310,61 @@ describe('Workstream B — Full 0037/0038 Recovery Proof Suite', () => {
           sub_order_id BIGINT NOT NULL
         ) ENGINE=InnoDB
       `);
-      await conn.query("INSERT INTO schema_migrations (version, name) VALUES ('0038', 'broken_run')");
+      await conn.query("INSERT INTO schema_migrations (version, name, checksum) VALUES ('0038', 'broken_run', '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef')");
 
-      const targetDb = { host: testDbConfig.host, port: testDbConfig.port, user: testDbConfig.user, password: testDbConfig.password, database: testDbConfig.name };
-      const mysqlBin = process.platform === 'win32' && fs.existsSync('C:/Users/Bappi/.gemini/antigravity/scratch/mariadb-10.11/mariadb-10.11.10-winx64/bin/mysql.exe')
-        ? 'C:/Users/Bappi/.gemini/antigravity/scratch/mariadb-10.11/mariadb-10.11.10-winx64/bin/mysql.exe'
-        : 'mysql';
+      const mysqlBin = getMysqlBin();
+      await executeCanonicalRecovery(conn, baselineDumpPath, targetDbConfig, {
+        mysqlBin,
+        confirmationFlag: 'I_CONFIRM_DESTRUCTIVE_DATABASE_RECOVERY'
+      });
 
-      await executeCanonicalRecovery(conn, baselineDumpPath, targetDb, { mysqlBin });
-
-      const postSnap = await takeSnapshot(conn, testDbConfig.name);
+      const postSnap = await takeSnapshot(conn, disposableDbName);
       assert.equal(postSnap.migrations.includes('0038'), false);
       assert.equal(postSnap.migrations.length, 36);
+      assert.equal(postSnap.vendorHash, baselineSnapshot.vendorHash);
+      assert.deepEqual(postSnap.migrations, baselineSnapshot.migrations);
     } finally {
       conn.release();
     }
   });
 
-  test('Scenario 5: Full 0037 & 0038 applied -> Canonical recovery rolls back to exact 0036 baseline', async (t) => {
-    if (!testDbConfig) return t.skip('No disposable MariaDB/MySQL service detected');
+  test('Scenario 5: Full 0037 & 0038 applied -> Canonical recovery rolls back to exact 0036 baseline with ZERO diffs', async (t) => {
+    if (!hasDbService) return t.skip('No disposable MariaDB/MySQL service detected');
 
     const conn = await pool.getConnection();
     try {
-      // Apply 0037
-      await conn.query('ALTER TABLE vendors ADD COLUMN slug VARCHAR(191), ADD COLUMN store_status TINYINT DEFAULT 1');
-      await conn.query("UPDATE vendors SET slug = CONCAT('store-', id)");
-      await conn.query("INSERT INTO schema_migrations (version, name) VALUES ('0037', 'vendor_store_branding')");
+      // Apply real 0037 and 0038 via migrator
+      const migrationsDir = path.join(__dirname, '..', 'src', 'db', 'migrations');
+      await migrateUp(pool, { migrationsDir, targetVersion: '0038' });
 
-      // Apply 0038
-      await conn.query('CREATE TABLE vendor_courier_booking_requests (id BIGINT AUTO_INCREMENT PRIMARY KEY, sub_order_id BIGINT NOT NULL) ENGINE=InnoDB');
-      await conn.query('CREATE TABLE vendor_courier_booking_audit_logs (id BIGINT AUTO_INCREMENT PRIMARY KEY, action VARCHAR(50) NOT NULL) ENGINE=InnoDB');
-      await conn.query("INSERT INTO schema_migrations (version, name) VALUES ('0038', 'vendor_courier_booking_requests')");
+      // Verify that 0037 and 0038 are currently applied
+      const midSnap = await takeSnapshot(conn, disposableDbName);
+      assert.equal(midSnap.migrations.length, 38, 'Must have 38 migrations applied');
+      assert.ok(midSnap.tables.includes('vendor_courier_booking_requests'));
+      assert.ok(midSnap.tables.includes('vendor_courier_booking_audit_logs'));
+      assert.ok(midSnap.columns.includes('vendors.slug'));
 
-      const targetDb = { host: testDbConfig.host, port: testDbConfig.port, user: testDbConfig.user, password: testDbConfig.password, database: testDbConfig.name };
-      const mysqlBin = process.platform === 'win32' && fs.existsSync('C:/Users/Bappi/.gemini/antigravity/scratch/mariadb-10.11/mariadb-10.11.10-winx64/bin/mysql.exe')
-        ? 'C:/Users/Bappi/.gemini/antigravity/scratch/mariadb-10.11/mariadb-10.11.10-winx64/bin/mysql.exe'
-        : 'mysql';
+      // Execute canonical recovery
+      const mysqlBin = getMysqlBin();
+      await executeCanonicalRecovery(conn, baselineDumpPath, targetDbConfig, {
+        mysqlBin,
+        confirmationFlag: 'I_CONFIRM_DESTRUCTIVE_DATABASE_RECOVERY'
+      });
 
-      await executeCanonicalRecovery(conn, baselineDumpPath, targetDb, { mysqlBin });
-
-      const postSnap = await takeSnapshot(conn, testDbConfig.name);
+      // Verify ZERO schema and data differences against baseline snapshot
+      const postSnap = await takeSnapshot(conn, disposableDbName);
       assert.equal(postSnap.migrations.length, 36);
+      assert.equal(postSnap.tableCount, baselineSnapshot.tableCount);
+      assert.equal(postSnap.columnCount, baselineSnapshot.columnCount);
+      assert.equal(postSnap.indexCount, baselineSnapshot.indexCount);
       assert.equal(postSnap.tables.includes('vendor_courier_booking_requests'), false);
       assert.equal(postSnap.tables.includes('vendor_courier_booking_audit_logs'), false);
       assert.equal(postSnap.columns.includes('vendors.slug'), false);
-      assert.equal(postSnap.vendorHash, baselineSnapshot.vendorHash);
+      assert.equal(postSnap.vendorHash, baselineSnapshot.vendorHash, 'Vendor data hash must match baseline identically');
+      assert.deepEqual(postSnap.migrations, baselineSnapshot.migrations, 'Migration history must match baseline');
+      assert.deepEqual(postSnap.tables.sort(), baselineSnapshot.tables.sort(), 'Tables must match baseline');
+      assert.deepEqual(postSnap.columns.sort(), baselineSnapshot.columns.sort(), 'Columns must match baseline');
+      assert.deepEqual(postSnap.indexes.sort(), baselineSnapshot.indexes.sort(), 'Indexes must match baseline');
     } finally {
       conn.release();
     }

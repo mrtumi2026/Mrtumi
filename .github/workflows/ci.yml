@@ -78,6 +78,8 @@ jobs:
             });
             try {
               await connection.query('SET GLOBAL log_bin_trust_function_creators = 1');
+              await connection.query("GRANT ALL PRIVILEGES ON `mrtumi_%`.* TO 'mrtumi_test'@'%'");
+              await connection.query('FLUSH PRIVILEGES');
               console.log('Configured disposable CI MySQL 8.0 to permit the database-scoped migration user to create deterministic audit triggers; no SUPER grant was given to that user.');
             } finally {
               await connection.end();
@@ -251,6 +253,8 @@ jobs:
             });
             try {
               await connection.query('SET GLOBAL log_bin_trust_function_creators = 1');
+              await connection.query("GRANT ALL PRIVILEGES ON `mrtumi_%`.* TO 'mrtumi_test'@'%'");
+              await connection.query('FLUSH PRIVILEGES');
               console.log('Configured only the disposable MariaDB CI service for migration trigger creation.');
             } finally {
               await connection.end();
