@@ -133,7 +133,7 @@ describe('Workstream C — Manifest, Uploads Safety & Recovery Gate Architecture
     const validSize = fs.statSync(validDump).size;
 
     const baseManifest = {
-      schema_version: '3.2',
+      schema_version: '3.5',
       run_id: crypto.randomUUID(),
       timestamp: new Date().toISOString(),
       status: {
@@ -399,7 +399,7 @@ describe('Workstream C — Manifest, Uploads Safety & Recovery Gate Architecture
 
     const testRunId = crypto.randomUUID();
     const manifestUnrehearsed = {
-      schema_version: '3.2',
+      schema_version: '3.5',
       run_id: testRunId,
       timestamp: new Date().toISOString(),
       status: {

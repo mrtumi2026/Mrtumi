@@ -25,17 +25,38 @@ cd "$SCRIPT_DIR"
 # STEP 0: Release Target Verification (Non-Self-Referential Pin)
 # ------------------------------------------------------------------------------
 TARGET_COMMIT_SHA="${1:-${APPROVED_RELEASE_SHA:-}}"
+TICKET_FILE="${2:-${RELEASE_APPROVAL_TICKET_FILE:-}}"
+EXPECTED_RELEASE_TAG="${3:-${DEPLOY_RELEASE_TAG:-}}"
 
 if [ -z "$TARGET_COMMIT_SHA" ]; then
   echo "❌ FATAL: Missing required release target commit SHA." >&2
-  echo "   Usage: ./deploy.sh <TARGET_COMMIT_SHA>" >&2
-  echo "   Or:    APPROVED_RELEASE_SHA=<TARGET_COMMIT_SHA> ./deploy.sh" >&2
+  echo "   Usage: ./deploy.sh <TARGET_COMMIT_SHA> [TICKET_FILE] <EXPECTED_RELEASE_TAG>" >&2
+  echo "   Or:    APPROVED_RELEASE_SHA=<TARGET_COMMIT_SHA> DEPLOY_RELEASE_TAG=<TAG> ./deploy.sh" >&2
   exit 1
 fi
 
 # Validate 40-character hex SHA format
 if [[ ! "$TARGET_COMMIT_SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
   echo "❌ FATAL: Target release commit '$TARGET_COMMIT_SHA' is not a valid 40-character hexadecimal Git SHA." >&2
+  exit 1
+fi
+
+# Enforce mandatory expected release tag for production deployment
+if [ -z "$EXPECTED_RELEASE_TAG" ]; then
+  echo "❌ FATAL: Expected release tag is mandatory for production deployment." >&2
+  echo "   Usage: ./deploy.sh <TARGET_COMMIT_SHA> [TICKET_FILE] <EXPECTED_RELEASE_TAG>" >&2
+  echo "   Example: ./deploy.sh 5285d82e... /path/to/release-ticket.json v3.5.0" >&2
+  exit 1
+fi
+
+# Preflight: Mandatory independent out-of-band trust anchor verification
+TRUST_ANCHOR_FILE="${GOVERNANCE_TRUST_ANCHOR_PATH:-$HOME/.mrtumi_governance_trust_anchor.json}"
+if [ -z "${GOVERNANCE_TRUST_ANCHOR_SHA256:-}" ] && [ ! -f "$TRUST_ANCHOR_FILE" ]; then
+  echo "❌ FATAL: Mandatory independent out-of-band trust anchor is missing!" >&2
+  echo "   Release policy requires an independent trust anchor to prevent in-repository tampering." >&2
+  echo "   Provision either:" >&2
+  echo "     1. Anchor file: $TRUST_ANCHOR_FILE (mode 0600, non-symlink, containing expected_governance_sha256)" >&2
+  echo "     2. Environment SHA: export GOVERNANCE_TRUST_ANCHOR_SHA256=<sha256_of_release-governance.json>" >&2
   exit 1
 fi
 
@@ -105,7 +126,7 @@ if ! git cat-file -e "${TARGET_COMMIT_SHA}^{commit}" 2>/dev/null; then
 fi
 
 # Verify release target approval under Project 01 Cryptographic Release Governance Policy
-DEPLOY_ENVIRONMENT="production" node scripts/ops/verify-release-approval.js "$TARGET_COMMIT_SHA" "${2:-}"
+DEPLOY_ENVIRONMENT="production" DEPLOY_RELEASE_TAG="$EXPECTED_RELEASE_TAG" node scripts/ops/verify-release-approval.js "$TARGET_COMMIT_SHA" "${TICKET_FILE:-}" "$EXPECTED_RELEASE_TAG"
 
 # Check for untracked path collisions with release diff
 node -e '
@@ -156,11 +177,15 @@ handle_deployment_failure() {
   echo "💥 Deployment Stage Reached: $DEPLOYMENT_STAGE"
   echo "💥 ======================================================================"
 
-  # Preserve maintenance mode permanently
-  node -e '
+  # Preserve maintenance mode permanently (Fail-closed: explicit error if state persistence fails)
+  if ! node -e '
     const mg = require("./scripts/ops/maintenance-guard");
     mg.persistOnFailure(new Error("Deployment aborted in stage: '"${DEPLOYMENT_STAGE}"'"));
-  ' || true
+  '; then
+    echo "💥 FATAL: Failed to persist maintenance mode failure state!" >&2
+    echo "   EMERGENCY OPERATOR ACTION REQUIRED: Verify that .htaccess contains 503 rules and maintenance-lock.json exists." >&2
+    echo "   Do NOT restart Passenger or release maintenance until manual investigation is complete." >&2
+  fi
 
   if [ "$DEPLOYMENT_STAGE" = "PRE_MIGRATION" ]; then
     echo "  Stage was PRE_MIGRATION: Safely realigning code tree to baseline ($PRE_DEPLOY_BASELINE_SHA)..."
@@ -260,6 +285,46 @@ const { createHardenedManifest } = require("./scripts/ops/recovery-protocol");
 });
 '
 
+# 4c. Pre-Migration Restore Rehearsal on Isolated Schema (Finding H6)
+if [ -n "${REHEARSAL_DB_NAME:-}" ]; then
+  echo ""
+  echo "🧪 [4c/8] Rehearsing database restore on isolated disposable schema: $REHEARSAL_DB_NAME..."
+  REHEARSAL_DB_NAME="$REHEARSAL_DB_NAME" node -e '
+  const path = require("path");
+  const fs = require("fs");
+  const { env } = require("./src/config/env");
+  const { rehearseDatabaseRestore } = require("./scripts/ops/recovery-protocol");
+
+  (async () => {
+    const backupDir = "'"${BACKUP_DIR}"'";
+    const pointerPath = path.join(backupDir, ".latest_verified_manifest");
+    const manifestFilename = fs.readFileSync(pointerPath, "utf8").trim();
+    const manifestPath = path.join(backupDir, manifestFilename);
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+    const dumpFile = manifest.artifacts.database_dump.canonical_path;
+
+    const rehearsalDbName = process.env.REHEARSAL_DB_NAME.trim();
+    if (rehearsalDbName.toLowerCase() === env.db.database.toLowerCase()) {
+      throw new Error(`CRITICAL_SAFETY_VIOLATION: REHEARSAL_DB_NAME cannot match production database (${env.db.database})!`);
+    }
+
+    const disposableConfig = { ...env.db, database: rehearsalDbName };
+    console.log(`   Executing restore rehearsal into disposable database: ${rehearsalDbName}...`);
+    await rehearseDatabaseRestore(dumpFile, disposableConfig, manifestPath, {
+      productionDatabase: env.db.database
+    });
+    console.log("✔ Pre-migration restore rehearsal PASSED on isolated schema. Manifest updated: database_restore_rehearsed=true.");
+  })().catch(err => {
+    console.error(`💥 [RESTORE_REHEARSAL_FAILED]: ${err.message}`);
+    process.exit(1);
+  });
+  '
+elif [ "${DEPLOY_REQUIRE_REHEARSAL:-false}" = "true" ]; then
+  echo "❌ FATAL: DEPLOY_REQUIRE_REHEARSAL is true, but no REHEARSAL_DB_NAME was provided." >&2
+  echo "   Provide REHEARSAL_DB_NAME=<disposable_database> to perform automated pre-migration rehearsal." >&2
+  exit 1
+fi
+
 # ------------------------------------------------------------------------------
 # STEP 5: Fast-Forward Code Update to Approved Target SHA
 # ------------------------------------------------------------------------------
@@ -313,6 +378,10 @@ const { validateAndLoadManifest } = require("./scripts/ops/recovery-protocol");
 
   if (loaded.manifest.status.backup_created !== true || loaded.manifest.status.integrity_verified !== true) {
     throw new Error("FAIL_CLOSED: Backup status does not have backup_created=true and integrity_verified=true!");
+  }
+
+  if (process.env.DEPLOY_REQUIRE_REHEARSAL === "true" && loaded.manifest.status.database_restore_rehearsed !== true) {
+    throw new Error("FAIL_CLOSED: DEPLOY_REQUIRE_REHEARSAL is true, but database_restore_rehearsed is false in manifest!");
   }
 
   console.log("✔ Mandatory pre-migration backup verification gate PASSED (database identity, dump integrity & footer verified).");

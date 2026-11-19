@@ -34,15 +34,9 @@ function verifyReleaseApproval(targetSha, opts = {}) {
     return { approved: false, reason: `Target SHA '${cleanSha}' is not a valid 40-character hexadecimal string` };
   }
 
-  // 1. Verify commit exists in git (unless explicitly bypassed for registry-only evaluation)
-  if (!opts.skipGitCheck) {
-    const catCheck = spawnSync('git', ['cat-file', '-e', `${cleanSha}^{commit}`], { encoding: 'utf8' });
-    if (catCheck.status !== 0) {
-      return { approved: false, reason: `Commit '${cleanSha}' does not exist in local Git object store` };
-    }
-  }
+  const repoDir = opts.repoDir || path.resolve(__dirname, '..', '..');
 
-  // 2. Load in-repo release governance configuration
+  // 1. Load in-repo release governance configuration
   const governancePath = opts.governanceConfig ||
     opts.configPath ||
     path.resolve(__dirname, '..', '..', 'config', 'release-governance.json');
@@ -64,35 +58,88 @@ function verifyReleaseApproval(targetSha, opts = {}) {
     return { approved: false, reason: `Release governance config not found: ${governancePath}` };
   }
 
-  // 3. Out-Of-Band Independent Trust Anchor Validation
-  const trustAnchorPath = opts.trustAnchorPath ||
+  // 2. Out-Of-Band Independent Trust Anchor Validation (MANDATORY & FAIL-CLOSED)
+  const trustAnchorPath = opts.trustAnchorPath !== undefined ? opts.trustAnchorPath : (
     process.env.GOVERNANCE_TRUST_ANCHOR_PATH ||
-    (process.env.HOME ? path.join(process.env.HOME, '.mrtumi_governance_trust_anchor.json') : null);
+    (process.env.HOME ? path.join(process.env.HOME, '.mrtumi_governance_trust_anchor.json') : null)
+  );
 
-  const trustAnchorSha = opts.trustAnchorSha || process.env.GOVERNANCE_TRUST_ANCHOR_SHA256;
+  const trustAnchorSha = opts.trustAnchorSha !== undefined ? opts.trustAnchorSha : process.env.GOVERNANCE_TRUST_ANCHOR_SHA256;
+
+  // Check if explicit trustAnchorPath was provided but doesn't exist
+  if ((opts.trustAnchorPath || process.env.GOVERNANCE_TRUST_ANCHOR_PATH) && (!trustAnchorPath || !fs.existsSync(trustAnchorPath))) {
+    return {
+      approved: false,
+      reason: `TRUST_ANCHOR_NOT_FOUND: Specified independent trust anchor file does not exist: ${trustAnchorPath}`
+    };
+  }
 
   if (trustAnchorPath && fs.existsSync(trustAnchorPath)) {
-    try {
-      const anchor = JSON.parse(fs.readFileSync(trustAnchorPath, 'utf8'));
-      const govRaw = fs.readFileSync(governancePath);
-      const govHash = crypto.createHash('sha256').update(govRaw).digest('hex');
+    // 2a. Reject symbolic links to prevent link-redirection tampering
+    const stat = fs.lstatSync(trustAnchorPath);
+    if (stat.isSymbolicLink()) {
+      return {
+        approved: false,
+        reason: `TRUST_ANCHOR_SYMLINK_FORBIDDEN: Independent trust anchor at '${trustAnchorPath}' must not be a symbolic link!`
+      };
+    }
 
-      if (anchor.expected_governance_sha256 && anchor.expected_governance_sha256.toLowerCase() !== govHash.toLowerCase()) {
+    let anchorRaw;
+    try {
+      anchorRaw = fs.readFileSync(trustAnchorPath, 'utf8');
+    } catch (readErr) {
+      return { approved: false, reason: `TRUST_ANCHOR_UNREADABLE: Failed to read trust anchor file (${trustAnchorPath}): ${readErr.message}` };
+    }
+
+    if (!anchorRaw || !anchorRaw.trim()) {
+      return { approved: false, reason: `TRUST_ANCHOR_EMPTY: Independent trust anchor file is empty: ${trustAnchorPath}` };
+    }
+
+    let anchor;
+    try {
+      anchor = JSON.parse(anchorRaw);
+    } catch (anchorErr) {
+      return { approved: false, reason: `TRUST_ANCHOR_MALFORMED: Failed to parse independent trust anchor (${trustAnchorPath}): ${anchorErr.message}` };
+    }
+
+    if (!anchor.expected_governance_sha256 || typeof anchor.expected_governance_sha256 !== 'string' || !/^[0-9a-fA-F]{64}$/.test(anchor.expected_governance_sha256.trim())) {
+      return { approved: false, reason: `TRUST_ANCHOR_INVALID: Missing or invalid expected_governance_sha256 in trust anchor (${trustAnchorPath})` };
+    }
+
+    const govRaw = fs.readFileSync(governancePath);
+    const govHash = crypto.createHash('sha256').update(govRaw).digest('hex');
+
+    // 2b. Check conflict between anchor file and environment SHA if both provided
+    if (trustAnchorSha) {
+      if (trustAnchorSha.toLowerCase().trim() !== anchor.expected_governance_sha256.toLowerCase().trim()) {
         return {
           approved: false,
-          reason: `TRUST_ANCHOR_INTEGRITY_MISMATCH: In-repo release governance hash '${govHash}' does not match independent out-of-band trust anchor hash '${anchor.expected_governance_sha256}'!`
+          reason: `TRUST_ANCHOR_CONFLICT: Environment GOVERNANCE_TRUST_ANCHOR_SHA256 '${trustAnchorSha}' conflicts with trust anchor file expected SHA '${anchor.expected_governance_sha256}'!`
         };
       }
-      if (anchor.trusted_keys && Array.isArray(anchor.trusted_keys)) {
-        governance.trusted_keys = anchor.trusted_keys;
+    }
+
+    // 2c. Integrity comparison against in-repo governance file
+    if (anchor.expected_governance_sha256.toLowerCase().trim() !== govHash.toLowerCase()) {
+      return {
+        approved: false,
+        reason: `TRUST_ANCHOR_INTEGRITY_MISMATCH: In-repo release governance hash '${govHash}' does not match independent out-of-band trust anchor hash '${anchor.expected_governance_sha256}'!`
+      };
+    }
+
+    if (anchor.trusted_keys !== undefined) {
+      if (!Array.isArray(anchor.trusted_keys) || anchor.trusted_keys.length === 0) {
+        return { approved: false, reason: `TRUST_ANCHOR_INVALID: Anchor trusted_keys must be a non-empty array of key objects` };
       }
-      if (anchor.revoked_key_ids && Array.isArray(anchor.revoked_key_ids)) {
-        governance.revoked_key_ids = Array.from(new Set([...(governance.revoked_key_ids || []), ...anchor.revoked_key_ids]));
-      }
-    } catch (anchorErr) {
-      return { approved: false, reason: `Failed to load independent trust anchor (${trustAnchorPath}): ${anchorErr.message}` };
+      governance.trusted_keys = anchor.trusted_keys;
+    }
+    if (anchor.revoked_key_ids && Array.isArray(anchor.revoked_key_ids)) {
+      governance.revoked_key_ids = Array.from(new Set([...(governance.revoked_key_ids || []), ...anchor.revoked_key_ids]));
     }
   } else if (trustAnchorSha) {
+    if (typeof trustAnchorSha !== 'string' || !/^[0-9a-fA-F]{64}$/.test(trustAnchorSha.trim())) {
+      return { approved: false, reason: `TRUST_ANCHOR_INVALID_SHA: GOVERNANCE_TRUST_ANCHOR_SHA256 must be a 64-character hex SHA-256 string (got '${trustAnchorSha}')` };
+    }
     const govRaw = fs.readFileSync(governancePath);
     const govHash = crypto.createHash('sha256').update(govRaw).digest('hex');
     if (govHash.toLowerCase() !== trustAnchorSha.toLowerCase().trim()) {
@@ -101,9 +148,40 @@ function verifyReleaseApproval(targetSha, opts = {}) {
         reason: `TRUST_ANCHOR_SHA_MISMATCH: In-repo release governance hash '${govHash}' does not match GOVERNANCE_TRUST_ANCHOR_SHA256 '${trustAnchorSha}'!`
       };
     }
+  } else {
+    // 2d. Mandatory Out-Of-Band Trust Anchor Enforcement (FAIL-CLOSED)
+    return {
+      approved: false,
+      reason: 'TRUST_ANCHOR_REQUIRED: No independent out-of-band trust anchor provisioned. An independent trust anchor file (~/.mrtumi_governance_trust_anchor.json or GOVERNANCE_TRUST_ANCHOR_PATH) or GOVERNANCE_TRUST_ANCHOR_SHA256 environment variable is mandatory to authorize release verification.'
+    };
   }
 
-  // 4. Check immutable historical baseline allowlist (strictly vetted pre-v3 baselines)
+  // 3. Policy Flags & Bypass Enforcement
+  if (process.env.RELEASE_GOVERNANCE_SIGNOFF || process.env.ALLOW_UNLISTED_RELEASE_SHA || process.env.RELEASE_APPROVAL_BYPASS) {
+    if (!governance.policy || governance.policy.allow_ambient_signoffs !== true) {
+      return {
+        approved: false,
+        reason: 'SECURITY_POLICY_VIOLATION: Ambient sign-offs and unlisted SHA bypass variables are strictly forbidden by security policy'
+      };
+    }
+  }
+
+  if (governance.policy && governance.policy.allow_unlisted_sha_bypass === true) {
+    return {
+      approved: false,
+      reason: 'SECURITY_POLICY_VIOLATION: allow_unlisted_sha_bypass is strictly forbidden in production governance policy'
+    };
+  }
+
+  // 4. Verify commit exists in git (unless explicitly bypassed for registry-only evaluation)
+  if (!opts.skipGitCheck) {
+    const catCheck = spawnSync('git', ['cat-file', '-e', `${cleanSha}^{commit}`], { cwd: repoDir, encoding: 'utf8' });
+    if (catCheck.status !== 0) {
+      return { approved: false, reason: `Commit '${cleanSha}' does not exist in local Git object store` };
+    }
+  }
+
+  // 5. Check immutable historical baseline allowlist (strictly vetted pre-v3 baselines)
   const historicalBaselines = new Set(
     (governance.historical_baseline_allowlist || []).map(s => s.toLowerCase())
   );
@@ -197,6 +275,15 @@ function verifyReleaseApproval(targetSha, opts = {}) {
   }
 
   const expectedTag = opts.expectedTag || process.env.DEPLOY_RELEASE_TAG;
+  const targetEnvironment = (opts.expectedEnvironment || process.env.DEPLOY_ENVIRONMENT || 'production').trim().toLowerCase();
+
+  if (targetEnvironment === 'production' && !expectedTag) {
+    return {
+      approved: false,
+      reason: 'MISSING_EXPECTED_TAG: Expected release tag (DEPLOY_RELEASE_TAG or opts.expectedTag) is mandatory for production releases'
+    };
+  }
+
   if (expectedTag && payload.release_tag.trim() !== expectedTag.trim()) {
     return {
       approved: false,
@@ -205,7 +292,6 @@ function verifyReleaseApproval(targetSha, opts = {}) {
   }
 
   // 9. Validate Deployment Environment Binding (Prevents Cross-Environment Replay)
-  const targetEnvironment = (opts.expectedEnvironment || process.env.DEPLOY_ENVIRONMENT || 'production').trim().toLowerCase();
   if (!payload.environment || typeof payload.environment !== 'string') {
     return { approved: false, reason: 'Ticket payload is missing mandatory environment field' };
   }
@@ -232,6 +318,34 @@ function verifyReleaseApproval(targetSha, opts = {}) {
 
   if (!trustedKey.roles || !trustedKey.roles.includes('production_release_approval')) {
     return { approved: false, reason: `Key '${ticket.key_id}' lacks the 'production_release_approval' role` };
+  }
+
+  // 10b. Verify Signature Algorithm Policy
+  const allowedAlgos = new Set(
+    ((governance.policy && governance.policy.allowed_signature_algorithms) || ['ed25519']).map(a => a.toLowerCase())
+  );
+
+  const keyAlgo = (trustedKey.algorithm || 'ed25519').toLowerCase();
+  if (!allowedAlgos.has(keyAlgo)) {
+    return {
+      approved: false,
+      reason: `UNSUPPORTED_SIGNATURE_ALGORITHM: Key algorithm '${keyAlgo}' is not permitted by release policy [${Array.from(allowedAlgos).join(', ')}]`
+    };
+  }
+
+  const ticketAlgo = (ticket.algorithm || payload.algorithm || 'ed25519').toLowerCase();
+  if (!allowedAlgos.has(ticketAlgo)) {
+    return {
+      approved: false,
+      reason: `UNSUPPORTED_SIGNATURE_ALGORITHM: Ticket algorithm '${ticketAlgo}' is not permitted by release policy [${Array.from(allowedAlgos).join(', ')}]`
+    };
+  }
+
+  if (keyAlgo !== ticketAlgo) {
+    return {
+      approved: false,
+      reason: `ALGORITHM_MISMATCH: Key algorithm '${keyAlgo}' does not match ticket algorithm '${ticketAlgo}'`
+    };
   }
 
   // 11. Verify Key Validity Window (valid_from and valid_until)
@@ -306,7 +420,8 @@ function verifyReleaseApproval(targetSha, opts = {}) {
 function main() {
   const targetSha = process.argv[2] || process.env.APPROVED_RELEASE_SHA;
   const ticketArg = process.argv[3];
-  const result = verifyReleaseApproval(targetSha, { ticketArg });
+  const expectedTag = process.argv[4] || process.env.DEPLOY_RELEASE_TAG;
+  const result = verifyReleaseApproval(targetSha, { ticketArg, expectedTag });
 
   if (!result.approved) {
     console.error(`❌ [RELEASE_APPROVAL_REJECTED]: ${result.reason}`);

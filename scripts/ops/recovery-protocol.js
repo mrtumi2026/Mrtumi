@@ -251,9 +251,26 @@ function streamRestore(sqlFilePath, dbConfig, opts = {}) {
  * Updates the manifest lifecycle status to database_restore_rehearsed: true upon success.
  */
 async function rehearseDatabaseRestore(dumpFilePath, disposableDbConfig, manifestPath, opts = {}) {
+  if (!dumpFilePath || !fs.existsSync(dumpFilePath)) {
+    throw new Error(`FAIL_CLOSED: Rehearsal dump file does not exist: ${dumpFilePath}`);
+  }
+  if (!disposableDbConfig || !disposableDbConfig.database) {
+    throw new Error('FAIL_CLOSED: Rehearsal database configuration with target database name is required');
+  }
+
+  const rehearsalDbName = disposableDbConfig.database.trim();
+  const prodDb = (opts.productionDatabase || (opts.dbConfig && opts.dbConfig.database)) || '';
+  if (prodDb && rehearsalDbName.toLowerCase() === prodDb.toLowerCase()) {
+    throw new Error(`CRITICAL_SAFETY_VIOLATION: Rehearsal database '${rehearsalDbName}' cannot match production database '${prodDb}'!`);
+  }
+
   const restoreRes = await streamRestore(dumpFilePath, disposableDbConfig, opts);
   if (manifestPath && fs.existsSync(manifestPath)) {
-    updateManifestState(manifestPath, { database_restore_rehearsed: true });
+    updateManifestState(manifestPath, {
+      database_restore_rehearsed: true,
+      rehearsal_timestamp: new Date().toISOString(),
+      rehearsal_database: rehearsalDbName
+    });
   }
   return restoreRes;
 }
@@ -466,13 +483,14 @@ async function restoreUploadsArchive(archivePath, targetUploadDir, expectedSha, 
   }
 
   // 3. Pre-scan tar archive for malicious entries (Directory traversal, absolute paths, symlinks, hardlinks)
+  // 3a. Verbose listing for link / permission inspection
   const tarList = spawnSync('tar', ['-ztvf', archivePath], { encoding: 'utf8' });
   if (tarList.status !== 0) {
     throw new Error(`FAIL_CLOSED: Cannot read archive contents: ${tarList.stderr}`);
   }
 
-  const lines = tarList.stdout.split('\n').map(s => s.trim()).filter(Boolean);
-  for (const line of lines) {
+  const vLines = tarList.stdout.split('\n').map(s => s.trim()).filter(Boolean);
+  for (const line of vLines) {
     // Check for symlinks or hardlinks in tar listing
     if (line.startsWith('l') || line.includes(' -> ')) {
       throw new Error(`FAIL_CLOSED: Malicious archive entry detected (symbolic link forbidden): ${line}`);
@@ -480,11 +498,16 @@ async function restoreUploadsArchive(archivePath, targetUploadDir, expectedSha, 
     if (line.startsWith('h') || line.includes(' link to ')) {
       throw new Error(`FAIL_CLOSED: Malicious archive entry detected (hard link forbidden): ${line}`);
     }
+  }
 
-    // Extract path segment (last token in tar -tvf output)
-    const tokens = line.split(/\s+/);
-    const entryPath = tokens[tokens.length - 1];
+  // 3b. Structured path listing (tar -ztf) for clean cross-platform entry inspection (GNU, BSD & BusyBox tar safe)
+  const tarPaths = spawnSync('tar', ['-ztf', archivePath], { encoding: 'utf8' });
+  if (tarPaths.status !== 0) {
+    throw new Error(`FAIL_CLOSED: Cannot list archive paths: ${tarPaths.stderr}`);
+  }
 
+  const rawEntries = tarPaths.stdout.split('\n').map(s => s.trim()).filter(Boolean);
+  for (const entryPath of rawEntries) {
     if (entryPath.startsWith('/') || entryPath.startsWith('\\')) {
       throw new Error(`FAIL_CLOSED: Malicious archive entry detected (absolute path forbidden): ${entryPath}`);
     }
@@ -631,7 +654,7 @@ async function createHardenedManifest(backupDir, dbConfig, dumpPath, uploadsPath
   const dbName = dbConfig.database || dbConfig.name;
 
   const manifestData = {
-    schema_version: '3.2',
+    schema_version: '3.5',
     run_id: runId,
     timestamp: new Date().toISOString(),
     status: {

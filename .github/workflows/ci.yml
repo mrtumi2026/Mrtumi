@@ -191,25 +191,7 @@ jobs:
         run: |
           mkdir -p ci-evidence/mysql
           cp /tmp/test-output.log ci-evidence/mysql/test-output.log 2>/dev/null || true
-          node -e '
-            const fs = require("fs");
-            const logPath = "/tmp/test-output.log";
-            const log = fs.existsSync(logPath) ? fs.readFileSync(logPath, "utf8") : "";
-            const passMatch = log.match(/ℹ pass (\d+)/);
-            const failMatch = log.match(/ℹ fail (\d+)/);
-            const skipMatch = log.match(/ℹ skipped (\d+)/);
-            const testsMatch = log.match(/ℹ tests (\d+)/);
-            const summary = {
-              engine: "MySQL 8.0",
-              timestamp: new Date().toISOString(),
-              tests: testsMatch ? Number(testsMatch[1]) : 0,
-              passed: passMatch ? Number(passMatch[1]) : 0,
-              failed: failMatch ? Number(failMatch[1]) : 0,
-              skipped: skipMatch ? Number(skipMatch[1]) : 0
-            };
-            fs.writeFileSync("ci-evidence/mysql/test-summary.json", JSON.stringify(summary, null, 2));
-            console.log("MySQL 8.0 Test Summary:", summary);
-          ' || true
+          node scripts/ci/generate-test-summary.js "MySQL 8.0" /tmp/test-output.log ci-evidence/mysql || true
 
       - name: Upload MySQL 8.0 test execution evidence and logs
         if: always()
@@ -416,25 +398,7 @@ jobs:
         run: |
           mkdir -p ci-evidence/mariadb
           cp /tmp/test-output.log ci-evidence/mariadb/test-output.log 2>/dev/null || true
-          node -e '
-            const fs = require("fs");
-            const logPath = "/tmp/test-output.log";
-            const log = fs.existsSync(logPath) ? fs.readFileSync(logPath, "utf8") : "";
-            const passMatch = log.match(/ℹ pass (\d+)/);
-            const failMatch = log.match(/ℹ fail (\d+)/);
-            const skipMatch = log.match(/ℹ skipped (\d+)/);
-            const testsMatch = log.match(/ℹ tests (\d+)/);
-            const summary = {
-              engine: "MariaDB 10.11",
-              timestamp: new Date().toISOString(),
-              tests: testsMatch ? Number(testsMatch[1]) : 0,
-              passed: passMatch ? Number(passMatch[1]) : 0,
-              failed: failMatch ? Number(failMatch[1]) : 0,
-              skipped: skipMatch ? Number(skipMatch[1]) : 0
-            };
-            fs.writeFileSync("ci-evidence/mariadb/test-summary.json", JSON.stringify(summary, null, 2));
-            console.log("MariaDB 10.11 Test Summary:", summary);
-          ' || true
+          node scripts/ci/generate-test-summary.js "MariaDB 10.11" /tmp/test-output.log ci-evidence/mariadb || true
 
       - name: Upload MariaDB 10.11 test execution evidence and logs
         if: always()

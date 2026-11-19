@@ -1,5 +1,5 @@
 {
-  "schema_version": "3.4",
+  "schema_version": "3.5",
   "description": "Mr. Tumi Marketplace — Cryptographic Release Governance Trust Store & Policy",
   "policy": {
     "require_cryptographic_signature": true,
