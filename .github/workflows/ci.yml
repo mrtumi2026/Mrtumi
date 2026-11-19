@@ -191,7 +191,7 @@ jobs:
         run: |
           mkdir -p ci-evidence/mysql
           cp /tmp/test-output.log ci-evidence/mysql/test-output.log 2>/dev/null || true
-          node scripts/ci/generate-test-summary.js "MySQL 8.0" /tmp/test-output.log ci-evidence/mysql || true
+          node scripts/ci/generate-test-summary.js "MySQL 8.0" /tmp/test-output.log ci-evidence/mysql
 
       - name: Upload MySQL 8.0 test execution evidence and logs
         if: always()
@@ -199,7 +199,7 @@ jobs:
         with:
           name: ci-evidence-mysql-8.0
           path: ci-evidence/mysql/
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 30
 
   mariadb-compatibility:
@@ -398,7 +398,7 @@ jobs:
         run: |
           mkdir -p ci-evidence/mariadb
           cp /tmp/test-output.log ci-evidence/mariadb/test-output.log 2>/dev/null || true
-          node scripts/ci/generate-test-summary.js "MariaDB 10.11" /tmp/test-output.log ci-evidence/mariadb || true
+          node scripts/ci/generate-test-summary.js "MariaDB 10.11" /tmp/test-output.log ci-evidence/mariadb
 
       - name: Upload MariaDB 10.11 test execution evidence and logs
         if: always()
@@ -406,5 +406,5 @@ jobs:
         with:
           name: ci-evidence-mariadb-10.11
           path: ci-evidence/mariadb/
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 30

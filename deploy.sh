@@ -285,11 +285,13 @@ const { createHardenedManifest } = require("./scripts/ops/recovery-protocol");
 });
 '
 
-# 4c. Pre-Migration Restore Rehearsal on Isolated Schema (Finding H6)
+# 4c. Pre-Migration Restore Rehearsal on Isolated Schema (v3.6 Hardened)
+DEPLOY_REQUIRE_REHEARSAL="${DEPLOY_REQUIRE_REHEARSAL:-true}"
+
 if [ -n "${REHEARSAL_DB_NAME:-}" ]; then
   echo ""
   echo "🧪 [4c/8] Rehearsing database restore on isolated disposable schema: $REHEARSAL_DB_NAME..."
-  REHEARSAL_DB_NAME="$REHEARSAL_DB_NAME" node -e '
+  REHEARSAL_AUTHORIZED="true" REHEARSAL_DB_NAME="$REHEARSAL_DB_NAME" node -e '
   const path = require("path");
   const fs = require("fs");
   const { env } = require("./src/config/env");
@@ -308,10 +310,20 @@ if [ -n "${REHEARSAL_DB_NAME:-}" ]; then
       throw new Error(`CRITICAL_SAFETY_VIOLATION: REHEARSAL_DB_NAME cannot match production database (${env.db.database})!`);
     }
 
-    const disposableConfig = { ...env.db, database: rehearsalDbName };
+    const disposableConfig = {
+      ...env.db,
+      database: rehearsalDbName,
+      user: process.env.REHEARSAL_DB_USER || env.db.user,
+      password: process.env.REHEARSAL_DB_PASSWORD || env.db.password,
+      authorized_disposable: true
+    };
     console.log(`   Executing restore rehearsal into disposable database: ${rehearsalDbName}...`);
     await rehearseDatabaseRestore(dumpFile, disposableConfig, manifestPath, {
-      productionDatabase: env.db.database
+      productionDatabase: env.db.database,
+      prodDbConfig: env.db,
+      authorizedDisposable: true,
+      allowSharedCredentials: true,
+      validateParity: true
     });
     console.log("✔ Pre-migration restore rehearsal PASSED on isolated schema. Manifest updated: database_restore_rehearsed=true.");
   })().catch(err => {
@@ -319,8 +331,9 @@ if [ -n "${REHEARSAL_DB_NAME:-}" ]; then
     process.exit(1);
   });
   '
-elif [ "${DEPLOY_REQUIRE_REHEARSAL:-false}" = "true" ]; then
-  echo "❌ FATAL: DEPLOY_REQUIRE_REHEARSAL is true, but no REHEARSAL_DB_NAME was provided." >&2
+elif [ "$DEPLOY_REQUIRE_REHEARSAL" = "true" ]; then
+  echo "❌ FATAL: Production deployment requires pre-migration restore rehearsal by default." >&2
+  echo "   No REHEARSAL_DB_NAME was provided." >&2
   echo "   Provide REHEARSAL_DB_NAME=<disposable_database> to perform automated pre-migration rehearsal." >&2
   exit 1
 fi

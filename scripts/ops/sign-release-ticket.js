@@ -81,14 +81,35 @@ function createSignedTicket(payload, privateKeyPem) {
 function main() {
   const args = process.argv.slice(2);
   const parsed = {};
+  const validFlags = new Set([
+    '--commit',
+    '--tag',
+    '--key-id',
+    '--key-file',
+    '--env',
+    '--hours',
+    '--out',
+    '--out-file'
+  ]);
+
   for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--commit') parsed.target_commit = args[++i];
-    else if (args[i] === '--tag') parsed.release_tag = args[++i];
-    else if (args[i] === '--key-id') parsed.key_id = args[++i];
-    else if (args[i] === '--key-file') parsed.key_file = args[++i];
-    else if (args[i] === '--env') parsed.environment = args[++i];
-    else if (args[i] === '--hours') parsed.validity_hours = Number(args[++i]);
-    else if (args[i] === '--out') parsed.out_file = args[++i];
+    const flag = args[i];
+    if (!validFlags.has(flag)) {
+      console.error(`Error: Unknown CLI argument '${flag}'. Allowed arguments: ${Array.from(validFlags).join(', ')}`);
+      process.exit(1);
+    }
+    if (i + 1 >= args.length || args[i + 1].startsWith('--')) {
+      console.error(`Error: Missing value for argument '${flag}'`);
+      process.exit(1);
+    }
+    const val = args[++i];
+    if (flag === '--commit') parsed.target_commit = val;
+    else if (flag === '--tag') parsed.release_tag = val;
+    else if (flag === '--key-id') parsed.key_id = val;
+    else if (flag === '--key-file') parsed.key_file = val;
+    else if (flag === '--env') parsed.environment = val;
+    else if (flag === '--hours') parsed.validity_hours = Number(val);
+    else if (flag === '--out' || flag === '--out-file') parsed.out_file = val;
   }
 
   if (!parsed.target_commit || !parsed.key_file || !parsed.release_tag || !parsed.environment || !parsed.key_id) {

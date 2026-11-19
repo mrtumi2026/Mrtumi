@@ -84,6 +84,17 @@ function verifyReleaseApproval(targetSha, opts = {}) {
       };
     }
 
+    // 2a-1. Strict file permissions check where supported (POSIX shared-hosting guard)
+    if (process.platform !== 'win32' && !opts.skipPermissionCheck) {
+      const mode = stat.mode & 0o777;
+      if (mode & 0o022) {
+        return {
+          approved: false,
+          reason: `TRUST_ANCHOR_INSECURE_PERMISSIONS: Independent trust anchor at '${trustAnchorPath}' has insecure permissions (0${mode.toString(8)}). File must not be group-writable or world-writable. Run: chmod 600 ${trustAnchorPath}`
+        };
+      }
+    }
+
     let anchorRaw;
     try {
       anchorRaw = fs.readFileSync(trustAnchorPath, 'utf8');
@@ -102,8 +113,18 @@ function verifyReleaseApproval(targetSha, opts = {}) {
       return { approved: false, reason: `TRUST_ANCHOR_MALFORMED: Failed to parse independent trust anchor (${trustAnchorPath}): ${anchorErr.message}` };
     }
 
+    if (!anchor || typeof anchor !== 'object' || Array.isArray(anchor)) {
+      return { approved: false, reason: `TRUST_ANCHOR_INVALID: Independent trust anchor must be a JSON object: ${trustAnchorPath}` };
+    }
+
     if (!anchor.expected_governance_sha256 || typeof anchor.expected_governance_sha256 !== 'string' || !/^[0-9a-fA-F]{64}$/.test(anchor.expected_governance_sha256.trim())) {
       return { approved: false, reason: `TRUST_ANCHOR_INVALID: Missing or invalid expected_governance_sha256 in trust anchor (${trustAnchorPath})` };
+    }
+
+    if (anchor.schema_version !== undefined) {
+      if (typeof anchor.schema_version !== 'string' || !/^[0-9]+\.[0-9]+(\.[0-9]+)?$/.test(anchor.schema_version.trim())) {
+        return { approved: false, reason: `TRUST_ANCHOR_SCHEMA_VIOLATION: Invalid or unsupported schema_version '${anchor.schema_version}' in trust anchor (${trustAnchorPath})` };
+      }
     }
 
     const govRaw = fs.readFileSync(governancePath);
