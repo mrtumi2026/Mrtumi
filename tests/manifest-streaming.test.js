@@ -506,7 +506,45 @@ describe('Workstream C — Manifest, Uploads Safety & Recovery Gate Architecture
       /EMERGENCY_OVERRIDE_JUSTIFICATION_TOO_SHORT|EMERGENCY_OVERRIDE_REJECTED/
     );
 
-    // 7. Ambient confirmation flag without matching run_id rejected
+    // 7. Emergency authorization with missing manifestPath fails closed (audit logging cannot be bypassed)
+    const validAuth = {
+      target_run_id: testRunId,
+      target_database: mockDb.database,
+      operator_id: 'operator:lead_secops',
+      justification: 'Incident #9999: production database outage requiring immediate recovery',
+      acknowledged_risks: ['DATA_LOSS', 'SCHEMA_DIVERGENCE'],
+      authorization_code: `EMERGENCY_OVERRIDE:${testRunId}:${mockDb.database}`
+    };
+
+    await assert.rejects(
+      async () => executeCanonicalRecovery(mockConn, fakeDump, mockDb, {
+        manifest: manifestUnrehearsed,
+        manifestPath: null, // missing manifest path!
+        confirmationToken: testRunId,
+        emergencyAuthorization: validAuth
+      }),
+      /FAIL_CLOSED_AUDIT_REQUIRED: Cannot perform emergency override without an active, durable manifest file/
+    );
+
+    // 8. Emergency authorization persists durable audit record in manifest
+    const emergencyManifestFile = path.join(backupDir, 'manifest_emergency_audit.json');
+    fs.writeFileSync(emergencyManifestFile, JSON.stringify(manifestUnrehearsed, null, 2));
+
+    // When manifest is unwritable, audit persistence fails closed
+    const unwritableManifest = path.join(backupDir, 'unwritable_manifest.json');
+    fs.writeFileSync(unwritableManifest, 'INVALID_JSON_FOR_UPDATE', { mode: 0o400 });
+
+    await assert.rejects(
+      async () => executeCanonicalRecovery(mockConn, fakeDump, mockDb, {
+        manifest: manifestUnrehearsed,
+        manifestPath: unwritableManifest,
+        confirmationToken: testRunId,
+        emergencyAuthorization: validAuth
+      }),
+      /FAIL_CLOSED_AUDIT_PERSISTENCE_FAILED/
+    );
+
+    // 9. Ambient confirmation flag without matching run_id rejected
     process.env.CONFIRM_DESTRUCTIVE_DATABASE_RECOVERY = 'I_CONFIRM_DESTRUCTIVE_DATABASE_RECOVERY';
     const manifestRehearsed = {
       ...manifestUnrehearsed,

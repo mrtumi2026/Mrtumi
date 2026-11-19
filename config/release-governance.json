@@ -1,11 +1,12 @@
 {
-  "schema_version": "3.3",
+  "schema_version": "3.4",
   "description": "Mr. Tumi Marketplace — Cryptographic Release Governance Trust Store & Policy",
   "policy": {
     "require_cryptographic_signature": true,
     "allowed_signature_algorithms": [
       "ed25519"
     ],
+    "approved_tag_pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+(-rc[0-9]+)?$",
     "max_ticket_validity_hours": 72,
     "allow_ambient_signoffs": false,
     "allow_unlisted_sha_bypass": false

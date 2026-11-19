@@ -375,17 +375,29 @@ async function executeCanonicalRecovery(conn, dumpFile, dbConfig, opts = {}) {
       );
     }
 
-    // Record auditable approval event
-    if (manifestPath && fs.existsSync(manifestPath)) {
+    // Assert durable manifest path exists before permitting emergency recovery
+    if (!manifestPath || !fs.existsSync(manifestPath)) {
+      throw new Error(
+        `FAIL_CLOSED_AUDIT_REQUIRED: Cannot perform emergency override without an active, durable manifest file to record the audit trail.`
+      );
+    }
+
+    // Record auditable approval event (FAIL-CLOSED: never silently omit or bypass)
+    try {
       updateManifestState(manifestPath, {
         emergency_override_audit: {
           timestamp: new Date().toISOString(),
           operator_id: authResult.operator,
           justification: authResult.justification,
           target_run_id: manifest ? manifest.run_id : null,
-          target_database: targetDbName
+          target_database: targetDbName,
+          status: 'APPLIED'
         }
       });
+    } catch (auditErr) {
+      throw new Error(
+        `FAIL_CLOSED_AUDIT_PERSISTENCE_FAILED: Failed to record emergency override audit in manifest (${manifestPath}): ${auditErr.message}. Aborting recovery to prevent unaudited state changes.`
+      );
     }
   }
 

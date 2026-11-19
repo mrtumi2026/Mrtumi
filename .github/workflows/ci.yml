@@ -186,6 +186,40 @@ jobs:
             exit 1
           }
 
+      - name: Generate machine-readable test summary and retain logs
+        if: always()
+        run: |
+          mkdir -p ci-evidence/mysql
+          cp /tmp/test-output.log ci-evidence/mysql/test-output.log 2>/dev/null || true
+          node -e '
+            const fs = require("fs");
+            const logPath = "/tmp/test-output.log";
+            const log = fs.existsSync(logPath) ? fs.readFileSync(logPath, "utf8") : "";
+            const passMatch = log.match(/ℹ pass (\d+)/);
+            const failMatch = log.match(/ℹ fail (\d+)/);
+            const skipMatch = log.match(/ℹ skipped (\d+)/);
+            const testsMatch = log.match(/ℹ tests (\d+)/);
+            const summary = {
+              engine: "MySQL 8.0",
+              timestamp: new Date().toISOString(),
+              tests: testsMatch ? Number(testsMatch[1]) : 0,
+              passed: passMatch ? Number(passMatch[1]) : 0,
+              failed: failMatch ? Number(failMatch[1]) : 0,
+              skipped: skipMatch ? Number(skipMatch[1]) : 0
+            };
+            fs.writeFileSync("ci-evidence/mysql/test-summary.json", JSON.stringify(summary, null, 2));
+            console.log("MySQL 8.0 Test Summary:", summary);
+          ' || true
+
+      - name: Upload MySQL 8.0 test execution evidence and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-evidence-mysql-8.0
+          path: ci-evidence/mysql/
+          if-no-files-found: warn
+          retention-days: 30
+
   mariadb-compatibility:
     name: MariaDB 10.11 Migrations & Integration Tests (Node 22.23.4)
     runs-on: ubuntu-latest
@@ -376,3 +410,37 @@ jobs:
             done
             exit 1
           }
+
+      - name: Generate machine-readable test summary and retain logs
+        if: always()
+        run: |
+          mkdir -p ci-evidence/mariadb
+          cp /tmp/test-output.log ci-evidence/mariadb/test-output.log 2>/dev/null || true
+          node -e '
+            const fs = require("fs");
+            const logPath = "/tmp/test-output.log";
+            const log = fs.existsSync(logPath) ? fs.readFileSync(logPath, "utf8") : "";
+            const passMatch = log.match(/ℹ pass (\d+)/);
+            const failMatch = log.match(/ℹ fail (\d+)/);
+            const skipMatch = log.match(/ℹ skipped (\d+)/);
+            const testsMatch = log.match(/ℹ tests (\d+)/);
+            const summary = {
+              engine: "MariaDB 10.11",
+              timestamp: new Date().toISOString(),
+              tests: testsMatch ? Number(testsMatch[1]) : 0,
+              passed: passMatch ? Number(passMatch[1]) : 0,
+              failed: failMatch ? Number(failMatch[1]) : 0,
+              skipped: skipMatch ? Number(skipMatch[1]) : 0
+            };
+            fs.writeFileSync("ci-evidence/mariadb/test-summary.json", JSON.stringify(summary, null, 2));
+            console.log("MariaDB 10.11 Test Summary:", summary);
+          ' || true
+
+      - name: Upload MariaDB 10.11 test execution evidence and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-evidence-mariadb-10.11
+          path: ci-evidence/mariadb/
+          if-no-files-found: warn
+          retention-days: 30

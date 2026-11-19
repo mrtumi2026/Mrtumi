@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Mr. Tumi Marketplace — Detached Cryptographic Release Ticket Signer
+ * Mr. Tumi Marketplace — Detached Cryptographic Release Ticket Signer (v3.4 Hardened)
  *
  * Used by authorized release governors to cryptographically sign a release
  * candidate commit using an offline Ed25519 private key.
@@ -24,16 +24,28 @@ function canonicalizePayload(payload) {
 
 function createSignedTicket(payload, privateKeyPem) {
   if (!payload.target_commit || !/^[0-9a-fA-F]{40}$/.test(payload.target_commit)) {
-    throw new Error(`Invalid target_commit: must be 40-character hex SHA`);
+    throw new Error('Invalid target_commit: must be 40-character hex SHA');
   }
   if (!payload.key_id) {
-    throw new Error(`Missing key_id in release ticket payload`);
+    throw new Error('Missing key_id in release ticket payload');
+  }
+
+  const releaseTag = (payload.release_tag || 'v1.0.0').trim();
+  const tagPattern = /^v[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?$/;
+  if (!tagPattern.test(releaseTag)) {
+    throw new Error(`Invalid release_tag '${releaseTag}': must conform to approved semantic tag pattern (e.g. v3.4.0 or v1.0.0-rc1)`);
+  }
+
+  const environment = (payload.environment || 'production').trim().toLowerCase();
+  const allowedEnvironments = new Set(['production', 'staging', 'development']);
+  if (!allowedEnvironments.has(environment)) {
+    throw new Error(`Invalid environment '${environment}': must be one of [production, staging, development]`);
   }
 
   const completePayload = {
     target_commit: payload.target_commit.toLowerCase(),
-    release_tag: payload.release_tag || 'release',
-    environment: payload.environment || 'production',
+    release_tag: releaseTag,
+    environment,
     issued_at: payload.issued_at || new Date().toISOString(),
     expires_at: payload.expires_at || new Date(Date.now() + (payload.validity_hours || 48) * 3600 * 1000).toISOString(),
     key_id: payload.key_id
@@ -65,7 +77,7 @@ function main() {
   }
 
   if (!parsed.target_commit || !parsed.key_file) {
-    console.error('Usage: node scripts/ops/sign-release-ticket.js --commit <SHA> --key-file <KEY_FILE> [--key-id <ID>] [--out <FILE>]');
+    console.error('Usage: node scripts/ops/sign-release-ticket.js --commit <SHA> --key-file <KEY_FILE> [--tag <TAG>] [--env <ENV>] [--key-id <ID>] [--out <FILE>]');
     process.exit(1);
   }
 
