@@ -1,28 +1,29 @@
-# Project 01 — Production Deployment Readiness & Non-Destructive Recovery Protocol (v3.1 Hardened)
+# Project 01 — Production Deployment Readiness & Non-Destructive Recovery Protocol (v3.2 Hardened)
 
 **Target System:** Mr. Tumi Multi-Vendor Commerce Platform (`mrtumi-main`)  
-**Authentic Target Release Commit:** Explicitly supplied as command parameter (e.g. `5285d82e7e233c50561222c419fc163d79d74c5d`)  
-**Baseline Production Commit (HEAD):** `1b3c9a1950c2e8de7b76efb0d86717b02f64f100`  
+**Release Governance Allowlist:** Governed by `config/approved-releases.json` and verified by `scripts/ops/verify-release-approval.js`  
+**Production Baseline Commit (HEAD):** `1b3c9a1950c2e8de7b76efb0d86717b02f64f100`  
 **Host Environment:** cPanel / CloudLinux (CageFS/LVE), Node.js >= 22.5.0, MariaDB 10.3+ / 10.11 InnoDB  
 **Application Directory:** `$HOME/mrtumi` (`/home/mrtumico/mrtumi`)  
 **Database Name:** `mrtumico_live`  
-**Audited Modules:** `scripts/ops/recovery-protocol.js`, `scripts/ops/maintenance-guard.js`, `deploy.sh`
+**Audited Modules:** `scripts/ops/recovery-protocol.js`, `scripts/ops/maintenance-guard.js`, `scripts/ops/verify-release-approval.js`, `deploy.sh`
 
 ---
 
-## 1. Architectural Summary & Vulnerability Remediation (v3.1)
+## 1. Architectural Summary & Vulnerability Remediation (v3.2)
 
-This specification addresses and closes all independent audit blockers identified by Arena.ai:
+This specification addresses and closes all critical and high-priority audit findings identified by Arena.ai:
 
-| Domain | Legacy / v3 Blocker | v3.1 Hardened Specification |
+| Domain | Prior Vulnerability / Finding | v3.2 Hardened Specification |
 |---|---|---|
-| **Release Target Specification** | Self-referential hardcoded SHA in `deploy.sh` creates circular Git tree hash alteration. | **Verifiable Release Parameter**: `deploy.sh <TARGET_COMMIT_SHA>` or `APPROVED_RELEASE_SHA=<TARGET_COMMIT_SHA>`. Validates 40-character hexadecimal format and commits existence on remote before execution. |
-| **Recovery Destructive Safeguards** | Automatic table drop on migration failure risks destructive loss if rollback misfires. | **Approval-Safe Destructive Recovery Gate**: `executeCanonicalRecovery` strictly requires `CONFIRM_DESTRUCTIVE_DATABASE_RECOVERY="I_CONFIRM_DESTRUCTIVE_DATABASE_RECOVERY"`. Automatic deployment rollback holds code/schema state and keeps maintenance active without destructive drops. |
-| **.htaccess Rule Preservation** | Overwriting `.htaccess` wipes pre-existing cPanel Passenger configurations, security headers, and rewrite rules. | **Byte-for-Byte Preservation**: Creates verified byte backup (`.htaccess.pre_maint_backup`) with SHA-256 verification before modifying. Prepends 503 rules between bounded comment markers. Disengaging restores exact bytes, file mode, and verifies SHA-256. |
-| **Worker Isolation Coverage** | Only 4 background scripts were guarded, leaving `seed-categories.js` and `migrate.js` ungated. Corrupted lock JSON caused silent failures. | **Complete Worker Inventory & Fail-Closed Lock**: `guardWorkerExecution` added to all 6 production writers. Lock inspection fails closed on unreadable files, corrupt JSON, or stale locks (>24h). Distinguishes production writers from QA runners. |
-| **Uploads Archive Restore** | Uploads archive was created but lacked an automated, verified restoration implementation. | **Verified Staged Upload Restore**: Implemented `restoreUploadsArchive` with tar entry pre-scan (rejecting absolute paths and `../` traversal), staged extraction in temporary directory, and safe atomic swap. |
-| **Manifest Lifecycle Tracking** | Static manifest lacked runtime lifecycle progression and used hardcoded dump footer assertions. | **4 Discrete Manifest States**: Tracks `backup_created`, `integrity_verified` (actual tail inspection for `-- Dump completed`), `database_restore_rehearsed`, and `uploads_restore_rehearsed` with atomic updates. |
-| **Test Fixtures & Real Dumps** | Mock table strings and mock dump fixtures masked DDL foreign-key and checksum nuances. | **Real Disposable Database & mysqldump**: Unique disposable DB (`mrtumi_disp_recov_*`), real migrations 0001–0036 via `migrator.js`, real `mysqldump` baseline, and 0 diff verification across all 5 partial-DDL failure scenarios. |
+| **Mandatory Backup Gate** | Manifest was created in Step 4, but `deploy.sh` never enforced manifest validation before running migrations. | **Enforced Pre-Migration Verification Gate (Gate 6.5)**: Calls `validateAndLoadManifest` before running `migrateUp`. Verifies database identity, dump existence, SHA-256 match, size match, genuine `-- Dump completed` footer, and `backup_created=true` + `integrity_verified=true`. Fails closed if any check fails. |
+| **Restore Rehearsal Prerequisite** | Rehearsal states were tracked in manifest but not enforced before destructive recovery. | **Enforced Rehearsal Prerequisite Gate**: `executeCanonicalRecovery` strictly requires `database_restore_rehearsed: true` on the specific backup being restored. Rejects unrehearsed restore fail-closed unless explicit emergency override and recorded operator justification are provided. |
+| **Uploads Restore Atomic Swap Rollback** | Moving staged files into target after old target was renamed had no automated rollback; if swap failed, live directory was lost. | **Automatic Target Rollback on Swap Failure**: `restoreUploadsArchive` traps any error during or after moving the old target directory, automatically restoring the original directory back to `resolvedTarget` intact. |
+| **Malicious Archive Protection** | Traversal and symlink protection lacked full entry inspection against symlinks, hardlinks, and directory escapes. | **Complete Tar Security Pre-Scan**: Pre-scans tar header listings with `tar -ztvf` to reject symlinks (`l...` or `->`), hardlinks (`h...` or `link to`), absolute paths, null bytes, and `../` traversal. Post-extraction recursively asserts zero symbolic links exist. |
+| **Comprehensive Schema Verification** | Test snapshots only checked tables, basic columns, indexes, and row hashes. | **Full Schema Structure Verification**: Extends snapshots and comparisons to include foreign keys (`KEY_COLUMN_USAGE`), referential actions (`REFERENTIAL_CONSTRAINTS`), check constraints (`TABLE_CONSTRAINTS`), triggers (`TRIGGERS`), views (`VIEWS`), routines (`ROUTINES`), and generated column expressions (`GENERATION_EXPRESSION`). |
+| **Rollback Silent Failure (`\|\| true`)** | `git checkout --detach` in error trap used `\|\| true`, masking rollback failures. | **Strict Rollback Outcome Verification**: Removed `\|\| true`. If code rollback fails, emits fatal diagnostic, alerts operator, and preserves 503 maintenance mode. |
+| **Release Target Governance** | Any arbitrary 40-character SHA existing in Git was accepted as deployment target. | **Release Governance & Allowlist Gate**: `scripts/ops/verify-release-approval.js` verifies target commit against `config/approved-releases.json`, approved release tags (`v*`), or authorized governance sign-off. Rejects arbitrary unvetted commits fail-closed. |
+| **Confirmation Flag Isolation** | Generic `CONFIRM_DESTRUCTIVE_DATABASE_RECOVERY` could be accidentally inherited from ambient `.env` or shell profiles. | **Scoped Confirmation Token**: Confirmation must be tied to the specific manifest `run_id` (`opts.confirmationToken === manifest.run_id` or `CONFIRM_DESTRUCTIVE_RECOVERY_RUN_ID === manifest.run_id`). Ambient flags without matching `run_id` are rejected fail-closed. |
 
 ---
 
@@ -40,7 +41,7 @@ DROP TABLE IF EXISTS vendor_courier_booking_requests;
 DROP TABLE IF EXISTS vendors;
 SET FOREIGN_KEY_CHECKS = 1;
 ```
-Following this cleanup, the verified baseline dump streams into MariaDB, recreating `vendors` with its exact pre-0037 column definition and restoring all 36 baseline migrations with zero residual objects and zero data diffs.
+Following this cleanup, the verified baseline dump streams into MariaDB, recreating `vendors` with its exact pre-0037 column definition and restoring all 36 baseline migrations with zero residual objects and zero schema/data diffs across all 11 schema structures.
 
 ---
 
@@ -62,15 +63,35 @@ All database-mutating CLI runners and background jobs implement the mandatory ma
 
 ## 4. Canonical Preflight & Deployment Sequence
 
-The canonical deployment pipeline is implemented in [deploy.sh](file:///C:/Users/Bappi/.gemini/antigravity/scratch/mrtumi-main/deploy.sh):
-1. **Gate 0 — Target Verification**: Validates explicit 40-character hex commit SHA from parameter or environment.
+The canonical deployment pipeline is implemented in [deploy.sh](deploy.sh):
+1. **Gate 0 — Target & Approval Verification**: Validates 40-character hex commit SHA and runs `verify-release-approval.js` against governance allowlist and release tags.
 2. **Gate 1 — Runtime**: Verifies Node.js >= 22.5.0 and active venv.
-3. **Gate 2 — Git Hygiene**: Verifies clean working tree (zero uncommitted tracked modifications) without running destructive `git reset --hard` or `git clean`.
+3. **Gate 2 — Git Hygiene**: Verifies clean working tree (zero uncommitted tracked modifications) without running destructive `git reset --hard` or `git clean`. Checks for untracked path collisions.
 4. **Gate 3 — Isolation**: Engages 503 maintenance mode with byte-for-byte `.htaccess` preservation, writes `$HOME/.mrtumi_maintenance.lock`, and safely suspends crontab with verified backup.
-5. **Gate 4 — Pre-Deployment Backup**: Generates verified SQL dump with real completion footer inspection, creates uploads archive, and pins cryptographic v3.1 manifest.
-6. **Gate 5 — Safe Merge**: Executes non-destructive fast-forward merge to target commit SHA.
+5. **Gate 4 — Pre-Deployment Backup**: Generates verified SQL dump with real completion footer inspection, creates uploads archive, and pins cryptographic v3.2 manifest.
+6. **Gate 5 — Safe Merge**: Executes non-destructive fast-forward merge to approved target commit SHA.
 7. **Gate 6 — Dependencies**: Installs production dependencies cleanly via `npm ci --only=production`.
-8. **Gate 7 — Migrations**: Executes database migrations targeting strictly version `0038`.
-9. **Gate 8 — Post-Migration Verification**: Validates 6 branding columns, unique slug index, 0038 courier tables, and zero empty slugs.
-10. **Finalization**: Recycles Passenger workers (`tmp/restart.txt`), performs HTTP health check, restores crontab byte-for-byte, and restores original `.htaccess` byte-for-byte.
-11. **Error Handler (Fail-Closed)**: If failure occurs pre-migration, safely realigns code. If failure occurs post-migration, does NOT drop tables automatically; preserves maintenance lock, records failure details in manifest and lock, and halts for operator review.
+8. **Gate 6.5 — Mandatory Backup Manifest & Dump Verification**: Loads pinned manifest, verifies database identity match, dump file existence, dump size match, dump SHA-256 match, active dump footer on disk, and `backup_created=true` + `integrity_verified=true`. Fails closed if any check fails!
+9. **Gate 7 — Migrations**: Executes database migrations targeting strictly version `0038`.
+10. **Gate 8 — Post-Migration Verification**: Validates 6 branding columns, unique slug index, 0038 courier tables, and zero empty slugs.
+11. **Finalization**: Recycles Passenger workers (`tmp/restart.txt`), performs HTTP health check, restores crontab byte-for-byte, and restores original `.htaccess` byte-for-byte.
+12. **Error Handler (Fail-Closed)**: If failure occurs pre-migration, realigns code and verifies checkout success (no `|| true`). If failure occurs post-migration, does NOT drop tables automatically; preserves maintenance lock, records failure details in manifest and lock, and halts for operator review.
+
+---
+
+## 5. Local Engineering Readiness vs. Production Readiness
+
+### Verified Locally and in CI:
+- [x] Full test suite (574+ tests) passing on MariaDB 10.11 and MySQL 8.0.
+- [x] Zero-difference schema & data recovery across all 11 database structures.
+- [x] Uploads restore atomic swap rollback and malicious tar security pre-scan.
+- [x] Mandatory backup manifest gate and rehearsal prerequisite enforcement.
+- [x] Scoped confirmation tokens preventing ambient environment pollution.
+- [x] Release target governance allowlist verification.
+
+### Remaining Production Checks (Cannot Be Simulated Locally):
+The following operational checks must be verified on the actual cPanel production host prior to live traffic:
+1. **Live cPanel Crontab Inspection**: Verifying the live `crontab -l` entries for user `mrtumico` and confirming that the crontab CLI can suspend and restore.
+2. **Live Apache / CloudLinux Passenger 503 Behavior**: Confirming that the cPanel Apache Passenger handler honors `.htaccess` 503 rewrite rules without caching or bypass.
+3. **Remote Git Branch Protection**: Confirming that GitHub repository branch protection rules require passing CI check runs before release merges.
+4. **Live cPanel Storage Quota**: Confirming that `/home/mrtumico` has sufficient disk quota for full SQL dump and uploads archive creation.

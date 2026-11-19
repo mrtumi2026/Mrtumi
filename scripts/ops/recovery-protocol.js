@@ -1,14 +1,20 @@
 'use strict';
 
 /**
- * Mr. Tumi Marketplace — Canonical Non-Destructive Recovery Protocol (v3.1 Hardened)
+ * Mr. Tumi Marketplace — Canonical Non-Destructive Recovery Protocol (v3.2 Hardened)
  *
  * Guarantees:
- * 1. Approval-Safe Destructive Recovery: Never drops tables without explicit operator confirmation.
- * 2. True Streaming with Backpressure & child error trapping (EPIPE, SQL syntax).
- * 3. Verified Upload Archive Restoration with directory traversal protection.
- * 4. Actual dump footer verification (not hardcoded true).
- * 5. Distinct verification states: backup_created, integrity_verified, database_restore_rehearsed, uploads_restore_rehearsed.
+ * 1. Mandatory Verified-Backup Gate: Enforces valid manifest, genuine dump footer, matching SHA/size,
+ *    and backup_created + integrity_verified states.
+ * 2. Rehearsal Prerequisite Enforcement: Prevents destructive recovery unless the specific backup
+ *    has been rehearsed (database_restore_rehearsed: true) or an explicit operator emergency justification is recorded.
+ * 3. Confirmation Flag Isolation: Prevents accidental ambient .env inheritance; confirmation must be
+ *    scoped to the specific backup run_id.
+ * 4. Automatic Rollback on Upload Restore Swap Failure: Old uploads directory is restored automatically
+ *    if the swap fails after the old target has been moved.
+ * 5. Comprehensive Traversal & Symlink Safety: Pre-scans and rejects any traversal, absolute paths,
+ *    symlinks, or hardlinks before extraction or modification of target directory.
+ * 6. True Streaming with Backpressure & child error trapping (EPIPE, SQL syntax).
  */
 
 const fs = require('fs');
@@ -55,6 +61,7 @@ function verifyDumpFooter(filePath, tailBytes = 8192) {
 
 /**
  * Hardened Manifest Validator & Loader
+ * Validates manifest identity, dump existence, SHA-256, size, dump footer, and integrity states.
  */
 async function validateAndLoadManifest(manifestFilePath, expectedDbConfig, backupBaseDir) {
   if (!fs.existsSync(manifestFilePath)) {
@@ -75,12 +82,23 @@ async function validateAndLoadManifest(manifestFilePath, expectedDbConfig, backu
     throw new Error(`FAIL_CLOSED: Manifest is malformed JSON: ${err.message}`);
   }
 
-  // Schema validation
+  // 1. Schema validation
   if (!manifest.run_id || !manifest.dump || !manifest.dump.filename || !manifest.dump.sha256 || !manifest.database_identity) {
     throw new Error('FAIL_CLOSED: Manifest missing required security identity fields');
   }
 
-  // Database identity verification
+  // 2. Status flags validation
+  if (!manifest.status || typeof manifest.status !== 'object') {
+    throw new Error('FAIL_CLOSED: Manifest missing required status lifecycle block');
+  }
+  if (manifest.status.backup_created !== true) {
+    throw new Error('FAIL_CLOSED: Manifest indicates backup_created is false or unverified');
+  }
+  if (manifest.status.integrity_verified !== true) {
+    throw new Error('FAIL_CLOSED: Manifest indicates integrity_verified is false');
+  }
+
+  // 3. Database identity verification
   if (expectedDbConfig) {
     const expectedName = expectedDbConfig.database || expectedDbConfig.name || expectedDbConfig.db_name;
     const expectedHost = expectedDbConfig.host || expectedDbConfig.db_host;
@@ -90,7 +108,7 @@ async function validateAndLoadManifest(manifestFilePath, expectedDbConfig, backu
     }
   }
 
-  // Canonical path bounds check (Directory traversal prevention)
+  // 4. Canonical path bounds check (Directory traversal prevention)
   const baseDir = backupBaseDir || path.dirname(path.resolve(manifestFilePath));
   const resolvedDumpPath = path.resolve(baseDir, manifest.dump.filename);
   const resolvedBaseDir = path.resolve(baseDir);
@@ -103,16 +121,25 @@ async function validateAndLoadManifest(manifestFilePath, expectedDbConfig, backu
     throw new Error(`FAIL_CLOSED: Dump file '${resolvedDumpPath}' does not exist on disk`);
   }
 
-  // SHA256 integrity verification
+  // 5. SHA256 integrity verification
   const actualHash = await sha256File(resolvedDumpPath);
   if (actualHash !== manifest.dump.sha256) {
     throw new Error(`FAIL_CLOSED: Dump checksum mismatch! Manifest SHA: ${manifest.dump.sha256}, Actual: ${actualHash}`);
   }
 
-  // Size verification
+  // 6. Size verification
   const actualSize = fs.statSync(resolvedDumpPath).size;
   if (manifest.dump.size_bytes && actualSize !== manifest.dump.size_bytes) {
     throw new Error(`FAIL_CLOSED: Dump file size mismatch! Manifest bytes: ${manifest.dump.size_bytes}, Actual: ${actualSize}`);
+  }
+
+  // 7. Active dump footer inspection on physical dump file
+  const hasRealFooter = verifyDumpFooter(resolvedDumpPath);
+  if (!hasRealFooter) {
+    throw new Error(`FAIL_CLOSED: Dump file '${resolvedDumpPath}' is truncated or missing completion footer`);
+  }
+  if (manifest.dump.has_footer !== true) {
+    throw new Error('FAIL_CLOSED: Manifest indicates dump has_footer is false');
   }
 
   return { status: 'VALID', manifest, resolvedDumpPath };
@@ -220,24 +247,98 @@ function streamRestore(sqlFilePath, dbConfig, opts = {}) {
 }
 
 /**
- * Approval-Safe Canonical Recovery Execution
- * Enforces explicit operator confirmation before destructive DROP TABLE operations.
+ * Rehearses a database restore into an isolated disposable database schema.
+ * Updates the manifest lifecycle status to database_restore_rehearsed: true upon success.
+ */
+async function rehearseDatabaseRestore(dumpFilePath, disposableDbConfig, manifestPath, opts = {}) {
+  const restoreRes = await streamRestore(dumpFilePath, disposableDbConfig, opts);
+  if (manifestPath && fs.existsSync(manifestPath)) {
+    updateManifestState(manifestPath, { database_restore_rehearsed: true });
+  }
+  return restoreRes;
+}
+
+/**
+ * Approval-Safe & Rehearsal-Enforced Canonical Recovery Execution
+ * Enforces:
+ * 1. Valid manifest and dump integrity.
+ * 2. Prerequisite restore rehearsal (database_restore_rehearsed: true) or explicit operator emergency justification.
+ * 3. Scoped operator confirmation token (tied to specific manifest run_id; prevents ambient .env inheritance).
  */
 async function executeCanonicalRecovery(conn, dumpFile, dbConfig, opts = {}) {
-  // Strict Safety Gate: Requires explicit operator confirmation flag
-  const approvalFlag = process.env.CONFIRM_DESTRUCTIVE_DATABASE_RECOVERY || opts.confirmationFlag;
-  if (approvalFlag !== 'I_CONFIRM_DESTRUCTIVE_DATABASE_RECOVERY') {
-    throw new Error(
-      'FAIL_CLOSED_APPROVAL_REQUIRED: Destructive database recovery requires explicit operator confirmation. ' +
-      'Set CONFIRM_DESTRUCTIVE_DATABASE_RECOVERY="I_CONFIRM_DESTRUCTIVE_DATABASE_RECOVERY" to proceed.'
-    );
-  }
-
   if (!fs.existsSync(dumpFile)) {
     throw new Error(`FAIL_CLOSED: Baseline SQL dump file not found: ${dumpFile}`);
   }
 
-  // Pre-restore DDL cleanup
+  // 1. Resolve and validate manifest
+  let manifest = opts.manifest;
+  let manifestPath = opts.manifestPath;
+
+  if (!manifest) {
+    if (!manifestPath) {
+      const dumpDir = path.dirname(path.resolve(dumpFile));
+      const pointerPath = path.join(dumpDir, '.latest_verified_manifest');
+      if (fs.existsSync(pointerPath)) {
+        const pName = fs.readFileSync(pointerPath, 'utf8').trim();
+        manifestPath = path.join(dumpDir, pName);
+      }
+    }
+    if (manifestPath && fs.existsSync(manifestPath)) {
+      const validated = await validateAndLoadManifest(manifestPath, dbConfig, path.dirname(manifestPath));
+      manifest = validated.manifest;
+    }
+  }
+
+  // 2. Enforce Restore Rehearsal Prerequisite
+  const isRehearsed = Boolean(manifest && manifest.status && manifest.status.database_restore_rehearsed === true);
+  const allowUnrehearsedEmergency = Boolean(
+    opts.allowUnrehearsedEmergencyRecovery ||
+    process.env.ALLOW_UNREHEARSED_EMERGENCY_RECOVERY === 'true'
+  );
+  const emergencyJustification = (
+    opts.emergencyRecoveryJustification ||
+    process.env.EMERGENCY_RECOVERY_JUSTIFICATION ||
+    ''
+  ).trim();
+
+  if (!isRehearsed) {
+    if (!allowUnrehearsedEmergency || emergencyJustification.length < 10) {
+      throw new Error(
+        'FAIL_CLOSED_REHEARSAL_REQUIRED: Destructive database recovery requires that this specific backup was rehearsed ' +
+        'on an isolated schema (database_restore_rehearsed is false). Run rehearsal first, or provide explicit emergency justification ' +
+        '(allowUnrehearsedEmergencyRecovery=true with emergencyRecoveryJustification).'
+      );
+    }
+  }
+
+  // 3. Isolated Confirmation Gate: Scoped to specific run_id to avoid ambient .env pollution
+  const expectedRunId = manifest ? manifest.run_id : null;
+  const suppliedToken = opts.confirmationToken;
+  const suppliedRunId = opts.targetRunId || process.env.CONFIRM_DESTRUCTIVE_RECOVERY_RUN_ID;
+  const suppliedFlag = opts.confirmationFlag;
+
+  let approved = false;
+  if (expectedRunId) {
+    if (suppliedToken === expectedRunId) {
+      approved = true;
+    } else if (suppliedFlag === 'I_CONFIRM_DESTRUCTIVE_DATABASE_RECOVERY' && suppliedRunId === expectedRunId) {
+      approved = true;
+    }
+  } else {
+    // If no manifest exists, require explicit non-empty confirmationToken matching confirmationFlag
+    if (suppliedFlag === 'I_CONFIRM_DESTRUCTIVE_DATABASE_RECOVERY' && opts.allowLegacyConfirmation === true) {
+      approved = true;
+    }
+  }
+
+  if (!approved) {
+    throw new Error(
+      `FAIL_CLOSED_APPROVAL_REQUIRED: Destructive database recovery requires explicit operator confirmation scoped to run_id ` +
+      `'${expectedRunId || 'UNKNOWN'}'. Ambient confirmation flags are rejected to prevent accidental drops.`
+    );
+  }
+
+  // 4. Pre-restore DDL cleanup
   await conn.query('SET FOREIGN_KEY_CHECKS = 0');
   // 1. Drop 0038 tables
   await conn.query('DROP TABLE IF EXISTS vendor_courier_booking_audit_logs');
@@ -246,13 +347,14 @@ async function executeCanonicalRecovery(conn, dumpFile, dbConfig, opts = {}) {
   await conn.query('DROP TABLE IF EXISTS vendors');
   await conn.query('SET FOREIGN_KEY_CHECKS = 1');
 
-  // 3. Stream restore verified baseline dump
+  // 5. Stream restore verified baseline dump
   return await streamRestore(dumpFile, dbConfig, opts);
 }
 
 /**
  * Verified Upload Archive Extraction and Restoration.
- * Prevents directory traversal, preserves existing uploads until extraction verified.
+ * Prevents directory traversal, absolute paths, symlinks, and hardlinks.
+ * Automatically restores old target uploads directory if directory swap fails.
  */
 async function restoreUploadsArchive(archivePath, targetUploadDir, expectedSha, opts = {}) {
   if (!fs.existsSync(archivePath)) {
@@ -273,16 +375,36 @@ async function restoreUploadsArchive(archivePath, targetUploadDir, expectedSha, 
     throw new Error(`FAIL_CLOSED: Target upload directory must be outside application root: ${resolvedTarget}`);
   }
 
-  // 3. Pre-scan tar archive for malicious entries (Directory traversal / absolute paths)
-  const tarList = spawnSync('tar', ['-ztf', archivePath], { encoding: 'utf8' });
+  // 3. Pre-scan tar archive for malicious entries (Directory traversal, absolute paths, symlinks, hardlinks)
+  const tarList = spawnSync('tar', ['-ztvf', archivePath], { encoding: 'utf8' });
   if (tarList.status !== 0) {
     throw new Error(`FAIL_CLOSED: Cannot read archive contents: ${tarList.stderr}`);
   }
 
-  const entries = tarList.stdout.split('\n').map(s => s.trim()).filter(Boolean);
-  for (const entry of entries) {
-    if (entry.startsWith('/') || entry.startsWith('\\') || entry.includes('../') || entry.includes('..\\')) {
-      throw new Error(`FAIL_CLOSED: Malicious archive entry detected (directory traversal attempt): ${entry}`);
+  const lines = tarList.stdout.split('\n').map(s => s.trim()).filter(Boolean);
+  for (const line of lines) {
+    // Check for symlinks or hardlinks in tar listing
+    if (line.startsWith('l') || line.includes(' -> ')) {
+      throw new Error(`FAIL_CLOSED: Malicious archive entry detected (symbolic link forbidden): ${line}`);
+    }
+    if (line.startsWith('h') || line.includes(' link to ')) {
+      throw new Error(`FAIL_CLOSED: Malicious archive entry detected (hard link forbidden): ${line}`);
+    }
+
+    // Extract path segment (last token in tar -tvf output)
+    const tokens = line.split(/\s+/);
+    const entryPath = tokens[tokens.length - 1];
+
+    if (entryPath.startsWith('/') || entryPath.startsWith('\\')) {
+      throw new Error(`FAIL_CLOSED: Malicious archive entry detected (absolute path forbidden): ${entryPath}`);
+    }
+    if (entryPath.includes('\0') || entryPath.includes('%2e%2e')) {
+      throw new Error(`FAIL_CLOSED: Malicious archive entry detected (corrupt encoding): ${entryPath}`);
+    }
+
+    const segments = entryPath.split(/[/\\]/);
+    if (segments.includes('..') || entryPath.includes('../') || entryPath.includes('..\\')) {
+      throw new Error(`FAIL_CLOSED: Malicious archive entry detected (directory traversal attempt): ${entryPath}`);
     }
   }
 
@@ -290,26 +412,45 @@ async function restoreUploadsArchive(archivePath, targetUploadDir, expectedSha, 
   const stagingDir = `${resolvedTarget}_restore_staging_${Date.now()}`;
   fs.mkdirSync(stagingDir, { recursive: true, mode: 0o700 });
 
+  const backupExisting = `${resolvedTarget}_pre_restore_bak_${Date.now()}`;
+  let targetExisted = false;
+
   try {
     const extractRes = spawnSync('tar', ['-xzf', archivePath, '-C', stagingDir], { encoding: 'utf8' });
     if (extractRes.status !== 0) {
       throw new Error(`FAIL_CLOSED: Extraction failed: ${extractRes.stderr}`);
     }
 
-    // Verify extracted contents
+    // Recursive post-extraction validation: ensure zero symbolic links exist in stagingDir
+    function assertNoSymlinks(dir) {
+      const items = fs.readdirSync(dir);
+      for (const item of items) {
+        const full = path.join(dir, item);
+        const lstat = fs.lstatSync(full);
+        if (lstat.isSymbolicLink()) {
+          throw new Error(`FAIL_CLOSED: Symbolic link detected in extracted files: ${item}`);
+        }
+        if (lstat.isDirectory()) {
+          assertNoSymlinks(full);
+        }
+      }
+    }
+    assertNoSymlinks(stagingDir);
+
     const extractedEntries = fs.readdirSync(stagingDir);
     if (extractedEntries.length === 0) {
       throw new Error('FAIL_CLOSED: Staging directory is empty after extraction!');
     }
 
-    // 5. Safe Atomic Swap
-    // If target exists, preserve it temporarily
-    const backupExisting = `${resolvedTarget}_pre_restore_bak_${Date.now()}`;
-    let targetExisted = false;
-
+    // 5. Safe Atomic Swap with Automatic Rollback
     if (fs.existsSync(resolvedTarget)) {
       targetExisted = true;
       fs.renameSync(resolvedTarget, backupExisting);
+    }
+
+    // Fault injection point 1: before target move
+    if (opts.faultInjection === 'FAIL_BEFORE_TARGET_MOVE') {
+      throw new Error('FAULT_INJECTION: Simulated failure before target directory move');
     }
 
     // Locate inner folder if tar included top-level directory
@@ -317,6 +458,11 @@ async function restoreUploadsArchive(archivePath, targetUploadDir, expectedSha, 
     const sourceToMove = fs.existsSync(innerPath) ? innerPath : stagingDir;
 
     fs.renameSync(sourceToMove, resolvedTarget);
+
+    // Fault injection point 2: after target move
+    if (opts.faultInjection === 'FAIL_AFTER_TARGET_MOVE') {
+      throw new Error('FAULT_INJECTION: Simulated failure after target directory move');
+    }
 
     // Clean up temporary pre-restore backup only after target is confirmed on disk
     if (targetExisted && fs.existsSync(backupExisting)) {
@@ -333,11 +479,35 @@ async function restoreUploadsArchive(archivePath, targetUploadDir, expectedSha, 
       sha256: actualSha
     };
   } catch (err) {
-    // If staging directory exists on error, remove it
-    if (fs.existsSync(stagingDir)) {
-      fs.rmSync(stagingDir, { recursive: true, force: true });
+    // CRITICAL 3: Automatic Rollback — if targetExisted and target is missing or swap failed,
+    // restore the original backupExisting directory back to resolvedTarget immediately!
+    let originalRestored = false;
+    if (targetExisted && fs.existsSync(backupExisting)) {
+      try {
+        if (fs.existsSync(resolvedTarget)) {
+          fs.rmSync(resolvedTarget, { recursive: true, force: true });
+        }
+        fs.renameSync(backupExisting, resolvedTarget);
+        originalRestored = true;
+      } catch (rollbackErr) {
+        console.error(`[CRITICAL] Rollback of original uploads directory failed: ${rollbackErr.message}`);
+      }
     }
-    throw new Error(`FAIL_CLOSED: Upload restore failed without altering production files: ${err.message}`);
+
+    // Clean up staging directory
+    if (fs.existsSync(stagingDir)) {
+      try { fs.rmSync(stagingDir, { recursive: true, force: true }); } catch (_) {}
+    }
+
+    if (originalRestored) {
+      throw new Error(
+        `FAIL_CLOSED: Upload restore failed during directory swap; original uploads directory was automatically restored intact: ${err.message}`
+      );
+    } else {
+      throw new Error(
+        `FAIL_CLOSED: Upload restore failed: ${err.message}${targetExisted ? ` (CRITICAL: original uploads preserved at ${backupExisting})` : ''}`
+      );
+    }
   }
 }
 
@@ -368,7 +538,7 @@ async function createHardenedManifest(backupDir, dbConfig, dumpPath, uploadsPath
   const dbName = dbConfig.database || dbConfig.name;
 
   const manifestData = {
-    schema_version: '3.1',
+    schema_version: '3.2',
     run_id: runId,
     timestamp: new Date().toISOString(),
     status: {
@@ -439,6 +609,7 @@ module.exports = {
   verifyDumpFooter,
   validateAndLoadManifest,
   streamRestore,
+  rehearseDatabaseRestore,
   executeCanonicalRecovery,
   restoreUploadsArchive,
   createHardenedManifest,

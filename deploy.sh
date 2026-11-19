@@ -104,6 +104,9 @@ if ! git cat-file -e "${TARGET_COMMIT_SHA}^{commit}" 2>/dev/null; then
   exit 1
 fi
 
+# Verify release target approval under Project 01 Release Governance Policy
+node scripts/ops/verify-release-approval.js "$TARGET_COMMIT_SHA"
+
 # Check for untracked path collisions with release diff
 node -e '
 const { execSync } = require("child_process");
@@ -161,8 +164,13 @@ handle_deployment_failure() {
 
   if [ "$DEPLOYMENT_STAGE" = "PRE_MIGRATION" ]; then
     echo "  Stage was PRE_MIGRATION: Safely realigning code tree to baseline ($PRE_DEPLOY_BASELINE_SHA)..."
-    git checkout --detach "${PRE_DEPLOY_BASELINE_SHA}" || true
-    mkdir -p tmp && touch tmp/restart.txt || true
+    if ! git checkout --detach "${PRE_DEPLOY_BASELINE_SHA}"; then
+      echo "💥 FATAL: Code rollback checkout to baseline ${PRE_DEPLOY_BASELINE_SHA} FAILED!" >&2
+      echo "   Working tree is in an inconsistent state. Maintenance mode MUST remain engaged." >&2
+    else
+      echo "✔ Code tree successfully realigned to pre-deployment baseline: ${PRE_DEPLOY_BASELINE_SHA}"
+      mkdir -p tmp && touch tmp/restart.txt
+    fi
   else
     echo "  Stage was POST_MIGRATION: Code rollback is HELD to prevent code/schema divergence!"
     echo "  Database may contain newer or partial migrations. DO NOT automatically rollback code."
@@ -278,6 +286,42 @@ echo "📦 [6/8] Installing production dependencies via npm ci..."
 npm ci --only=production
 
 echo "✔ Production dependencies installed."
+
+# ------------------------------------------------------------------------------
+# STEP 6.5: Mandatory Pre-Migration Backup Manifest & Dump Verification Gate
+# ------------------------------------------------------------------------------
+echo ""
+echo "🔍 [6.5/8] Enforcing mandatory pre-migration backup manifest & dump verification gate..."
+
+node -e '
+const path = require("path");
+const fs = require("fs");
+const { env } = require("./src/config/env");
+const { validateAndLoadManifest } = require("./scripts/ops/recovery-protocol");
+
+(async () => {
+  const backupDir = "'"${BACKUP_DIR}"'";
+  const pointerPath = path.join(backupDir, ".latest_verified_manifest");
+  if (!fs.existsSync(pointerPath)) {
+    throw new Error("FAIL_CLOSED: Missing backup manifest pointer (.latest_verified_manifest)!");
+  }
+  const manifestFilename = fs.readFileSync(pointerPath, "utf8").trim();
+  const manifestPath = path.join(backupDir, manifestFilename);
+
+  console.log(`   Validating cryptographic manifest: ${manifestPath}`);
+  const loaded = await validateAndLoadManifest(manifestPath, env.db, backupDir);
+
+  if (loaded.manifest.status.backup_created !== true || loaded.manifest.status.integrity_verified !== true) {
+    throw new Error("FAIL_CLOSED: Backup status does not have backup_created=true and integrity_verified=true!");
+  }
+
+  console.log("✔ Mandatory pre-migration backup verification gate PASSED (database identity, dump integrity & footer verified).");
+})().catch(err => {
+  console.error(`💥 [MANDATORY_BACKUP_GATE_FAILED]: ${err.message}`);
+  console.error("   Deployment CANNOT proceed without a verified baseline backup. Aborting!");
+  process.exit(1);
+});
+'
 
 # ------------------------------------------------------------------------------
 # STEP 7: Database Migration Execution (Target: 0038)
