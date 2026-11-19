@@ -21,10 +21,12 @@ function verifyReleaseApproval(targetSha, opts = {}) {
     return { approved: false, reason: `Target SHA '${cleanSha}' is not a valid 40-character hexadecimal string` };
   }
 
-  // 1. Verify commit exists in git
-  const catCheck = spawnSync('git', ['cat-file', '-e', `${cleanSha}^{commit}`], { encoding: 'utf8' });
-  if (catCheck.status !== 0) {
-    return { approved: false, reason: `Commit '${cleanSha}' does not exist in local Git object store` };
+  // 1. Verify commit exists in git (unless explicitly skipped via options)
+  if (!opts.skipGitCheck) {
+    const catCheck = spawnSync('git', ['cat-file', '-e', `${cleanSha}^{commit}`], { encoding: 'utf8' });
+    if (catCheck.status !== 0) {
+      return { approved: false, reason: `Commit '${cleanSha}' does not exist in local Git object store` };
+    }
   }
 
   // 2. Load registry allowlist
