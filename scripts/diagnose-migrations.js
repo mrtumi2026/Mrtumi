@@ -5,7 +5,7 @@
 const { env } = require('../src/config/env');
 const { createPoolFromConfig, closePool } = require('../src/db/mysqlPool');
 const { loadMigrationPairs, migrateUp } = require('../src/db/migrator');
-const { isMaintenanceLocked } = require('./ops/maintenance-guard');
+const { checkMaintenanceLock } = require('./ops/maintenance-guard');
 
 function emitFailure(message) {
   console.error(message);
@@ -19,8 +19,9 @@ async function main() {
   if (process.env.NODE_ENV === 'production' || env.isProduction) {
     throw new Error('CRITICAL_SAFETY_VIOLATION: Refusing to run diagnostic migrations in production.');
   }
-  if (isMaintenanceLocked()) {
-    throw new Error('MAINTENANCE_LOCKED: Refusing to run diagnostic migrations while maintenance lock is active.');
+  const lock = checkMaintenanceLock();
+  if (lock.locked) {
+    throw new Error(`MAINTENANCE_LOCKED: Refusing to run diagnostic migrations while maintenance lock is active (${lock.reason || 'lock active'}).`);
   }
   if (env.db.client !== 'mysql') throw new Error('Migration diagnostic requires DB_CLIENT=mysql.');
   const pairs = loadMigrationPairs();
