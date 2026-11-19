@@ -1,6 +1,29 @@
+param(
+    [string]$srcPath = "",
+    [string]$root = ""
+)
+
+if (-not $root) {
+    $root = Resolve-Path "$PSScriptRoot\.."
+}
+
+if (-not $srcPath) {
+    $candidate = "$root\public\uploads\brand\mrtumi-app-icon.png"
+    if (Test-Path $candidate) {
+        $srcPath = $candidate
+    } else {
+        Write-Error "Source image path not provided and default not found: $candidate"
+        exit 1
+    }
+}
+
+if (-not (Test-Path $srcPath)) {
+    Write-Error "Source image not found: $srcPath"
+    exit 1
+}
+
 Add-Type -AssemblyName System.Drawing
 
-$srcPath = "C:\Users\sj010\.gemini\antigravity\brain\df1ce63c-a8a8-482e-af4a-0d01729f0282\.user_uploaded\media_1794247304877_c6bc3c93.jpg"
 $src = [System.Drawing.Image]::FromFile($srcPath)
 
 function Create-SquareIcon([int]$size, [string]$destPath) {
@@ -38,7 +61,7 @@ function Create-SquareIcon([int]$size, [string]$destPath) {
     Write-Host "Created: $destPath ($size x $size)"
 }
 
-$root = "C:\Users\sj010\.gemini\antigravity\scratch\Mrtumi"
+# $root is already resolved from parameter or relative path above
 
 # 1. Web & PWA Icons
 Create-SquareIcon 512 "$root\public\uploads\brand\mrtumi-app-icon.png"

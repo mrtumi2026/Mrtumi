@@ -23,6 +23,9 @@ const crypto = require('crypto');
 const { spawn, spawnSync } = require('child_process');
 const { pipeline } = require('stream');
 
+const CURRENT_MANIFEST_SCHEMA_VERSION = '3.7';
+const SUPPORTED_MANIFEST_SCHEMA_VERSIONS = new Set(['3.5', '3.6', '3.7']);
+
 /**
  * Calculates SHA-256 hash of a file using streams.
  */
@@ -82,7 +85,12 @@ async function validateAndLoadManifest(manifestFilePath, expectedDbConfig, backu
     throw new Error(`FAIL_CLOSED: Manifest is malformed JSON: ${err.message}`);
   }
 
-  // 1. Schema validation
+  // 1. Schema version validation
+  if (manifest.schema_version && !SUPPORTED_MANIFEST_SCHEMA_VERSIONS.has(String(manifest.schema_version).trim())) {
+    throw new Error(`FAIL_CLOSED_UNSUPPORTED_SCHEMA: Manifest schema_version '${manifest.schema_version}' is unsupported. Supported versions: [${Array.from(SUPPORTED_MANIFEST_SCHEMA_VERSIONS).join(', ')}]`);
+  }
+
+  // 1b. Schema identity validation
   if (!manifest.run_id || !manifest.dump || !manifest.dump.filename || !manifest.dump.sha256 || !manifest.database_identity) {
     throw new Error('FAIL_CLOSED: Manifest missing required security identity fields');
   }
@@ -145,15 +153,44 @@ async function validateAndLoadManifest(manifestFilePath, expectedDbConfig, backu
   return { status: 'VALID', manifest, resolvedDumpPath };
 }
 
+function resolveSafeBinary(binName, envVar) {
+  if (envVar && process.env[envVar]) {
+    const custom = process.env[envVar].trim();
+    if (fs.existsSync(custom)) {
+      const stat = fs.statSync(custom);
+      if (stat.isFile()) {
+        return path.resolve(custom);
+      }
+    }
+    throw new Error(`FAIL_CLOSED: Configured binary path in ${envVar} ('${custom}') does not exist or is not a file`);
+  }
+
+  // Safe PATH resolution
+  const pathDirs = (process.env.PATH || '').split(path.delimiter);
+  const pathExts = process.platform === 'win32'
+    ? (process.env.PATHEXT || '.EXE;.CMD;.BAT').split(';')
+    : [''];
+
+  for (const dir of pathDirs) {
+    if (!dir) continue;
+    for (const ext of pathExts) {
+      const candidate = path.join(dir, `${binName}${ext}`);
+      try {
+        if (fs.existsSync(candidate)) {
+          const stat = fs.statSync(candidate);
+          if (stat.isFile()) {
+            return candidate;
+          }
+        }
+      } catch (_) {}
+    }
+  }
+
+  return binName;
+}
+
 function getMysqlBinary() {
-  if (process.env.MYSQL_BIN && fs.existsSync(process.env.MYSQL_BIN)) {
-    return process.env.MYSQL_BIN;
-  }
-  const localMariadb = 'C:\\Users\\Bappi\\.gemini\\antigravity\\scratch\\mariadb-10.11\\mariadb-10.11.10-winx64\\bin\\mysql.exe';
-  if (process.platform === 'win32' && fs.existsSync(localMariadb)) {
-    return localMariadb;
-  }
-  return 'mysql';
+  return resolveSafeBinary('mysql', 'MYSQL_BIN');
 }
 
 /**
@@ -383,84 +420,101 @@ async function rehearseDatabaseRestore(dumpFilePath, disposableDbConfig, manifes
       restoreRes = await streamRestore(dumpFilePath, disposableDbConfig, opts);
     }
 
-    // Post-Restore Parity and Schema Validation
+    // Post-Restore Parity and Schema Validation (MANDATORY CONTRACT)
+    let parityStats = null;
     if (opts.skipParityValidation !== true) {
       let mysql;
-      try {
-        mysql = require('mysql2/promise');
-      } catch (_) {
-        mysql = null;
+      if (opts.mockMysql !== undefined) {
+        mysql = opts.mockMysql;
+      } else {
+        try {
+          mysql = require('mysql2/promise');
+        } catch (driverErr) {
+          throw new Error(`FAIL_CLOSED_PARITY_UNAVAILABLE: mysql2 database driver is required for mandatory restore parity validation (${driverErr.message})`);
+        }
       }
 
-      if (mysql) {
-        const conn = await mysql.createConnection({
-          host: disposableDbConfig.host || '127.0.0.1',
-          port: Number(disposableDbConfig.port || 3306),
-          user: disposableDbConfig.user,
-          password: disposableDbConfig.password,
-          database: rehearsalDbName
-        });
+      if (!mysql) {
+        throw new Error('FAIL_CLOSED_PARITY_UNAVAILABLE: mysql2 database driver is unavailable for restore parity inspection');
+      }
 
-        try {
-          // 1. Table counts & Schema parity
-          const [tables] = await conn.query(
-            'SELECT table_name FROM information_schema.tables WHERE table_schema = ?',
-            [rehearsalDbName]
-          );
+      const conn = await mysql.createConnection({
+        host: disposableDbConfig.host || '127.0.0.1',
+        port: Number(disposableDbConfig.port || 3306),
+        user: disposableDbConfig.user,
+        password: disposableDbConfig.password,
+        database: rehearsalDbName
+      });
 
-          if (!tables || tables.length === 0) {
-            throw new Error(`REHEARSAL_SCHEMA_MISMATCH: Restore resulted in 0 tables in rehearsal database '${rehearsalDbName}'!`);
-          }
+      try {
+        // 1. Table counts & Schema parity
+        const [tables] = await conn.query(
+          'SELECT table_name FROM information_schema.tables WHERE table_schema = ?',
+          [rehearsalDbName]
+        );
 
-          const tableSet = new Set(tables.map(r => r.table_name || r.TABLE_NAME));
-
-          if (opts.expectedTableCount && tableSet.size !== opts.expectedTableCount) {
-            throw new Error(`REHEARSAL_TABLE_COUNT_MISMATCH: Expected ${opts.expectedTableCount} tables, found ${tableSet.size}`);
-          }
-
-          if (opts.expectedTables && Array.isArray(opts.expectedTables)) {
-            for (const expectedTable of opts.expectedTables) {
-              if (!tableSet.has(expectedTable)) {
-                throw new Error(`REHEARSAL_SCHEMA_MISMATCH: Expected table '${expectedTable}' missing after restore!`);
-              }
-            }
-          }
-
-          // 2. Migration history validation
-          const migrationsTable = tableSet.has('migrations') ? 'migrations' : (tableSet.has('knex_migrations') ? 'knex_migrations' : null);
-          if (migrationsTable) {
-            const [migRows] = await conn.query(`SELECT COUNT(*) AS c FROM \`${migrationsTable}\``);
-            const count = migRows[0].c || migRows[0].C || 0;
-            if (count === 0) {
-              throw new Error(`REHEARSAL_SCHEMA_MISMATCH: Migrations table '${migrationsTable}' is empty after restore!`);
-            }
-          }
-
-          // 3. Critical Row Counts
-          if (opts.expectedRowCounts && typeof opts.expectedRowCounts === 'object') {
-            for (const [tbl, expectedCount] of Object.entries(opts.expectedRowCounts)) {
-              if (tableSet.has(tbl)) {
-                const [rows] = await conn.query(`SELECT COUNT(*) AS c FROM \`${tbl}\``);
-                const actual = Number(rows[0].c || rows[0].C || 0);
-                if (actual !== Number(expectedCount)) {
-                  throw new Error(`REHEARSAL_ROW_COUNT_MISMATCH: Table '${tbl}' expected ${expectedCount} rows, found ${actual}`);
-                }
-              }
-            }
-          }
-
-          // 4. Foreign Key Constraints check
-          const [fks] = await conn.query(
-            "SELECT COUNT(*) AS c FROM information_schema.table_constraints WHERE table_schema = ? AND constraint_type = 'FOREIGN KEY'",
-            [rehearsalDbName]
-          );
-          const fkCount = Number(fks[0].c || fks[0].C || 0);
-          if (opts.requireForeignKeys && fkCount === 0) {
-            throw new Error(`REHEARSAL_SCHEMA_MISMATCH: Expected foreign key constraints, found 0 in '${rehearsalDbName}'`);
-          }
-        } finally {
-          await conn.end();
+        if (!tables || tables.length === 0) {
+          throw new Error(`REHEARSAL_SCHEMA_MISMATCH: Restore resulted in 0 tables in rehearsal database '${rehearsalDbName}'!`);
         }
+
+        const tableSet = new Set(tables.map(r => r.table_name || r.TABLE_NAME));
+
+        if (opts.expectedTableCount && tableSet.size !== opts.expectedTableCount) {
+          throw new Error(`REHEARSAL_TABLE_COUNT_MISMATCH: Expected ${opts.expectedTableCount} tables, found ${tableSet.size}`);
+        }
+
+        if (opts.expectedTables && Array.isArray(opts.expectedTables)) {
+          for (const expectedTable of opts.expectedTables) {
+            if (!tableSet.has(expectedTable)) {
+              throw new Error(`REHEARSAL_SCHEMA_MISMATCH: Expected table '${expectedTable}' missing after restore!`);
+            }
+          }
+        }
+
+        // 2. Migration history validation
+        const migrationsTable = tableSet.has('migrations') ? 'migrations' : (tableSet.has('knex_migrations') ? 'knex_migrations' : null);
+        if (!migrationsTable) {
+          throw new Error(`REHEARSAL_SCHEMA_MISMATCH: Migrations tracking table not found after restore in '${rehearsalDbName}'!`);
+        }
+        const [migRows] = await conn.query(`SELECT COUNT(*) AS c FROM \`${migrationsTable}\``);
+        const count = migRows[0].c || migRows[0].C || 0;
+        if (count === 0) {
+          throw new Error(`REHEARSAL_SCHEMA_MISMATCH: Migrations table '${migrationsTable}' is empty after restore!`);
+        }
+
+        // 3. Critical Row Counts
+        if (opts.expectedRowCounts && typeof opts.expectedRowCounts === 'object') {
+          for (const [tbl, expectedCount] of Object.entries(opts.expectedRowCounts)) {
+            if (!tableSet.has(tbl)) {
+              throw new Error(`REHEARSAL_SCHEMA_MISMATCH: Cannot verify row count; expected table '${tbl}' does not exist`);
+            }
+            const [rows] = await conn.query(`SELECT COUNT(*) AS c FROM \`${tbl}\``);
+            const actual = Number(rows[0].c || rows[0].C || 0);
+            if (actual !== Number(expectedCount)) {
+              throw new Error(`REHEARSAL_ROW_COUNT_MISMATCH: Table '${tbl}' expected ${expectedCount} rows, found ${actual}`);
+            }
+          }
+        }
+
+        // 4. Foreign Key Constraints check
+        const [fks] = await conn.query(
+          "SELECT COUNT(*) AS c FROM information_schema.table_constraints WHERE table_schema = ? AND constraint_type = 'FOREIGN KEY'",
+          [rehearsalDbName]
+        );
+        const fkCount = Number(fks[0].c || fks[0].C || 0);
+        if (opts.requireForeignKeys && fkCount === 0) {
+          throw new Error(`REHEARSAL_SCHEMA_MISMATCH: Expected foreign key constraints, found 0 in '${rehearsalDbName}'`);
+        }
+
+        parityStats = {
+          table_count: tableSet.size,
+          migrations_table: migrationsTable,
+          migrations_count: count,
+          foreign_key_count: fkCount,
+          row_counts_verified: Boolean(opts.expectedRowCounts)
+        };
+      } finally {
+        await conn.end();
       }
     }
 
@@ -475,7 +529,9 @@ async function rehearseDatabaseRestore(dumpFilePath, disposableDbConfig, manifes
         database_restore_rehearsed: true,
         rehearsal_timestamp: new Date().toISOString(),
         rehearsal_database: rehearsalDbName,
-        rehearsal_validated: true
+        rehearsal_validated: true,
+        rehearsal_parity_verified: opts.skipParityValidation !== true,
+        rehearsal_parity_stats: parityStats
       });
     }
 
@@ -867,7 +923,7 @@ async function createHardenedManifest(backupDir, dbConfig, dumpPath, uploadsPath
   const dbName = dbConfig.database || dbConfig.name;
 
   const manifestData = {
-    schema_version: '3.5',
+    schema_version: CURRENT_MANIFEST_SCHEMA_VERSION,
     run_id: runId,
     timestamp: new Date().toISOString(),
     status: {
@@ -944,7 +1000,129 @@ function updateManifestState(manifestPath, stateUpdates = {}) {
   return manifest;
 }
 
+async function mainCli() {
+  const args = process.argv.slice(2);
+  if (args.length === 0) {
+    console.error('Usage: node scripts/ops/recovery-protocol.js --rollback --manifest <PATH> --confirm <CONFIRMATION_TOKEN> [--run-id <RUN_ID>] [--db-config <CONFIG_PATH>]');
+    process.exit(1);
+  }
+
+  const validFlags = new Set([
+    '--rollback',
+    '--manifest',
+    '--confirm',
+    '--run-id',
+    '--uploads-archive',
+    '--uploads-target',
+    '--db-config',
+    '--emergency-operator',
+    '--emergency-justification'
+  ]);
+
+  const parsed = {};
+  for (let i = 0; i < args.length; i++) {
+    const flag = args[i];
+    if (!validFlags.has(flag)) {
+      console.error(`Error: Unknown CLI argument '${flag}'. Allowed arguments: ${Array.from(validFlags).join(', ')}`);
+      process.exit(1);
+    }
+    if (flag === '--rollback') {
+      parsed.rollback = true;
+    } else {
+      if (i + 1 >= args.length || args[i + 1].startsWith('--')) {
+        console.error(`Error: Missing value for argument '${flag}'`);
+        process.exit(1);
+      }
+      const val = args[++i];
+      if (flag === '--manifest') parsed.manifestPath = val;
+      else if (flag === '--confirm') parsed.confirmationFlag = val;
+      else if (flag === '--run-id') parsed.runId = val;
+      else if (flag === '--uploads-archive') parsed.uploadsArchive = val;
+      else if (flag === '--uploads-target') parsed.uploadsTarget = val;
+      else if (flag === '--db-config') parsed.dbConfigFile = val;
+      else if (flag === '--emergency-operator') parsed.emergencyOperator = val;
+      else if (flag === '--emergency-justification') parsed.emergencyJustification = val;
+    }
+  }
+
+  if (!parsed.rollback) {
+    console.error('Error: Command not specified. For rollback, use: --rollback');
+    process.exit(1);
+  }
+
+  if (!parsed.manifestPath) {
+    console.error('Error: Missing mandatory argument --manifest <PATH>');
+    process.exit(1);
+  }
+
+  if (!fs.existsSync(parsed.manifestPath)) {
+    console.error(`Error: Manifest file not found: ${parsed.manifestPath}`);
+    process.exit(1);
+  }
+
+  if (!parsed.confirmationFlag) {
+    console.error('Error: Missing mandatory operator confirmation flag --confirm <TOKEN>');
+    console.error('Destructive recovery requires: --confirm I_CONFIRM_DESTRUCTIVE_DATABASE_RECOVERY');
+    process.exit(1);
+  }
+
+  let dbConfig = null;
+  if (parsed.dbConfigFile && fs.existsSync(parsed.dbConfigFile)) {
+    dbConfig = JSON.parse(fs.readFileSync(parsed.dbConfigFile, 'utf8'));
+  } else {
+    try {
+      const { env } = require('../../src/config/env');
+      dbConfig = env.db;
+    } catch (_) {
+      dbConfig = null;
+    }
+  }
+
+  if (!dbConfig) {
+    console.error('Error: Database configuration could not be resolved from --db-config or application environment');
+    process.exit(1);
+  }
+
+  let emergencyAuth = null;
+  if (parsed.emergencyOperator && parsed.emergencyJustification) {
+    emergencyAuth = {
+      target_run_id: parsed.runId,
+      target_database: dbConfig.database || dbConfig.name,
+      operator: parsed.emergencyOperator,
+      justification: parsed.emergencyJustification
+    };
+  }
+
+  console.log(`[recovery-protocol] Initiating canonical recovery from manifest: ${parsed.manifestPath}...`);
+  const result = await executeCanonicalRecovery(
+    parsed.manifestPath,
+    dbConfig,
+    parsed.confirmationFlag,
+    {
+      suppliedRunId: parsed.runId,
+      emergencyAuthorization: emergencyAuth
+    }
+  );
+
+  console.log('✔ Database canonical recovery completed successfully:', result);
+
+  if (parsed.uploadsArchive && parsed.uploadsTarget) {
+    console.log(`[recovery-protocol] Restoring uploads archive: ${parsed.uploadsArchive}...`);
+    const upRes = await restoreUploadsArchive(parsed.uploadsArchive, parsed.uploadsTarget);
+    console.log('✔ Uploads archive restoration completed successfully:', upRes);
+  }
+}
+
+if (require.main === module) {
+  mainCli().catch(err => {
+    console.error(`💥 [RECOVERY_CLI_FAILED]: ${err.message}`);
+    process.exit(1);
+  });
+}
+
 module.exports = {
+  CURRENT_MANIFEST_SCHEMA_VERSION,
+  SUPPORTED_MANIFEST_SCHEMA_VERSIONS,
   sha256File,
   verifyDumpFooter,
   validateAndLoadManifest,
@@ -953,5 +1131,6 @@ module.exports = {
   executeCanonicalRecovery,
   restoreUploadsArchive,
   createHardenedManifest,
-  updateManifestState
+  updateManifestState,
+  resolveSafeBinary
 };

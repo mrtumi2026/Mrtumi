@@ -285,13 +285,39 @@ const { createHardenedManifest } = require("./scripts/ops/recovery-protocol");
 });
 '
 
-# 4c. Pre-Migration Restore Rehearsal on Isolated Schema (v3.6 Hardened)
+# 4c. Pre-Migration Restore Rehearsal on Isolated Schema (v3.7 Hardened)
 DEPLOY_REQUIRE_REHEARSAL="${DEPLOY_REQUIRE_REHEARSAL:-true}"
 
 if [ -n "${REHEARSAL_DB_NAME:-}" ]; then
   echo ""
   echo "🧪 [4c/8] Rehearsing database restore on isolated disposable schema: $REHEARSAL_DB_NAME..."
-  REHEARSAL_AUTHORIZED="true" REHEARSAL_DB_NAME="$REHEARSAL_DB_NAME" node -e '
+
+  # Explicit operator authorization is strictly required; deploy.sh must NEVER automatically set it
+  if [ "${REHEARSAL_DISPOSABLE_AUTHORIZED:-${REHEARSAL_AUTHORIZED:-false}}" != "true" ]; then
+    echo "❌ FATAL: Missing mandatory operator authorization for restore rehearsal." >&2
+    echo "   Restore rehearsal requires explicit operator confirmation to prevent live database drops." >&2
+    echo "   Provide REHEARSAL_DISPOSABLE_AUTHORIZED=true in your environment to authorize disposable rehearsal." >&2
+    exit 1
+  fi
+
+  # Approved rehearsal targets allowlist enforcement
+  REHEARSAL_APPROVED_TARGETS="${REHEARSAL_APPROVED_TARGETS:-mrtumico_rehearsal,mrtumi_test}"
+
+  # Rehearsal credentials must be explicitly separate from production
+  if [ -z "${REHEARSAL_DB_USER:-}" ] || [ -z "${REHEARSAL_DB_PASSWORD:-}" ]; then
+    echo "❌ FATAL: Missing separate rehearsal database credentials." >&2
+    echo "   Rehearsal must use distinct non-production credentials (REHEARSAL_DB_USER and REHEARSAL_DB_PASSWORD)." >&2
+    exit 1
+  fi
+
+  REHEARSAL_DB_NAME="$REHEARSAL_DB_NAME" \
+  REHEARSAL_DB_USER="$REHEARSAL_DB_USER" \
+  REHEARSAL_DB_PASSWORD="$REHEARSAL_DB_PASSWORD" \
+  REHEARSAL_DB_HOST="${REHEARSAL_DB_HOST:-127.0.0.1}" \
+  REHEARSAL_DB_PORT="${REHEARSAL_DB_PORT:-3306}" \
+  REHEARSAL_APPROVED_TARGETS="$REHEARSAL_APPROVED_TARGETS" \
+  REHEARSAL_DISPOSABLE_AUTHORIZED="${REHEARSAL_DISPOSABLE_AUTHORIZED:-${REHEARSAL_AUTHORIZED:-false}}" \
+  node -e '
   const path = require("path");
   const fs = require("fs");
   const { env } = require("./src/config/env");
@@ -306,26 +332,59 @@ if [ -n "${REHEARSAL_DB_NAME:-}" ]; then
     const dumpFile = manifest.artifacts.database_dump.canonical_path;
 
     const rehearsalDbName = process.env.REHEARSAL_DB_NAME.trim();
+    const rehearsalUser = process.env.REHEARSAL_DB_USER.trim();
+    const rehearsalPass = process.env.REHEARSAL_DB_PASSWORD.trim();
+    const rehearsalHost = (process.env.REHEARSAL_DB_HOST || "127.0.0.1").trim();
+    const rehearsalPort = Number(process.env.REHEARSAL_DB_PORT || 3306);
+
+    // 1. Database name isolation
     if (rehearsalDbName.toLowerCase() === env.db.database.toLowerCase()) {
       throw new Error(`CRITICAL_SAFETY_VIOLATION: REHEARSAL_DB_NAME cannot match production database (${env.db.database})!`);
     }
 
+    // 2. Reject system catalog targets
+    const forbidden = ["mysql", "information_schema", "performance_schema", "sys"];
+    if (forbidden.includes(rehearsalDbName.toLowerCase())) {
+      throw new Error(`CRITICAL_SAFETY_VIOLATION: Rehearsal database cannot be a system catalog (${rehearsalDbName})!`);
+    }
+
+    // 3. Target identity isolation
+    const prodHost = (env.db.host || "127.0.0.1").trim().toLowerCase();
+    const prodPort = Number(env.db.port || 3306);
+    if (rehearsalHost.toLowerCase() === prodHost && rehearsalPort === prodPort && rehearsalDbName.toLowerCase() === env.db.database.toLowerCase()) {
+      throw new Error("CRITICAL_SAFETY_VIOLATION: Rehearsal points to identical database host/port/schema target as production!");
+    }
+
+    // 4. Credential isolation (Shared credentials strictly forbidden)
+    if (rehearsalUser === env.db.user && rehearsalPass === env.db.password) {
+      throw new Error("PRODUCTION_CREDENTIALS_FORBIDDEN: Rehearsal cannot use production database credentials. Separate credentials required.");
+    }
+
+    // 5. Approved targets allowlist
+    const approvedTargets = (process.env.REHEARSAL_APPROVED_TARGETS || "").split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
+    if (!approvedTargets.includes(rehearsalDbName.toLowerCase())) {
+      throw new Error(`UNAPPROVED_REHEARSAL_TARGET: Database "${rehearsalDbName}" is not in the approved rehearsal allowlist: [${approvedTargets.join(", ")}]`);
+    }
+
     const disposableConfig = {
-      ...env.db,
+      host: rehearsalHost,
+      port: rehearsalPort,
       database: rehearsalDbName,
-      user: process.env.REHEARSAL_DB_USER || env.db.user,
-      password: process.env.REHEARSAL_DB_PASSWORD || env.db.password,
+      user: rehearsalUser,
+      password: rehearsalPass,
       authorized_disposable: true
     };
+
     console.log(`   Executing restore rehearsal into disposable database: ${rehearsalDbName}...`);
     await rehearseDatabaseRestore(dumpFile, disposableConfig, manifestPath, {
       productionDatabase: env.db.database,
       prodDbConfig: env.db,
       authorizedDisposable: true,
-      allowSharedCredentials: true,
+      allowSharedCredentials: false,
+      approvedRehearsalTargets: approvedTargets,
       validateParity: true
     });
-    console.log("✔ Pre-migration restore rehearsal PASSED on isolated schema. Manifest updated: database_restore_rehearsed=true.");
+    console.log("✔ Pre-migration restore rehearsal PASSED on isolated schema. Manifest updated: database_restore_rehearsed=true, rehearsal_parity_verified=true.");
   })().catch(err => {
     console.error(`💥 [RESTORE_REHEARSAL_FAILED]: ${err.message}`);
     process.exit(1);
@@ -393,8 +452,8 @@ const { validateAndLoadManifest } = require("./scripts/ops/recovery-protocol");
     throw new Error("FAIL_CLOSED: Backup status does not have backup_created=true and integrity_verified=true!");
   }
 
-  if (process.env.DEPLOY_REQUIRE_REHEARSAL === "true" && loaded.manifest.status.database_restore_rehearsed !== true) {
-    throw new Error("FAIL_CLOSED: DEPLOY_REQUIRE_REHEARSAL is true, but database_restore_rehearsed is false in manifest!");
+  if (process.env.DEPLOY_REQUIRE_REHEARSAL === "true" && (loaded.manifest.status.database_restore_rehearsed !== true || loaded.manifest.status.rehearsal_parity_verified !== true)) {
+    throw new Error("FAIL_CLOSED: DEPLOY_REQUIRE_REHEARSAL is true, but database restore rehearsal or parity verification is incomplete in manifest!");
   }
 
   console.log("✔ Mandatory pre-migration backup verification gate PASSED (database identity, dump integrity & footer verified).");

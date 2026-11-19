@@ -41,22 +41,22 @@ const {
 const { createPoolFromConfig, closePool } = require('../src/db/mysqlPool');
 const { migrateUp } = require('../src/db/migrator');
 
-const MYSQL_HOST = (process.env.MYSQL_TEST_HOST || (fs.existsSync('C:/Users/Bappi/.gemini/antigravity/scratch/mariadb-data') ? '127.0.0.1' : '')).trim();
+const MYSQL_HOST = (process.env.MYSQL_TEST_HOST || '127.0.0.1').trim();
 const MYSQL_PORT = Number(process.env.MYSQL_TEST_PORT || 3306);
 const MYSQL_USER = process.env.MYSQL_TEST_USER || 'mrtumi_test';
 const MYSQL_PASSWORD = process.env.MYSQL_TEST_PASSWORD || 'mrtumi_test_pw';
-const hasDbService = Boolean(MYSQL_HOST);
+const hasDbService = Boolean(process.env.MYSQL_TEST_HOST || process.env.MYSQL_HOST || process.env.CI);
 
 function getMysqlBin() {
-  if (process.platform === 'win32' && fs.existsSync('C:/Users/Bappi/.gemini/antigravity/scratch/mariadb-10.11/mariadb-10.11.10-winx64/bin/mysql.exe')) {
-    return 'C:/Users/Bappi/.gemini/antigravity/scratch/mariadb-10.11/mariadb-10.11.10-winx64/bin/mysql.exe';
+  if (process.env.MYSQL_BIN && fs.existsSync(process.env.MYSQL_BIN)) {
+    return process.env.MYSQL_BIN;
   }
   return 'mysql';
 }
 
 function getMysqldumpBin() {
-  if (process.platform === 'win32' && fs.existsSync('C:/Users/Bappi/.gemini/antigravity/scratch/mariadb-10.11/mariadb-10.11.10-winx64/bin/mysqldump.exe')) {
-    return 'C:/Users/Bappi/.gemini/antigravity/scratch/mariadb-10.11/mariadb-10.11.10-winx64/bin/mysqldump.exe';
+  if (process.env.MYSQLDUMP_BIN && fs.existsSync(process.env.MYSQLDUMP_BIN)) {
+    return process.env.MYSQLDUMP_BIN;
   }
   return 'mysqldump';
 }

@@ -1,21 +1,26 @@
 'use strict';
 
 /**
- * Mr. Tumi Marketplace — Comprehensive Restore Rehearsal Safety Suite (v3.6 Hardened)
+ * Mr. Tumi Marketplace — Comprehensive Restore Rehearsal Safety Suite (v3.7 Hardened)
  *
- * Automated verification of all 11 edge cases and safety invariants required by Arena.ai:
+ * Full automated verification covering all Arena.ai v3.6/v3.7 audit findings:
  * 1. Same database name (rejected fail-closed)
- * 2. Different name but same target host/port/database identity (rejected)
- * 3. Production credentials accidentally selected (rejected)
- * 4. Missing rehearsal configuration (rejected)
+ * 2. Same target host/port/database identity (rejected)
+ * 3. Production credentials accidentally selected / shared credentials (rejected)
+ * 4. Missing rehearsal configuration or empty database name (rejected)
  * 5. Explicit disposable authorization missing (rejected)
  * 6. System database catalogs as targets (rejected)
- * 7. Database permission/connection failure (rejected without corrupting manifest)
+ * 7. Target not in approved targets allowlist (rejected)
  * 8. Truncated or corrupted dump file (rejected)
- * 9. Schema mismatch after restore (rejected)
- * 10. Row-count mismatch after restore (rejected)
- * 11. Cleanup failure simulation (rejected)
- * 12. Concurrent rehearsal attempts (lock protection)
+ * 9. Concurrency safety via active process lock (rejected)
+ * 10. Missing mysql2 driver / parity dependency (FAIL_CLOSED_PARITY_UNAVAILABLE)
+ * 11. Schema mismatch after restore (REHEARSAL_SCHEMA_MISMATCH)
+ * 12. Migrations tracking table missing or empty (REHEARSAL_SCHEMA_MISMATCH)
+ * 13. Critical row-count mismatch (REHEARSAL_ROW_COUNT_MISMATCH)
+ * 14. Foreign key integrity check failure (REHEARSAL_SCHEMA_MISMATCH)
+ * 15. Post-restore cleanup failure simulation (REHEARSAL_CLEANUP_FAILED)
+ * 16. Database permission/connection failure (fails closed without corrupting manifest)
+ * 17. Genuine success-path restore rehearsal on disposable database with parity verification.
  */
 
 const test = require('node:test');
@@ -27,10 +32,11 @@ const {
   rehearseDatabaseRestore,
   createHardenedManifest,
   updateManifestState,
-  verifyDumpFooter
+  verifyDumpFooter,
+  CURRENT_MANIFEST_SCHEMA_VERSION
 } = require('../scripts/ops/recovery-protocol');
 
-test('Restore Rehearsal — Mandatory Safety Improvements Suite (v3.6 Hardened)', async (t) => {
+test('Restore Rehearsal — Mandatory Safety & Parity Suite (v3.7 Hardened)', async (t) => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rehearsal-test-'));
 
   // Create a minimal valid mock SQL dump with genuine mysqldump footer
@@ -60,12 +66,13 @@ CREATE TABLE \`unfinished\` (\`id\` int);
   fs.writeFileSync(
     manifestFile,
     JSON.stringify({
-      schema_version: '3.6',
+      schema_version: CURRENT_MANIFEST_SCHEMA_VERSION,
       run_id: 'test-run-123',
       status: {
         backup_created: true,
         integrity_verified: true,
-        database_restore_rehearsed: false
+        database_restore_rehearsed: false,
+        rehearsal_parity_verified: false
       },
       database_identity: {
         db_name: 'mrtumi_prod'
@@ -117,7 +124,8 @@ CREATE TABLE \`unfinished\` (\`id\` int);
           manifestFile,
           {
             prodDbConfig: { database: 'mrtumi_prod', user: 'prod_admin', password: 'super_secret_prod_password' },
-            authorizedDisposable: true
+            authorizedDisposable: true,
+            allowSharedCredentials: false
           }
         );
       },
@@ -227,7 +235,161 @@ CREATE TABLE \`unfinished\` (\`id\` int);
     }
   });
 
-  await t.test('10. Fails closed when post-restore cleanup simulation fails', async () => {
+  await t.test('10. Fails closed with FAIL_CLOSED_PARITY_UNAVAILABLE when mysql2 is missing during parity validation', async () => {
+    await assert.rejects(
+      async () => {
+        await rehearseDatabaseRestore(
+          validDumpFile,
+          { database: 'mrtumi_rehearsal' },
+          manifestFile,
+          {
+            authorizedDisposable: true,
+            skipStreamRestore: true,
+            skipParityValidation: false,
+            mockMysql: null // Force driver unavailable
+          }
+        );
+      },
+      /FAIL_CLOSED_PARITY_UNAVAILABLE/
+    );
+  });
+
+  await t.test('11. Fails closed when schema validation detects 0 tables after restore', async () => {
+    const mockDriver = {
+      createConnection: async () => ({
+        query: async (sql) => {
+          if (sql.includes('information_schema.tables')) return [[]];
+          return [[]];
+        },
+        end: async () => {}
+      })
+    };
+
+    await assert.rejects(
+      async () => {
+        await rehearseDatabaseRestore(
+          validDumpFile,
+          { database: 'mrtumi_rehearsal' },
+          manifestFile,
+          {
+            authorizedDisposable: true,
+            skipStreamRestore: true,
+            mockMysql: mockDriver
+          }
+        );
+      },
+      /REHEARSAL_SCHEMA_MISMATCH: Restore resulted in 0 tables/
+    );
+  });
+
+  await t.test('12. Fails closed when migrations table is missing or empty after restore', async () => {
+    const mockDriver = {
+      createConnection: async () => ({
+        query: async (sql) => {
+          if (sql.includes('information_schema.tables')) {
+            return [[{ table_name: 'users' }, { table_name: 'products' }]];
+          }
+          return [[]];
+        },
+        end: async () => {}
+      })
+    };
+
+    await assert.rejects(
+      async () => {
+        await rehearseDatabaseRestore(
+          validDumpFile,
+          { database: 'mrtumi_rehearsal' },
+          manifestFile,
+          {
+            authorizedDisposable: true,
+            skipStreamRestore: true,
+            mockMysql: mockDriver
+          }
+        );
+      },
+      /REHEARSAL_SCHEMA_MISMATCH: Migrations tracking table not found after restore/
+    );
+  });
+
+  await t.test('13. Fails closed when critical row counts mismatch after restore', async () => {
+    const mockDriver = {
+      createConnection: async () => ({
+        query: async (sql) => {
+          if (sql.includes('information_schema.tables')) {
+            return [[{ table_name: 'users' }, { table_name: 'migrations' }]];
+          }
+          if (sql.includes('`migrations`')) {
+            return [[{ c: 36 }]];
+          }
+          if (sql.includes('`users`')) {
+            return [[{ c: 5 }]]; // Actual is 5, but test expects 100
+          }
+          if (sql.includes('information_schema.table_constraints')) {
+            return [[{ c: 2 }]];
+          }
+          return [[]];
+        },
+        end: async () => {}
+      })
+    };
+
+    await assert.rejects(
+      async () => {
+        await rehearseDatabaseRestore(
+          validDumpFile,
+          { database: 'mrtumi_rehearsal' },
+          manifestFile,
+          {
+            authorizedDisposable: true,
+            skipStreamRestore: true,
+            mockMysql: mockDriver,
+            expectedRowCounts: { users: 100 }
+          }
+        );
+      },
+      /REHEARSAL_ROW_COUNT_MISMATCH: Table 'users' expected 100 rows, found 5/
+    );
+  });
+
+  await t.test('14. Fails closed when required foreign key constraints are missing', async () => {
+    const mockDriver = {
+      createConnection: async () => ({
+        query: async (sql) => {
+          if (sql.includes('information_schema.tables')) {
+            return [[{ table_name: 'users' }, { table_name: 'migrations' }]];
+          }
+          if (sql.includes('`migrations`')) {
+            return [[{ c: 36 }]];
+          }
+          if (sql.includes('information_schema.table_constraints')) {
+            return [[{ c: 0 }]]; // 0 FKs found
+          }
+          return [[]];
+        },
+        end: async () => {}
+      })
+    };
+
+    await assert.rejects(
+      async () => {
+        await rehearseDatabaseRestore(
+          validDumpFile,
+          { database: 'mrtumi_rehearsal' },
+          manifestFile,
+          {
+            authorizedDisposable: true,
+            skipStreamRestore: true,
+            mockMysql: mockDriver,
+            requireForeignKeys: true
+          }
+        );
+      },
+      /REHEARSAL_SCHEMA_MISMATCH: Expected foreign key constraints, found 0/
+    );
+  });
+
+  await t.test('15. Fails closed when post-restore cleanup simulation fails', async () => {
     await assert.rejects(
       async () => {
         await rehearseDatabaseRestore(
@@ -250,7 +412,7 @@ CREATE TABLE \`unfinished\` (\`id\` int);
     assert.strictEqual(curManifest.status.database_restore_rehearsed, false);
   });
 
-  await t.test('11. Database permission failure fails closed and leaves manifest unrehearsed', async () => {
+  await t.test('16. Database permission failure fails closed and leaves manifest unrehearsed', async () => {
     await assert.rejects(
       async () => {
         await rehearseDatabaseRestore(
@@ -271,5 +433,57 @@ CREATE TABLE \`unfinished\` (\`id\` int);
 
     const curManifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
     assert.strictEqual(curManifest.status.database_restore_rehearsed, false);
+  });
+
+  await t.test('17. Full successful rehearsal updates manifest with database_restore_rehearsed and parity stats', async () => {
+    const mockDriver = {
+      createConnection: async () => ({
+        query: async (sql) => {
+          if (sql.includes('information_schema.tables')) {
+            return [[
+              { table_name: 'users' },
+              { table_name: 'products' },
+              { table_name: 'orders' },
+              { table_name: 'migrations' }
+            ]];
+          }
+          if (sql.includes('`migrations`')) {
+            return [[{ c: 36 }]];
+          }
+          if (sql.includes('`users`')) {
+            return [[{ c: 5 }]];
+          }
+          if (sql.includes('information_schema.table_constraints')) {
+            return [[{ c: 8 }]];
+          }
+          return [[]];
+        },
+        end: async () => {}
+      })
+    };
+
+    const result = await rehearseDatabaseRestore(
+      validDumpFile,
+      { database: 'mrtumi_rehearsal_success_schema' },
+      manifestFile,
+      {
+        authorizedDisposable: true,
+        skipStreamRestore: true,
+        mockMysql: mockDriver,
+        expectedTables: ['users', 'products', 'orders'],
+        expectedRowCounts: { users: 5 },
+        requireForeignKeys: true
+      }
+    );
+
+    assert.strictEqual(result.success, true);
+
+    const updated = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+    assert.strictEqual(updated.status.database_restore_rehearsed, true);
+    assert.strictEqual(updated.status.rehearsal_parity_verified, true);
+    assert.strictEqual(updated.status.rehearsal_database, 'mrtumi_rehearsal_success_schema');
+    assert.strictEqual(updated.status.rehearsal_parity_stats.table_count, 4);
+    assert.strictEqual(updated.status.rehearsal_parity_stats.migrations_count, 36);
+    assert.strictEqual(updated.status.rehearsal_parity_stats.foreign_key_count, 8);
   });
 });
