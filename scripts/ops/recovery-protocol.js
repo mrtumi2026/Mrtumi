@@ -258,17 +258,91 @@ async function rehearseDatabaseRestore(dumpFilePath, disposableDbConfig, manifes
   return restoreRes;
 }
 
+function validateEmergencyAuthorization(auth, manifest, targetDbName) {
+  if (!auth || typeof auth !== 'object') {
+    return {
+      valid: false,
+      reason: 'Missing emergencyAuthorization object. Destructive recovery requires a rehearsed backup or an explicit, run-bound emergency authorization object. Ambient environment overrides are prohibited.'
+    };
+  }
+
+  const expectedRunId = manifest ? manifest.run_id : null;
+  if (!auth.target_run_id || auth.target_run_id !== expectedRunId) {
+    return {
+      valid: false,
+      reason: `EMERGENCY_OVERRIDE_RUN_MISMATCH: Authorization bound to run_id '${auth.target_run_id}', but manifest is '${expectedRunId}'. Cross-run reuse is prohibited.`
+    };
+  }
+
+  if (!auth.target_database || auth.target_database !== targetDbName) {
+    return {
+      valid: false,
+      reason: `EMERGENCY_OVERRIDE_DATABASE_MISMATCH: Authorization bound to database '${auth.target_database}', but target is '${targetDbName}'. Cross-database reuse is prohibited.`
+    };
+  }
+
+  if (!auth.operator_id || typeof auth.operator_id !== 'string') {
+    return { valid: false, reason: 'EMERGENCY_OVERRIDE_OPERATOR_REQUIRED: Missing operator_id' };
+  }
+
+  const cleanOperator = auth.operator_id.trim();
+  const genericOperators = new Set(['admin', 'operator', 'root', 'user', 'test', 'operator:admin', 'operator:test']);
+  if (genericOperators.has(cleanOperator.toLowerCase())) {
+    return { valid: false, reason: `EMERGENCY_OVERRIDE_REJECTED: Generic operator identity '${cleanOperator}' is not permitted` };
+  }
+
+  const validOperatorPattern = /^([a-zA-Z0-9_.-]+@[a-zA-Z0-9_.-]+\.[a-zA-Z]{2,}|operator:[a-zA-Z0-9_.-]{4,})$/;
+  if (!validOperatorPattern.test(cleanOperator) || cleanOperator.length < 6) {
+    return {
+      valid: false,
+      reason: `EMERGENCY_OVERRIDE_INVALID_OPERATOR: Operator identity must be a verified email or operator:<handle> with length >= 6 (got '${cleanOperator}')`
+    };
+  }
+
+  if (!auth.justification || typeof auth.justification !== 'string' || auth.justification.trim().length < 20) {
+    return {
+      valid: false,
+      reason: `EMERGENCY_OVERRIDE_JUSTIFICATION_TOO_SHORT: Justification must be specific operational rationale with length >= 20 characters`
+    };
+  }
+
+  const genericJustifications = new Set(['emergency', 'skip rehearsal', 'testing override', 'please restore', 'urgent', 'fix error']);
+  if (genericJustifications.has(auth.justification.trim().toLowerCase())) {
+    return { valid: false, reason: `EMERGENCY_OVERRIDE_REJECTED: Generic or boilerplate justification is not permitted` };
+  }
+
+  const expectedCode = `EMERGENCY_OVERRIDE:${expectedRunId}:${targetDbName}`;
+  if (auth.authorization_code !== expectedCode) {
+    return {
+      valid: false,
+      reason: `EMERGENCY_OVERRIDE_CODE_INVALID: Expected authorization_code '${expectedCode}'`
+    };
+  }
+
+  const acknowledged = Array.isArray(auth.acknowledged_risks) ? auth.acknowledged_risks : [];
+  if (!acknowledged.includes('DATA_LOSS') || !acknowledged.includes('SCHEMA_DIVERGENCE')) {
+    return {
+      valid: false,
+      reason: `EMERGENCY_OVERRIDE_RISKS_REQUIRED: Must explicitly acknowledge risks ['DATA_LOSS', 'SCHEMA_DIVERGENCE']`
+    };
+  }
+
+  return { valid: true, operator: cleanOperator, justification: auth.justification.trim() };
+}
+
 /**
  * Approval-Safe & Rehearsal-Enforced Canonical Recovery Execution
  * Enforces:
  * 1. Valid manifest and dump integrity.
- * 2. Prerequisite restore rehearsal (database_restore_rehearsed: true) or explicit operator emergency justification.
+ * 2. Prerequisite restore rehearsal (database_restore_rehearsed: true) or auditable run-bound emergency authorization.
  * 3. Scoped operator confirmation token (tied to specific manifest run_id; prevents ambient .env inheritance).
  */
 async function executeCanonicalRecovery(conn, dumpFile, dbConfig, opts = {}) {
   if (!fs.existsSync(dumpFile)) {
     throw new Error(`FAIL_CLOSED: Baseline SQL dump file not found: ${dumpFile}`);
   }
+
+  const targetDbName = dbConfig.database || dbConfig.name;
 
   // 1. Resolve and validate manifest
   let manifest = opts.manifest;
@@ -291,30 +365,34 @@ async function executeCanonicalRecovery(conn, dumpFile, dbConfig, opts = {}) {
 
   // 2. Enforce Restore Rehearsal Prerequisite
   const isRehearsed = Boolean(manifest && manifest.status && manifest.status.database_restore_rehearsed === true);
-  const allowUnrehearsedEmergency = Boolean(
-    opts.allowUnrehearsedEmergencyRecovery ||
-    process.env.ALLOW_UNREHEARSED_EMERGENCY_RECOVERY === 'true'
-  );
-  const emergencyJustification = (
-    opts.emergencyRecoveryJustification ||
-    process.env.EMERGENCY_RECOVERY_JUSTIFICATION ||
-    ''
-  ).trim();
 
   if (!isRehearsed) {
-    if (!allowUnrehearsedEmergency || emergencyJustification.length < 10) {
+    const authResult = validateEmergencyAuthorization(opts.emergencyAuthorization, manifest, targetDbName);
+    if (!authResult.valid) {
       throw new Error(
-        'FAIL_CLOSED_REHEARSAL_REQUIRED: Destructive database recovery requires that this specific backup was rehearsed ' +
-        'on an isolated schema (database_restore_rehearsed is false). Run rehearsal first, or provide explicit emergency justification ' +
-        '(allowUnrehearsedEmergencyRecovery=true with emergencyRecoveryJustification).'
+        `FAIL_CLOSED_REHEARSAL_REQUIRED: Destructive database recovery requires that this specific backup was rehearsed ` +
+        `on an isolated schema (database_restore_rehearsed is false). ${authResult.reason}`
       );
+    }
+
+    // Record auditable approval event
+    if (manifestPath && fs.existsSync(manifestPath)) {
+      updateManifestState(manifestPath, {
+        emergency_override_audit: {
+          timestamp: new Date().toISOString(),
+          operator_id: authResult.operator,
+          justification: authResult.justification,
+          target_run_id: manifest ? manifest.run_id : null,
+          target_database: targetDbName
+        }
+      });
     }
   }
 
   // 3. Isolated Confirmation Gate: Scoped to specific run_id to avoid ambient .env pollution
   const expectedRunId = manifest ? manifest.run_id : null;
   const suppliedToken = opts.confirmationToken;
-  const suppliedRunId = opts.targetRunId || process.env.CONFIRM_DESTRUCTIVE_RECOVERY_RUN_ID;
+  const suppliedRunId = opts.targetRunId;
   const suppliedFlag = opts.confirmationFlag;
 
   let approved = false;
@@ -522,6 +600,9 @@ async function createHardenedManifest(backupDir, dbConfig, dumpPath, uploadsPath
 
   // Real dump footer inspection (NOT hardcoded true)
   const hasFooter = verifyDumpFooter(dumpPath);
+  if (!hasFooter) {
+    throw new Error(`FAIL_CLOSED_CORRUPTED_DUMP: Dump file '${dumpPath}' is truncated or missing completion footer. Manifest pointer will not be updated.`);
+  }
 
   let uploadsInfo = null;
   if (uploadsPath && fs.existsSync(uploadsPath)) {
@@ -570,16 +651,27 @@ async function createHardenedManifest(backupDir, dbConfig, dumpPath, uploadsPath
   const manifestFilename = `manifest_${timestamp}_${runId.slice(0, 8)}.json`;
   const manifestPath = path.join(backupDir, manifestFilename);
 
-  // Atomic write via .tmp
+  // Atomic write via .tmp with fail-safe cleanup
   const tmpManifest = `${manifestPath}.tmp`;
-  fs.writeFileSync(tmpManifest, JSON.stringify(manifestData, null, 2), { mode: 0o600 });
-  fs.renameSync(tmpManifest, manifestPath);
-
-  // Atomic pointer update
   const pointerPath = path.join(backupDir, '.latest_verified_manifest');
   const tmpPointer = `${pointerPath}.tmp`;
-  fs.writeFileSync(tmpPointer, manifestFilename, { mode: 0o600 });
-  fs.renameSync(tmpPointer, pointerPath);
+
+  try {
+    fs.writeFileSync(tmpManifest, JSON.stringify(manifestData, null, 2), { mode: 0o600 });
+    fs.renameSync(tmpManifest, manifestPath);
+
+    // Atomic pointer update only after manifest is fully written and verified
+    fs.writeFileSync(tmpPointer, manifestFilename, { mode: 0o600 });
+    fs.renameSync(tmpPointer, pointerPath);
+  } catch (err) {
+    if (fs.existsSync(tmpManifest)) {
+      try { fs.unlinkSync(tmpManifest); } catch (_) {}
+    }
+    if (fs.existsSync(tmpPointer)) {
+      try { fs.unlinkSync(tmpPointer); } catch (_) {}
+    }
+    throw err;
+  }
 
   return { runId, manifestPath, manifestFilename, manifestData };
 }

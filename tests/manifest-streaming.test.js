@@ -53,7 +53,7 @@ function buildMaliciousTarGz(entries) {
   return zlib.gzipSync(Buffer.concat(chunks));
 }
 
-describe('Workstream C — Manifest, Uploads Safety & Recovery Gate Architecture Suite (v3.2 Hardened)', () => {
+describe('Workstream C — Manifest, Uploads Safety & Recovery Gate Architecture Suite (v3.3 Hardened)', () => {
   const sandboxDir = path.join(__dirname, 'helpers', 'tmp-manifest-sandbox');
   const backupDir = path.join(sandboxDir, 'db_backups');
   const uploadsSourceDir = path.join(sandboxDir, 'fake_uploads_source');
@@ -232,8 +232,9 @@ describe('Workstream C — Manifest, Uploads Safety & Recovery Gate Architecture
     );
   });
 
-  test('Broken or stale manifest pointer safety', () => {
+  test('Broken or stale manifest pointer safety (properly awaited)', async () => {
     const pointerPath = path.join(backupDir, '.latest_verified_manifest');
+    assert.ok(fs.existsSync(pointerPath), 'Valid pointer file must exist from earlier test');
     const originalPointer = fs.readFileSync(pointerPath, 'utf8').trim();
 
     // 1. Interrupted write leaves .tmp without corrupting pointer
@@ -241,10 +242,46 @@ describe('Workstream C — Manifest, Uploads Safety & Recovery Gate Architecture
     fs.writeFileSync(interruptedPath, '{ "run_id": "incomplete');
     assert.equal(fs.readFileSync(pointerPath, 'utf8').trim(), originalPointer);
 
-    // 2. Broken pointer pointing to nonexistent file is rejected by validateAndLoadManifest
+    // 2. Broken pointer pointing to nonexistent file is REJECTED and PROPERLY AWAITED
     const brokenPointerPath = path.join(backupDir, 'nonexistent_manifest_file.json');
-    assert.rejects(
+    await assert.rejects(
       async () => validateAndLoadManifest(brokenPointerPath, mockDb, backupDir),
+      /FAIL_CLOSED: Manifest file does not exist/
+    );
+
+    // 3. Stale pointer pointing to malformed JSON is rejected
+    const malformedManifestPath = path.join(backupDir, 'malformed_manifest.json');
+    fs.writeFileSync(malformedManifestPath, 'INVALID_JSON_CONTENT_HERE');
+    await assert.rejects(
+      async () => validateAndLoadManifest(malformedManifestPath, mockDb, backupDir),
+      /FAIL_CLOSED: Manifest is malformed JSON/
+    );
+
+    // 4. Pointer cannot be replaced by an invalid or corrupted dump
+    const corruptedDump = path.join(backupDir, 'corrupted_without_footer.sql');
+    fs.writeFileSync(corruptedDump, 'CREATE TABLE corrupted (id INT); -- NO FOOTER');
+    await assert.rejects(
+      async () => createHardenedManifest(backupDir, mockDb, corruptedDump, null),
+      /FAIL_CLOSED_CORRUPTED_DUMP: Dump file '.*' is truncated or missing completion footer/
+    );
+
+    // Assert that the pointer STILL points to originalPointer and was NOT replaced!
+    assert.equal(
+      fs.readFileSync(pointerPath, 'utf8').trim(),
+      originalPointer,
+      'Invalid manifest creation must never replace the last valid pointer'
+    );
+  });
+
+  test('Filesystem permission / EACCES handling fails closed safely', async () => {
+    // Test that when a directory cannot be read or written, operations fail-closed
+    const unreadableDir = path.join(sandboxDir, 'unreadable_test_dir');
+    if (fs.existsSync(unreadableDir)) fs.rmSync(unreadableDir, { recursive: true, force: true });
+    fs.mkdirSync(unreadableDir, { recursive: true });
+
+    const inaccessibleManifest = path.join(unreadableDir, 'nonexistent_locked.json');
+    await assert.rejects(
+      async () => validateAndLoadManifest(inaccessibleManifest, mockDb, unreadableDir),
       /FAIL_CLOSED: Manifest file does not exist/
     );
   });
@@ -355,7 +392,7 @@ describe('Workstream C — Manifest, Uploads Safety & Recovery Gate Architecture
     assert.equal(fs.readFileSync(path.join(maliciousTarget, 'canary.txt'), 'utf8'), 'SAFE_CANARY');
   });
 
-  test('executeCanonicalRecovery: rehearsal prerequisite & confirmation flag isolation', async () => {
+  test('executeCanonicalRecovery: rehearsal prerequisite & emergency authorization isolation', async () => {
     const fakeDump = path.join(backupDir, 'gate_test_dump.sql');
     fs.writeFileSync(fakeDump, 'SELECT 1;\n-- Dump completed\n');
     const fSha = await sha256File(fakeDump);
@@ -379,7 +416,7 @@ describe('Workstream C — Manifest, Uploads Safety & Recovery Gate Architecture
       query: async () => []
     };
 
-    // 1. Unrehearsed restore rejected fail-closed
+    // 1. Unrehearsed restore without authorization rejected fail-closed
     await assert.rejects(
       async () => executeCanonicalRecovery(mockConn, fakeDump, mockDb, {
         manifest: manifestUnrehearsed,
@@ -388,18 +425,88 @@ describe('Workstream C — Manifest, Uploads Safety & Recovery Gate Architecture
       /FAIL_CLOSED_REHEARSAL_REQUIRED/
     );
 
-    // 2. Emergency override without justification rejected
+    // 2. Ambient environment variables alone CANNOT bypass the gate!
+    process.env.ALLOW_UNREHEARSED_EMERGENCY_RECOVERY = 'true';
+    process.env.EMERGENCY_RECOVERY_JUSTIFICATION = 'Ambient justification string attempting bypass';
+    await assert.rejects(
+      async () => executeCanonicalRecovery(mockConn, fakeDump, mockDb, {
+        manifest: manifestUnrehearsed,
+        confirmationToken: testRunId
+      }),
+      /FAIL_CLOSED_REHEARSAL_REQUIRED.*Ambient environment overrides are prohibited/
+    );
+    delete process.env.ALLOW_UNREHEARSED_EMERGENCY_RECOVERY;
+    delete process.env.EMERGENCY_RECOVERY_JUSTIFICATION;
+
+    // 3. Rejects emergency authorization with mismatched target_run_id (prevents cross-run reuse)
     await assert.rejects(
       async () => executeCanonicalRecovery(mockConn, fakeDump, mockDb, {
         manifest: manifestUnrehearsed,
         confirmationToken: testRunId,
-        allowUnrehearsedEmergencyRecovery: true,
-        emergencyRecoveryJustification: 'short'
+        emergencyAuthorization: {
+          target_run_id: 'DIFFERENT_RUN_ID',
+          target_database: mockDb.database,
+          operator_id: 'operator:lead_secops',
+          justification: 'Incident #9999: production database outage requiring immediate recovery',
+          acknowledged_risks: ['DATA_LOSS', 'SCHEMA_DIVERGENCE'],
+          authorization_code: `EMERGENCY_OVERRIDE:DIFFERENT_RUN_ID:${mockDb.database}`
+        }
       }),
-      /FAIL_CLOSED_REHEARSAL_REQUIRED/
+      /EMERGENCY_OVERRIDE_RUN_MISMATCH/
     );
 
-    // 3. Ambient confirmation flag without matching run_id rejected
+    // 4. Rejects emergency authorization with mismatched database (prevents cross-database reuse)
+    await assert.rejects(
+      async () => executeCanonicalRecovery(mockConn, fakeDump, mockDb, {
+        manifest: manifestUnrehearsed,
+        confirmationToken: testRunId,
+        emergencyAuthorization: {
+          target_run_id: testRunId,
+          target_database: 'another_db_name',
+          operator_id: 'operator:lead_secops',
+          justification: 'Incident #9999: production database outage requiring immediate recovery',
+          acknowledged_risks: ['DATA_LOSS', 'SCHEMA_DIVERGENCE'],
+          authorization_code: `EMERGENCY_OVERRIDE:${testRunId}:another_db_name`
+        }
+      }),
+      /EMERGENCY_OVERRIDE_DATABASE_MISMATCH/
+    );
+
+    // 5. Rejects generic operator identity
+    await assert.rejects(
+      async () => executeCanonicalRecovery(mockConn, fakeDump, mockDb, {
+        manifest: manifestUnrehearsed,
+        confirmationToken: testRunId,
+        emergencyAuthorization: {
+          target_run_id: testRunId,
+          target_database: mockDb.database,
+          operator_id: 'admin',
+          justification: 'Incident #9999: production database outage requiring immediate recovery',
+          acknowledged_risks: ['DATA_LOSS', 'SCHEMA_DIVERGENCE'],
+          authorization_code: `EMERGENCY_OVERRIDE:${testRunId}:${mockDb.database}`
+        }
+      }),
+      /EMERGENCY_OVERRIDE_REJECTED: Generic operator identity/
+    );
+
+    // 6. Rejects boilerplate or short justification
+    await assert.rejects(
+      async () => executeCanonicalRecovery(mockConn, fakeDump, mockDb, {
+        manifest: manifestUnrehearsed,
+        confirmationToken: testRunId,
+        emergencyAuthorization: {
+          target_run_id: testRunId,
+          target_database: mockDb.database,
+          operator_id: 'operator:lead_secops',
+          justification: 'emergency',
+          acknowledged_risks: ['DATA_LOSS', 'SCHEMA_DIVERGENCE'],
+          authorization_code: `EMERGENCY_OVERRIDE:${testRunId}:${mockDb.database}`
+        }
+      }),
+      /EMERGENCY_OVERRIDE_JUSTIFICATION_TOO_SHORT|EMERGENCY_OVERRIDE_REJECTED/
+    );
+
+    // 7. Ambient confirmation flag without matching run_id rejected
     process.env.CONFIRM_DESTRUCTIVE_DATABASE_RECOVERY = 'I_CONFIRM_DESTRUCTIVE_DATABASE_RECOVERY';
     const manifestRehearsed = {
       ...manifestUnrehearsed,
@@ -417,7 +524,7 @@ describe('Workstream C — Manifest, Uploads Safety & Recovery Gate Architecture
     delete process.env.CONFIRM_DESTRUCTIVE_DATABASE_RECOVERY;
   });
 
-  test('Streaming restore: backpressure, bounded memory test case, and error propagation', async () => {
+  test('Streaming restore: backpressure, bounded memory, EPIPE fault injection, and error propagation', async () => {
     const streamDump = path.join(backupDir, 'stream_test_dump.sql');
     const line = '-- Sample streaming padding SQL query statement 0123456789 ABCDEF\n';
     const writeStream = fs.createWriteStream(streamDump);
@@ -431,7 +538,7 @@ describe('Workstream C — Manifest, Uploads Safety & Recovery Gate Architecture
 
     await new Promise((resolve) => writeStream.on('finish', resolve));
 
-    // Consumer script simulating mysql client reading stdin
+    // 1. Consumer script simulating normal mysql client reading stdin
     const consumer = path.join(sandboxDir, 'mock_mysql_consumer.js');
     fs.writeFileSync(consumer, `
       let count = 0;
@@ -448,7 +555,7 @@ describe('Workstream C — Manifest, Uploads Safety & Recovery Gate Architecture
     assert.equal(result.code, 0);
     assert.ok(parseFloat(result.maxHeapUsedMB) > 0);
 
-    // Test error propagation: child process failure (code 1) with syntax error
+    // 2. Test error propagation: child process failure (code 1) with syntax error
     const failingConsumer = path.join(sandboxDir, 'failing_mysql_consumer.js');
     fs.writeFileSync(failingConsumer, `
       process.stderr.write("ERROR 1064 (42000): You have an error in your SQL syntax; near 'BROKEN'\\n");
@@ -461,6 +568,25 @@ describe('Workstream C — Manifest, Uploads Safety & Recovery Gate Architecture
         args: [failingConsumer]
       }),
       /Restore process failed \(code 1\): ERROR 1064/
+    );
+
+    // 3. Test explicit EPIPE fault-injection: child exits immediately while stream is mid-transfer
+    const epipeConsumer = path.join(sandboxDir, 'epipe_mysql_consumer.js');
+    fs.writeFileSync(epipeConsumer, `
+      // Read first chunk and immediately destroy stdin and exit, triggering EPIPE on writer
+      process.stdin.once('data', () => {
+        process.stderr.write("FATAL: Database connection severed during streaming restore (EPIPE)\\n");
+        process.stdin.destroy();
+        process.exit(2);
+      });
+    `);
+
+    await assert.rejects(
+      async () => streamRestore(streamDump, mockDb, {
+        mysqlBin: process.execPath,
+        args: [epipeConsumer]
+      }),
+      /Restore process failed \(code 2\): FATAL: Database connection severed/
     );
   });
 });

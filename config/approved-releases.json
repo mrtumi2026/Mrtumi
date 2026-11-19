@@ -1,16 +1,9 @@
 {
-  "schema_version": "1.0",
-  "description": "Mr. Tumi Marketplace — Production Approved Release Registry & Governance Allowlist",
-  "approved_release_tags": [
-    "^v[0-9]+\\.[0-9]+\\.[0-9]+(-rc[0-9]+)?$"
-  ],
-  "approved_commit_allowlist": [
+  "schema_version": "3.3",
+  "description": "Mr. Tumi Marketplace — Production Approved Release Policy (Pointer to Cryptographic Governance)",
+  "governance_config": "config/release-governance.json",
+  "historical_baseline_allowlist": [
     "1b3c9a1950c2e8de7b76efb0d86717b02f64f100",
     "5285d82e7e233c50561222c419fc163d79d74c5d"
-  ],
-  "governance_signoffs": [
-    "release-governance-board",
-    "lead-architect-approved",
-    "arena-audit-candidate"
   ]
 }

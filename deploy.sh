@@ -104,8 +104,8 @@ if ! git cat-file -e "${TARGET_COMMIT_SHA}^{commit}" 2>/dev/null; then
   exit 1
 fi
 
-# Verify release target approval under Project 01 Release Governance Policy
-node scripts/ops/verify-release-approval.js "$TARGET_COMMIT_SHA"
+# Verify release target approval under Project 01 Cryptographic Release Governance Policy
+node scripts/ops/verify-release-approval.js "$TARGET_COMMIT_SHA" "${2:-}"
 
 # Check for untracked path collisions with release diff
 node -e '
