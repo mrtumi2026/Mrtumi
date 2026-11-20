@@ -4,6 +4,18 @@
 
 This queue lists every item in `MASTER_CHECKLIST.md` whose audited status is not `TESTED AND PASSED`/complete (50 items at creation). Status and evidence must be updated after each accepted batch. `BLOCKED` refers only to the dependent provider/policy/live-verification acceptance; safe adapter foundations are still queued.
 
+## Delivery & Operations Backlog — Observability, Health & Resilience
+
+The following operational engineering tasks are tracked for continuous production reliability and safe maintenance:
+
+| ID | Operational Capability | Goal / Scope | Acceptance Criteria |
+|---|---|---|---|
+| `OPS-01` | **Centralized Structured Logging** | Unified Pino/Winston structured logging across all subsystems (HTTP access, auth, background crons, courier adapters). | Standard JSON logs with timestamp, requestId, level, and context; log rotation; zero unstructured console.log in production paths. |
+| `OPS-02` | **Universal Secret Redaction** | Comprehensive runtime filter for logs and exception handlers. | Automatically redacts OTPs, recovery tokens, authorization headers, passwords, session IDs, and courier API keys with `[REDACTED_SECRET]`. |
+| `OPS-03` | **One-Command Diagnostic Report** | CLI utility (`npm run diagnose:prod`) for instantaneous platform health audit. | Non-destructively inspects Node version, Passenger environment, MySQL pool latency, migration checksum status, and adapter readiness; prints sanitized report. |
+| `OPS-04` | **Deployment Health Check Runner** | Automated post-deployment smoke verification (`npm run deploy:verify`). | Checks HTTP 200/503 states for storefront, customer recovery, customer login, and checkout endpoints; verifies asset hashes and DB liveness. |
+| `OPS-05` | **Deterministic Rollback Runbook** | Documented and rehearsed rollback protocol for code and database schemas. | Step-by-step instructions for Git rollback, Passenger restart (`touch tmp/restart.txt`), migration down-safety validation, and state preservation. |
+
 ## Durable continuation checkpoint
 
 - Verified implementation slice: Phase 06 supplier create at `e1f6a2a2876cffc173eaba0c623099ed38071359`, exact-SHA MySQL 8.0 run `40493990393` passed. It keeps persistence and `supplier.create` audit atomic in MySQL and SQLite; authenticated route tests cover denial, CSRF, validation, persistence, audit and rollback.

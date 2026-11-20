@@ -39,7 +39,7 @@ function isValidSid(val) {
 }
 
 function appendSidToUrl(targetUrl, sid) {
-  if (!targetUrl || !sid) return targetUrl;
+  if (env.isProduction || !targetUrl || !sid) return targetUrl;
   const str = String(targetUrl);
   if (!str.startsWith('/') || str.startsWith('//')) return str;
   const [pathAndQuery, hash] = str.split('#');
@@ -60,7 +60,7 @@ function buildCookieHeader(req, sid) {
     'HttpOnly',
   ];
 
-  if (env.isProduction) {
+  if (env.isProduction || isHttps) {
     cookieParts.push('SameSite=Lax', 'Secure');
   } else if (isHttps) {
     cookieParts.push('SameSite=None', 'Secure', 'Partitioned');

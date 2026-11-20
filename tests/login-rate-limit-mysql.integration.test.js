@@ -7,9 +7,13 @@ const { env } = require('../src/config/env');
 const mysql = require('../src/db/mysqlPool');
 const { consumeLoginBucket } = require('../src/repositories/loginRateLimitRepository');
 
-const testDatabase = /(?:^|[_-])test(?:[_-]|$)/i.test(String(env.db.name || ''));
-const enabled = process.env.RUN_MYSQL_LOGIN_LIMIT_TESTS === '1' && env.nodeEnv !== 'production' && env.db.client === 'mysql' && testDatabase;
-const skipReason = enabled ? false : 'SKIP: requires RUN_MYSQL_LOGIN_LIMIT_TESTS=1, NODE_ENV=test/development, DB_CLIENT=mysql and a disposable DB_NAME containing "test".';
+const testDatabase = /(?:^|[_-])test(?:[_-]|$)/i.test(String(env.db.name || process.env.MYSQL_TEST_DB || ''));
+const isMySQLConfigured = env.db.client === 'mysql' || process.env.MYSQL_TEST_REQUIRED === 'true' || Boolean(process.env.MYSQL_TEST_HOST);
+const enabled = (process.env.RUN_MYSQL_LOGIN_LIMIT_TESTS === '1' || process.env.MYSQL_TEST_REQUIRED === 'true' || Boolean(process.env.MYSQL_TEST_HOST)) &&
+  env.nodeEnv !== 'production' &&
+  isMySQLConfigured &&
+  testDatabase;
+const skipReason = enabled ? false : 'SKIP: requires disposable MySQL/MariaDB service with DB_NAME containing "test" (or RUN_MYSQL_LOGIN_LIMIT_TESTS=1).';
 
 test('MySQL login limiter is atomic under concurrency, persists across pool restart, and expires', { skip: skipReason }, async () => {
   const suffix = crypto.randomBytes(12).toString('hex');

@@ -1,5 +1,7 @@
 'use strict';
 
+const { validateCourierBaseUrl } = require('../../utils/ssrfValidator');
+
 /**
  * Base abstract adapter for courier service integrations.
  * Provides unified contract for real-time / configured quote comparison,
@@ -11,10 +13,10 @@ class CourierBaseAdapter {
     this.providerName = String(config.name || '').trim();
     this.providerType = String(config.provider_type || config.code || '').trim().toLowerCase();
     this.baseUrl = String(config.base_url || '').trim();
-    this.apiKey = String(config.api_key || '').trim();
-    this.secretKey = String(config.secret_key || '').trim();
-    this.clientId = String(config.client_id || '').trim();
-    this.isSandbox = Boolean(Number(config.sandbox || 0));
+    this.apiKey = String(config.api_key || config.apiKey || '').trim();
+    this.secretKey = String(config.secret_key || config.secretKey || '').trim();
+    this.clientId = String(config.client_id || config.clientId || '').trim();
+    this.isSandbox = Boolean(Number(config.sandbox || 0) || config.isSandbox);
     this.supportsLiveQuotes = Boolean(Number(config.supports_live_quotes || 0));
     this.fetchFn = config.fetchFn || null;
     this.serviceOptions = config.service_options_json
@@ -27,6 +29,13 @@ class CourierBaseAdapter {
    * Ensures API credentials are never leaked in network errors.
    */
   async safeFetch(url, options = {}, timeoutMs = 8000) {
+    const isTestMode = process.env.NODE_ENV === 'test';
+    const isMockFetch = Boolean(this.fetchFn);
+    const isLocalTestServer = isTestMode && (url.startsWith('http://127.0.0.1') || url.startsWith('http://localhost'));
+
+    if (!isMockFetch && !isLocalTestServer) {
+      await validateCourierBaseUrl(url);
+    }
     const fetchFn = this.fetchFn || globalThis.fetch || require('node-fetch');
     const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
     const signal = controller ? controller.signal : undefined;
@@ -41,8 +50,21 @@ class CourierBaseAdapter {
     try {
       const response = await fetchFn(url, {
         ...options,
-        signal
+        signal,
+        redirect: 'manual'
       });
+      if ([301, 302, 303, 307, 308].includes(response.status)) {
+        const location = response.headers && typeof response.headers.get === 'function'
+          ? response.headers.get('location')
+          : (response.headers && response.headers.location);
+        if (location) {
+          const redirectUrl = new URL(location, url).toString();
+          const isRedirectLocalTest = isTestMode && (redirectUrl.startsWith('http://127.0.0.1') || redirectUrl.startsWith('http://localhost'));
+          if (!isMockFetch && !isRedirectLocalTest) {
+            await validateCourierBaseUrl(redirectUrl);
+          }
+        }
+      }
       return response;
     } catch (err) {
       if (err.name === 'AbortError' || err.name === 'TimeoutError' || err.code === 'ABORT_ERR') {

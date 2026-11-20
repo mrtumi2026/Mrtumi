@@ -127,6 +127,8 @@ async function checkPhoneFraud(rawPhone) {
       ],
       storeOrders,
       isBlocked,
+      isLiveApi: false,
+      provider: 'internal_store',
       notice: 'External BD Courier API Key is not configured in Admin Settings. Showing internal store order metrics.'
     };
   }
@@ -203,7 +205,9 @@ async function checkPhoneFraud(rawPhone) {
       totalReturned,
       couriers,
       storeOrders,
-      isBlocked
+      isBlocked,
+      isLiveApi: true,
+      provider: 'bdcourier_live'
     };
   } catch (err) {
     logger.warn(`BD Courier query error for ${phone}: ` + err.message);
@@ -229,6 +233,8 @@ async function checkPhoneFraud(rawPhone) {
       ],
       storeOrders,
       isBlocked,
+      isLiveApi: false,
+      provider: 'internal_store',
       notice: 'External BD Courier API timed out. Displaying local store order history.'
     };
   } finally {

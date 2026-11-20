@@ -1,0 +1,32 @@
+{
+  "schema_version": "3.5",
+  "description": "Mr. Tumi Marketplace — Cryptographic Release Governance Trust Store & Policy",
+  "policy": {
+    "require_cryptographic_signature": true,
+    "allowed_signature_algorithms": [
+      "ed25519"
+    ],
+    "approved_tag_pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+(-rc[0-9]+)?$",
+    "max_ticket_validity_hours": 72,
+    "allow_ambient_signoffs": false,
+    "allow_unlisted_sha_bypass": false
+  },
+  "trusted_keys": [
+    {
+      "key_id": "gov-board-2026-ed25519",
+      "algorithm": "ed25519",
+      "public_key": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA0eHHvMeQs/eLHH6Wqk/nL1Sq43jEz92MBBZryn+URN0=\n-----END PUBLIC KEY-----",
+      "owner": "Mr. Tumi Release Governance Board <governance@mrtumi.com>",
+      "roles": [
+        "production_release_approval"
+      ],
+      "valid_from": "2026-01-01T00:00:00Z",
+      "valid_until": "2027-01-01T00:00:00Z"
+    }
+  ],
+  "revoked_key_ids": [],
+  "historical_baseline_allowlist": [
+    "1b3c9a1950c2e8de7b76efb0d86717b02f64f100",
+    "5285d82e7e233c50561222c419fc163d79d74c5d"
+  ]
+}

@@ -1,0 +1,80 @@
+name: Build Mobile Apps (APK & iOS)
+
+on:
+  push:
+    paths:
+      - 'android/**'
+      - 'ios/**'
+      - '.github/workflows/build-mobile-apps.yml'
+  workflow_dispatch:
+
+jobs:
+  build-android-apks:
+    name: Build Android APKs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Make Gradle Wrapper Executable
+        run: |
+          chmod +x android/customer-app/gradlew
+          chmod +x android/partner-app/gradlew
+
+      - name: Build Customer App APK
+        run: |
+          cd android/customer-app
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Build Partner App APK
+        run: |
+          cd android/partner-app
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Prepare APK Artifacts
+        run: |
+          mkdir -p build-apks
+          cp android/customer-app/app/build/outputs/apk/debug/app-debug.apk build-apks/MrTumi-Customer-App.apk
+          cp android/partner-app/app/build/outputs/apk/debug/app-debug.apk build-apks/MrTumi-Partner-App.apk
+
+      - name: Upload Android APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: MrTumi-Android-APKs
+          path: build-apks/*.apk
+          retention-days: 30
+
+  build-ios-app:
+    name: Build iOS Native App
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Select Xcode Version
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app || true
+
+      - name: Build iOS App Scheme
+        run: |
+          cd ios
+          xcodebuild build \
+            -project MrTumi.xcodeproj \
+            -scheme MrTumi \
+            -destination "generic/platform=iOS Simulator" \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Upload iOS Xcode Project
+        uses: actions/upload-artifact@v4
+        with:
+          name: MrTumi-iOS-App
+          path: ios/
+          retention-days: 30

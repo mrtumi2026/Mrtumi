@@ -9,6 +9,39 @@ const logger = require('../utils/logger');
 const DEFAULT_MIGRATIONS_DIR = path.join(__dirname, 'migrations');
 const MIGRATION_LOCK_NAME = 'mrtumi_schema_migration';
 
+const KNOWN_CHECKSUM_ALIASES = {
+  '0030': new Set([
+    '7ceb4304a6d11636410d1aa505feb58de60c4f507fb331bc3927f1d8cd03c0bc', // d48583a (LF)
+    'b4f46a8c88a01695e423869864dc430c4656f07de3588b7719b3585dfc42a452', // d48583a (CRLF)
+    'e289337027e4b5fa47512e056c982b783c90bb846262654d1cd8718fb3b80898', // 80086b7 (LF)
+    'f63ef498c2a204c672168f083e6ea5add96721cf5d126fd89c498f37b57df520', // 80086b7 (CRLF)
+    'ca1a5b47a9ef332ca89b0d2d3a778e5ab663e26210be8c5bc803b90906be336a', // intermediate alias
+  ]),
+  '0032': new Set([
+    'd590045213ae8d0f282a6c4b7434a43c9b8d69ddf29293abd06a6e07c44425a4', // d48583a (LF)
+    '95ac8642eebdf5613b0f79ef9bc89048df8e193b4c2ea8b3270932a7e2ca5f2a', // d48583a (CRLF)
+  ]),
+  '0033': new Set([
+    'f2b4b93601fdad281829bc15a0e413f5aa5940e2a23e7750d14c0c54277edc04', // d48583a (LF)
+    '102399b0e74eaaacc9e19f691e441a33443b1e1e51413662d59dd0f84d158c47', // d48583a (CRLF)
+  ]),
+  '0034': new Set([
+    '5976ee07d7368e7d50b8ddd60c12ea7084eb5321ac505324d1ce699f7000fd17', // 4d62d86 (LF) - production applied
+    'b319440aa224aa8a5202f6c24d4ebe8fdea1ac51e129dcd02ae8abd0e61bedaa', // 4d62d86 (CRLF)
+    '339fd3fa888c290f514666a74bd0be4f2f6ba67b10783d827ca0cb816651bc57', // 80086b7 (CRLF)
+  ]),
+  '0035': new Set([
+    'dc39e04a0f45ff73be5837c60021caa1a0cd6551aeec802b906dec77afde891b', // 2f2a84b (LF) - original
+    '5005ec8784babd7df4f3177226e309ead91165edaa0243ee78a2665469b6ecc1', // 2f2a84b (CRLF)
+    '74316bbb3f3170c3c38dd57ec5aa622d9e69405584cde609c22035828a0491ef', // 80086b7 (CRLF)
+  ]),
+  '0036': new Set([
+    '926a80da8e96da19ba0daad6a9bdf3a0adffa35d920a35d81b0f52197af79977', // 56bc9c1 (LF) - original
+    '533e048096b0f4ca85831c34f65fab4463c79c6e7f246f758d26fa87cf0d8170', // 56bc9c1 (CRLF)
+    '97d7d675be0f04ebd2674a933939fffe2de01e8525e1ee4fb7340e3fbd3b152a', // 80086b7 (CRLF)
+  ]),
+};
+
 class MigrationError extends AppError {
   constructor(code, message, details = null) {
     super(code, message, 500, details);
@@ -230,7 +263,13 @@ function verifyIntegrity(pairs, appliedMap) {
         `Applied migration version "${appliedVer}" (${appliedRow.name}) is missing from disk.`
       );
     }
-    if (disk.checksum !== appliedRow.checksum) {
+    const aliases = KNOWN_CHECKSUM_ALIASES[appliedVer];
+    const diskLfChecksum = sha256Hex(disk.upSql.replace(/\r\n/g, '\n'));
+    const matchesChecksum =
+      disk.checksum === appliedRow.checksum ||
+      diskLfChecksum === appliedRow.checksum ||
+      Boolean(aliases && (aliases.has(appliedRow.checksum) || aliases.has(disk.checksum)));
+    if (!matchesChecksum) {
       throw new MigrationError(
         'MIGRATION_CHECKSUM_MISMATCH',
         `Checksum mismatch for applied migration "${disk.upFile}". Expected ${appliedRow.checksum}, got ${disk.checksum}.`,
@@ -276,6 +315,33 @@ async function getMigrationStatus(pool, { migrationsDir = DEFAULT_MIGRATIONS_DIR
   }
 }
 
+async function detectIsMariaDB(conn) {
+  try {
+    const [rows] = await conn.query('SELECT VERSION() AS version, @@version_comment AS version_comment');
+    const ver = String(rows && rows[0] && rows[0].version ? rows[0].version : '');
+    const comment = String(rows && rows[0] && rows[0].version_comment ? rows[0].version_comment : '');
+    return /mariadb/i.test(ver) || /mariadb/i.test(comment);
+  } catch {
+    return false;
+  }
+}
+
+function adaptStatementForEngine(sql, isMariaDB) {
+  if (isMariaDB) return sql;
+  // MySQL 8.0 does not support MariaDB-specific IF [NOT] EXISTS clauses on ALTER TABLE statements
+  let adapted = sql;
+  if (/^\s*ALTER\s+TABLE/i.test(adapted)) {
+    adapted = adapted
+      .replace(/\bADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\b/gi, 'ADD COLUMN')
+      .replace(/\bADD\s+UNIQUE\s+KEY\s+IF\s+NOT\s+EXISTS\b/gi, 'ADD UNIQUE KEY')
+      .replace(/\bADD\s+KEY\s+IF\s+NOT\s+EXISTS\b/gi, 'ADD KEY')
+      .replace(/\bDROP\s+INDEX\s+IF\s+EXISTS\b/gi, 'DROP KEY')
+      .replace(/\bDROP\s+KEY\s+IF\s+EXISTS\b/gi, 'DROP KEY')
+      .replace(/\bDROP\s+COLUMN\s+IF\s+EXISTS\b/gi, 'DROP COLUMN');
+  }
+  return adapted;
+}
+
 async function migrateUp(pool, { migrationsDir = DEFAULT_MIGRATIONS_DIR, targetVersion = null, lockTimeoutSec = 15 } = {}) {
   const pairs = loadMigrationPairs(migrationsDir);
   const conn = await pool.getConnection();
@@ -283,6 +349,7 @@ async function migrateUp(pool, { migrationsDir = DEFAULT_MIGRATIONS_DIR, targetV
 
   try {
     await acquireAdvisoryLock(conn, lockTimeoutSec);
+    const isMariaDB = await detectIsMariaDB(conn);
     const appliedMap = await getAppliedMigrationsMap(conn);
     verifyIntegrity(pairs, appliedMap);
 
@@ -297,8 +364,9 @@ async function migrateUp(pool, { migrationsDir = DEFAULT_MIGRATIONS_DIR, targetV
 
       const started = Date.now();
       for (let idx = 0; idx < statements.length; idx++) {
+        const stmt = adaptStatementForEngine(statements[idx], isMariaDB);
         try {
-          await conn.query(statements[idx]);
+          await conn.query(stmt);
         } catch (err) {
           throw new MigrationError(
             'MIGRATION_STATEMENT_FAILED',
@@ -341,6 +409,7 @@ async function migrateDown(pool, { migrationsDir = DEFAULT_MIGRATIONS_DIR, steps
 
   try {
     await acquireAdvisoryLock(conn, lockTimeoutSec);
+    const isMariaDB = await detectIsMariaDB(conn);
     const appliedMap = await getAppliedMigrationsMap(conn);
     verifyIntegrity(pairs, appliedMap);
 
@@ -354,8 +423,9 @@ async function migrateDown(pool, { migrationsDir = DEFAULT_MIGRATIONS_DIR, steps
 
       const started = Date.now();
       for (let idx = 0; idx < statements.length; idx++) {
+        const stmt = adaptStatementForEngine(statements[idx], isMariaDB);
         try {
-          await conn.query(statements[idx]);
+          await conn.query(stmt);
         } catch (err) {
           throw new MigrationError(
             'ROLLBACK_STATEMENT_FAILED',
@@ -385,11 +455,15 @@ async function migrateDown(pool, { migrationsDir = DEFAULT_MIGRATIONS_DIR, steps
 
 module.exports = {
   DEFAULT_MIGRATIONS_DIR,
+  KNOWN_CHECKSUM_ALIASES,
   MigrationError,
   sha256Hex,
   splitSqlStatements,
   loadMigrationPairs,
+  verifyIntegrity,
   getMigrationStatus,
   migrateUp,
   migrateDown,
+  detectIsMariaDB,
+  adaptStatementForEngine,
 };

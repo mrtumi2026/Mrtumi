@@ -20,57 +20,87 @@ async function consumeLoginBucket({ bucketKey, max, windowMs }) {
   }
   const seconds = Math.ceil(windowMs / 1000);
 
-  const result = await mysql.withTransaction(async (tx) => {
-    await tx.execute(
-      `INSERT IGNORE INTO rate_limits (bucket_key, hit_count, reset_at, updated_at)
-       VALUES (?, 0, DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? SECOND), UTC_TIMESTAMP())`,
-      [bucketKey, seconds]
-    );
-    const row = await tx.queryOne(
-      `SELECT hit_count, reset_at,
-              (reset_at <= UTC_TIMESTAMP()) AS is_expired,
-              GREATEST(1, TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), reset_at)) AS retry_after_sec
-       FROM rate_limits WHERE bucket_key = ? FOR UPDATE`,
-      [bucketKey]
-    );
-    if (!row) throw new Error('Rate-limit bucket disappeared during a transaction.');
+  // Ensure the rate_limits bucket row exists in autocommit mode outside the multi-statement
+  // transaction to avoid concurrent next-key/gap lock deadlocks (ER_LOCK_DEADLOCK) in InnoDB.
+  await mysql.execute(
+    `INSERT IGNORE INTO rate_limits (bucket_key, hit_count, reset_at, updated_at)
+     VALUES (?, 0, DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? SECOND), UTC_TIMESTAMP())`,
+    [bucketKey, seconds]
+  ).catch(() => {});
 
-    let count;
-    let retryAfterSec;
-    let allowed;
-    if (Number(row.is_expired) === 1) {
-      await tx.execute(
-        `UPDATE rate_limits
-         SET hit_count = 1, reset_at = DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? SECOND), updated_at = UTC_TIMESTAMP()
-         WHERE bucket_key = ?`,
-        [seconds, bucketKey]
-      );
-      count = 1;
-      retryAfterSec = seconds;
-      allowed = true;
-    } else {
-      retryAfterSec = Math.max(1, Number(row.retry_after_sec) || seconds);
-      count = Number(row.hit_count) || 0;
-      if (count < max) {
-        await tx.execute(
-          'UPDATE rate_limits SET hit_count = hit_count + 1, updated_at = UTC_TIMESTAMP() WHERE bucket_key = ?',
+  const maxAttempts = 3;
+  let result;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      result = await mysql.withTransaction(async (tx) => {
+        let row = await tx.queryOne(
+          `SELECT hit_count, reset_at,
+                  (reset_at <= UTC_TIMESTAMP()) AS is_expired,
+                  GREATEST(1, TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), reset_at)) AS retry_after_sec
+           FROM rate_limits WHERE bucket_key = ? FOR UPDATE`,
           [bucketKey]
         );
-        count += 1;
-        allowed = true;
-      } else {
-        allowed = false;
-      }
-    }
+        if (!row) {
+          await tx.execute(
+            `INSERT IGNORE INTO rate_limits (bucket_key, hit_count, reset_at, updated_at)
+             VALUES (?, 0, DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? SECOND), UTC_TIMESTAMP())`,
+            [bucketKey, seconds]
+          );
+          row = await tx.queryOne(
+            `SELECT hit_count, reset_at,
+                    (reset_at <= UTC_TIMESTAMP()) AS is_expired,
+                    GREATEST(1, TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), reset_at)) AS retry_after_sec
+             FROM rate_limits WHERE bucket_key = ? FOR UPDATE`,
+            [bucketKey]
+          );
+        }
+        if (!row) throw new Error('Rate-limit bucket disappeared during a transaction.');
 
-    return {
-      allowed,
-      count,
-      limit: max,
-      remaining: Math.max(0, max - count),
-      retryAfterSec,
-    };
-  });
+        let count;
+        let retryAfterSec;
+        let allowed;
+        if (Number(row.is_expired) === 1) {
+          await tx.execute(
+            `UPDATE rate_limits
+             SET hit_count = 1, reset_at = DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? SECOND), updated_at = UTC_TIMESTAMP()
+             WHERE bucket_key = ?`,
+            [seconds, bucketKey]
+          );
+          count = 1;
+          retryAfterSec = seconds;
+          allowed = true;
+        } else {
+          retryAfterSec = Math.max(1, Number(row.retry_after_sec) || seconds);
+          count = Number(row.hit_count) || 0;
+          if (count < max) {
+            await tx.execute(
+              'UPDATE rate_limits SET hit_count = hit_count + 1, updated_at = UTC_TIMESTAMP() WHERE bucket_key = ?',
+              [bucketKey]
+            );
+            count += 1;
+            allowed = true;
+          } else {
+            allowed = false;
+          }
+        }
+
+        return {
+          allowed,
+          count,
+          limit: max,
+          remaining: Math.max(0, max - count),
+          retryAfterSec,
+        };
+      });
+      break;
+    } catch (err) {
+      if (err && err.mysqlCode === 'ER_LOCK_DEADLOCK' && attempt < maxAttempts) {
+        await new Promise((resolve) => setTimeout(resolve, Math.floor(Math.random() * 25) + 10));
+        continue;
+      }
+      throw err;
+    }
+  }
 
   operationsSinceCleanup += 1;
   if (operationsSinceCleanup >= CLEANUP_EVERY) {

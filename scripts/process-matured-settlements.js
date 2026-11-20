@@ -3,6 +3,7 @@
 /** One-shot settlement runner. It is deliberately inert unless --apply is supplied. */
 const settlementRepository = require('../src/repositories/partnerSettlementRepository');
 const mysql = require('../src/db/mysqlPool');
+const { guardWorkerExecution } = require('./ops/maintenance-guard');
 
 function parseArgs(argv) {
   const options = { apply: false, returnWindowDays: 7 };
@@ -21,6 +22,7 @@ function parseArgs(argv) {
 }
 
 (async () => {
+  guardWorkerExecution('process-matured-settlements');
   const options = parseArgs(process.argv.slice(2));
   if (options.help) return;
   if (!options.apply) {

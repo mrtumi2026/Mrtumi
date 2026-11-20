@@ -79,13 +79,35 @@
           <input type="number" name="stock" value="<%= product ? product.stock : '100' %>" class="form-control" required />
         </div>
 
-        <div class="col-md-6">
-          <label class="form-label fw-semibold small">Sizes / Weight Variants (comma separated)</label>
-          <input type="text" name="sizes" value="<%= product ? product.sizes : '৫০০ গ্রাম,১ কেজি,২ কেজি' %>" class="form-control" />
+        <div class="col-md-3">
+          <label class="form-label fw-semibold small">Unit / একক *</label>
+          <input type="text" name="unit" list="admin-unit-list" value="<%= (product && (product.unit || product.unit_label)) ? (product.unit || product.unit_label) : '1 pc' %>" class="form-control" placeholder="1 pc, 1 kg, 1 dozen..." required />
+          <datalist id="admin-unit-list">
+            <option value="1 pc">১ পিস / 1 Piece</option>
+            <option value="1 packet">১ প্যাকেট / 1 Packet</option>
+            <option value="1 box">১ বক্স / 1 Box</option>
+            <option value="1 dozen">১ ডজন (১২টি) / 1 Dozen</option>
+            <option value="1 hali">১ হালি (৪টি) / 1 Hali</option>
+            <option value="1 pon">১ পোঁন (৮০টি) / 1 Pon</option>
+            <option value="100 pcs">১০০টি / 100 Pieces</option>
+            <option value="1 kg">১ কেজি / 1 kg</option>
+            <option value="500 g">৫০০ গ্রাম / 500 g</option>
+            <option value="250 g">২৫০ গ্রাম / 250 g</option>
+            <option value="100 g">১০০ গ্রাম / 100 g</option>
+            <option value="5 kg">৫ কেজি / 5 kg</option>
+            <option value="1 L">১ লিটার / 1 Litre</option>
+            <option value="500 ml">৫০০ মিলি / 500 ml</option>
+            <option value="250 ml">২৫০ মিলি / 250 ml</option>
+          </datalist>
         </div>
-        <div class="col-md-6">
+
+        <div class="col-md-5">
+          <label class="form-label fw-semibold small">Sizes / Options (optional text tags)</label>
+          <input type="text" name="sizes" value="<%= product ? (product.sizes || '') : '' %>" class="form-control" placeholder="যেমন: ছোট, মাঝারি, বড়" />
+        </div>
+        <div class="col-md-4">
           <label class="form-label fw-semibold small">Colors / Grade Options (comma separated)</label>
-          <input type="text" name="colors" value="<%= product ? product.colors : 'লাল,গোলাপি' %>" class="form-control" />
+          <input type="text" name="colors" value="<%= product ? (product.colors || '') : '' %>" class="form-control" placeholder="যেমন: লাল, সবুজ" />
         </div>
 
         <div class="col-md-6">

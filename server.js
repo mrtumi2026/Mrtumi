@@ -16,11 +16,13 @@ const { legacyAdminRbac, legacyAdminCsrf } = require('./src/middleware/legacyAdm
 const { legacyAdminAudit } = require('./src/middleware/legacyAdminAudit');
 const { recordErrorLog } = require('./src/repositories/auditLogRepository');
 
-const isStartupInvocation = require.main === module || typeof PhusionPassenger !== 'undefined';
-if (isStartupInvocation && env.isDevelopment) {
+const isPassenger = typeof PhusionPassenger !== 'undefined' || Boolean(process.env.PASSENGER_APP_ENV) || Boolean(process.env.PHUSION_PASSENGER);
+const isDirectStartup = require.main === module || isPassenger;
+
+if (isDirectStartup && env.isDevelopment) {
   throw new Error('DEPLOYMENT STARTUP ERROR: direct server.js startup refuses development defaults; use `npm run dev` locally or configure production and use app.js.');
 }
-if (isStartupInvocation && env.isTest && process.env.APP_ALLOW_TEST_STARTUP !== 'true') {
+if (isDirectStartup && env.isTest && process.env.APP_ALLOW_TEST_STARTUP !== 'true') {
   throw new Error('DEPLOYMENT STARTUP ERROR: NODE_ENV=test cannot start server.js without the explicit test-only APP_ALLOW_TEST_STARTUP=true flag.');
 }
 
@@ -46,6 +48,7 @@ const phase08AdminRoutes = require('./src/routes/phase08Admin');
 const d7AdminRoutes = require('./src/routes/d7Admin');
 const paymentRoutes = require('./src/routes/paymentRoutes');
 const logisticsRoutes = require('./src/routes/logisticsRoutes');
+const adminTestDataRoutes = require('./src/routes/adminTestData');
 const { createSecurityHeaders } = require('./src/middleware/securityHeaders');
 const { corsMiddleware } = require('./src/middleware/corsConfig');
 const { sanitizeRequestMiddleware } = require('./src/middleware/validator');
@@ -93,29 +96,24 @@ app.use(attachRequestId);
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(express.json({ limit: '10mb' }));
 app.use(sanitizeRequestMiddleware);
-
-// Customer return evidence is private. Legacy evidence files may still exist beneath the
-// public upload tree, so any file registered in `customer_return_requests` is refused
-// before either static handler can serve it. This guard must stay above `express.static`.
+// Older return evidence was saved below /uploads/custom. Keep those files out of
+// public static responses without deleting customer evidence or changing history.
 app.use('/uploads/custom', async (req, res, next) => {
-  if (req.method !== 'GET' && req.method !== 'HEAD') return next();
-  const match = /^\/?return-evidence\/([A-Za-z0-9-]+\.(?:jpg|jpeg|png|webp|gif))$/i.exec(String(req.path || ''));
-  if (!match) return next();
-  const evidenceKey = `return-evidence/${match[1]}`;
+  if (env.db.client !== 'mysql' || !/\.(?:jpe?g|png|webp|gif)$/i.test(req.path)) return next();
+  const filename = path.basename(req.path);
+  if (!filename || filename === '.' || filename === '..') return next();
   try {
-    const legacyEvidence = env.db.client === 'mysql'
-      ? await mysqlPool.queryOne('SELECT id FROM customer_return_requests WHERE evidence_path IN (?, ?) LIMIT 1', [evidenceKey, match[1]])
-      : db.get('SELECT id FROM customer_return_requests WHERE evidence_path IN (?, ?) LIMIT 1', evidenceKey, match[1]);
+    const legacyEvidence = await mysqlPool.queryOne(
+      'SELECT id FROM customer_return_requests WHERE evidence_path IN (?, ?) LIMIT 1',
+      [`/uploads/custom/${filename}`, `uploads/custom/${filename}`]
+    );
     if (legacyEvidence) return res.sendStatus(404);
     return next();
   } catch (error) {
-    logger.error('Return evidence exposure guard failed closed', {
-      code: error && error.code ? String(error.code).slice(0, 64) : 'ERROR',
-    });
-    return res.sendStatus(404);
+    logger.error('Unable to verify legacy customer evidence access', { code: error.code || 'DB_QUERY_FAILED' });
+    return res.sendStatus(503);
   }
 });
-
 app.use(express.static(path.join(__dirname, 'public')));
 // Keep uploaded admin images reachable when UPLOAD_DIR points outside the disposable app release.
 // The default local path is also under public/, so this is only a fallback there.
@@ -158,6 +156,7 @@ app.use(adminResellerCommerceRoutes);
 app.use(customerAccountRoutes);
 app.use(paymentRoutes);
 app.use(logisticsRoutes);
+app.use(adminTestDataRoutes);
 app.use(storefrontRoutes);
 
 // 404 Handler (JSON envelope for API paths, HTML/redirects for portal paths)
@@ -203,8 +202,4 @@ if (require.main === module) {
   startServer();
 }
 
-// Primary export remains the Express application so `require('./server')` is a drop-in
-// Passenger-compatible entry point; named exports preserve the existing import contract.
-module.exports = app;
-module.exports.app = app;
-module.exports.startServer = startServer;
+module.exports = Object.assign(app, { app, startServer });

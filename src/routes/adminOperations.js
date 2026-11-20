@@ -11,6 +11,8 @@ const adminManualPaymentRepository = require('../repositories/adminManualPayment
 const adminCustomerRepository = require('../repositories/adminCustomerRepository');
 const phase06Repository = require('../repositories/phase06Repository');
 const adminPartnerDirectoryRepository = require('../repositories/adminPartnerDirectoryRepository');
+const adminResellerCommerceRepository = require('../repositories/adminResellerCommerceRepository');
+const mysqlPool = require('../db/mysqlPool');
 const { asyncHandler } = require('../utils/asyncHandler');
 const { requireAdmin } = require('../middleware/auth');
 const { requireCsrf } = require('../middleware/csrf');
@@ -18,6 +20,12 @@ const { ConflictError, ValidationError } = require('../utils/errors');
 
 const router = express.Router();
 router.use('/admin', requireAdmin);
+
+const actor = (req) => ({
+  id: req.adminUser?.id || req.session?.adminUser?.id || null,
+  ip: req.ip || '',
+  userAgent: req.get('user-agent') || '',
+});
 
 function slugify(str) {
   return (
@@ -820,7 +828,7 @@ async function renderVendors(res, pendingOnly) {
     : pendingOnly
       ? db.all('SELECT * FROM vendors WHERE verified = 0 ORDER BY id DESC')
       : db.all('SELECT * FROM vendors ORDER BY id DESC');
-  if(mysqlMode&&!pendingOnly)return res.render('admin/vendors-mysql',{rows});
+  if (mysqlMode && !pendingOnly) return res.render('admin/vendors-mysql', { rows });
   res.render('admin/crud-module', {
     pageTitle: pendingOnly ? 'Vendor Verifications' : 'All Vendors',
     subtitle: 'মাল্টি-ভেন্ডর সেলার অ্যাকাউন্ট, কমিশন রেট এবং ভেরিফিকেশন',
@@ -885,18 +893,73 @@ router.post('/admin/vendors/create', asyncHandler(async (req, res) => {
   res.redirect('/admin/vendors');
 }));
 
-router.post('/admin/vendors/verify/:id', (req, res) => {
+router.post('/admin/vendors/verify/:id', asyncHandler(async (req, res) => {
+  if (env.db.client === 'mysql') {
+    const mysql = require('../db/mysqlPool');
+    await mysql.withTransaction(async (tx) => {
+      await tx.execute("UPDATE vendors SET verified = 1, lifecycle_status = 'active', status = 1 WHERE id = ?", [req.params.id]);
+      await tx.execute("INSERT INTO audit_logs(actor_type,actor_id,action,entity_type,entity_id,before_json,after_json) VALUES('admin',?,'vendor.verified','vendor',?,'{}',?)", [
+        req.adminUser?.id || null,
+        String(req.params.id),
+        JSON.stringify({ verified: 1, status: 1, lifecycle_status: 'active' })
+      ]);
+    });
+    req.flash('success', 'ভেন্ডর সফলভাবে ভেরিফাই ও সক্রিয় করা হয়েছে!');
+    return res.redirect(req.get('Referrer') || '/admin/vendors');
+  }
   db.run('UPDATE vendors SET verified = 1 WHERE id = ?', req.params.id);
   req.flash('success', 'ভেন্ডর ভেরিফাই করা হয়েছে!');
   res.redirect(req.get('Referrer') || '/admin/vendors');
-});
+}));
 
-router.post('/admin/vendors/delete/:id', (req, res) => {
+router.post('/admin/vendors/delete/:id', asyncHandler(async (req, res) => {
+  if (env.db.client === 'mysql') {
+    const mysql = require('../db/mysqlPool');
+    await mysql.withTransaction(async (tx) => {
+      await tx.execute("UPDATE vendors SET status = 0, lifecycle_status = 'deactivated' WHERE id = ?", [req.params.id]);
+      await tx.execute("INSERT INTO audit_logs(actor_type,actor_id,action,entity_type,entity_id,before_json,after_json) VALUES('admin',?,'vendor.deactivated','vendor',?,'{}',?)", [
+        req.adminUser?.id || null,
+        String(req.params.id),
+        JSON.stringify({ status: 0, lifecycle_status: 'deactivated' })
+      ]);
+    });
+    req.flash('success', 'ভেন্ডর অ্যাকাউন্ট নিষ্ক্রিয় (deactivated) করা হয়েছে।');
+    return res.redirect('/admin/vendors');
+  }
   db.run('DELETE FROM vendors WHERE id = ?', req.params.id);
   res.redirect('/admin/vendors');
-});
+}));
 
-router.get('/admin/vendor-withdrawals', (_req, res) => {
+router.get('/admin/vendor-withdrawals', asyncHandler(async (_req, res) => {
+  if (env.db.client === 'mysql') {
+    const pool = mysqlPool.getPool();
+    const rows = await pool.query(
+      `SELECT vw.id, vw.vendor_id, v.shop_name, (vw.amount_paisa / 100) AS amount,
+              vw.method, vw.account_number, vw.status, vw.created_at
+       FROM vendor_withdrawals vw
+       LEFT JOIN vendors v ON v.id = vw.vendor_id
+       ORDER BY vw.id DESC`
+    ).then(([results]) => results);
+    return res.render('admin/crud-module', {
+      pageTitle: 'Vendor Withdrawals',
+      subtitle: 'ভেন্ডরদের পেমেন্ট উত্তোলন রিকোয়েস্ট ও অনুমোদন',
+      createAction: null,
+      customActionPrefix: '/admin/vendor-withdrawals/approve',
+      customActionLabel: 'Approve / Pay',
+      customActionHideWhenPaid: true,
+      deletePrefix: null,
+      columns: [
+        { key: 'id', label: '#' },
+        { key: 'shop_name', label: 'Vendor Shop' },
+        { key: 'amount', label: 'Amount', type: 'currency' },
+        { key: 'method', label: 'Method' },
+        { key: 'account_number', label: 'Account No' },
+        { key: 'status', label: 'Status', type: 'badge' },
+      ],
+      fields: [],
+      rows,
+    });
+  }
   const rows = db.all(
     `SELECT vw.*, v.shop_name FROM vendor_withdrawals vw
      LEFT JOIN vendors v ON v.id = vw.vendor_id ORDER BY vw.id DESC`
@@ -908,6 +971,7 @@ router.get('/admin/vendor-withdrawals', (_req, res) => {
     createAction: '/admin/vendor-withdrawals/create',
     customActionPrefix: '/admin/vendor-withdrawals/approve',
     customActionLabel: 'Mark Paid',
+    customActionHideWhenPaid: true,
     deletePrefix: '/admin/vendor-withdrawals/delete',
     columns: [
       { key: 'id', label: '#' },
@@ -925,7 +989,7 @@ router.get('/admin/vendor-withdrawals', (_req, res) => {
     ],
     rows,
   });
-});
+}));
 
 router.post('/admin/vendor-withdrawals/create', (req, res) => {
   db.run(
@@ -938,16 +1002,40 @@ router.post('/admin/vendor-withdrawals/create', (req, res) => {
   res.redirect('/admin/vendor-withdrawals');
 });
 
-router.post('/admin/vendor-withdrawals/approve/:id', (req, res) => {
+router.post('/admin/vendor-withdrawals/approve/:id', asyncHandler(async (req, res) => {
+  if (env.db.client === 'mysql') {
+    try {
+      await adminResellerCommerceRepository.decideWithdrawal(
+        { partnerType: 'vendor', requestId: req.params.id, decision: 'approve' },
+        actor(req)
+      );
+      req.flash('success', 'ভেন্ডর উইথড্রয়াল অনুমোদিত হয়েছে এবং ওয়ালেট সমন্বয় সম্পন্ন হয়েছে।');
+    } catch (err) {
+      req.flash('error', `উইথড্রয়াল অনুমোদন ব্যর্থ: ${err.message}`);
+    }
+    return res.redirect('/admin/vendor-withdrawals');
+  }
   db.run("UPDATE vendor_withdrawals SET status = 'paid' WHERE id = ?", req.params.id);
   req.flash('success', 'ভেন্ডর উইথড্রয়াল পরিশোধিত মার্ক করা হয়েছে।');
   res.redirect('/admin/vendor-withdrawals');
-});
+}));
 
-router.post('/admin/vendor-withdrawals/delete/:id', (req, res) => {
+router.post('/admin/vendor-withdrawals/delete/:id', asyncHandler(async (req, res) => {
+  if (env.db.client === 'mysql') {
+    try {
+      await adminResellerCommerceRepository.decideWithdrawal(
+        { partnerType: 'vendor', requestId: req.params.id, decision: 'reject', reason: req.body.reason || 'Rejected by admin' },
+        actor(req)
+      );
+      req.flash('success', 'ভেন্ডর উইথড্রয়াল বাতিল (reject) করা হয়েছে।');
+    } catch (err) {
+      req.flash('error', `উইথড্রয়াল বাতিল ব্যর্থ: ${err.message}`);
+    }
+    return res.redirect('/admin/vendor-withdrawals');
+  }
   db.run('DELETE FROM vendor_withdrawals WHERE id = ?', req.params.id);
   res.redirect('/admin/vendor-withdrawals');
-});
+}));
 
 // Resellers
 router.get('/admin/resellers', asyncHandler(async (_req, res) => renderResellers(res, false)));
@@ -967,6 +1055,7 @@ async function renderResellers(res, unverifiedOnly) {
     createAction: mysqlMode ? null : '/admin/resellers/create',
     customActionPrefix: mysqlMode ? null : '/admin/resellers/verify',
     customActionLabel: 'Verify',
+    customActionHideWhenPaid: true,
     deletePrefix: mysqlMode ? null : '/admin/resellers/delete',
     columns: [
       { key: 'id', label: '#' },
@@ -1004,18 +1093,69 @@ router.post('/admin/resellers/create', (req, res) => {
   res.redirect('/admin/resellers');
 });
 
-router.post('/admin/resellers/verify/:id', (req, res) => {
+router.post('/admin/resellers/verify/:id', asyncHandler(async (req, res) => {
+  if (env.db.client === 'mysql') {
+    try {
+      await adminResellerCommerceRepository.setResellerStatus(req.params.id, 'approve', actor(req));
+      req.flash('success', 'রিসেলার সফলভাবে ভেরিফাই ও সক্রিয় করা হয়েছে!');
+    } catch (err) {
+      req.flash('error', `ভেরিফিকেশন ব্যর্থ: ${err.message}`);
+    }
+    return res.redirect(req.get('Referrer') || '/admin/resellers');
+  }
   db.run('UPDATE resellers SET verified = 1 WHERE id = ?', req.params.id);
+  req.flash('success', 'রিসেলার ভেরিফাই করা হয়েছে!');
   res.redirect('/admin/resellers');
-});
+}));
 
-router.post('/admin/resellers/delete/:id', (req, res) => {
+router.post('/admin/resellers/delete/:id', asyncHandler(async (req, res) => {
+  if (env.db.client === 'mysql') {
+    try {
+      await adminResellerCommerceRepository.setResellerStatus(req.params.id, 'suspend', actor(req));
+      req.flash('success', 'রিসেলার অ্যাকাউন্ট নিষ্ক্রিয় (suspend) করা হয়েছে।');
+    } catch (err) {
+      req.flash('error', `নিষ্ক্রিয়করণ ব্যর্থ: ${err.message}`);
+    }
+    return res.redirect('/admin/resellers');
+  }
   db.run('DELETE FROM resellers WHERE id = ?', req.params.id);
   res.redirect('/admin/resellers');
-});
+}));
 
 router.get('/admin/reseller-deposits', (_req, res) => renderResellerTx(res, 'deposit', 'Reseller Deposits'));
-router.get('/admin/reseller-withdrawals', (_req, res) => renderResellerTx(res, 'withdrawal', 'Reseller Withdrawals'));
+router.get('/admin/reseller-withdrawals', asyncHandler(async (_req, res) => {
+  if (env.db.client === 'mysql') {
+    const pool = mysqlPool.getPool();
+    const rows = await pool.query(
+      `SELECT rt.id, rt.reseller_id, r.name AS reseller_name, r.shop_name,
+              (rt.amount_paisa / 100) AS amount, rt.method, rt.trx_id, rt.status, rt.created_at
+       FROM reseller_transactions rt
+       LEFT JOIN resellers r ON r.id = rt.reseller_id
+       WHERE rt.tx_type = 'withdrawal'
+       ORDER BY rt.id DESC`
+    ).then(([results]) => results);
+    return res.render('admin/crud-module', {
+      pageTitle: 'Reseller Withdrawals',
+      subtitle: 'রিসেলারদের কমিশন উত্তোলন রিকোয়েস্ট ও অনুমোদন',
+      createAction: null,
+      customActionPrefix: '/admin/reseller-tx/approve',
+      customActionLabel: 'Approve / Pay',
+      customActionHideWhenPaid: true,
+      deletePrefix: null,
+      columns: [
+        { key: 'id', label: '#' },
+        { key: 'reseller_name', label: 'Reseller' },
+        { key: 'amount', label: 'Amount', type: 'currency' },
+        { key: 'method', label: 'Method' },
+        { key: 'trx_id', label: 'Transaction / Account' },
+        { key: 'status', label: 'Status', type: 'badge' },
+      ],
+      fields: [],
+      rows,
+    });
+  }
+  return renderResellerTx(res, 'withdrawal', 'Reseller Withdrawals');
+}));
 
 function renderResellerTx(res, type, pageTitle) {
   const rows = db.all(
@@ -1031,6 +1171,7 @@ function renderResellerTx(res, type, pageTitle) {
     createAction: `/admin/reseller-tx/${type}/create`,
     customActionPrefix: '/admin/reseller-tx/approve',
     customActionLabel: 'Approve',
+    customActionHideWhenPaid: true,
     deletePrefix: '/admin/reseller-tx/delete',
     columns: [
       { key: 'id', label: '#' },
@@ -1063,7 +1204,19 @@ router.post('/admin/reseller-tx/:type/create', (req, res) => {
   res.redirect(type === 'deposit' ? '/admin/reseller-deposits' : '/admin/reseller-withdrawals');
 });
 
-router.post('/admin/reseller-tx/approve/:id', (req, res) => {
+router.post('/admin/reseller-tx/approve/:id', asyncHandler(async (req, res) => {
+  if (env.db.client === 'mysql') {
+    try {
+      await adminResellerCommerceRepository.decideWithdrawal(
+        { partnerType: 'reseller', requestId: req.params.id, decision: 'approve' },
+        actor(req)
+      );
+      req.flash('success', 'অনুমোদিত হয়েছে এবং ব্যালেন্স সমন্বয় করা হয়েছে।');
+    } catch (err) {
+      req.flash('error', `অনুমোদন ব্যর্থ: ${err.message}`);
+    }
+    return res.redirect(req.get('Referrer') || '/admin/reseller-withdrawals');
+  }
   const tx = db.get('SELECT * FROM reseller_transactions WHERE id = ?', req.params.id);
   if (tx && tx.status !== 'approved') {
     db.run("UPDATE reseller_transactions SET status = 'approved' WHERE id = ?", tx.id);
@@ -1073,7 +1226,7 @@ router.post('/admin/reseller-tx/approve/:id', (req, res) => {
   }
   req.flash('success', 'অনুমোদিত হয়েছে এবং ব্যালেন্স সমন্বয় করা হয়েছে।');
   res.redirect(req.get('Referrer') || '/admin/resellers');
-});
+}));
 
 router.post('/admin/reseller-tx/delete/:id', (req, res) => {
   db.run('DELETE FROM reseller_transactions WHERE id = ?', req.params.id);

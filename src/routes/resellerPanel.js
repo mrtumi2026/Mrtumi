@@ -12,6 +12,7 @@ const { revokeActorSessions } = require('../repositories/sessionRepository');
 const { env } = require('../config/env');
 const resellerPortal = require('../repositories/resellerPortalRepository');
 const partnerWithdrawalRepository = require('../repositories/partnerWithdrawalRepository');
+const phase08Repository = require('../repositories/phase08Repository');
 const mysqlActive = () => env.db.client === 'mysql';
 
 function activeResellerSession(req) { return req.resellerUser !== undefined ? req.resellerUser : req.session && req.session.resellerUser; }
@@ -145,10 +146,38 @@ router.post('/reseller/logout', requireCsrf, (req, res, next) => {
 });
 
 // ─── Protected Reseller Portal Routes ───
-router.use('/reseller', (req,res,next)=>{if(mysqlActive()){res.locals.allowOrderCreation=false;res.locals.allowFinancialMutations=false;}next();}, requireReseller);
+router.use('/reseller', (req, res, next) => {
+  if (mysqlActive()) {
+    res.locals.allowOrderCreation = true;
+    res.locals.allowFinancialMutations = true;
+  }
+  next();
+}, requireReseller);
 
 router.get('/reseller/dashboard', async (req, res, next) => {
-  if (mysqlActive()) { try { const id=req.session.resellerUser.id; const [reseller,summary,orders,hotProducts]=await Promise.all([resellerPortal.getProfile(id),resellerPortal.getDashboardSummary(id),resellerPortal.listOrders(id,{page:1,perPage:8}),resellerPortal.listPublicProducts()]); return res.render('reseller/dashboard',{reseller,totalOrders:Number(summary.total_orders||0),deliveredCount:Number(summary.delivered_orders||0),pendingCount:Number(summary.pending_orders||0),totalEstimatedProfit:0,recentOrders:orders.orders,hotProducts:hotProducts.slice(0,6),allowOrderCreation:false,recordedMargin:true,canonicalDashboard:true}); } catch(error) { return next(error); } }
+  if (mysqlActive()) {
+    try {
+      const id = req.session.resellerUser.id;
+      const [reseller, summary, orders, hotProducts] = await Promise.all([
+        resellerPortal.getProfile(id),
+        resellerPortal.getDashboardSummary(id),
+        resellerPortal.listOrders(id, { page: 1, perPage: 8 }),
+        resellerPortal.listPublicProducts()
+      ]);
+      return res.render('reseller/dashboard', {
+        reseller,
+        totalOrders: Number(summary.total_orders || 0),
+        deliveredCount: Number(summary.delivered_orders || 0),
+        pendingCount: Number(summary.pending_orders || 0),
+        totalEstimatedProfit: (Number(summary.total_earned_paisa || 0) / 100).toFixed(2),
+        recentOrders: orders.orders,
+        hotProducts: hotProducts.slice(0, 6),
+        allowOrderCreation: true,
+        recordedMargin: true,
+        canonicalDashboard: true
+      });
+    } catch (error) { return next(error); }
+  }
   const reseller = db.get('SELECT * FROM resellers WHERE id = ?', req.session.resellerUser.id);
   const myOrders = db.all(
     `SELECT o.*, COALESCE(os.name, o.status) AS status_label, COALESCE(os.badge_class, 'sb-1') AS badge_class
@@ -319,11 +348,60 @@ router.post('/reseller/orders/create', requireCsrf, async (req, res, next) => {
 
 router.get('/reseller/orders/:id', async (req, res, next) => {
   if (!mysqlActive()) return res.redirect('/reseller/orders');
-  try { const data=await resellerPortal.getOrderDetails(req.session.resellerUser.id,req.params.id); return res.render('reseller/order-detail',{...data,order:data.order,items:data.items}); } catch(error) { if(error.statusCode===404) return res.status(404).render('reseller/unsupported-operation',{message:'অর্ডার পাওয়া যায়নি।'}); return next(error); }
+  try {
+    const data = await resellerPortal.getOrderDetails(req.session.resellerUser.id, req.params.id);
+    return res.render('reseller/order-detail', { ...data, order: data.order, items: data.items, allowOrderCreation: true });
+  } catch (error) {
+    if (error.statusCode === 404 || error.code === 'NOT_FOUND') {
+      return res.status(404).render('reseller/unsupported-operation', { message: 'অর্ডার পাওয়া যায়নি।' });
+    }
+    return next(error);
+  }
+});
+
+router.post('/reseller/orders/:id/cancel', requireCsrf, async (req, res, next) => {
+  if (!mysqlActive()) return res.redirect('/reseller/orders');
+  const resellerId = req.session.resellerUser.id;
+  const orderId = Number(req.params.id);
+  const note = String(req.body.reason || 'Cancelled by reseller').trim().slice(0, 255);
+  const reason = note.length >= 3 ? note : 'Cancelled by reseller';
+  try {
+    const data = await resellerPortal.getOrderDetails(resellerId, orderId);
+    if (data.order.status !== 'pending') {
+      req.flash('error', 'শুধুমাত্র অপেক্ষমাণ (pending) অর্ডার বাতিল করা সম্ভব।');
+      return res.redirect(`/reseller/orders/${orderId}`);
+    }
+    const requestKey = `reseller-cancel:${orderId}:${crypto.randomBytes(12).toString('hex')}`;
+    await phase08Repository.transitionOrder(
+      orderId,
+      'cancelled',
+      reason,
+      { id: resellerId, type: 'reseller' },
+      requestKey
+    );
+    req.flash('success', `অর্ডার #${data.order.invoice_id} সফলভাবে বাতিল করা হয়েছে।`);
+    return res.redirect(`/reseller/orders/${orderId}`);
+  } catch (error) {
+    if (['CONFLICT', 'NOT_FOUND', 'VALIDATION_ERROR'].includes(error.code) || error instanceof TypeError || error instanceof RangeError) {
+      req.flash('error', error.message);
+      return res.redirect(`/reseller/orders/${orderId}`);
+    }
+    return next(error);
+  }
 });
 
 router.get('/reseller/orders', async (req, res, next) => {
-  if (mysqlActive()) { try { const result=await resellerPortal.listOrders(req.session.resellerUser.id,{page:req.query.page||1,perPage:20,status:req.query.status||'',search:req.query.q||''}); return res.render('reseller/orders',{...result,orders:result.orders,canonicalOrders:true}); } catch(error) { return next(error); } }
+  if (mysqlActive()) {
+    try {
+      const result = await resellerPortal.listOrders(req.session.resellerUser.id, {
+        page: req.query.page || 1,
+        perPage: 20,
+        status: req.query.status || '',
+        search: req.query.q || ''
+      });
+      return res.render('reseller/orders', { ...result, orders: result.orders, canonicalOrders: true, allowOrderCreation: true });
+    } catch (error) { return next(error); }
+  }
   const orders = db.all(
     `SELECT o.*, COALESCE(os.name, o.status) AS status_label, COALESCE(os.badge_class, 'sb-1') AS badge_class
      FROM orders o

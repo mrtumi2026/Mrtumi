@@ -679,6 +679,13 @@ function initializeDatabase() {
     "ALTER TABLE customers ADD COLUMN referral_code TEXT DEFAULT NULL;",
     "ALTER TABLE customers ADD COLUMN referred_by_code TEXT DEFAULT NULL;",
     "ALTER TABLE vendors ADD COLUMN referral_code TEXT DEFAULT NULL;",
+    "ALTER TABLE vendors ADD COLUMN lifecycle_status TEXT DEFAULT 'active';",
+    "ALTER TABLE vendors ADD COLUMN slug TEXT DEFAULT NULL;",
+    "ALTER TABLE vendors ADD COLUMN logo_url TEXT DEFAULT '/uploads/default/store-logo.svg';",
+    "ALTER TABLE vendors ADD COLUMN banner_url TEXT DEFAULT '';",
+    "ALTER TABLE vendors ADD COLUMN tagline TEXT DEFAULT '';",
+    "ALTER TABLE vendors ADD COLUMN description TEXT DEFAULT NULL;",
+    "ALTER TABLE vendors ADD COLUMN store_status INTEGER DEFAULT 1;",
     "ALTER TABLE orders ADD COLUMN affiliate_code TEXT DEFAULT NULL;",
   ];
   for (const stmt of additiveAlterStatements) {

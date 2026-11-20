@@ -6,12 +6,12 @@ const { recordAuditLog } = require('./auditLogRepository');
 const { ConflictError, NotFoundError, ValidationError } = require('../utils/errors');
 
 const TAXONOMY = Object.freeze({
-  categories:{table:'categories',name:'Category',join:'',select:'c.id,c.name_bn AS name,c.slug,c.icon,c.status,COUNT(p.id) AS product_count',from:'categories c LEFT JOIN products p ON p.category_id=c.id',group:'GROUP BY c.id,c.name_bn,c.slug,c.icon,c.status,c.sort_order',order:'c.sort_order ASC,c.id ASC'},
-  subcategories:{table:'subcategories',name:'Subcategory',join:' JOIN categories c ON c.id=s.category_id',select:'s.id,s.name_bn AS name,s.slug,s.status,c.name_bn AS category_name',from:'subcategories s',group:'',order:'s.id DESC'},
-  childcategories:{table:'childcategories',name:'Childcategory',join:' JOIN subcategories s ON s.id=ch.subcategory_id',select:'ch.id,ch.name_bn AS name,ch.slug,ch.status,s.name_bn AS subcategory_name',from:'childcategories ch',group:'',order:'ch.id DESC'},
-  brands:{table:'brands',name:'Brand',join:'',select:'id,name_bn AS name,slug,status',from:'brands',group:'',order:'id DESC'},
-  colors:{table:'colors',name:'Color',join:'',select:'id,name_bn AS name,hex_code,status',from:'colors',group:'',order:'id DESC'},
-  sizes:{table:'sizes',name:'Size',join:'',select:'id,name_bn AS name,status',from:'sizes',group:'',order:'id DESC'},
+  categories:{table:'categories',name:'Category',join:'',select:'c.id,c.name_bn AS name,c.name_bn,c.name_en,c.slug,c.icon,c.sort_order,c.status,COUNT(p.id) AS product_count',from:'categories c LEFT JOIN products p ON p.category_id=c.id',group:'GROUP BY c.id,c.name_bn,c.name_en,c.slug,c.icon,c.sort_order,c.status',order:'c.sort_order ASC,c.id ASC'},
+  subcategories:{table:'subcategories',name:'Subcategory',join:' JOIN categories c ON c.id=s.category_id',select:'s.id,s.category_id,s.name_bn AS name,s.name_bn,s.name_en,s.slug,s.status,c.name_bn AS category_name',from:'subcategories s',group:'',order:'s.id DESC'},
+  childcategories:{table:'childcategories',name:'Childcategory',join:' JOIN subcategories s ON s.id=ch.subcategory_id',select:'ch.id,ch.subcategory_id,ch.name_bn AS name,ch.name_bn,ch.name_en,ch.slug,ch.status,s.name_bn AS subcategory_name',from:'childcategories ch',group:'',order:'ch.id DESC'},
+  brands:{table:'brands',name:'Brand',join:'',select:'id,name_bn AS name,name_bn,name_en,slug,status',from:'brands',group:'',order:'id DESC'},
+  colors:{table:'colors',name:'Color',join:'',select:'id,name_bn AS name,name_bn,name_en,hex_code,status',from:'colors',group:'',order:'id DESC'},
+  sizes:{table:'sizes',name:'Size',join:'',select:'id,name_bn AS name,name_bn,name_en,status',from:'sizes',group:'',order:'id DESC'},
 });
 
 function client(pool=null){
@@ -198,4 +198,210 @@ async function rejectPendingVendorProduct(idInput,reasonInput,actor={}, {pool=nu
   },{pool:pool||getPool()});
 }
 
-module.exports={listProducts,listTaxonomy,createTaxonomy,toggleProductStatus,approvePendingVendorProduct,rejectPendingVendorProduct,listReviews,listReviewProductOptions,createReview,approveReview};
+async function updateTaxonomy(typeInput, idInput, input = {}, actor = {}, { pool = null } = {}) {
+  const type = taxonomyType(typeInput);
+  const spec = TAXONOMY[type];
+  const recordId = id(idInput, spec.name);
+  const name = text(input.name, `${spec.name} name`, 191, { required: true });
+  const nameEn = text(input.name_en || '', `${spec.name} English name`, 191);
+  const hasSlug = ['categories', 'subcategories', 'childcategories', 'brands'].includes(type);
+  const entrySlug = hasSlug ? slug(input.slug, name) : '';
+  const metadata = { name_bn: name, name_en: nameEn, ...(hasSlug ? { slug: entrySlug } : {}) };
+
+  let icon = '';
+  let sortOrder = 0;
+  let hex = '#dc2626';
+
+  if (type === 'categories') {
+    icon = text(input.icon || '🍒', 'Category icon', 120);
+    const raw = input.sort_order === undefined || input.sort_order === '' ? '1' : input.sort_order;
+    sortOrder = Number(raw);
+    if (!Number.isSafeInteger(sortOrder) || sortOrder < 0 || sortOrder > 2147483647) {
+      throw new ValidationError('Sort order must be a non-negative whole number.');
+    }
+    metadata.icon = icon;
+    metadata.sort_order = sortOrder;
+  }
+  if (type === 'colors') {
+    hex = text(input.hex_code || '#dc2626', 'Color code', 16);
+    if (!/^#[0-9a-fA-F]{6}$/.test(hex)) {
+      throw new ValidationError('Color code must be a six-digit hexadecimal color.');
+    }
+    metadata.hex_code = hex;
+  }
+
+  try {
+    return await withTransaction(async (tx) => {
+      const before = await tx.queryOne(`SELECT * FROM ${spec.table} WHERE id=? FOR UPDATE`, [recordId]);
+      if (!before) throw new NotFoundError(`${spec.name} not found.`);
+
+      const parent = await validateParent(type, input, tx);
+      if (parent) {
+        metadata[parent.parentColumn] = parent.parentId;
+        await tx.execute(
+          `UPDATE ${spec.table} SET ${parent.parentColumn}=?, name_bn=?, name_en=?, slug=? WHERE id=?`,
+          [parent.parentId, name, nameEn, entrySlug, recordId]
+        );
+      } else if (type === 'categories') {
+        await tx.execute(
+          'UPDATE categories SET name_bn=?, name_en=?, slug=?, icon=?, sort_order=? WHERE id=?',
+          [name, nameEn, entrySlug, icon, sortOrder, recordId]
+        );
+      } else if (type === 'brands') {
+        await tx.execute(
+          'UPDATE brands SET name_bn=?, name_en=?, slug=? WHERE id=?',
+          [name, nameEn, entrySlug, recordId]
+        );
+      } else if (type === 'colors') {
+        await tx.execute(
+          'UPDATE colors SET name_bn=?, name_en=?, hex_code=? WHERE id=?',
+          [name, nameEn, hex, recordId]
+        );
+      } else {
+        await tx.execute(
+          'UPDATE sizes SET name_bn=?, name_en=? WHERE id=?',
+          [name, nameEn, recordId]
+        );
+      }
+
+      const updated = { id: recordId, ...metadata };
+      await recordAuditLog(
+        {
+          actorType: 'admin',
+          actorId: actor.id || null,
+          action: `catalog.${type}.update`,
+          entityType: type,
+          entityId: recordId,
+          beforeState: before,
+          afterState: metadata,
+          ipAddress: actor.ip || '',
+          userAgent: actor.userAgent || '',
+        },
+        tx
+      );
+      return updated;
+    }, { pool: pool || getPool() });
+  } catch (error) {
+    if (error.code === 'DB_DUPLICATE_ENTRY') {
+      throw new ConflictError(`A ${spec.name.toLowerCase()} with this slug already exists.`);
+    }
+    throw error;
+  }
+}
+
+async function toggleTaxonomyStatus(typeInput, idInput, actor = {}, { pool = null } = {}) {
+  const type = taxonomyType(typeInput);
+  const spec = TAXONOMY[type];
+  const recordId = id(idInput, spec.name);
+  return withTransaction(async (tx) => {
+    const before = await tx.queryOne(`SELECT id, status FROM ${spec.table} WHERE id=? FOR UPDATE`, [recordId]);
+    if (!before) throw new NotFoundError(`${spec.name} not found.`);
+    const status = Number(before.status) ? 0 : 1;
+    await tx.execute(`UPDATE ${spec.table} SET status=? WHERE id=?`, [status, recordId]);
+    await recordAuditLog(
+      {
+        actorType: 'admin',
+        actorId: actor.id || null,
+        action: `catalog.${type}.toggleStatus`,
+        entityType: type,
+        entityId: recordId,
+        beforeState: { status: Number(before.status) },
+        afterState: { status },
+        ipAddress: actor.ip || '',
+        userAgent: actor.userAgent || '',
+      },
+      tx
+    );
+    return { id: recordId, status };
+  }, { pool: pool || getPool() });
+}
+
+async function deleteTaxonomy(typeInput, idInput, actor = {}, { pool = null } = {}) {
+  const type = taxonomyType(typeInput);
+  const spec = TAXONOMY[type];
+  const recordId = id(idInput, spec.name);
+
+  return withTransaction(async (tx) => {
+    const before = await tx.queryOne(`SELECT * FROM ${spec.table} WHERE id=? FOR UPDATE`, [recordId]);
+    if (!before) throw new NotFoundError(`${spec.name} not found.`);
+
+    if (type === 'categories') {
+      const subRow = await tx.queryOne('SELECT COUNT(*) AS total FROM subcategories WHERE category_id=?', [recordId]);
+      const prodRow = await tx.queryOne('SELECT COUNT(*) AS total FROM products WHERE category_id=?', [recordId]);
+      const subCount = Number(subRow?.total || 0);
+      const prodCount = Number(prodRow?.total || 0);
+      if (subCount > 0 || prodCount > 0) {
+        const parts = [];
+        if (prodCount > 0) parts.push(`${prodCount} product(s)`);
+        if (subCount > 0) parts.push(`${subCount} subcategory(s)`);
+        throw new ConflictError(
+          `Cannot delete category "${before.name_bn}": ${parts.join(' and ')} are linked to it. Deactivate this category instead to hide it from the storefront.`
+        );
+      }
+    } else if (type === 'subcategories') {
+      const childRow = await tx.queryOne('SELECT COUNT(*) AS total FROM childcategories WHERE subcategory_id=?', [recordId]);
+      const prodRow = await tx.queryOne('SELECT COUNT(*) AS total FROM products WHERE subcategory_id=?', [recordId]);
+      const childCount = Number(childRow?.total || 0);
+      const prodCount = Number(prodRow?.total || 0);
+      if (childCount > 0 || prodCount > 0) {
+        const parts = [];
+        if (prodCount > 0) parts.push(`${prodCount} product(s)`);
+        if (childCount > 0) parts.push(`${childCount} childcategory(s)`);
+        throw new ConflictError(
+          `Cannot delete subcategory "${before.name_bn}": ${parts.join(' and ')} are linked to it. Deactivate this subcategory instead.`
+        );
+      }
+    } else if (type === 'childcategories') {
+      const prodRow = await tx.queryOne('SELECT COUNT(*) AS total FROM products WHERE childcategory_id=?', [recordId]);
+      const prodCount = Number(prodRow?.total || 0);
+      if (prodCount > 0) {
+        throw new ConflictError(
+          `Cannot delete child category "${before.name_bn}": ${prodCount} product(s) are linked to it. Deactivate this child category instead.`
+        );
+      }
+    } else if (type === 'brands') {
+      const prodRow = await tx.queryOne('SELECT COUNT(*) AS total FROM products WHERE brand_id=?', [recordId]);
+      const prodCount = Number(prodRow?.total || 0);
+      if (prodCount > 0) {
+        throw new ConflictError(
+          `Cannot delete brand "${before.name_bn}": ${prodCount} product(s) are linked to it. Deactivate this brand instead.`
+        );
+      }
+    } else if (type === 'colors') {
+      const variantRow = await tx.queryOne('SELECT COUNT(*) AS total FROM product_variants WHERE color_label=? OR color_label=?', [before.name_bn, before.name_en || before.name_bn]);
+      const varCount = Number(variantRow?.total || 0);
+      if (varCount > 0) {
+        throw new ConflictError(
+          `Cannot delete color "${before.name_bn}": ${varCount} product variant(s) are linked to it. Deactivate this color instead.`
+        );
+      }
+    } else if (type === 'sizes') {
+      const variantRow = await tx.queryOne('SELECT COUNT(*) AS total FROM product_variants WHERE size_label=? OR size_label=?', [before.name_bn, before.name_en || before.name_bn]);
+      const varCount = Number(variantRow?.total || 0);
+      if (varCount > 0) {
+        throw new ConflictError(
+          `Cannot delete size "${before.name_bn}": ${varCount} product variant(s) are linked to it. Deactivate this size instead.`
+        );
+      }
+    }
+
+    await tx.execute(`DELETE FROM ${spec.table} WHERE id=?`, [recordId]);
+    await recordAuditLog(
+      {
+        actorType: 'admin',
+        actorId: actor.id || null,
+        action: `catalog.${type}.delete`,
+        entityType: type,
+        entityId: recordId,
+        beforeState: before,
+        afterState: null,
+        ipAddress: actor.ip || '',
+        userAgent: actor.userAgent || '',
+      },
+      tx
+    );
+    return { id: recordId, deleted: true };
+  }, { pool: pool || getPool() });
+}
+
+module.exports={listProducts,listTaxonomy,createTaxonomy,updateTaxonomy,toggleTaxonomyStatus,deleteTaxonomy,toggleProductStatus,approvePendingVendorProduct,rejectPendingVendorProduct,listReviews,listReviewProductOptions,createReview,approveReview};

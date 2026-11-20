@@ -78,6 +78,8 @@ jobs:
             });
             try {
               await connection.query('SET GLOBAL log_bin_trust_function_creators = 1');
+              await connection.query("GRANT ALL PRIVILEGES ON `mrtumi_%`.* TO 'mrtumi_test'@'%'");
+              await connection.query('FLUSH PRIVILEGES');
               console.log('Configured disposable CI MySQL 8.0 to permit the database-scoped migration user to create deterministic audit triggers; no SUPER grant was given to that user.');
             } finally {
               await connection.end();
@@ -184,6 +186,22 @@ jobs:
             exit 1
           }
 
+      - name: Generate machine-readable test summary and retain logs
+        if: always()
+        run: |
+          mkdir -p ci-evidence/mysql
+          cp /tmp/test-output.log ci-evidence/mysql/test-output.log 2>/dev/null || true
+          node scripts/ci/generate-test-summary.js "MySQL 8.0" /tmp/test-output.log ci-evidence/mysql
+
+      - name: Upload MySQL 8.0 test execution evidence and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-evidence-mysql-8.0
+          path: ci-evidence/mysql/
+          if-no-files-found: error
+          retention-days: 30
+
   mariadb-compatibility:
     name: MariaDB 10.11 Migrations & Integration Tests (Node 22.23.4)
     runs-on: ubuntu-latest
@@ -251,6 +269,8 @@ jobs:
             });
             try {
               await connection.query('SET GLOBAL log_bin_trust_function_creators = 1');
+              await connection.query("GRANT ALL PRIVILEGES ON `mrtumi_%`.* TO 'mrtumi_test'@'%'");
+              await connection.query('FLUSH PRIVILEGES');
               console.log('Configured only the disposable MariaDB CI service for migration trigger creation.');
             } finally {
               await connection.end();
@@ -372,3 +392,19 @@ jobs:
             done
             exit 1
           }
+
+      - name: Generate machine-readable test summary and retain logs
+        if: always()
+        run: |
+          mkdir -p ci-evidence/mariadb
+          cp /tmp/test-output.log ci-evidence/mariadb/test-output.log 2>/dev/null || true
+          node scripts/ci/generate-test-summary.js "MariaDB 10.11" /tmp/test-output.log ci-evidence/mariadb
+
+      - name: Upload MariaDB 10.11 test execution evidence and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-evidence-mariadb-10.11
+          path: ci-evidence/mariadb/
+          if-no-files-found: error
+          retention-days: 30

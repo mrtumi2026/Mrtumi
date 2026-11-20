@@ -22,6 +22,7 @@ function policyForAdminRoute(method, pathname) {
   if (path==='/admin/dashboard/dismiss-new-orders-popup') return { key:'orders.popup.dismiss', audit:false };
   if (has(path,'/admin/dashboard/new-orders-popup')) return { key:'orders.popup.view', audit:false };
   if (has(path,'/admin/gemini-chat')) return { key:'assistant.report', audit:false };
+  if (has(path,'/admin/api/analytics')) return { key:'dashboard.view', audit:false };
   if (has(path,'/admin/smsgeteway/balance') || has(path,'/admin/bdcourier/my-plan') || has(path,'/admin/steadfast/dashboard-widget')) return { key:'dashboard.view', audit:false };
 
   if (has(path,'/admin/privacy/requests')) return { key:'privacy.review', audit:false };
@@ -54,7 +55,7 @@ function policyForAdminRoute(method, pathname) {
   if (has(path,'/admin/customer/ip-block')) return { key:'security.manage', audit:true };
   if (has(path,'/admin/reseller-orders') || has(path,'/admin/reseller-deposits') || has(path,'/admin/reseller-withdrawals') || has(path,'/admin/reseller-tx'))
     return { key:/withdraw|deposit|reseller-tx/.test(path)?viewOrManage('finance.view','finance.manage'):'resellers.manage', audit:write };
-  if (has(path,'/admin/orders') || has(path,'/admin/order') || has(path,'/admin/orderstatus') || has(path,'/admin/fulfillment')) return { key:'orders.manage', audit:write };
+  if (has(path,'/admin/orders') || has(path,'/admin/order') || has(path,'/admin/orderstatus') || has(path,'/admin/fulfillment') || has(path,'/admin/courier')) return { key:'orders.manage', audit:write };
 
   if (has(path,'/admin/products') || has(path,'/admin/inhouse-products') || has(path,'/admin/categories') || has(path,'/admin/subcategories') || has(path,'/admin/childcategories') || has(path,'/admin/brands') || has(path,'/admin/color') || has(path,'/admin/size') || has(path,'/admin/coupon') || has(path,'/admin/reviews') || has(path,'/admin/review'))
     return { key:viewOrManage('catalog.view','catalog.manage'), audit:write };

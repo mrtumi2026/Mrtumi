@@ -49,15 +49,32 @@
       <input type="number" name="stock" value="<%= product ? product.stock : 100 %>" class="form-control" required />
     </div>
 
-    <div class="col-md-4">
-      <label class="form-label fw-semibold small">সাইজ / ভ্যারিয়েন্ট (কমা দিয়ে)</label>
-      <input type="text" name="sizes" value="<%= product ? product.sizes : '৫০০ গ্রাম,১ কেজি,২ কেজি' %>" class="form-control" />
+    <div class="col-md-3">
+      <label class="form-label fw-semibold small">একক / Unit *</label>
+      <input type="text" name="unit_label" list="vendor-unit-list" value="<%= (product && (product.unit_label || product.unit || product.sizes)) ? (product.unit_label || product.unit || product.sizes) : '1 pc' %>" class="form-control" placeholder="1 pc, 1 kg, 1 dozen, 1 packet..." required />
+      <datalist id="vendor-unit-list">
+        <option value="1 pc">১ পিস / 1 Piece</option>
+        <option value="1 packet">১ প্যাকেট / 1 Packet</option>
+        <option value="1 box">১ বক্স / 1 Box</option>
+        <option value="1 dozen">১ ডজন (১২টি) / 1 Dozen</option>
+        <option value="1 hali">১ হালি (৪টি) / 1 Hali</option>
+        <option value="1 pon">১ পোঁন (৮০টি) / 1 Pon</option>
+        <option value="100 pcs">১০০টি / 100 Pieces</option>
+        <option value="1 kg">১ কেজি / 1 kg</option>
+        <option value="500 g">৫০০ গ্রাম / 500 g</option>
+        <option value="250 g">২৫০ গ্রাম / 250 g</option>
+        <option value="100 g">১০০ গ্রাম / 100 g</option>
+        <option value="5 kg">৫ কেজি / 5 kg</option>
+        <option value="1 L">১ লিটার / 1 Litre</option>
+        <option value="500 ml">৫০০ মিলি / 500 ml</option>
+        <option value="250 ml">২৫০ মিলি / 250 ml</option>
+      </datalist>
     </div>
-    <div class="col-md-4">
-      <label class="form-label fw-semibold small">গ্রেড / কালার</label>
-      <input type="text" name="colors" value="<%= product ? product.colors : 'প্রিমিয়াম লাল' %>" class="form-control" />
+    <div class="col-md-3">
+      <label class="form-label fw-semibold small">গ্রেড / অপশন</label>
+      <input type="text" name="colors" value="<%= product ? (product.colors || '') : '' %>" class="form-control" placeholder="যেমন: প্রিমিয়াম গ্রেড, লাল" />
     </div>
-    <div class="col-md-4">
+    <div class="col-md-6">
       <label class="form-label fw-semibold small">পণ্যের ছবি আপলোড</label>
       <input type="file" name="image" accept="image/*" class="form-control" />
     </div>
@@ -67,6 +84,14 @@
       <textarea name="description" rows="4" class="form-control"><%= product ? product.description : '' %></textarea>
     </div>
 
+    <% if (!product) { %>
+      <div class="col-12">
+        <div class="alert alert-light border small text-muted mb-0">
+          💡 <strong>ভ্যারিয়েন্ট টিপ:</strong> পণ্যটির একাধিক সাইজ, ওজন বা বিকল্প থাকলে (যেমন ৫০০ গ্রাম, ১ কেজি, ২ কেজি) পণ্যটি সংরক্ষণ করার পর নিচে ভ্যারিয়েন্ট সেকশন থেকে আলাদা SKU, মূল্য ও স্টক যুক্ত করতে পারবেন। সাধারণ পণ্যের ক্ষেত্রে উপরের তথ্যই যথেষ্ট।
+        </div>
+      </div>
+    <% } %>
+
     <div class="col-12 pt-2">
       <button type="submit" class="btn btn-forest px-5 py-2 fw-bold">✓ সংরক্ষণ করুন</button>
     </div>
@@ -74,27 +99,95 @@
 </form>
 
     <% if (product && typeof variants !== 'undefined') { %>
-      <div class="col-12"><hr><h5 class="fw-bold">Variants</h5>
-        <% variants.forEach(function(v) { %>
-          <form action="/vendor/products/<%= product.id %>/variants/<%= v.id %>" method="POST" class="row g-2 mb-2">
+      <div class="tbl-card p-4 mt-4">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <div>
+            <h5 class="fw-bold mb-1">পণ্যের ভ্যারিয়েন্ট (Product Variants)</h5>
+            <p class="text-muted small mb-0">বিভিন্ন সাইজ, ওজন বা বিকল্পের জন্য আলাদা SKU, মূল্য ও স্টক নির্ধারণ করুন।</p>
+          </div>
+        </div>
+
+        <% if (variants.length > 0) { %>
+          <div class="table-responsive mb-4">
+            <table class="table table-bordered align-middle">
+              <thead class="table-light small">
+                <tr>
+                  <th style="min-width: 140px;">Variant SKU *</th>
+                  <th style="min-width: 120px;">সাইজ / লেবেল (যেমন: ৫০০ গ্রাম)</th>
+                  <th style="min-width: 100px;">অপশন / গ্রেড</th>
+                  <th style="min-width: 110px;">বিক্রয় মূল্য (৳) *</th>
+                  <th style="min-width: 100px;">স্টক *</th>
+                  <th style="min-width: 110px;">অবস্থা</th>
+                  <th style="width: 80px;">অ্যাকশন</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% variants.forEach(function(v) { %>
+                  <tr>
+                    <td colspan="7" class="p-2">
+                      <form action="/vendor/products/<%= product.id %>/variants/<%= v.id %>" method="POST" class="row g-2 align-items-center m-0">
+                        <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
+                        <div class="col-md-2">
+                          <input class="form-control form-control-sm" name="variant_sku" value="<%= v.variant_sku %>" required maxlength="80" aria-label="Variant SKU" />
+                        </div>
+                        <div class="col-md-2">
+                          <input class="form-control form-control-sm" name="size_label" value="<%= v.size_label || '' %>" maxlength="80" placeholder="৫০০ গ্রাম / ১ কেজি" aria-label="Size" />
+                        </div>
+                        <div class="col-md-2">
+                          <input class="form-control form-control-sm" name="color_label" value="<%= v.color_label || '' %>" maxlength="80" placeholder="অপশন" aria-label="Option" />
+                        </div>
+                        <div class="col-md-2">
+                          <input class="form-control form-control-sm" name="price_bdt" type="number" min="0" step="0.01" value="<%= (Number(v.price_paisa)/100).toFixed(2) %>" required aria-label="Variant price BDT" />
+                        </div>
+                        <div class="col-md-2">
+                          <input class="form-control form-control-sm" name="stock_on_hand" type="number" min="0" value="<%= v.stock_on_hand %>" required aria-label="Variant stock" />
+                        </div>
+                        <div class="col-md-1">
+                          <select class="form-select form-select-sm" name="status" aria-label="Status">
+                            <option value="1" <%= Number(v.status) ? 'selected' : '' %>>সক্রিয়</option>
+                            <option value="0" <%= !Number(v.status) ? 'selected' : '' %>>নিষ্ক্রিয়</option>
+                          </select>
+                        </div>
+                        <div class="col-md-1 text-end">
+                          <button class="btn btn-outline-primary btn-sm w-100" type="submit">Save</button>
+                        </div>
+                      </form>
+                    </td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        <% } else { %>
+          <div class="alert alert-light border small text-muted mb-3">
+            এখনো কোনো আলাদা ভ্যারিয়েন্ট যোগ করা হয়নি। ভ্যারিয়েন্ট যোগ না করলে মূল পণ্যের মূল্য ও স্টক ব্যবহার হবে।
+          </div>
+        <% } %>
+
+        <div class="card bg-light border p-3">
+          <h6 class="fw-bold mb-2 small text-dark">+ নতুন ভ্যারিয়েন্ট যোগ করুন</h6>
+          <form action="/vendor/products/<%= product.id %>/variants" method="POST" class="row g-2 align-items-center">
             <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
-            <div class="col-md-3"><input class="form-control" name="variant_sku" value="<%= v.variant_sku %>" required maxlength="80" aria-label="Variant SKU"></div>
-            <div class="col-md-2"><input class="form-control" name="size_label" value="<%= v.size_label %>" maxlength="80" aria-label="Size"></div>
-            <div class="col-md-2"><input class="form-control" name="color_label" value="<%= v.color_label %>" maxlength="80" aria-label="Option"></div>
-            <div class="col-md-2"><input class="form-control" name="price_bdt" type="number" min="0" step="0.01" value="<%= (Number(v.price_paisa)/100).toFixed(2) %>" required aria-label="Variant price BDT"></div>
-            <div class="col-md-2"><input class="form-control" name="stock_on_hand" type="number" min="0" value="<%= v.stock_on_hand %>" required aria-label="Variant stock"></div>
-            <div class="col-md-1"><button class="btn btn-outline-primary" type="submit">Save</button></div>
+            <div class="col-md-2">
+              <input class="form-control form-control-sm" name="variant_sku" placeholder="ভ্যারিয়েন্ট SKU *" required maxlength="80" />
+            </div>
+            <div class="col-md-2">
+              <input class="form-control form-control-sm" name="size_label" placeholder="সাইজ / ওজন (যেমন: ১ কেজি)" maxlength="80" />
+            </div>
+            <div class="col-md-2">
+              <input class="form-control form-control-sm" name="color_label" placeholder="গ্রেড / বিকল্প (ঐচ্ছিক)" maxlength="80" />
+            </div>
+            <div class="col-md-2">
+              <input class="form-control form-control-sm" name="price_bdt" type="number" min="0" step="0.01" placeholder="মূল্য (টাকা) *" required />
+            </div>
+            <div class="col-md-2">
+              <input class="form-control form-control-sm" name="stock_on_hand" type="number" min="0" value="0" placeholder="স্টক" required />
+            </div>
+            <div class="col-md-2">
+              <button class="btn btn-success btn-sm w-100" type="submit">+ যোগ করুন</button>
+            </div>
           </form>
-        <% }) %>
-        <form action="/vendor/products/<%= product.id %>/variants" method="POST" class="row g-2">
-          <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
-          <div class="col-md-3"><input class="form-control" name="variant_sku" placeholder="Variant SKU" required maxlength="80"></div>
-          <div class="col-md-2"><input class="form-control" name="size_label" placeholder="Size" maxlength="80"></div>
-          <div class="col-md-2"><input class="form-control" name="color_label" placeholder="Option" maxlength="80"></div>
-          <div class="col-md-2"><input class="form-control" name="price_bdt" type="number" min="0" step="0.01" placeholder="Price BDT" required></div>
-          <div class="col-md-2"><input class="form-control" name="stock_on_hand" type="number" min="0" value="0" required></div>
-          <div class="col-md-1"><button class="btn btn-outline-success" type="submit">Add</button></div>
-        </form>
+        </div>
       </div>
     <% } %>
 

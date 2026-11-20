@@ -38,6 +38,7 @@ async function journey(name, fn) {
   item.finishedAt = new Date().toISOString();
 }
 async function main() {
+  assert(process.env.NODE_ENV !== 'production' && !process.env.isProduction, 'CRITICAL_SAFETY_VIOLATION: Refusing to run QA E2E against production.');
   assert(process.env.NODE_ENV === 'test' && process.env.DB_CLIENT === 'mysql', 'Refusing to run outside the MySQL test profile.');
   assert(process.env.DB_NAME === 'mrtumi_test' && process.env.DB_USER === 'mrtumi_test' && process.env.DB_HOST === '127.0.0.1', 'Refusing to use a database other than the named disposable CI service.');
   assert(process.env.MYSQL_TEST_REQUIRED === 'true', 'MYSQL_TEST_REQUIRED must be enabled.');

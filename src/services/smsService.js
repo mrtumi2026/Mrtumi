@@ -50,7 +50,10 @@ async function getSmsSettings() {
  */
 async function logSms({ recipient, message, gateway = 'BulkSMSBD', status = 'sent', providerMessageId = null, templateKey = 'custom' }) {
   try {
-    const preview = String(message || '').slice(0, 255);
+    let preview = String(message || '').slice(0, 255);
+    if (templateKey === 'customer_recovery' || templateKey === 'order_otp') {
+      preview = preview.replace(/[A-Za-z0-9_-]{6,64}/g, '[REDACTED_SECRET]');
+    }
     const masked = maskPhone(recipient);
     if (isMysql()) {
       const client = createQueryClient(getPool());

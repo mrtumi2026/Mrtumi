@@ -198,7 +198,7 @@ ALTER TABLE `payment_gateways`
   ADD COLUMN `gateway_fee_bps` INT UNSIGNED NOT NULL DEFAULT 0
     COMMENT 'Gateway deduction in basis points applied to vendor earnings';
 -- NOTE: `gateway_type` already exists on payment_gateways since migration 0003.
--- It is intentionally not re-added here; re-adding it fails on MySQL/MariaDB.
+-- It is intentionally not re-added here; re-adding it fails with ER_DUP_FIELDNAME.
 
 -- ---------------------------------------------------------------------------
 -- 7. Seed: global default commission rule (10% = 1000 bps)

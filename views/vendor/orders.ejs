@@ -52,10 +52,29 @@
                       <button type="submit" class="btn btn-sm btn-success"><%= actionLabels[target] %></button>
                     </form>
                   <% }); } %>
-                  <% if (ol.vendor_sub_order_id && subKey==='ready_for_pickup' && ol.delivery_mode==='vendor_managed' && !['succeeded', 'unknown_timeout', 'in_review'].includes(ol.booking_status)) { %>
-                    <button type="button" class="btn btn-sm btn-primary" onclick="openCourierCompareModal('<%= ol.vendor_sub_order_id %>')">
-                      <i class="fas fa-truck-fast me-1"></i><%= t('vendorFulfillment.compareAndBookCourier') %>
-                    </button>
+                  <% if (ol.vendor_sub_order_id && subKey==='ready_for_pickup') { %>
+                    <% if (ol.courier_request_status === 'pending') { %>
+                      <span class="badge bg-warning text-dark"><i class="fas fa-clock me-1"></i>কুরিয়ার বুকিং অনুরোধ অপেক্ষমাণ</span>
+                    <% } else if (ol.courier_request_status === 'booking') { %>
+                      <span class="badge bg-info"><i class="fas fa-spinner fa-spin me-1"></i>বুকিং প্রক্রিয়াধীন...</span>
+                    <% } else if (ol.courier_request_status === 'booked' || ol.booking_status === 'succeeded') { %>
+                      <span class="badge bg-success"><i class="fas fa-check-circle me-1"></i>বুকড (<%= ol.courier_request_tracking || ol.tracking_code || 'সফল' %>)</span>
+                    <% } else if (ol.courier_request_status === 'failed') { %>
+                      <div class="badge bg-danger mb-1 text-wrap text-start" style="font-size:11px;"><i class="fas fa-triangle-exclamation me-1"></i>ব্যর্থ: <%= ol.courier_request_failure || '' %></div>
+                      <button type="button" class="btn btn-sm btn-primary" onclick="openCourierCompareModal('<%= ol.vendor_sub_order_id %>')">
+                        <i class="fas fa-rotate me-1"></i>পুনরায় বুকিং অনুরোধ
+                      </button>
+                    <% } else if (ol.courier_request_status === 'rejected') { %>
+                      <div class="badge bg-secondary mb-1 text-wrap text-start" style="font-size:11px;"><i class="fas fa-ban me-1"></i>প্রত্যাখ্যাত: <%= ol.courier_request_rejection || '' %></div>
+                      <button type="button" class="btn btn-sm btn-primary" onclick="openCourierCompareModal('<%= ol.vendor_sub_order_id %>')">
+                        <i class="fas fa-paper-plane me-1"></i>নতুন বুকিং অনুরোধ
+                      </button>
+                    <% } else if (!['succeeded', 'unknown_timeout', 'in_review'].includes(ol.booking_status)) { %>
+                      <button type="button" class="btn btn-sm btn-primary" onclick="openCourierCompareModal('<%= ol.vendor_sub_order_id %>')">
+                        <i class="fas fa-truck-fast me-1"></i><%= t('vendorFulfillment.compareAndBookCourier') %>
+                      </button>
+                    <% } %>
+                    <% if (ol.delivery_mode==='vendor_managed' && !['succeeded', 'unknown_timeout', 'in_review'].includes(ol.booking_status)) { %>
                     <details class="mt-1 text-end" style="font-size:11px;">
                       <summary class="text-muted cursor-pointer"><%= t('vendorFulfillment.manualBookingEntry') %></summary>
                       <form action="/vendor/sub-orders/<%= ol.vendor_sub_order_id %>/booking-result" method="POST" class="d-flex flex-wrap gap-1 justify-content-end mt-1">
@@ -66,6 +85,7 @@
                         <button type="submit" class="btn btn-sm btn-outline-secondary" style="font-size:11px;"><%= t('vendorFulfillment.recordBooking') %></button>
                       </form>
                     </details>
+                    <% } %>
                   <% } %>
                   <% if (ol.vendor_sub_order_id && subKey==='ready_for_pickup' && ol.delivery_mode==='vendor_managed' && ol.booking_status==='succeeded' && !ol.picked_up_at) { %>
                     <div class="d-flex flex-wrap gap-1 justify-content-end">
@@ -176,12 +196,12 @@ function openCourierCompareModal(subOrderId) {
         html += '      </div>';
         html += '      <div class="col-md-5 text-md-end mt-3 mt-md-0">';
         html += '        <div class="h4 fw-bold text-success mb-2">৳' + totalBdt.toLocaleString('en-IN') + '</div>';
-        html += '        <form method="POST" action="/vendor/sub-orders/' + encodeURIComponent(d.subOrderId) + '/one-click-book">';
+        html += '        <form method="POST" action="/vendor/sub-orders/' + encodeURIComponent(d.subOrderId) + '/request-courier-booking">';
         html += '          <input type="hidden" name="_csrf" value="' + csrfToken + '" />';
         html += '          <input type="hidden" name="courier_code" value="' + rec.providerCode + '" />';
         html += '          <input type="hidden" name="idempotency_key" value="' + idempotencyKey + '" />';
         html += '          <button type="submit" class="btn btn-success fw-bold px-3 shadow-sm">';
-        html += '            <i class="fas fa-bolt me-1"></i><%= t("vendorFulfillment.bookNow") %>';
+        html += '            <i class="fas fa-paper-plane me-1"></i>কুরিয়ার বুকিং অনুরোধ করুন';
         html += '          </button>';
         html += '        </form>';
         html += '      </div>';
@@ -206,11 +226,11 @@ function openCourierCompareModal(subOrderId) {
           html += '<td>' + alt.estimatedDaysMin + '-' + alt.estimatedDaysMax + ' দিন</td>';
           html += '<td class="small text-muted">' + (alt.tradeOffBn || alt.tradeOffEn) + '</td>';
           html += '<td class="text-end">';
-          html += '  <form method="POST" action="/vendor/sub-orders/' + encodeURIComponent(d.subOrderId) + '/one-click-book" class="d-inline">';
+          html += '  <form method="POST" action="/vendor/sub-orders/' + encodeURIComponent(d.subOrderId) + '/request-courier-booking" class="d-inline">';
           html += '    <input type="hidden" name="_csrf" value="' + csrfToken + '" />';
           html += '    <input type="hidden" name="courier_code" value="' + alt.providerCode + '" />';
           html += '    <input type="hidden" name="idempotency_key" value="' + idempotencyKey + '" />';
-          html += '    <button type="submit" class="btn btn-sm btn-outline-primary">বুক করুন</button>';
+          html += '    <button type="submit" class="btn btn-sm btn-outline-primary"><i class="fas fa-paper-plane me-1"></i>অনুরোধ করুন</button>';
           html += '  </form>';
           html += '</td>';
           html += '</tr>';

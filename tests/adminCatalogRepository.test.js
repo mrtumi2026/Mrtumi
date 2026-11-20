@@ -5,7 +5,7 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const repo=require('../src/repositories/adminCatalogRepository');
 
-function poolFixture({failAudit=false,duplicate=false,missingParent=false}={}){
+function poolFixture({failAudit=false,duplicate=false,missingParent=false,hasDependents=false}={}){
   const calls=[];const state={began:false,committed:false,rolledBack:false};
   const connection={
     async beginTransaction(){state.began=true;},async commit(){state.committed=true;},async rollback(){state.rolledBack=true;},release(){},
@@ -17,10 +17,14 @@ function poolFixture({failAudit=false,duplicate=false,missingParent=false}={}){
         return [{insertId:42,affectedRows:1},[]];
       }
       if(sql.trimStart().startsWith('UPDATE'))return [{affectedRows:1},[]];
+      if(sql.trimStart().startsWith('DELETE'))return [{affectedRows:1},[]];
+      if(sql.includes('SELECT COUNT(*) AS total')){
+        return [[{total: hasDependents ? 3 : 0}],[]];
+      }
       if(sql.includes('SELECT id,status FROM reviews'))return [[{id:7,status:'pending'}],[]];
-      if(sql.includes('FROM categories')||sql.includes('FROM subcategories')||sql.includes('FROM products')){
+      if(sql.includes('FROM categories')||sql.includes('FROM subcategories')||sql.includes('FROM products')||sql.includes('FROM childcategories')||sql.includes('FROM brands')||sql.includes('FROM colors')||sql.includes('FROM sizes')){
         if(missingParent)return [[],[]];
-        return [[{id:7,category_id:3,subcategory_id:5,status:1,is_archived:0,approval_status:'pending',vendor_id:9,vendor_status:1,lifecycle_status:'active'}],[]];
+        return [[{id:7,category_id:3,subcategory_id:5,status:1,name_bn:'Organic Fruits',name_en:'Organic Fruits',slug:'organic-fruits',icon:'🍎',sort_order:2,is_archived:0,approval_status:'pending',vendor_id:9,vendor_status:1,lifecycle_status:'active'}],[]];
       }
       throw new Error(`Unexpected SQL: ${sql}`);
     },
@@ -92,4 +96,49 @@ test('product status and vendor approval are audited in transactions and reject 
   const missing=poolFixture({missingParent:true});
   await assert.rejects(repo.toggleProductStatus(999,{id:5},{pool:missing}),{code:'NOT_FOUND'});
   assert.equal(repo.deleteProduct,undefined,'catalog repository deliberately exposes no destructive delete API');
+});
+
+test('taxonomy update validates, preserves references, and writes transactional audit',async()=>{
+  const pool=poolFixture();
+  const updated=await repo.updateTaxonomy('categories',7,{name:'Updated Fruits',name_en:'Updated Fruits En',slug:'updated-fruits',icon:'🍊',sort_order:'3'},{id:5},{pool});
+  assert.equal(updated.id,7);
+  assert.equal(updated.name_bn,'Updated Fruits');
+  assert.equal(updated.slug,'updated-fruits');
+  assert.equal(pool.state.committed,true);
+  const updateCall=pool.calls.find(({sql})=>sql.includes('UPDATE categories'));
+  assert.deepEqual(updateCall.params,['Updated Fruits','Updated Fruits En','updated-fruits','🍊',3,7]);
+  assert.ok(pool.calls.some(({sql,params})=>sql.includes('audit_logs')&&params.includes('catalog.categories.update')));
+
+  const duplicate=poolFixture({duplicate:true});
+  await assert.rejects(repo.updateTaxonomy('categories',7,{name:'Duplicate'},{},{pool:duplicate}),{code:'CONFLICT'});
+});
+
+test('taxonomy toggle status updates status atomically and writes audit log',async()=>{
+  const pool=poolFixture();
+  const result=await repo.toggleTaxonomyStatus('categories',7,{id:5},{pool});
+  assert.deepEqual(result,{id:7,status:0});
+  assert.equal(pool.state.committed,true);
+  const updateCall=pool.calls.find(({sql})=>sql.includes('UPDATE categories SET status=?'));
+  assert.deepEqual(updateCall.params,[0,7]);
+  assert.ok(pool.calls.some(({sql,params})=>sql.includes('audit_logs')&&params.includes('catalog.categories.toggleStatus')));
+});
+
+test('taxonomy delete safely blocks deletion when dependents exist and deletes when clean',async()=>{
+  const blockedPool=poolFixture({hasDependents:true});
+  await assert.rejects(
+    repo.deleteTaxonomy('categories',7,{id:5},{pool:blockedPool}),
+    (err)=>{
+      assert.equal(err.code,'CONFLICT');
+      assert.match(err.message,/Cannot delete category.*product.*subcategory/);
+      return true;
+    }
+  );
+  assert.equal(blockedPool.state.rolledBack,true);
+
+  const cleanPool=poolFixture({hasDependents:false});
+  const result=await repo.deleteTaxonomy('categories',7,{id:5},{pool:cleanPool});
+  assert.deepEqual(result,{id:7,deleted:true});
+  assert.equal(cleanPool.state.committed,true);
+  assert.ok(cleanPool.calls.some(({sql})=>sql.includes('DELETE FROM categories WHERE id=?')));
+  assert.ok(cleanPool.calls.some(({sql,params})=>sql.includes('audit_logs')&&params.includes('catalog.categories.delete')));
 });

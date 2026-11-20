@@ -93,11 +93,29 @@ async function getProfile(resellerId, pool) {
   assertMysql();
   const id = requirePositiveInt(resellerId, 'Reseller ID');
   const row = await client(pool).queryOne(
-    'SELECT id,name,shop_name,phone,email,balance_paisa,deposit_paisa,verified,status,created_at FROM resellers WHERE id=? AND status=1',
+    `SELECT r.id, r.name, r.shop_name, r.phone, r.email, r.balance_paisa, r.deposit_paisa, r.verified, r.status, r.created_at,
+            COALESCE(w.available_balance, r.balance_paisa, 0) AS available_balance_paisa,
+            COALESCE(w.pending_balance, 0) AS pending_balance_paisa
+     FROM resellers r
+     LEFT JOIN partner_wallets w ON w.reseller_id = r.id
+     WHERE r.id = ? AND r.status = 1`,
     [id]
   );
   if (!row) throw new NotFoundError('Reseller account not found.');
-  return { ...row, id: Number(row.id), email: row.email || '' };
+  const availablePaisa = Number(row.available_balance_paisa || 0);
+  const pendingPaisa = Number(row.pending_balance_paisa || 0);
+  return {
+    ...row,
+    id: Number(row.id),
+    email: row.email || '',
+    balance_paisa: availablePaisa,
+    available_balance_paisa: availablePaisa,
+    pending_balance_paisa: pendingPaisa,
+    balance: availablePaisa / 100,
+    available_balance: availablePaisa / 100,
+    pending_balance: pendingPaisa / 100,
+    deposit_amount: Number(row.deposit_paisa || 0) / 100,
+  };
 }
 
 async function updateProfile(resellerId, input, { pool = null, sessionId = null, currentPassword = '' } = {}) {
@@ -154,7 +172,11 @@ async function getDashboardSummary(resellerId, pool) {
   assertMysql();
   const id = requirePositiveInt(resellerId, 'Reseller ID');
   return client(pool).queryOne(
-    "SELECT COUNT(*) AS total_orders,SUM(order_status IN ('delivered','completed')) AS delivered_orders,SUM(order_status IN ('pending','confirmed','processing')) AS pending_orders FROM orders WHERE reseller_id=?",
+    `SELECT COUNT(*) AS total_orders,
+            SUM(order_status IN ('delivered','completed')) AS delivered_orders,
+            SUM(order_status IN ('pending','confirmed','processing')) AS pending_orders,
+            COALESCE(SUM(CASE WHEN order_status IN ('delivered','completed') THEN reseller_margin_paisa ELSE 0 END), 0) AS total_earned_paisa
+     FROM orders WHERE reseller_id=?`,
     [id]
   );
 }
@@ -197,7 +219,7 @@ async function getOrderDetails(resellerId, orderId, pool) {
   const id = requirePositiveInt(orderId, 'Order ID');
   const db = client(pool);
   const order = await db.queryOne(
-    'SELECT id,invoice_no AS invoice_id,customer_name,customer_phone AS phone,shipping_address AS address,order_status AS status,payment_method,payment_status,total_paisa,paid_paisa,cod_due_paisa,created_at FROM orders WHERE id=? AND reseller_id=?',
+    'SELECT id,invoice_no AS invoice_id,customer_name,customer_phone AS phone,shipping_address AS address,order_status AS status,payment_method,payment_status,total_paisa,paid_paisa,cod_due_paisa,reseller_margin_paisa,courier_code,courier_tracking_id,created_at FROM orders WHERE id=? AND reseller_id=?',
     [id, ownerId]
   );
   if (!order) throw new NotFoundError('Reseller order not found.');

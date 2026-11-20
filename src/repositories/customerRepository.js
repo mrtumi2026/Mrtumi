@@ -54,7 +54,12 @@ async function issueCustomerRecovery(identifier, channel, deliver, { pool = null
   if (!['email','phone'].includes(channel) || typeof deliver !== 'function') throw new ValidationError('A verified recovery channel and configured delivery provider are required.');
   const key = String(identifier || '').trim();
   if (!key || key.length > 191) return { accepted: true };
-  const match = channel === 'phone' ? normalizeBdPhone(key) : key.toLowerCase();
+  let match;
+  try {
+    match = channel === 'phone' ? normalizeBdPhone(key) : key.toLowerCase();
+  } catch (_e) {
+    return { accepted: true };
+  }
   if (channel === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(match)) return { accepted: true };
   const rawToken = require('node:crypto').randomBytes(32).toString('base64url');
   const tokenHash = require('node:crypto').createHash('sha256').update(rawToken).digest('hex');

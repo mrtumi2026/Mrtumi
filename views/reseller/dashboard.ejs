@@ -14,7 +14,7 @@
     <p class="text-muted small mb-0">পাইকারি দামে কাস্টমারের ঠিকানায় সরাসরি ড্রপশিপ অর্ডার পাঠান এবং লাভ উত্তোলন করুন</p>
   </div>
   <div class="d-flex gap-2">
-    <% if(!canonicalDashboard){ %><a href="/reseller/orders/create" class="btn btn-primary btn-sm fw-bold">+ নতুন কাস্টমার অর্ডার তৈরি করুন</a><% } %>
+    <% if(typeof allowOrderCreation === 'undefined' || allowOrderCreation){ %><a href="/reseller/orders/create" class="btn btn-primary btn-sm fw-bold">+ নতুন কাস্টমার অর্ডার তৈরি করুন</a><% } %>
     <a href="/reseller/products" class="btn btn-outline-dark btn-sm">📦 পাইকারি ক্যাটালগ</a>
   </div>
 </div>
@@ -23,17 +23,17 @@
   <div class="sc">
     <div class="sc-ico" style="background:#f0fdf4;"><i class="fas fa-coins text-success"></i></div>
     <div>
-      <div class="sc-label"><%= canonicalDashboard ? 'ওয়ালেট' : 'কমিশন ওয়ালেট ব্যালেন্স' %></div>
-      <div class="sc-val"><%= canonicalDashboard ? 'নীতিমালা নির্ধারিত নয়' : '৳'+Number(reseller.balance || 0).toLocaleString('en-IN') %></div>
-      <div class="sc-note"><%= canonicalDashboard ? 'ব্যবহারযোগ্য ব্যালেন্স দেখানো হচ্ছে না' : 'উত্তোলনযোগ্য লাভ' %></div>
+      <div class="sc-label">কমিশন ওয়ালেট ব্যালেন্স</div>
+      <div class="sc-val">৳<%= Number(reseller.balance || reseller.available_balance || 0).toLocaleString('en-IN') %></div>
+      <div class="sc-note"><%= Number(reseller.pending_balance || 0) > 0 ? 'পেন্ডিং: ৳' + Number(reseller.pending_balance).toLocaleString('en-IN') : 'উত্তোলনযোগ্য লাভ' %></div>
     </div>
   </div>
   <div class="sc">
     <div class="sc-ico" style="background:#eff6ff;"><i class="fas fa-shield-alt text-primary"></i></div>
     <div>
-      <div class="sc-label"><%= canonicalDashboard ? 'ডিপোজিট' : 'সিকিউরিটি ডিপোজিট' %></div>
-      <div class="sc-val"><%= canonicalDashboard ? 'ইতিহাসে দেখুন' : '৳'+Number(reseller.deposit_amount || 0).toLocaleString('en-IN') %></div>
-      <div class="sc-note"><%= canonicalDashboard ? 'ডিপোজিট লেনদেন দেখুন' : 'অ্যাক্টিভ ব্যালেন্স' %></div>
+      <div class="sc-label">সিকিউরিটি ডিপোজিট</div>
+      <div class="sc-val">৳<%= Number(reseller.deposit_amount || 0).toLocaleString('en-IN') %></div>
+      <div class="sc-note">অ্যাক্টিভ ব্যালেন্স</div>
     </div>
   </div>
   <div class="sc">
@@ -47,9 +47,9 @@
   <div class="sc">
     <div class="sc-ico" style="background:#faf5ff;"><i class="fas fa-chart-line text-info"></i></div>
     <div>
-      <div class="sc-label"><%= canonicalDashboard ? 'রেকর্ডকৃত অর্ডার মার্জিন' : 'মোট অর্জিত প্রফিট' %></div>
-      <div class="sc-val"><%= canonicalDashboard ? 'ওয়ালেট হিসাব নয়' : '৳'+Number(totalEstimatedProfit).toLocaleString('en-IN') %></div>
-      <div class="sc-note"><%= canonicalDashboard ? 'কোনো কমিশন গণনা করা হয়নি' : 'অর্ডার মার্জিন থেকে' %></div>
+      <div class="sc-label">মোট অর্জিত প্রফিট</div>
+      <div class="sc-val">৳<%= Number(totalEstimatedProfit || 0).toLocaleString('en-IN') %></div>
+      <div class="sc-note">ডেলিভারড অর্ডার মার্জিন</div>
     </div>
   </div>
 </div>
@@ -66,13 +66,13 @@
           <thead>
             <tr>
               <th>পণ্য</th>
-              <% if(canonicalDashboard){ %><th>উপলভ্য স্টক</th><% } else { %><th>রিসেলার পাইকারি মূল্য</th><th>খুচরা মূল্য</th><th>সম্ভাব্য লাভ</th><th></th><% } %>
+              <th>উপলভ্য স্টক</th>
+              <th>মূল্য</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
-            <% hotProducts.forEach(function(p) {
-                 const estProfit = canonicalDashboard ? null : Math.max(0, Number(p.new_price) - Number(p.reseller_cost));
-            %>
+            <% hotProducts.forEach(function(p) { %>
               <tr>
                 <td>
                   <div class="d-flex align-items-center gap-2">
@@ -80,7 +80,9 @@
                     <span class="fw-semibold"><%= p.name %></span>
                   </div>
                 </td>
-                <% if(canonicalDashboard){ %><td><%= Number(p.available_stock||0) %></td><% } else { %><td class="fw-bold text-primary">৳<%= Number(p.reseller_cost).toLocaleString('en-IN') %></td><td>৳<%= Number(p.new_price).toLocaleString('en-IN') %></td><td><span class="badge bg-success-subtle text-success">+৳<%= estProfit %>+</span></td><td class="text-end"><a href="/reseller/orders/create?product_id=<%= p.id %>" class="btn btn-sm btn-primary py-0 px-2">অর্ডার করুন</a></td><% } %>
+                <td><span class="badge bg-secondary-subtle text-secondary"><%= Number(p.available_stock||p.stock||0) %> টি</span></td>
+                <td><span class="fw-bold text-primary">৳<%= Number(p.new_price || 0).toLocaleString('en-IN') %></span></td>
+                <td class="text-end"><a href="/reseller/orders/create?product_id=<%= p.id %>" class="btn btn-sm btn-primary py-0 px-2">অর্ডার করুন</a></td>
               </tr>
             <% }) %>
           </tbody>

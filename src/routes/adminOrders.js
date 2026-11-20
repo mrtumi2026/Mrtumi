@@ -36,6 +36,87 @@ router.post('/admin/fulfillment/sub-orders/:subOrderId/status', requirePermissio
   return req.accepts('json')?res.json({data:result}):res.redirect('/admin/reseller-commerce');
 }));
 
+// ─── Vendor Courier Booking Approval Queue ───
+router.get('/admin/courier/requests', requirePermission('orders.manage'), asyncHandler(async (req, res) => {
+  const approvalRepo = require('../repositories/vendorCourierApprovalRepository');
+  const status = req.query.status || 'all';
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  const data = await approvalRepo.listBookingRequests({ status, page, perPage: 25 });
+
+  if (req.accepts('json') && !req.query.html) {
+    return res.json({ success: true, data: data.requests, pagination: data.pagination });
+  }
+
+  return res.render('admin/courier-requests', {
+    pageTitle: req.locale === 'bn' ? 'ভেন্ডর কুরিয়ার বুকিং অনুমোদন কিউ' : 'Vendor Courier Booking Approvals',
+    requests: data.requests,
+    pagination: data.pagination,
+    filterStatus: status,
+    flash: req.flash ? {
+      message: (req.flash('success') || [])[0] || (req.flash('error') || [])[0],
+      type: req.flash('success')?.length ? 'success' : 'danger'
+    } : null,
+    csrfToken: req.csrfToken ? req.csrfToken() : '',
+  });
+}));
+
+router.post('/admin/courier/requests/:id/approve', requirePermission('orders.manage'), requireCsrf, asyncHandler(async (req, res) => {
+  const approvalRepo = require('../repositories/vendorCourierApprovalRepository');
+  const adminId = req.session?.adminUser?.id || 1;
+  try {
+    const result = await approvalRepo.approveBookingRequest({
+      requestId: req.params.id,
+      adminId,
+      courierCodeOverride: req.body.courier_code,
+      note: req.body.note,
+    });
+    const tracking = result.request?.tracking_id || result.booking?.trackingId || '';
+    req.flash('success', `কুরিয়ার বুকিং সফলভাবে অনুমোদিত ও সম্পন্ন হয়েছে (ট্র্যাকিং: ${tracking})।`);
+  } catch (err) {
+    req.flash('error', `কুরিয়ার বুকিং ব্যর্থ হয়েছে: ${err.message}`);
+  }
+  return res.redirect('/admin/courier/requests');
+}));
+
+router.post('/admin/courier/requests/:id/reject', requirePermission('orders.manage'), requireCsrf, asyncHandler(async (req, res) => {
+  const approvalRepo = require('../repositories/vendorCourierApprovalRepository');
+  const adminId = req.session?.adminUser?.id || 1;
+  try {
+    await approvalRepo.rejectBookingRequest({
+      requestId: req.params.id,
+      adminId,
+      rejectionReason: req.body.rejection_reason || req.body.reason || 'Admin rejected the request',
+      note: req.body.note,
+    });
+    req.flash('success', 'কুরিয়ার বুকিং অনুরোধ সফলভাবে প্রত্যাখ্যান করা হয়েছে।');
+  } catch (err) {
+    req.flash('error', `প্রত্যাখ্যান ব্যর্থ হয়েছে: ${err.message}`);
+  }
+  return res.redirect('/admin/courier/requests');
+}));
+
+router.post('/admin/courier/requests/recover-stale', requirePermission('orders.manage'), requireCsrf, asyncHandler(async (req, res) => {
+  const approvalRepo = require('../repositories/vendorCourierApprovalRepository');
+  const adminId = req.session?.adminUser?.id || 1;
+  const olderThanMinutes = parseInt(req.body.older_than_minutes, 10) || 5;
+  try {
+    const result = await approvalRepo.recoverStaleBookingRequests({
+      olderThanMinutes,
+      actorId: adminId
+    });
+    if (req.accepts('json') && !req.query.html) {
+      return res.json({ success: true, ...result });
+    }
+    req.flash('success', `স্টেল বুকিং রিকভারি সম্পন্ন হয়েছে (মোট: ${result.scanned}, উদ্ধার: ${result.recovered}, ইন-রিভিউ: ${result.inReview}, ক্লিয়ার: ${result.cleared})।`);
+  } catch (err) {
+    if (req.accepts('json') && !req.query.html) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
+    req.flash('error', `স্টেল বুকিং রিকভারি ব্যর্থ হয়েছে: ${err.message}`);
+  }
+  return res.redirect('/admin/courier/requests');
+}));
+
 // Multi-courier quote comparison and recommendation
 router.get('/admin/fulfillment/sub-orders/:subOrderId/courier-quotes', requirePermission('orders.manage'), asyncHandler(async (req, res) => {
   const courierRepo = require('../repositories/courierIntegrationRepository');
@@ -109,9 +190,7 @@ router.get('/admin/fulfillment/ambiguous-shipments', requirePermission('orders.m
     return res.json({ success: true, data: result.shipments, pagination: result.pagination });
   }
 
-  const successMsg = req.flash ? req.flash('success') : null;
-  const errorMsg = req.flash ? req.flash('error') : null;
-  const flash = successMsg ? { type: 'success', message: successMsg } : (errorMsg ? { type: 'danger', message: errorMsg } : null);
+  const flash = res.locals.flash || null;
 
   return res.render('admin/ambiguous-courier-shipments', {
     pageTitle: 'Courier Operations & Monitoring Center',
@@ -731,7 +810,7 @@ router.get('/admin/reseller-orders', asyncHandler(async (req, res) => {
 
 // ─── Incomplete Orders ───
 router.get('/admin/incomplete-orders', (_req, res) => {
-  if (env.db.client === 'mysql') return res.status(409).send('Legacy incomplete-order records are unavailable in MySQL mode; only consented Phase 08 recovery records are supported.')
+  if (env.db.client === 'mysql') return res.redirect('/admin/phase08/incomplete');
   const rows = db.all('SELECT * FROM incomplete_orders ORDER BY id DESC');
   res.render('admin/crud-module', {
     pageTitle: 'Incomplete / Abandoned Orders',
@@ -925,7 +1004,7 @@ router.post('/admin/customer/ip-block/delete/:id', asyncHandler(async (_req, _re
 
 // ─── Refunds ───
 router.get('/admin/refunds', (req, res) => {
-  if (env.db.client === 'mysql') return res.status(409).send('Legacy refund records are unavailable in MySQL mode; no refund provider operation is configured.')
+  if (env.db.client === 'mysql') return res.redirect('/admin/phase08/refunds' + (req.query.status ? `?status=${encodeURIComponent(req.query.status)}` : ''));
   const statusFilter = req.query.status || '';
   const rows = statusFilter
     ? db.all('SELECT * FROM refunds WHERE status = ? ORDER BY id DESC', statusFilter)

@@ -7,6 +7,7 @@
  */
 const mysql = require('../src/db/mysqlPool');
 const { env } = require('../src/config/env');
+const { guardWorkerExecution } = require('./ops/maintenance-guard');
 
 const CATEGORY_SEEDS = Object.freeze([
   { icon: '📱', slug: 'mobiles-and-tablets', nameEn: 'Mobiles & Tablets', nameBn: 'মোবাইল ও ট্যাবলেট', subcategories: [['Smartphones', 'স্মার্টফোন'], ['Tablets', 'ট্যাবলেট'], ['Mobile Covers & Cases', 'মোবাইল কভার ও কেস'], ['Chargers & Cables', 'চার্জার ও কেবল'], ['Power Banks', 'পাওয়ার ব্যাংক']] },
@@ -64,6 +65,7 @@ async function seedCategories({ transaction = mysql.withTransaction, seeds = CAT
 }
 
 async function main() {
+  guardWorkerExecution('seed-categories');
   const result = await seedCategories();
   console.log(`Seeded ${result.categoryCount} categories and ${result.subcategoryCount} subcategories into MySQL.`);
 }
