@@ -302,8 +302,9 @@
     select._methodsPromise = fetch('/api/checkout/payment-methods', { headers: { Accept: 'application/json' } })
       .then(function (response) { return response.json().then(function (data) { if (!response.ok || !data.success) throw new Error('Payment methods unavailable.'); return data.methods || []; }); })
       .then(function (methods) {
-        // Only override if server returned at least 2 configured methods, otherwise preserve full canonical options
-        if (methods && methods.length > 1) {
+        // Replace the COD-only default with exactly the methods the server reports as
+        // enabled and configured. No fallback or default wallet options are injected.
+        if (Array.isArray(methods) && methods.length) {
           select.innerHTML = '';
           methods.forEach(function (method) {
             var option = document.createElement('option');
