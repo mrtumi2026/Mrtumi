@@ -472,14 +472,91 @@ async function rehearseDatabaseRestore(dumpFilePath, disposableDbConfig, manifes
         }
 
         // 2. Migration history validation
-        const migrationsTable = tableSet.has('migrations') ? 'migrations' : (tableSet.has('knex_migrations') ? 'knex_migrations' : null);
+        // Canonical table is schema_migrations; support legacy migrations / knex_migrations for backwards compatibility
+        const migrationsTable = tableSet.has('schema_migrations')
+          ? 'schema_migrations'
+          : (tableSet.has('migrations')
+            ? 'migrations'
+            : (tableSet.has('knex_migrations')
+              ? 'knex_migrations'
+              : null));
+
         if (!migrationsTable) {
           throw new Error(`REHEARSAL_SCHEMA_MISMATCH: Migrations tracking table not found after restore in '${rehearsalDbName}'!`);
         }
-        const [migRows] = await conn.query(`SELECT COUNT(*) AS c FROM \`${migrationsTable}\``);
-        const count = migRows[0].c || migRows[0].C || 0;
-        if (count === 0) {
-          throw new Error(`REHEARSAL_SCHEMA_MISMATCH: Migrations table '${migrationsTable}' is empty after restore!`);
+
+        let count = 0;
+        let appliedVersions = [];
+        let pendingVersions = [];
+
+        if (migrationsTable === 'schema_migrations') {
+          // Verify expected schema_migrations column structure
+          const [cols] = await conn.query(
+            "SELECT column_name FROM information_schema.columns WHERE table_schema = ? AND table_name = 'schema_migrations'",
+            [rehearsalDbName]
+          );
+          const colSet = new Set(cols.map(c => (c.column_name || c.COLUMN_NAME || '').toLowerCase()));
+          const requiredCols = ['version', 'name', 'checksum'];
+          const missingCols = requiredCols.filter(c => !colSet.has(c));
+          if (missingCols.length > 0) {
+            throw new Error(`REHEARSAL_SCHEMA_MISMATCH: Table 'schema_migrations' has invalid structure. Missing columns: ${missingCols.join(', ')}`);
+          }
+
+          // Query applied migration records
+          const [migRows] = await conn.query(
+            'SELECT `version`, `name`, `checksum` FROM `schema_migrations` ORDER BY `version` ASC'
+          );
+
+          if (!migRows || migRows.length === 0) {
+            throw new Error(`REHEARSAL_SCHEMA_MISMATCH: Migrations table 'schema_migrations' is empty after restore!`);
+          }
+
+          count = migRows.length;
+          appliedVersions = migRows.map(r => String(r.version || '').trim());
+
+          // Verify version formatting and duplicate detection
+          const distinctVersions = new Set();
+          for (const ver of appliedVersions) {
+            if (!/^\d{4}$/.test(ver)) {
+              throw new Error(`REHEARSAL_MIGRATION_VERSION_INVALID: Invalid migration version format '${ver}' in schema_migrations`);
+            }
+            if (distinctVersions.has(ver)) {
+              throw new Error(`REHEARSAL_MIGRATION_DUPLICATE: Duplicate migration version '${ver}' detected in schema_migrations`);
+            }
+            distinctVersions.add(ver);
+          }
+
+          // Verify checksum integrity against disk migration pairs & aliases if migrator is available
+          if (opts.validateMigrationIntegrity !== false) {
+            try {
+              const { loadMigrationPairs, verifyIntegrity } = require('../../src/db/migrator');
+              const migrationsDir = opts.migrationsDir || path.resolve(__dirname, '..', '..', 'src', 'db', 'migrations');
+              if (fs.existsSync(migrationsDir)) {
+                const pairs = loadMigrationPairs(migrationsDir);
+                const appliedMap = new Map();
+                for (const r of migRows) {
+                  appliedMap.set(r.version, r);
+                }
+                verifyIntegrity(pairs, appliedMap);
+
+                // Identify pending migrations
+                pendingVersions = pairs
+                  .filter(p => !appliedMap.has(p.version))
+                  .map(p => p.version);
+              }
+            } catch (migErr) {
+              if (migErr.code === 'MIGRATION_CHECKSUM_MISMATCH' || migErr.code === 'MISSING_APPLIED_MIGRATION_FILE') {
+                throw new Error(`REHEARSAL_CHECKSUM_MISMATCH: ${migErr.message}`);
+              }
+              throw migErr;
+            }
+          }
+        } else {
+          const [migRows] = await conn.query(`SELECT COUNT(*) AS c FROM \`${migrationsTable}\``);
+          count = migRows[0].c || migRows[0].C || 0;
+          if (count === 0) {
+            throw new Error(`REHEARSAL_SCHEMA_MISMATCH: Migrations table '${migrationsTable}' is empty after restore!`);
+          }
         }
 
         // 3. Critical Row Counts
@@ -510,6 +587,8 @@ async function rehearseDatabaseRestore(dumpFilePath, disposableDbConfig, manifes
           table_count: tableSet.size,
           migrations_table: migrationsTable,
           migrations_count: count,
+          applied_versions: appliedVersions,
+          pending_versions: pendingVersions,
           foreign_key_count: fkCount,
           row_counts_verified: Boolean(opts.expectedRowCounts)
         };

@@ -1,5 +1,5 @@
 -- ============================================================================
--- Migration 0018 (UP): Logistics, Courier Shipments, and Query Optimizations
+-- Migration 0032 (UP): Logistics, Courier Shipments, and Query Optimizations
 -- Target: MySQL 5.7+, MySQL 8.0+, MariaDB 10.3+
 -- All monetary amounts: BIGINT paisa (৳1.00 = 100 paisa)
 -- ============================================================================

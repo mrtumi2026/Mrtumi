@@ -486,4 +486,182 @@ CREATE TABLE \`unfinished\` (\`id\` int);
     assert.strictEqual(updated.status.rehearsal_parity_stats.migrations_count, 36);
     assert.strictEqual(updated.status.rehearsal_parity_stats.foreign_key_count, 8);
   });
+
+  await t.test('18. Detects schema_migrations, validates 0001-0036 records, and identifies 0037/0038 as pending', async () => {
+    const { loadMigrationPairs } = require('../src/db/migrator');
+    const pairs = loadMigrationPairs();
+    const prodHashes = {
+      '0030': '7ceb4304a6d11636410d1aa505feb58de60c4f507fb331bc3927f1d8cd03c0bc',
+      '0031': '943aaae204db011f06347fbe3121ff666e8ef1e32abda13cc40b90931a22b4c9',
+      '0032': 'd590045213ae8d0f282a6c4b7434a43c9b8d69ddf29293abd06a6e07c44425a4',
+      '0033': 'f2b4b93601fdad281829bc15a0e413f5aa5940e2a23e7750d14c0c54277edc04'
+    };
+    const mockMigRows = pairs.slice(0, 36).map(p => ({
+      version: p.version,
+      name: p.name,
+      checksum: prodHashes[p.version] || p.checksum,
+      execution_ms: 10,
+      applied_at: '2026-11-20 12:00:00'
+    }));
+
+    const mockDriver = {
+      createConnection: async () => ({
+        query: async (sql) => {
+          if (sql.includes('information_schema.tables')) {
+            return [[
+              { table_name: 'users' },
+              { table_name: 'products' },
+              { table_name: 'orders' },
+              { table_name: 'schema_migrations' }
+            ]];
+          }
+          if (sql.includes('information_schema.columns')) {
+            return [[
+              { column_name: 'version' },
+              { column_name: 'name' },
+              { column_name: 'checksum' },
+              { column_name: 'execution_ms' },
+              { column_name: 'applied_at' }
+            ]];
+          }
+          if (sql.includes('schema_migrations')) {
+            return [mockMigRows];
+          }
+          if (sql.includes('information_schema.table_constraints')) {
+            return [[{ c: 8 }]];
+          }
+          return [[]];
+        },
+        end: async () => {}
+      })
+    };
+
+    const result = await rehearseDatabaseRestore(
+      validDumpFile,
+      { database: 'mrtumi_rehearsal_prod_schema' },
+      manifestFile,
+      {
+        authorizedDisposable: true,
+        skipStreamRestore: true,
+        mockMysql: mockDriver
+      }
+    );
+
+    assert.strictEqual(result.success, true);
+    const updated = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+    assert.strictEqual(updated.status.database_restore_rehearsed, true);
+    assert.strictEqual(updated.status.rehearsal_parity_verified, true);
+    assert.strictEqual(updated.status.rehearsal_parity_stats.migrations_table, 'schema_migrations');
+    assert.strictEqual(updated.status.rehearsal_parity_stats.migrations_count, 36);
+    assert.deepStrictEqual(updated.status.rehearsal_parity_stats.pending_versions, ['0037', '0038']);
+  });
+
+  await t.test('19. Fails closed when schema_migrations has invalid or missing required columns', async () => {
+    const mockDriver = {
+      createConnection: async () => ({
+        query: async (sql) => {
+          if (sql.includes('information_schema.tables')) {
+            return [[{ table_name: 'schema_migrations' }]];
+          }
+          if (sql.includes('information_schema.columns')) {
+            return [[
+              { column_name: 'version' },
+              { column_name: 'name' }
+            ]];
+          }
+          return [[]];
+        },
+        end: async () => {}
+      })
+    };
+
+    await assert.rejects(
+      async () => {
+        await rehearseDatabaseRestore(
+          validDumpFile,
+          { database: 'mrtumi_rehearsal' },
+          manifestFile,
+          { authorizedDisposable: true, skipStreamRestore: true, mockMysql: mockDriver }
+        );
+      },
+      /REHEARSAL_SCHEMA_MISMATCH: Table 'schema_migrations' has invalid structure. Missing columns: checksum/
+    );
+  });
+
+  await t.test('20. Fails closed when duplicate migration versions exist in schema_migrations', async () => {
+    const mockDriver = {
+      createConnection: async () => ({
+        query: async (sql) => {
+          if (sql.includes('information_schema.tables')) {
+            return [[{ table_name: 'schema_migrations' }]];
+          }
+          if (sql.includes('information_schema.columns')) {
+            return [[{ column_name: 'version' }, { column_name: 'name' }, { column_name: 'checksum' }]];
+          }
+          if (sql.includes('schema_migrations')) {
+            return [[
+              { version: '0001', name: 'v1', checksum: 'a' },
+              { version: '0001', name: 'v1_dup', checksum: 'b' }
+            ]];
+          }
+          return [[]];
+        },
+        end: async () => {}
+      })
+    };
+
+    await assert.rejects(
+      async () => {
+        await rehearseDatabaseRestore(
+          validDumpFile,
+          { database: 'mrtumi_rehearsal' },
+          manifestFile,
+          { authorizedDisposable: true, skipStreamRestore: true, mockMysql: mockDriver }
+        );
+      },
+      /REHEARSAL_MIGRATION_DUPLICATE: Duplicate migration version '0001' detected in schema_migrations/
+    );
+  });
+
+  await t.test('21. Fails closed when schema_migrations contains a tampered or unrecognized checksum', async () => {
+    const { loadMigrationPairs } = require('../src/db/migrator');
+    const pairs = loadMigrationPairs();
+    const mockMigRows = pairs.slice(0, 5).map(p => ({
+      version: p.version,
+      name: p.name,
+      checksum: p.version === '0003' ? 'badchecksumbadchecksumbadchecksumbadchecksumbadchecksumbadcheck' : p.checksum,
+      execution_ms: 10,
+      applied_at: '2026-11-20 12:00:00'
+    }));
+
+    const mockDriver = {
+      createConnection: async () => ({
+        query: async (sql) => {
+          if (sql.includes('information_schema.tables')) {
+            return [[{ table_name: 'schema_migrations' }]];
+          }
+          if (sql.includes('information_schema.columns')) {
+            return [[{ column_name: 'version' }, { column_name: 'name' }, { column_name: 'checksum' }]];
+          }
+          if (sql.includes('schema_migrations')) {
+            return [mockMigRows];
+          }
+          return [[]];
+        },
+        end: async () => {}
+      })
+    };
+
+    await assert.rejects(
+      async () => {
+        await rehearseDatabaseRestore(
+          validDumpFile,
+          { database: 'mrtumi_rehearsal' },
+          manifestFile,
+          { authorizedDisposable: true, skipStreamRestore: true, mockMysql: mockDriver }
+        );
+      },
+      /REHEARSAL_CHECKSUM_MISMATCH: Checksum mismatch for applied migration/
+    );
+  });
 });

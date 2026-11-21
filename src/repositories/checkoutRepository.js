@@ -7,6 +7,7 @@ const {normalizeBdPhone,requirePositiveInt,requireString}=require('../utils/vali
 const {ValidationError,ConflictError,NotFoundError}=require('../utils/errors');
 const lifecycle=require('./phase08Repository');
 const settingsRepository=require('./settingsRepository');
+const paymentMethodEligibility=require('../services/paymentMethodEligibility');
 const {CONSENT_VERSION, EMPTY_ATTRIBUTION, normalizeAttribution}=require('../analytics/attribution');
 
 function localizedText(locale,bnValue,enValue,fallback=''){
@@ -87,16 +88,11 @@ async function listDeliveryLocations(){
 }
 async function listCheckoutMethods(){
   assertMysql();
-  const rows = await client().queryAll("SELECT code,name,account_number,instructions,instructions_bn,gateway_type,mode FROM payment_gateways WHERE (status=1 OR is_active=1) AND (gateway_type='manual' OR code IN ('cod','bkash_api','bkash_manual','nagad_api','nagad_manual','rocket_api','rocket_manual','bkash','nagad','rocket')) ORDER BY CASE WHEN code='cod' THEN 0 ELSE 1 END,id");
-  const hasBkash = rows.some(r => r.code === 'bkash' || r.code === 'bkash_manual' || r.code === 'bkash_api');
-  const hasNagad = rows.some(r => r.code === 'nagad' || r.code === 'nagad_manual' || r.code === 'nagad_api');
-  const hasRocket = rows.some(r => r.code === 'rocket' || r.code === 'rocket_manual' || r.code === 'rocket_api');
-  const siteSettings = await settingsRepository.getAllSettings().catch(() => ({}));
-  const fallbackPhone = siteSettings.phone || siteSettings.site_phone || '01973437395';
-  if (!hasBkash) rows.push({ code: 'bkash', name: 'bKash (বিকাশ Send Money)', gateway_type: 'manual', mode: 'manual', account_number: fallbackPhone, instructions: 'Send Money to our bKash number and enter TrxID below.', instructions_bn: 'আমাদের বিকাশ নম্বরে Send Money করুন এবং নিচে TrxID দিন।' });
-  if (!hasNagad) rows.push({ code: 'nagad', name: 'Nagad (নগদ Send Money)', gateway_type: 'manual', mode: 'manual', account_number: fallbackPhone, instructions: 'Send Money to our Nagad number and enter TrxID below.', instructions_bn: 'আমাদের নগদ নম্বরে Send Money করুন এবং নিচে TrxID দিন।' });
-  if (!hasRocket) rows.push({ code: 'rocket', name: 'Rocket (রকেট Send Money)', gateway_type: 'manual', mode: 'manual', account_number: fallbackPhone, instructions: 'Send Money to our Rocket number and enter TrxID below.', instructions_bn: 'আমাদের রকেট নম্বরে Send Money করুন এবং নিচে TrxID দিন।' });
-  return rows;
+  const rows = await client().queryAll(
+    "SELECT code,name,account_number,instructions,instructions_bn,gateway_type,mode,status,is_active FROM payment_gateways WHERE status=1 AND (is_active=1 OR is_active IS NULL) AND code IN ('cod','bkash_manual','nagad_manual','rocket_manual','bkash','nagad','rocket') ORDER BY id"
+  );
+  // Display and order creation share one eligibility rule; nothing is synthesized.
+  return paymentMethodEligibility.selectCheckoutMethods(rows);
 }
 function couponAmount(row,subtotal){
   if(!row)return{amount:0,code:''};
@@ -157,8 +153,10 @@ async function createOrder(input,options={}){
     if(replay){if(replay.checkout_request_hash!==payloadHash)throw new ConflictError('This checkout request key was already used with different order details.');return{id:Number(replay.id),invoiceNo:replay.invoice_no,replayed:true};}
     const blocked=await tx.queryOne('SELECT id FROM ip_blocks WHERE status=1 AND ip_or_phone IN (?,?) LIMIT 1 FOR UPDATE',[phone,String(ip||'').slice(0,64)]);
     if(blocked)throw new ConflictError('This phone number or IP address is blocked from placing orders.');
-    const gateway=await tx.queryOne("SELECT code,gateway_type,mode FROM payment_gateways WHERE (code=? OR code=REPLACE(?,'_manual','') OR code=CONCAT(?,'_manual')) AND status=1 AND (is_active=1 OR is_active IS NULL) LIMIT 1 FOR UPDATE",[paymentMethod,paymentMethod,paymentMethod]);
+    const gateway=await tx.queryOne("SELECT code,gateway_type,mode,status,is_active,account_number,instructions,instructions_bn FROM payment_gateways WHERE (code=? OR code=REPLACE(?,'_manual','') OR code=CONCAT(?,'_manual')) AND status=1 AND (is_active=1 OR is_active IS NULL) LIMIT 1 FOR UPDATE",[paymentMethod,paymentMethod,paymentMethod]);
     if(!gateway || (isManualPayment && !['bkash','nagad','rocket'].includes(manualBrand)))throw new ConflictError('This payment method is not active or is not supported at checkout.');
+    // Same rule as listCheckoutMethods(): disabled, incomplete or forged methods are rejected.
+    paymentMethodEligibility.assertCheckoutMethodAllowed(gateway,paymentMethod);
     const zone=await tx.queryOne('SELECT id,division,district,upazila,delivery_charge_paisa FROM delivery_locations WHERE id=? AND status=1 FOR UPDATE',[zoneId]);
     if(!zone)throw new ValidationError('Select an active, configured delivery location.');
     let recovery=null;

@@ -1,5 +1,5 @@
 -- ============================================================================
--- Migration 0018 (DOWN): Rollback courier shipments
+-- Migration 0032 (DOWN): Rollback courier shipments
 -- ============================================================================
 DROP TABLE IF EXISTS `courier_shipments`;
 

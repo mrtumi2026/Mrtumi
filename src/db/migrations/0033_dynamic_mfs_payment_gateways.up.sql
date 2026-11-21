@@ -1,17 +1,11 @@
 -- ============================================================================
--- Migration 0029 (UP): Dynamic Dual-Mode Bangladesh MFS Payment Gateways
+-- Migration 0033 (UP): Dynamic Dual-Mode Bangladesh MFS Payment Gateways
 -- Target: MySQL 5.7+, MySQL 8.0+, MariaDB 10.3+
 -- Monetary values: BIGINT paisa (1 BDT = 100 paisa)
 -- ============================================================================
 
 -- ---------------------------------------------------------------------------
--- 1. Purge Duplicate, Obsolete, and Test Gateways (Keep strictly canonical 7 channels)
--- ---------------------------------------------------------------------------
-DELETE FROM `payment_gateways` 
-WHERE `code` NOT IN ('cod', 'bkash_api', 'bkash_manual', 'nagad_api', 'nagad_manual', 'rocket_api', 'rocket_manual');
-
--- ---------------------------------------------------------------------------
--- 2. Extend payment_gateways with Dual-Mode Attributes & Bengali Instructions
+-- 1. Extend payment_gateways with Dual-Mode Attributes & Bengali Instructions
 -- ---------------------------------------------------------------------------
 ALTER TABLE `payment_gateways`
   ADD COLUMN `is_active` TINYINT(1) NOT NULL DEFAULT 1
@@ -26,6 +20,15 @@ ALTER TABLE `payment_gateways`
     COMMENT 'Minimum order amount in paisa to use this channel',
   ADD COLUMN `max_order_paisa` BIGINT UNSIGNED DEFAULT NULL
     COMMENT 'Maximum order amount in paisa allowed for this channel';
+
+-- ---------------------------------------------------------------------------
+-- 1b. Non-destructively retire obsolete/test gateway channels.
+-- Rows are preserved for audit and reconciliation; the canonical seed below
+-- re-activates only the supported channels.
+-- ---------------------------------------------------------------------------
+UPDATE `payment_gateways`
+SET `status`=0, `is_active`=0
+WHERE `code` NOT IN ('cod', 'bkash_api', 'bkash_manual', 'nagad_api', 'nagad_manual', 'rocket_api', 'rocket_manual');
 
 -- ---------------------------------------------------------------------------
 -- 3. Extend orders and payment_transactions with Manual Verification Columns

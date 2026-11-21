@@ -1,8 +1,11 @@
 -- ============================================================================
--- Migration 0029 (DOWN): Rollback Dynamic MFS Gateways
+-- Migration 0033 (DOWN): Rollback Dynamic MFS Gateways
 -- ============================================================================
 
-DELETE FROM `payment_gateways`
+-- Non-destructive rollback: these channels may predate 0033 (0020 seeds manual
+-- MFS rows and order_payments may reference them). Deactivate instead of deleting.
+UPDATE `payment_gateways`
+SET `status`=0
 WHERE `code` IN (
   'bkash_api',
   'bkash_manual',

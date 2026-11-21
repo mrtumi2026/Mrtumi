@@ -57,3 +57,14 @@ test('Vendor and admin shipment routes retain CSRF, vendor ownership, and orders
   assert.match(admin,/\/admin\/fulfillment\/sub-orders\/:subOrderId\/handover', requirePermission\('orders\.manage'\), requireCsrf/);
   assert.match(admin,/platformAdmin: true/);
 });
+
+test('Phase B repository implements booking, handover, delivery mode and parent synchronization contracts', () => {
+  for (const name of ['setDeliveryMode', 'recordBookingResult', 'recordPhysicalHandover', 'syncParentStatus']) {
+    assert.equal(typeof repo[name], 'function', `${name} must be implemented by the vendor order repository`);
+  }
+  const source = fs.readFileSync(path.join(root, 'src/repositories/vendorOrderRepository.js'), 'utf8');
+  assert.match(source, /Only an authorized platform administrator may confirm this shipment event/);
+  assert.match(source, /booking_result/);
+  assert.match(source, /physical_handover/);
+  assert.match(source, /fulfillment_shipment_events/);
+});

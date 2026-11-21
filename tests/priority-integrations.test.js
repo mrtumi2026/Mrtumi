@@ -38,10 +38,13 @@ test('priority settings routes use asynchronous MySQL operations and retain SQLi
   assert.match(source, /INSERT INTO courier_apis \(name,code,base_url,api_key,secret_key,client_id,status,sandbox\)/);
   assert.match(source, /db\.all\('SELECT \* FROM banners/);
   const checkout = fs.readFileSync(path.join(root, 'src/repositories/checkoutRepository.js'), 'utf8');
-  assert.match(checkout, /gateway_type='manual'/);
+  // Manual MFS channels are read from payment_gateways and filtered by the shared
+  // eligibility rule; they are never synthesized (COD-first defect regression).
+  assert.match(checkout, /codes? IN \('cod','bkash_manual','nagad_manual','rocket_manual'/);
+  assert.match(checkout, /paymentMethodEligibility\.selectCheckoutMethods\(rows\)/);
   assert.match(checkout, /payment_method,payment_status/);
   const checkoutView = fs.readFileSync(path.join(root, 'views/store/checkout.ejs'), 'utf8');
-  assert.match(checkoutView, /gateways\.forEach/);
+  assert.match(checkoutView, /displayGateways\.forEach/);
   const crudView = fs.readFileSync(path.join(root, 'views/admin/crud-module.ejs'), 'utf8');
   assert.ok(crudView.includes('input[type="file"][name="image_file"]'));
   assert.ok(crudView.includes("canvas.toBlob(resolve, 'image/jpeg', quality)"));
