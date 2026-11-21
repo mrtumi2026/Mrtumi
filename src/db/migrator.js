@@ -16,29 +16,46 @@ const KNOWN_CHECKSUM_ALIASES = {
     'e289337027e4b5fa47512e056c982b783c90bb846262654d1cd8718fb3b80898', // 80086b7 (LF)
     'f63ef498c2a204c672168f083e6ea5add96721cf5d126fd89c498f37b57df520', // 80086b7 (CRLF)
     'ca1a5b47a9ef332ca89b0d2d3a778e5ab663e26210be8c5bc803b90906be336a', // intermediate alias
+    '86941f4e456c3828620dee883810692f541958ab02c80b61bac6d0b6fe90d216', // 3ed75f4/f0a0a3c (LF) - production applied
+    'f59f5c2fe400f4334d509636b8416bcacecfbdfacc2ceff614a42fcc953d43ab', // 3ed75f4/f0a0a3c (CRLF)
+    '5553eccd11d8815866ded7d6f17ac1a9c701fd3234add6f78ab64e104207ec08', // 647c9a5 release bytes (current) - pinned
+  ]),
+  '0031': new Set([
+    '0b16399bf1434067b7dda20147c09fae899632277b4aba1a23199debe523c595', // 647c9a5 release (LF) - current
+    '943aaae204db011f06347fbe3121ff666e8ef1e32abda13cc40b90931a22b4c9', // 3ed75f4/f0a0a3c (LF) - production applied
+    'c2ba287ff0336420c96ee51a40df66fd8821683ee90e74c8a6f7b0aa90bcd7fa', // 3ed75f4/f0a0a3c (CRLF)
   ]),
   '0032': new Set([
     'd590045213ae8d0f282a6c4b7434a43c9b8d69ddf29293abd06a6e07c44425a4', // d48583a (LF)
     '95ac8642eebdf5613b0f79ef9bc89048df8e193b4c2ea8b3270932a7e2ca5f2a', // d48583a (CRLF)
+    'cdb8b5e939d8fb5d35ddead6bb6cbcded847f64f31b81ad8bbbe4b439bbc4c0c', // f0a0a3c (LF) - production applied
+    '39688621b5139e8691a8de9c868fd1bacca15e69b2346c7cdbe2cbc92737b3a4', // f0a0a3c (CRLF)
+    'ad0bc53e5aea7e7d1761559186fde9a9664eb136d481c08ab999720847e5e458', // 647c9a5 release bytes (current) - pinned
   ]),
   '0033': new Set([
     'f2b4b93601fdad281829bc15a0e413f5aa5940e2a23e7750d14c0c54277edc04', // d48583a (LF)
     '102399b0e74eaaacc9e19f691e441a33443b1e1e51413662d59dd0f84d158c47', // d48583a (CRLF)
+    '5fae1e8f79c6c3973a2936d5f9f20955dbe9603438b5f078be145bab7f4e72fe', // f0a0a3c (LF) - production applied
+    '910dd998db9d2e4e24c0d03150221c1e147eb83e1b21f674f7cdacadaf310a3c', // f0a0a3c (CRLF)
+    '0c0a3f9daf43c93bc5ed3c97ca5559b87efa74f784e5eb138fc6554f2b84e391', // 647c9a5 release bytes (current) - pinned
   ]),
   '0034': new Set([
     '5976ee07d7368e7d50b8ddd60c12ea7084eb5321ac505324d1ce699f7000fd17', // 4d62d86 (LF) - production applied
     'b319440aa224aa8a5202f6c24d4ebe8fdea1ac51e129dcd02ae8abd0e61bedaa', // 4d62d86 (CRLF)
     '339fd3fa888c290f514666a74bd0be4f2f6ba67b10783d827ca0cb816651bc57', // 80086b7 (CRLF)
+    'f916ffd411eaf124815bc84e802506eff6cf4aeb5a04a36251941b99a25f038f', // 647c9a5 release bytes (current) - pinned
   ]),
   '0035': new Set([
     'dc39e04a0f45ff73be5837c60021caa1a0cd6551aeec802b906dec77afde891b', // 2f2a84b (LF) - original
     '5005ec8784babd7df4f3177226e309ead91165edaa0243ee78a2665469b6ecc1', // 2f2a84b (CRLF)
     '74316bbb3f3170c3c38dd57ec5aa622d9e69405584cde609c22035828a0491ef', // 80086b7 (CRLF)
+    'd2eac70cc1259afd03fd6cf0abbfb55f2abb0ae4a8d1a75343949847ade3ecd1', // 647c9a5 release bytes (current) - pinned
   ]),
   '0036': new Set([
     '926a80da8e96da19ba0daad6a9bdf3a0adffa35d920a35d81b0f52197af79977', // 56bc9c1 (LF) - original
     '533e048096b0f4ca85831c34f65fab4463c79c6e7f246f758d26fa87cf0d8170', // 56bc9c1 (CRLF)
     '97d7d675be0f04ebd2674a933939fffe2de01e8525e1ee4fb7340e3fbd3b152a', // 80086b7 (CRLF)
+    '3b9de3941596547ac4e9bfaba4ebfb5852ab21ce4c9b0d3787237a4d7dc29d46', // 647c9a5 release bytes (current) - pinned
   ]),
 };
 
@@ -265,10 +282,18 @@ function verifyIntegrity(pairs, appliedMap) {
     }
     const aliases = KNOWN_CHECKSUM_ALIASES[appliedVer];
     const diskLfChecksum = sha256Hex(disk.upSql.replace(/\r\n/g, '\n'));
+    // Alias-based compatibility is only valid when BOTH sides are an independently
+    // recognised historical checksum for THIS version. Accepting either side alone
+    // would let a modified/malicious disk file pass by riding on the applied row's
+    // legitimate alias (or vice versa).
+    const appliedIsKnownAlias = Boolean(aliases && aliases.has(appliedRow.checksum));
+    const diskIsKnownAlias = Boolean(
+      aliases && (aliases.has(disk.checksum) || aliases.has(diskLfChecksum))
+    );
     const matchesChecksum =
       disk.checksum === appliedRow.checksum ||
       diskLfChecksum === appliedRow.checksum ||
-      Boolean(aliases && (aliases.has(appliedRow.checksum) || aliases.has(disk.checksum)));
+      (appliedIsKnownAlias && diskIsKnownAlias);
     if (!matchesChecksum) {
       throw new MigrationError(
         'MIGRATION_CHECKSUM_MISMATCH',
