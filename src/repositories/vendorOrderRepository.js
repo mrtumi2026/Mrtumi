@@ -59,6 +59,12 @@ async function recordSubOrderStatus(tx, row, target, actor, note = '') {
   await tx.execute('INSERT INTO vendor_order_status_history(order_id,vendor_id,vendor_sub_order_id,from_status,to_status) VALUES(?,?,?,?,?)', [row.order_id,row.vendor_id,row.id,row.status,target]);
   await tx.execute('INSERT INTO order_status_history(order_id,vendor_sub_order_id,from_status,to_status,note,changed_by_user_id) VALUES(?,?,?,?,?,?)', [row.order_id,row.id,row.status,target,String(note || '').slice(0,255),actor.userId]);
 }
+// Shipping through the vendor screens must reduce stock just like shipping from the order page.
+async function consumeParentStockTx(tx, orderId, userId) {
+  const held = await tx.queryOne("SELECT COUNT(*) AS n FROM stock_reservations WHERE reservation_key=? AND status='active'", [`order:${Number(orderId)}`]);
+  if (Number(held?.n || 0) > 0) await require('./phase08Repository').consumeOrderInventoryTx(tx, Number(orderId), { id: userId || null });
+}
+
 async function syncParentStatus(tx, orderId, priorStatus, userId) {
   const rows = await tx.queryAll('SELECT id,status FROM vendor_sub_orders WHERE order_id=? ORDER BY id FOR UPDATE', [orderId]);
   const applicableRows=rows.filter((row)=>row.status!=='cancelled');
@@ -72,6 +78,7 @@ async function syncParentStatus(tx, orderId, priorStatus, userId) {
   if (!Object.hasOwn(rank,priorStatus) || (rank[target] ?? 0) <= rank[priorStatus]) return priorStatus;
   const changed = await tx.execute('UPDATE orders SET order_status=? WHERE id=? AND order_status=?', [target,orderId,priorStatus]);
   if (changed.affectedRows === 1) await tx.execute('INSERT INTO order_status_history(order_id,from_status,to_status,note,changed_by_user_id) VALUES(?,?,?,?,?)', [orderId,priorStatus,target,target==='delivered'?'All applicable vendor sub-orders delivered':'All applicable vendor sub-orders handed over',userId]);
+  if (changed.affectedRows === 1) await consumeParentStockTx(tx, orderId, userId);
   if (changed.affectedRows === 1) await require('../services/orderRewardService').applyOrderOutcomeTx(tx, orderId, target);
   return changed.affectedRows === 1 ? target : priorStatus;
 }

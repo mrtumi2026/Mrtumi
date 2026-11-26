@@ -96,6 +96,9 @@ function normalizeOrderLines(rawLines) {
   }
   return [...byLine.values()].sort((a,b) => a.productId-b.productId || (a.variantId||0)-(b.variantId||0));
 }
+// A placed order is a commitment: COD and manually verified orders ship hours or days later.
+const ORDER_RESERVATION_DAYS = 90;
+
 async function reserveOrderInventoryTx(tx, orderId, actor = {}) {
   const key = orderReservationKey(orderId);
   const order=await tx.queryOne('SELECT id,order_status FROM orders WHERE id=? FOR UPDATE',[orderId]);
@@ -130,7 +133,7 @@ async function reserveOrderInventoryTx(tx, orderId, actor = {}) {
     const reserved = line.variantId ? Number(variantsById.get(line.variantId).stock_reserved) : Number(p[pool === 'vendor' ? 'vendor_stock_reserved' : 'stock_reserved']);
     if (onHand - reserved < line.qty) throw new ConflictError(`Insufficient available stock for product ${line.productId}.`);
   }
-  const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+  const expiresAt = new Date(Date.now() + ORDER_RESERVATION_DAYS * 24 * 60 * 60 * 1000);
   for (const line of lines) {
     const p = productsById.get(line.productId);
     const pool = p.vendor_id ? 'vendor' : 'warehouse';
@@ -212,7 +215,7 @@ async function expireExpiredOrderReservations({ limit = 100 } = {}) {
 async function consumeOrderInventoryTx(tx, orderId, actor = {}) {
   const rows = await tx.queryAll('SELECT id,product_id,variant_id,stock_pool,qty,expires_at FROM stock_reservations WHERE reservation_key=? AND status="active" ORDER BY product_id,variant_id FOR UPDATE', [orderReservationKey(orderId)]);
   if (!rows.length) throw new ConflictError('Order has no active inventory reservation; stock was not decremented.');
-  if (rows.some((r) => new Date(r.expires_at).getTime() <= Date.now())) throw new ConflictError('Order inventory reservation expired; extend or re-reserve before shipping.');
+  // A row that is still "active" still holds its stock, so it can be shipped even if its date has passed.
   await tx.lockRowsById('products', rows.map((r) => Number(r.product_id)), ['id','vendor_id','stock_on_hand','stock_reserved','vendor_stock_on_hand','vendor_stock_reserved']);
   for (const r of rows) {
     const pool = r.stock_pool === 'vendor' ? 'vendor' : 'warehouse';
@@ -594,4 +597,4 @@ async function getOrderOtpStatus(orderId){
 }
 async function listOrderHistory(orderId){assertMysql();return client().queryAll('SELECT h.*,u.name AS actor_name FROM order_status_history h LEFT JOIN users u ON u.id=h.changed_by_user_id WHERE h.order_id=? ORDER BY h.id',[requirePositiveInt(orderId,'order ID')]);}
 
-module.exports={TRANSITIONS,REFUND_STATES,INCOMPLETE_STATES,validateOtpPolicy,validateAdvancePolicy,calculateAdvance,computeOrderPayment,otpDigest,makeOtp,normalizeCaptureCart,normalizeOrderLines,orderReservationKey,transitionOrder,transitionOrderTx,requestRefund,transitionRefund,recordIncompleteCheckout,withdrawIncompleteCheckout,listIncompleteCheckouts,transitionIncompleteCheckout,createOrderOtp,verifyOrderOtp,getPhase08Settings,savePhase08Settings,listOrders,listRefunds,listRefundHistory,listOrderHistory,getOrderOtpStatus,reserveOrderInventory:async(orderId,actor={})=>mysql.withTransaction(tx=>reserveOrderInventoryTx(tx,requirePositiveInt(orderId,'order ID'),actor)),reserveOrderInventoryTx,releaseOrderInventory:async(orderId,actor={},reason='Order cancelled')=>mysql.withTransaction(tx=>releaseOrderInventoryTx(tx,requirePositiveInt(orderId,'order ID'),actor,reason)),listExpiredOrderReservationCandidates,expireExpiredOrderReservations};
+module.exports={ORDER_RESERVATION_DAYS,consumeOrderInventoryTx,TRANSITIONS,REFUND_STATES,INCOMPLETE_STATES,validateOtpPolicy,validateAdvancePolicy,calculateAdvance,computeOrderPayment,otpDigest,makeOtp,normalizeCaptureCart,normalizeOrderLines,orderReservationKey,transitionOrder,transitionOrderTx,requestRefund,transitionRefund,recordIncompleteCheckout,withdrawIncompleteCheckout,listIncompleteCheckouts,transitionIncompleteCheckout,createOrderOtp,verifyOrderOtp,getPhase08Settings,savePhase08Settings,listOrders,listRefunds,listRefundHistory,listOrderHistory,getOrderOtpStatus,reserveOrderInventory:async(orderId,actor={})=>mysql.withTransaction(tx=>reserveOrderInventoryTx(tx,requirePositiveInt(orderId,'order ID'),actor)),reserveOrderInventoryTx,releaseOrderInventory:async(orderId,actor={},reason='Order cancelled')=>mysql.withTransaction(tx=>releaseOrderInventoryTx(tx,requirePositiveInt(orderId,'order ID'),actor,reason)),listExpiredOrderReservationCandidates,expireExpiredOrderReservations};

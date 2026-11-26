@@ -56,8 +56,8 @@ async function listProducts({mode='all',search=''}={}, {pool=null}={}){
   if(mode==='wholesale')where.push('(p.is_wholesale=1 OR p.wholesale_price_paisa>0)');
   if(q){where.push("(p.name_bn LIKE ? ESCAPE '!' OR p.name_en LIKE ? ESCAPE '!' OR p.sku LIKE ? ESCAPE '!')");const escaped=q.replace(/[!%_]/g,c=>`!${c}`);params.push(`%${escaped}%`,`%${escaped}%`,`%${escaped}%`);}
   return client(pool).queryAll(`SELECT p.id,p.sku AS code,p.slug,p.name_bn AS name,p.image_url AS image,
-      p.regular_price_paisa/100 AS old_price,p.sale_price_paisa/100 AS new_price,
-      p.wholesale_price_paisa/100 AS wholesale_price,p.wholesale_min_qty,
+      CAST(p.regular_price_paisa/100 AS DECIMAL(20,2)) AS old_price,CAST(p.sale_price_paisa/100 AS DECIMAL(20,2)) AS new_price,
+      CAST(p.wholesale_price_paisa/100 AS DECIMAL(20,2)) AS wholesale_price,p.wholesale_min_qty,
       p.stock_on_hand AS stock,p.is_flash_sale,p.is_hot_deal,p.is_wholesale,p.approval_status,p.status,
       c.name_bn AS category_name,v.shop_name AS vendor_name
     FROM products p LEFT JOIN categories c ON c.id=p.category_id LEFT JOIN vendors v ON v.id=p.vendor_id

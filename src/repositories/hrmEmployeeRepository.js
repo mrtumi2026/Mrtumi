@@ -25,7 +25,7 @@ async function insertAudit(tx, actor, action, id, beforeState, afterState) {
     VALUES('admin',?,?,?,?,?,?,?,?)`, [actor.id, action, 'employee', String(id), audit(beforeState), audit(afterState), String(actor.ip || '').slice(0, 64), String(actor.userAgent || '').slice(0, 255)]);
 }
 async function listEmployees() {
-  return client().queryAll(`SELECT id,name,designation,phone,email,base_salary_paisa / 100 AS base_salary,join_date,status
+  return client().queryAll(`SELECT id,name,designation,phone,email,CAST(base_salary_paisa/100 AS DECIMAL(20,2)) AS base_salary,join_date,status
     FROM employees ORDER BY id DESC`);
 }
 async function createEmployee(input, actor = {}) {

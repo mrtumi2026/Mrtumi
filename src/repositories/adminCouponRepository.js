@@ -57,7 +57,7 @@ async function listCoupons({ pool = null } = {}) {
   return client(pool).queryAll(`SELECT id,code,
       CASE WHEN discount_type='fixed' THEN 'flat' ELSE discount_type END AS type,
       CASE WHEN discount_type='fixed' THEN discount_value/100 ELSE discount_value END AS value,
-      min_purchase_paisa/100 AS min_purchase,
+      CAST(min_purchase_paisa/100 AS DECIMAL(20,2)) AS min_purchase,
       DATE_FORMAT(expires_at,'%Y-%m-%d') AS expiry_date,
       used_count,status
     FROM coupons ORDER BY id DESC LIMIT 2000`);

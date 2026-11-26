@@ -231,7 +231,7 @@ async function refreshCustomerCart(req) {
     const variant = item.variant_id
       ? (product.variants || []).find((row) => Number(row.id) === Number(item.variant_id)) || null
       : null;
-    if (item.variant_id && (!variant || product.vendor_id)) continue;
+    if (item.variant_id && !variant) continue;
     const productAvailable = Number(product.available_stock);
     const variantAvailable = variant ? Number(variant.available_stock) : productAvailable;
     const available = variant ? Math.min(productAvailable, variantAvailable) : productAvailable;
