@@ -137,6 +137,81 @@ async function settleOneTx(tx, subOrderId, actor = {}) {
     resellerAmountPaisa: resellerAmount, vendorAmountPaisa: vendorAmount, marketplaceRevenuePaisa: marketplaceAmount };
 }
 
+// A reseller order for the marketplace's own products has no vendor sub-order, so its earning
+// is released from reseller_financial_ledger. Owner's rule: the order is delivered, the admin
+// has confirmed the money was received, and the return window has passed.
+const OWN_PRODUCT_EARNING_SQL = `FROM reseller_financial_ledger l
+  JOIN orders o ON o.id=l.order_id
+  JOIN resellers r ON r.id=l.reseller_id
+  WHERE l.entry_type='earning' AND l.status='pending' AND l.reseller_id=o.reseller_id
+    AND NOT EXISTS (SELECT 1 FROM vendor_sub_orders so WHERE so.order_id=o.id)`;
+const DELIVERED_AT_SQL = `(SELECT MIN(h.created_at) FROM order_status_history h
+  WHERE h.order_id=o.id AND h.to_status='delivered' AND h.vendor_sub_order_id IS NULL)`;
+const HAS_OPEN_CLAIM_SQL = `(EXISTS (SELECT 1 FROM customer_return_requests rr WHERE rr.order_id=o.id AND rr.status<>'rejected')
+  OR EXISTS (SELECT 1 FROM refunds rf WHERE rf.order_id=o.id AND rf.status NOT IN ('rejected','failed')))`;
+
+async function listOwnProductResellerEarnings({ returnWindowDays = 7, pool = null } = {}) {
+  assertMysql();
+  const db = mysql.createQueryClient(pool || mysql.getPool());
+  return db.queryAll(
+    `SELECT o.id AS order_id,o.invoice_no,o.order_status,o.payment_status,o.total_paisa,l.amount_paisa,r.shop_name,
+       ${DELIVERED_AT_SQL} AS delivered_at,
+       DATE_ADD(${DELIVERED_AT_SQL},INTERVAL ? DAY) AS releasable_at,
+       COALESCE(DATE_ADD(${DELIVERED_AT_SQL},INTERVAL ? DAY)<=UTC_TIMESTAMP(),0) AS window_passed,
+       ${HAS_OPEN_CLAIM_SQL} AS has_open_claim
+     ${OWN_PRODUCT_EARNING_SQL} AND o.order_status IN ('delivered','return_requested')
+     ORDER BY o.id DESC LIMIT 300`, [Number(returnWindowDays), Number(returnWindowDays)]
+  );
+}
+
+async function confirmResellerOrderPayment({ orderId, reference = '', actor = {} } = {}) {
+  assertMysql();
+  const id = requirePositiveInt(orderId, 'order ID');
+  const text = String(reference || '').trim();
+  if (text.length < 3 || text.length > 120) throw new ValidationError('Enter the payment or courier remittance reference (3 to 120 characters).');
+  return mysql.withTransaction(async (tx) => {
+    const order = await tx.queryOne('SELECT id,reseller_id,order_status,payment_status,total_paisa,paid_paisa FROM orders WHERE id=? FOR UPDATE', [id]);
+    if (!order || !order.reseller_id) throw new NotFoundError('Reseller order not found.');
+    const vendorPart = await tx.queryOne('SELECT id FROM vendor_sub_orders WHERE order_id=? LIMIT 1', [id]);
+    if (vendorPart) throw new ConflictError('Vendor product orders are confirmed through COD reconciliation.');
+    if (order.order_status !== 'delivered') throw new ConflictError('Money can be confirmed only after the order is delivered.');
+    if (order.payment_status === 'paid') return { orderId: id, replayed: true };
+    await tx.execute("UPDATE orders SET payment_status='paid',paid_paisa=total_paisa,cod_due_paisa=0,verified_by_user_id=?,verified_at=UTC_TIMESTAMP() WHERE id=?", [actor.id || null, id]);
+    await tx.execute("UPDATE order_payments SET status='verified',verified_at=UTC_TIMESTAMP(),verified_by_user_id=? WHERE order_id=? AND status='pending_verification'", [actor.id || null, id]);
+    await recordAuditLog({ actorType: 'admin', actorId: actor.id || null, action: 'reseller_commerce.order.payment_confirmed',
+      entityType: 'order', entityId: id,
+      beforeState: { paymentStatus: order.payment_status, paidPaisa: Number(order.paid_paisa) },
+      afterState: { paymentStatus: 'paid', paidPaisa: Number(order.total_paisa), reference: text },
+      ipAddress: actor.ip || '', userAgent: actor.userAgent || '' }, tx);
+    return { orderId: id, replayed: false };
+  });
+}
+
+async function releaseOwnProductEarningsTx(tx, days, actor = {}) {
+  const rows = await tx.queryAll(
+    `SELECT l.id,l.reseller_id,l.order_id,l.amount_paisa ${OWN_PRODUCT_EARNING_SQL}
+       AND o.order_status='delivered' AND o.payment_status='paid'
+       AND ${DELIVERED_AT_SQL}<=DATE_SUB(UTC_TIMESTAMP(),INTERVAL ? DAY)
+       AND NOT ${HAS_OPEN_CLAIM_SQL}
+     ORDER BY l.id LIMIT 500 FOR UPDATE`, [days]
+  );
+  for (const row of rows) {
+    const amount = positivePaisa(row.amount_paisa, 'Reseller earning', false);
+    await tx.execute('INSERT IGNORE INTO partner_wallets(reseller_id) VALUES(?)', [row.reseller_id]);
+    await tx.queryOne('SELECT reseller_id FROM partner_wallets WHERE reseller_id=? FOR UPDATE', [row.reseller_id]);
+    // The unique key on partner_transactions makes a second release of the same order impossible.
+    await tx.execute(
+      `INSERT INTO partner_transactions(reseller_id,sub_order_id,idempotency_key,transaction_type,amount_paisa,balance_bucket,metadata_json)
+       VALUES(?,NULL,?,'settlement_release',?,'available',?)`,
+      [row.reseller_id, `settle:reseller-order:${row.order_id}`, amount, json({ orderId: Number(row.order_id), actorId: actor?.userId || actor?.id || null })]
+    );
+    await tx.execute('UPDATE partner_wallets SET available_balance=available_balance+? WHERE reseller_id=?', [amount, row.reseller_id]);
+    await tx.execute('UPDATE resellers SET balance_paisa=balance_paisa+? WHERE id=?', [amount, row.reseller_id]);
+    await tx.execute("UPDATE reseller_financial_ledger SET status='released' WHERE id=? AND status='pending'", [row.id]);
+  }
+  return rows.length;
+}
+
 async function processMaturedSettlements({ returnWindowDays = 7, actor = {} } = {}) {
   assertMysql();
   const days = Number(returnWindowDays);
@@ -159,19 +234,21 @@ async function processMaturedSettlements({ returnWindowDays = 7, actor = {} } = 
     );
     const results = [];
     for (const candidate of candidates) results.push(await settleOneTx(tx, Number(candidate.id), actor));
+    const ownOrderReleasedCount = await releaseOwnProductEarningsTx(tx, days, actor);
     const summary = {
       maturedCount: candidates.length,
       releasedCount: results.filter((result) => result.released).length,
+      ownOrderReleasedCount,
       results,
     };
     if (actor?.id || actor?.userId) {
       await recordAuditLog({ actorType: 'admin', actorId: actor.id || actor.userId, action: 'reseller_commerce.settlements.released',
         entityType: 'settlement_batch', entityId: 'matured', beforeState: {},
-        afterState: { maturedCount: summary.maturedCount, releasedCount: summary.releasedCount },
+        afterState: { maturedCount: summary.maturedCount, releasedCount: summary.releasedCount, ownOrderReleasedCount },
         ipAddress: actor.ip || '', userAgent: actor.userAgent || '' }, tx);
     }
     return summary;
   });
 }
 
-module.exports = { processMaturedSettlements, recordPendingSettlementTx, settleOneTx, settlementAmounts };
+module.exports = { listOwnProductResellerEarnings, confirmResellerOrderPayment, processMaturedSettlements, recordPendingSettlementTx, settleOneTx, settlementAmounts };

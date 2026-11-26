@@ -107,6 +107,7 @@
             <div class="d-flex justify-content-between small mb-1"><span>Subtotal:</span><strong>৳<%= order.subtotal %></strong></div>
             <div class="d-flex justify-content-between small mb-1"><span>Shipping (<%= order.shipping_area %>):</span><strong>৳<%= order.shipping_charge %></strong></div>
             <div class="d-flex justify-content-between small mb-1"><span>Discount <%= order.coupon_code ? '(' + order.coupon_code + ')' : '' %>:</span><strong class="text-danger">-৳<%= order.discount %></strong></div>
+            <% if (order.wallet_used > 0) { %><div class="small text-muted mb-1">উপরের ডিসকাউন্টের মধ্যে ৳<%= order.wallet_used %> কাস্টমারের ওয়ালেট থেকে দেওয়া হয়েছে। "Total Payable" হলো যে টাকা কাস্টমারের কাছ থেকে নিতে হবে।</div><% } %>
             <div class="d-flex justify-content-between fs-6 fw-bold text-success border-top pt-2 mt-1"><span>Total Payable:</span><span>৳<%= Number(order.amount).toLocaleString('en-IN') %></span></div>
           </div>
         </div>

@@ -146,6 +146,8 @@ async function createOrder(input,options={}){
   const campaignKey=campaignSlug?requireString(campaignSlug,'campaign slug',{min:1,max:191}):'';const key=requireString(recoveryId?`incomplete:${recoveryId}`:requestKey,'checkout request key',{min:8,max:100});const lines=normalizeLines(cart);if(campaignKey&&lines.length!==1)throw new ValidationError('Campaign checkout accepts exactly one campaign product.');
   const payload={name,phone,address,zoneId,note,paymentMethod,lines:lines.map(lineCanonical),coupon:String(input.coupon_code||'').trim().toUpperCase(),recoveryId,campaignSlug:campaignKey};
   if(isManualPayment){payload.trxId=trxId;payload.senderNumber=senderNumber;}
+  const useWallet=input.use_wallet==='yes';
+  if(useWallet)payload.useWallet=true;
   const payloadHash=crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex');
   try {
   return await mysql.withTransaction(async tx=>{
@@ -177,9 +179,18 @@ async function createOrder(input,options={}){
     const shipping=asSafeInteger(zone.delivery_charge_paisa,'Delivery charge');
     let coupon={amount:0,code:''};const couponCode=String(input.coupon_code||'').trim().toUpperCase();
     if(couponCode){const row=await tx.queryOne('SELECT code,discount_type,discount_value,min_purchase_paisa,max_discount_paisa,usage_limit,used_count,expires_at,status FROM coupons WHERE UPPER(code)=? FOR UPDATE',[couponCode]);coupon=couponAmount(row,subtotal);}
-    const total=subtotal+shipping-coupon.amount;if(!Number.isSafeInteger(total)||total<0)throw new ValidationError('Order total is invalid.');
     let customerId=null;
     if(sessionCustomer?.id){const customer=await tx.queryOne('SELECT id,phone,status,is_blocked FROM customers WHERE id=? FOR UPDATE',[requirePositiveInt(sessionCustomer.id,'customer ID')]);if(!customer||Number(customer.status)!==1||Number(customer.is_blocked)===1||normalizeBdPhone(customer.phone)!==phone)throw new ConflictError('Sign in with an account matching the delivery phone, or continue as a guest.');customerId=Number(customer.id);}
+    let walletUsed=0;
+    if(useWallet){
+      if(!customerId)throw new ConflictError('Sign in to your account to pay part of the order from your wallet.');
+      const walletService=require('../services/customerWalletService');
+      walletUsed=walletService.maxUsablePaisa({subtotalPaisa:subtotal,couponPaisa:coupon.amount,balancePaisa:await walletService.lockBalancePaisaTx(tx,customerId),percent:await walletService.getMaxPercent(tx)});
+      if(walletUsed<1)throw new ConflictError('No wallet balance can be used on this order. Untick the wallet option and try again.');
+    }
+    // Wallet money is stored as part of the discount, so total is the cash still to be paid.
+    const discount=coupon.amount+walletUsed;
+    const total=subtotal+shipping-discount;if(!Number.isSafeInteger(total)||total<0)throw new ValidationError('Order total is invalid.');
     const settingsRows=await tx.queryAll("SELECT setting_key,setting_value FROM settings WHERE setting_key IN ('otp_mode','advance_payment_mode','advance_payment_value','advance_min_order_paisa','advance_max_order_paisa')");
     const settings=Object.fromEntries(settingsRows.map(x=>[x.setting_key,x.setting_value]));
     let isOtpVerified=Boolean(options.otpVerified);
@@ -205,8 +216,9 @@ async function createOrder(input,options={}){
     const orderChannel=campaign?'campaign':'storefront';const trafficSource=campaign?`Campaign:${campaign.slug}`:attributionData.platformSource;const customerNote=note||(campaign?`Campaign: ${campaign.title}`:null);
     const codDue=isManualPayment?0:total;
     const paymentStatus=isManualPayment?'pending_verification':'unpaid';
-    const order=await tx.execute(`INSERT INTO orders (invoice_no,idempotency_key,checkout_request_hash,customer_id,customer_name,customer_phone,shipping_address,division,district,upazila,shipping_zone,subtotal_paisa,discount_paisa,shipping_paisa,total_paisa,advance_required_paisa,paid_paisa,cod_due_paisa,coupon_code,payment_method,payment_status,order_status,order_channel,traffic_source,utm_source,utm_medium,utm_campaign,analytics_consent_at,analytics_consent_version,client_ip,customer_note,consent_accepted_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP())`,[invoice,key,payloadHash,customerId,name,phone,address,zone.division,zone.district,zone.upazila,zoneLabel,subtotal,coupon.amount,shipping,total,0,0,codDue,coupon.code,paymentMethod,paymentStatus,'pending',orderChannel,trafficSource,attributionData.utmSource,attributionData.utmMedium,attributionData.utmCampaign,attributionAllowed?new Date():null,attributionAllowed?CONSENT_VERSION:null,String(ip||'').slice(0,64),customerNote]);
+    const order=await tx.execute(`INSERT INTO orders (invoice_no,idempotency_key,checkout_request_hash,customer_id,customer_name,customer_phone,shipping_address,division,district,upazila,shipping_zone,subtotal_paisa,discount_paisa,shipping_paisa,total_paisa,advance_required_paisa,paid_paisa,cod_due_paisa,coupon_code,payment_method,payment_status,order_status,order_channel,traffic_source,utm_source,utm_medium,utm_campaign,analytics_consent_at,analytics_consent_version,client_ip,customer_note,consent_accepted_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP())`,[invoice,key,payloadHash,customerId,name,phone,address,zone.division,zone.district,zone.upazila,zoneLabel,subtotal,discount,shipping,total,0,0,codDue,coupon.code,paymentMethod,paymentStatus,'pending',orderChannel,trafficSource,attributionData.utmSource,attributionData.utmMedium,attributionData.utmCampaign,attributionAllowed?new Date():null,attributionAllowed?CONSENT_VERSION:null,String(ip||'').slice(0,64),customerNote]);
     if(isManualPayment)await tx.execute("INSERT INTO order_payments (order_id,gateway_code,provider_trx_id,sender_number,amount_paisa,payment_purpose,status) VALUES (?,?,?,?,?,'full','pending_verification')",[order.insertId,gateway.code,trxId,senderNumber,total]);
+    if(walletUsed>0)await require('../services/customerWalletService').spendTx(tx,{customerId,orderId:Number(order.insertId),invoiceNo:invoice,amountPaisa:walletUsed});
     const vendorSubOrders=new Map();
     for(const item of items){
       const insertedItem=await tx.execute('INSERT INTO order_items (order_id,product_id,variant_id,vendor_id,product_name,product_image,unit_price_paisa,qty,line_total_paisa,size_label,color_label) VALUES (?,?,?,?,?,?,?,?,?,?,?)',[order.insertId,item.productId,item.variantId,item.product.vendor_id||null,item.name,item.image,item.unitPricePaisa,item.qty,item.lineTotalPaisa,item.size,item.color]);
@@ -280,12 +292,12 @@ async function createOrder(input,options={}){
       await tx.execute("INSERT INTO incomplete_order_history (incomplete_order_id,from_status,to_status,reason) VALUES (?,?,'recovered','Customer placed order through the same consented checkout session')",[recoveryId,recovery.status]);
       await tx.execute("INSERT INTO audit_logs (actor_type,actor_id,action,entity_type,entity_id,before_json,after_json,ip_address,user_agent) VALUES ('customer',NULL,'checkout.recovery.recovered','incomplete_order',?,?,?,?,'')",[String(recoveryId),JSON.stringify({status:recovery.status}),JSON.stringify({status:'recovered',orderId:Number(order.insertId)}),String(ip||'').slice(0,64)]);
     }
-    await tx.execute(`INSERT INTO audit_logs (actor_type,actor_id,action,entity_type,entity_id,before_json,after_json,ip_address,user_agent) VALUES ('system',NULL,'checkout.order.created','order',?,NULL,?,?, '')`,[String(order.insertId),JSON.stringify({invoiceNo:invoice,totalPaisa:total,status:'pending',paymentStatus:'unpaid',reservation:'active'}),String(ip||'').slice(0,64)]);
+    await tx.execute(`INSERT INTO audit_logs (actor_type,actor_id,action,entity_type,entity_id,before_json,after_json,ip_address,user_agent) VALUES ('system',NULL,'checkout.order.created','order',?,NULL,?,?, '')`,[String(order.insertId),JSON.stringify({invoiceNo:invoice,totalPaisa:total,walletUsedPaisa:walletUsed,status:'pending',paymentStatus:'unpaid',reservation:'active'}),String(ip||'').slice(0,64)]);
     if(isOtpVerified){
       await tx.execute("UPDATE orders SET otp_status='verified' WHERE id=?",[order.insertId]);
       await tx.execute("UPDATE order_otps SET order_id=? WHERE phone=? AND order_id IS NULL AND verified_at IS NOT NULL",[order.insertId,phone]);
     }
-    return{id:Number(order.insertId),invoiceNo:invoice,replayed:false,totalPaisa:total,paidPaisa:0,codDuePaisa:codDue,paymentStatus};
+    return{id:Number(order.insertId),invoiceNo:invoice,replayed:false,totalPaisa:total,walletUsedPaisa:walletUsed,paidPaisa:0,codDuePaisa:codDue,paymentStatus};
   });
   if (result && !result.replayed) {
     try {
@@ -351,6 +363,6 @@ async function getOrderForCancellation(invoiceNo){
 }
 async function getOrderForSuccess(invoiceNo){
   assertMysql();const db=client();const order=await db.queryOne('SELECT id,invoice_no,customer_name,total_paisa,paid_paisa,cod_due_paisa,order_status,payment_status,created_at FROM orders WHERE invoice_no=?',[requireString(invoiceNo,'invoice number',{min:8,max:40})]);
-  if(!order)return null;const items=await db.queryAll('SELECT product_name,qty,unit_price_paisa,line_total_paisa,size_label,color_label FROM order_items WHERE order_id=? ORDER BY id',[order.id]);return{order,items};
+  if(!order)return null;order.wallet_used_paisa=await require('../services/customerWalletService').getOrderWalletUsedPaisa(order.id,db);const items=await db.queryAll('SELECT product_name,qty,unit_price_paisa,line_total_paisa,size_label,color_label FROM order_items WHERE order_id=? ORDER BY id',[order.id]);return{order,items};
 }
 module.exports={normalizeLines,unitPrice,quoteCart,fallbackDeliveryLocations,listDeliveryLocations,listCheckoutMethods,couponAmount,validateCoupon,resolveQuickOrderVariant,quoteQuickOrder,createOrder,getOrderForSuccess,getOrderForCancellation,createCampaignOrder};

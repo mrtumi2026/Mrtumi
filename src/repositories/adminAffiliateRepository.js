@@ -38,7 +38,8 @@ async function getOverview() {
       FROM referral_rewards r LEFT JOIN orders o ON o.id=r.order_id ORDER BY r.id DESC LIMIT 100`),
   ]);
   const referral = await require('../services/referralService').getReferralSettings();
-  return { affiliates, withdrawals, commissions, rewards, referral };
+  const walletMaxPercent = await require('../services/customerWalletService').getMaxPercent();
+  return { affiliates, withdrawals, commissions, rewards, referral, walletMaxPercent };
 }
 
 async function saveReferralSettings(input, actor = {}) {
@@ -60,6 +61,20 @@ async function saveReferralSettings(input, actor = {}) {
     }
     await audit(tx, actor, 'referral.settings.updated', 'settings', 'referral', {}, values);
     return values;
+  });
+}
+
+async function saveWalletSettings(input, actor = {}) {
+  const walletService = require('../services/customerWalletService');
+  const text = String(input.wallet_max_percent ?? '').trim();
+  if (!/^\d{1,2}$/.test(text) || Number(text) > walletService.HIGHEST_ALLOWED_PERCENT) {
+    throw new ValidationError(`Wallet limit must be a whole number from 0 to ${walletService.HIGHEST_ALLOWED_PERCENT}.`);
+  }
+  return mysql.withTransaction(async (tx) => {
+    const before = await walletService.getMaxPercent(tx);
+    await tx.execute('INSERT INTO settings(setting_key,setting_value) VALUES(?,?) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)', [walletService.SETTING_KEY, String(Number(text))]);
+    await audit(tx, actor, 'wallet.settings.updated', 'settings', walletService.SETTING_KEY, { maxPercent: before }, { maxPercent: Number(text) });
+    return { maxPercent: Number(text) };
   });
 }
 
@@ -94,4 +109,4 @@ async function decideWithdrawal(withdrawalId, decision, note, actor = {}) {
   });
 }
 
-module.exports = { getOverview, saveReferralSettings, updateAffiliate, decideWithdrawal };
+module.exports = { getOverview, saveWalletSettings, saveReferralSettings, updateAffiliate, decideWithdrawal };

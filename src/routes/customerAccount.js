@@ -86,6 +86,8 @@ router.post('/customer/logout', requireCsrf, asyncHandler(async (req, res) => {
   res.clearCookie('pholbazar_sid', { path: '/', httpOnly: true, sameSite: 'lax', secure: env.isProduction });
   return res.redirect('/customer/login');
 }));
+const walletUsedFor = (orderId) => (require('../config/env').env.db.client === 'mysql'
+  ? require('../services/customerWalletService').getOrderWalletUsedPaisa(orderId) : Promise.resolve(0));
 function moneyLabel(paisa, locale) {
   const value = Number(paisa);
   if (!Number.isSafeInteger(value) || value < 0) return locale === 'en' ? 'Unavailable' : 'উপলভ্য নয়';
@@ -303,7 +305,8 @@ router.get('/customer/account/orders/:id', requireCustomer, asyncHandler(async (
   const id = Number(req.params.id);
   if (!Number.isSafeInteger(id) || id < 1) return res.sendStatus(404);
   const details = await customers.getOrderSelfServiceDetails(req.session.customerUser.id, id);
-  const order = { ...details.order, statusLabel: statusLabel(details.order.order_status, isEn(req)), subtotalLabel: moneyLabel(details.order.subtotal_paisa, req.locale), discountLabel: moneyLabel(details.order.discount_paisa, req.locale), shippingLabel: moneyLabel(details.order.shipping_paisa, req.locale), totalLabel: moneyLabel(details.order.total_paisa, req.locale), paidLabel: moneyLabel(details.order.paid_paisa || 0, req.locale), dateLabel: dateLabel(details.order.created_at, req.locale) };
+  const walletUsedPaisa = await walletUsedFor(id);
+  const order = { ...details.order, walletUsedPaisa, walletLabel: moneyLabel(walletUsedPaisa, req.locale), statusLabel: statusLabel(details.order.order_status, isEn(req)), subtotalLabel: moneyLabel(details.order.subtotal_paisa, req.locale), discountLabel: moneyLabel(Math.max(0, Number(details.order.discount_paisa) - walletUsedPaisa), req.locale), shippingLabel: moneyLabel(details.order.shipping_paisa, req.locale), totalLabel: moneyLabel(details.order.total_paisa, req.locale), paidLabel: moneyLabel(details.order.paid_paisa || 0, req.locale), dateLabel: dateLabel(details.order.created_at, req.locale) };
   const items = details.items.map((item) => ({ ...item, unitPriceLabel: moneyLabel(item.unit_price_paisa, req.locale), lineTotalLabel: moneyLabel(item.line_total_paisa, req.locale) }));
   const tracking = details.tracking[0] || ((details.order.courier_code || details.order.courier_tracking_id) ? { courier_code: details.order.courier_code, tracking_code: details.order.courier_tracking_id, consignment_id: '', courier_status: '' } : null);
   const shipments = (details.shipments || []).map((shipment) => ({ ...shipment, deliveryStatusLabel: statusLabel(shipment.delivery_status, isEn(req)), bookingStatusLabel: shipment.booking_status ? statusLabel(shipment.booking_status, isEn(req)) : '' }));
@@ -324,7 +327,8 @@ router.get('/customer/account/orders/:id/invoice', requireCustomer, asyncHandler
   const id = Number(req.params.id);
   if (!Number.isSafeInteger(id) || id < 1) return res.sendStatus(404);
   const { order: rawOrder, items: rawItems } = await customers.getOrderDetails(req.session.customerUser.id, id);
-  const order = { ...rawOrder, dateLabel: dateLabel(rawOrder.created_at, req.locale), subtotalLabel: moneyLabel(rawOrder.subtotal_paisa, req.locale), discountLabel: moneyLabel(rawOrder.discount_paisa, req.locale), shippingLabel: moneyLabel(rawOrder.shipping_paisa, req.locale), totalLabel: moneyLabel(rawOrder.total_paisa, req.locale) };
+  const walletUsedPaisa = await walletUsedFor(id);
+  const order = { ...rawOrder, walletUsedPaisa, walletLabel: moneyLabel(walletUsedPaisa, req.locale), dateLabel: dateLabel(rawOrder.created_at, req.locale), subtotalLabel: moneyLabel(rawOrder.subtotal_paisa, req.locale), discountLabel: moneyLabel(Math.max(0, Number(rawOrder.discount_paisa) - walletUsedPaisa), req.locale), shippingLabel: moneyLabel(rawOrder.shipping_paisa, req.locale), totalLabel: moneyLabel(rawOrder.total_paisa, req.locale) };
   const items = rawItems.map((item) => ({ ...item, unitPriceLabel: moneyLabel(item.unit_price_paisa, req.locale), lineTotalLabel: moneyLabel(item.line_total_paisa, req.locale) }));
   return res.render('customer/invoice', { order, items, isEn: isEn(req) });
 }));

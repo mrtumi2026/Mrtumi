@@ -17,13 +17,14 @@ const write = (handler) => [requireCsrf, asyncHandler(handler)];
 router.get('/admin/reseller-commerce', asyncHandler(async (req, res) => {
   if (env.db.client !== 'mysql') return res.status(503).render('admin/error', { message: 'Reseller commerce administration requires MySQL.' });
   const settings = await repo.getCommerceSettings();
-  const [products, resellers, subOrders, codShipments, wallets, settlements, withdrawals, audit] = await Promise.all([
+  const [products, resellers, subOrders, codShipments, wallets, settlements, withdrawals, audit, ownEarnings] = await Promise.all([
     repo.listProducts({ search: String(req.query.product || '').slice(0, 80) }), repo.listResellers(),
     repo.listVendorSubOrders(), repo.listCodShipments(), repo.getWalletSummary(),
     repo.previewMaturedSettlements(Number(settings.return_window_days)), repo.listWithdrawalRequests(),
     repo.listAuditTrail({ orderId: req.query.orderId || '', resellerId: req.query.resellerId || '', reference: req.query.reference || '' }),
+    settlementRepo.listOwnProductResellerEarnings({ returnWindowDays: Number(settings.return_window_days) }),
   ]);
-  res.render('admin/reseller-commerce', { title: 'Reseller Commerce Operations', settings, products, resellers, subOrders, codShipments, wallets, settlements, withdrawals, audit,
+  res.render('admin/reseller-commerce', { title: 'Reseller Commerce Operations', settings, products, resellers, subOrders, codShipments, wallets, settlements, withdrawals, audit, ownEarnings,
     query: req.query });
 }));
 
@@ -46,7 +47,17 @@ router.post('/admin/reseller-commerce/resellers/:id/branding', ...write(async (r
 router.post('/admin/reseller-commerce/settlements/release-matured', ...write(async (req, res) => {
   const settings = await repo.getCommerceSettings();
   const result = await settlementRepo.processMaturedSettlements({ returnWindowDays: Number(settings.return_window_days), actor: actor(req) });
-  req.session.flash = { type: 'success', message: `Released ${result.releasedCount} matured sub-orders (${result.maturedCount} eligible).` };
+  req.session.flash = { type: 'success', message: `Released ${result.releasedCount} matured sub-orders (${result.maturedCount} eligible) and ${result.ownOrderReleasedCount} own-product reseller earnings.` };
+  res.redirect('/admin/reseller-commerce#wallets');
+}));
+router.post('/admin/reseller-commerce/reseller-orders/:id/confirm-payment', ...write(async (req, res) => {
+  try {
+    await settlementRepo.confirmResellerOrderPayment({ orderId: req.params.id, reference: req.body.reference, actor: actor(req) });
+    req.session.flash = { type: 'success', message: 'Money received was recorded for the reseller order.' };
+  } catch (error) {
+    if (!error.statusCode || error.statusCode >= 500) throw error;
+    req.session.flash = { type: 'error', message: error.message };
+  }
   res.redirect('/admin/reseller-commerce#wallets');
 }));
 router.post('/admin/reseller-commerce/withdrawals/:type/:id', ...write(async (req, res) => {

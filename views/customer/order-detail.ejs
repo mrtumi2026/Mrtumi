@@ -60,6 +60,7 @@
     <dt class="col-7"><%= isEn ? 'Subtotal' : 'সাবটোটাল' %></dt><dd class="col-5 text-end"><%= order.subtotalLabel %></dd>
     <dt class="col-7"><%= isEn ? 'Discount' : 'ছাড়' %></dt><dd class="col-5 text-end"><%= order.discountLabel %></dd>
     <dt class="col-7"><%= isEn ? 'Delivery' : 'ডেলিভারি' %></dt><dd class="col-5 text-end"><%= order.shippingLabel %></dd>
+    <% if (order.walletUsedPaisa > 0) { %><dt class="col-7"><%= isEn ? 'Paid from wallet' : 'ওয়ালেট থেকে পরিশোধ' %></dt><dd class="col-5 text-end">-<%= order.walletLabel %></dd><% } %>
     <dt class="col-7 border-top pt-2"><%= isEn ? 'Total' : 'সর্বমোট' %></dt><dd class="col-5 text-end border-top pt-2 fw-bold"><%= order.totalLabel %></dd>
   </dl></section>
 

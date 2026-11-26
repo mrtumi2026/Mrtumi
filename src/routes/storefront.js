@@ -1238,7 +1238,14 @@ router.get('/customer/checkout', asyncHandler(async (req, res) => {
       checkoutRepo.listCheckoutMethods(),
       req.customerUser?.id ? customerRepo.listAddresses(req.customerUser.id).then((rows) => rows.map((row) => ({ ...row, checkoutPhoneMatches: customerRepo.normalizeBdPhone(row.recipient_phone) === customerRepo.normalizeBdPhone(req.customerUser.phone) }))) : Promise.resolve([]),
     ]);
+    let checkoutWallet = null;
+    if (req.customerUser?.id) {
+      const walletService = require('../services/customerWalletService');
+      const [balancePaisa, maxPercent] = await Promise.all([walletService.getBalancePaisa(req.customerUser.id), walletService.getMaxPercent()]);
+      if (balancePaisa > 0 && maxPercent > 0) checkoutWallet = { balancePaisa, maxPercent };
+    }
     return res.render('store/checkout', {
+      checkoutWallet,
       cart, cartCount: quote.count, cartSubtotal: quote.subtotalPaisa / 100, discount,
       appliedCoupon: req.session.appliedCoupon || null, gateways: methods,
       deliveryLocations: locations, savedAddresses, checkoutCustomer: req.customerUser || null,
@@ -1285,7 +1292,7 @@ router.post('/customer/checkout', requireCsrf, asyncHandler(async (req, res) => 
     const result = await checkoutRepo.createOrder({
       customer_name: checkoutInput.customer_name, phone: checkoutInput.phone, address: checkoutInput.address,
       delivery_location_id: checkoutInput.delivery_location_id, payment_method: checkoutInput.payment_method,
-      trx_id: req.body.trx_id, sender_number: req.body.sender_number,
+      trx_id: req.body.trx_id, sender_number: req.body.sender_number, use_wallet: req.body.use_wallet,
       note: req.body.note, coupon_code: matches(replayKey) ? String(req.body.coupon_code || '') : (req.session.appliedCoupon?.code || ''),
     }, { locale: req.locale, sessionCustomer: req.customerUser || null, ip: req.ip, userAgent: req.get('user-agent'), fbp: req.cookies?._fbp, fbc: req.cookies?._fbc, requestKey: expected, cart: sourceCart, incompleteOrderId, sessionSid: req.sessionID, otpVerified: isOtpSessionVerified, referralCode: req.body.referral_code || req.session.referralCode || req.cookies?.mrtumi_ref || null, affiliateCode: req.body.affiliate_code || req.session?.affiliateCode || req.cookies?.mrtumi_aff || null, analyticsConsent: consentGranted(req.session, env.analyticsAttributionEnabled), attribution: req.session.analyticsAttribution || null });
     delete req.session.orderOtpVerified; delete req.session.orderOtpPhone;

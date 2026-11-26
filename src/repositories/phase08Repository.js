@@ -306,6 +306,9 @@ async function transitionOrderTx(tx, orderIdInput, toStatus, note, actor = {}, r
       await insertAudit(tx, actor, 'reseller.order.earning.held', 'order', id, null, { resellerId:Number(reseller.id), amountPaisa:margin, reason:'Awaiting payment/COD reconciliation and return-window eligibility.' });
     }
   }
+  if (['cancelled', 'failed', 'returned'].includes(target)) {
+    await tx.execute("UPDATE reseller_financial_ledger SET status='cancelled' WHERE order_id=? AND entry_type='earning' AND status='pending'", [id]);
+  }
   await require('../services/orderRewardService').applyOrderOutcomeTx(tx, id, target);
   try {
     const pushService = require('../services/pushNotificationService');

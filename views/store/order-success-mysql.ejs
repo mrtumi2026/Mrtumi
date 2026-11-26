@@ -8,6 +8,7 @@
       <dt class="col-6"><%= isEn ? 'Invoice' : 'ইনভয়েস' %></dt><dd class="col-6 text-end fw-semibold"><%= order.invoice_no %></dd>
       <dt class="col-6"><%= isEn ? 'Order status' : 'অর্ডারের অবস্থা' %></dt><dd class="col-6 text-end"><%= order.order_status %></dd>
       <dt class="col-6"><%= isEn ? 'Payment' : 'পেমেন্ট' %></dt><dd class="col-6 text-end"><%= order.payment_status %> · <%= order.payment_status === 'unpaid' ? (isEn ? 'Cash on delivery' : 'ক্যাশ অন ডেলিভারি') : '' %></dd>
+      <% if (Number(order.wallet_used_paisa) > 0) { %><dt class="col-6"><%= isEn ? 'Paid from wallet' : 'ওয়ালেট থেকে পরিশোধ' %></dt><dd class="col-6 text-end">৳<%= (Number(order.wallet_used_paisa) / 100).toLocaleString('en-IN',{minimumFractionDigits:2}) %></dd><% } %>
       <dt class="col-6"><%= isEn ? 'Total' : 'মোট' %></dt><dd class="col-6 text-end fw-bold">৳<%= (Number(order.total_paisa) / 100).toLocaleString('en-IN',{minimumFractionDigits:2}) %></dd>
       <dt class="col-6"><%= isEn ? 'Due on delivery' : 'ডেলিভারিতে প্রদেয়' %></dt><dd class="col-6 text-end">৳<%= (Number(order.cod_due_paisa) / 100).toLocaleString('en-IN',{minimumFractionDigits:2}) %></dd>
     </dl>

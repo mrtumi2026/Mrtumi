@@ -250,6 +250,8 @@ async function updateAdminOrder(orderIdInput,input={},actor={}) {
     const order=await getOrder(tx,orderId);
     if(paymentStatus && paymentStatus!==order.payment_status)throw new ConflictError('Payment status must be changed through the payment-record workflow.');
     const totals=recalculateTotals({subtotalPaisa:Number(order.subtotal_paisa),shippingPaisa,discountPaisa,paidPaisa:Number(order.paid_paisa)});
+    const walletUsed=await require('../services/customerWalletService').getOrderWalletUsedPaisa(orderId,tx);
+    if(discountPaisa<walletUsed)throw new ConflictError(`This order's discount includes ${walletUsed/100} taka paid from the customer wallet, so the discount cannot be lower than that.`);
     let courierCode='';
     if(courierName) {
       const courier=await tx.queryOne('SELECT code FROM courier_apis WHERE name=? AND status=1 ORDER BY id LIMIT 1 FOR UPDATE',[courierName]);

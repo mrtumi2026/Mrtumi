@@ -20,7 +20,8 @@ async function getAdminInvoice(orderId, poolOverride = null) {
             o.payment_method,o.payment_status,
             COALESCE(NULLIF(ca.name,''),o.courier_code,'') AS courier_name,
             o.courier_tracking_id,
-            o.subtotal_paisa,o.shipping_paisa,o.discount_paisa,o.total_paisa
+            o.subtotal_paisa,o.shipping_paisa,o.discount_paisa,o.total_paisa,
+            (SELECT -COALESCE(SUM(w.amount_paisa),0) FROM customer_wallet_transactions w WHERE w.customer_id=o.customer_id AND w.tx_type='order_spend' AND w.reference_id=CONCAT('order:',o.id)) AS wallet_used_paisa
        FROM orders o
        LEFT JOIN order_statuses os ON os.slug=o.order_status
        LEFT JOIN courier_apis ca ON ca.code=o.courier_code
@@ -42,6 +43,8 @@ async function getAdminInvoice(orderId, poolOverride = null) {
     shipping_charge: toBdtString(row.shipping_paisa),
     discount: toBdtString(row.discount_paisa),
     amount: toBdtString(row.total_paisa),
+    wallet_used: Number(row.wallet_used_paisa || 0) / 100,
+    other_discount: toBdtString(Math.max(0, Number(row.discount_paisa) - Number(row.wallet_used_paisa || 0))),
   };
   return {
     order,
@@ -64,6 +67,7 @@ async function getAdminOrderDetail(orderId, poolOverride = null) {
     `SELECT o.id,o.invoice_no AS invoice_id,o.customer_name,o.customer_phone AS phone,
             o.shipping_address AS address,o.shipping_zone AS shipping_area,
             o.subtotal_paisa,o.shipping_paisa,o.discount_paisa,o.total_paisa,
+            (SELECT -COALESCE(SUM(w.amount_paisa),0) FROM customer_wallet_transactions w WHERE w.customer_id=o.customer_id AND w.tx_type='order_spend' AND w.reference_id=CONCAT('order:',o.id)) AS wallet_used_paisa,
             o.coupon_code,o.payment_method,o.payment_status,o.order_status AS status,
             COALESCE(os.name,o.order_status) AS status_label,
             COALESCE(os.badge_class,'sb-1') AS badge_class,
@@ -109,6 +113,7 @@ async function getAdminOrderDetail(orderId, poolOverride = null) {
       shipping_charge: toBdtString(row.shipping_paisa),
       discount: toBdtString(row.discount_paisa),
       amount: toBdtString(row.total_paisa),
+      wallet_used: Number(row.wallet_used_paisa || 0) / 100,
     },
     items: rawItems.map((item) => ({ ...item, price: toBdtString(item.unit_price_paisa) })),
     statuses,

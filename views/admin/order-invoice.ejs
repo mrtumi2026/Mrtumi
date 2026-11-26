@@ -79,7 +79,8 @@
         <div class="col-sm-5">
           <div class="d-flex justify-content-between py-1"><span>সাবটোটাল:</span><span>৳<%= order.subtotal %></span></div>
           <div class="d-flex justify-content-between py-1"><span>ডেলিভারি চার্জ:</span><span>৳<%= order.shipping_charge %></span></div>
-          <div class="d-flex justify-content-between py-1"><span>ডিসকাউন্ট:</span><span>-৳<%= order.discount %></span></div>
+          <div class="d-flex justify-content-between py-1"><span>ডিসকাউন্ট:</span><span>-৳<%= order.wallet_used > 0 ? order.other_discount : order.discount %></span></div>
+          <% if (order.wallet_used > 0) { %><div class="d-flex justify-content-between py-1"><span>ওয়ালেট থেকে পরিশোধ:</span><span>-৳<%= order.wallet_used %></span></div><% } %>
           <div class="d-flex justify-content-between py-2 border-top fw-bold fs-5 text-success">
             <span>সর্বমোট প্রদেয়:</span><span>৳<%= Number(order.amount).toLocaleString('en-IN') %></span>
           </div>

@@ -31,6 +31,7 @@ const write = (anchor, message, handler) => [requireCsrf, asyncHandler(async (re
 })];
 
 router.post('/admin/affiliates/referral-settings', ...write('#referral', 'Referral settings saved.', (req) => repo.saveReferralSettings(req.body, actor(req))));
+router.post('/admin/affiliates/wallet-settings', ...write('#wallet', 'Wallet payment limit saved.', (req) => repo.saveWalletSettings(req.body, actor(req))));
 router.post('/admin/affiliates/:id/update', ...write('#partners', 'Affiliate updated.', (req) => repo.updateAffiliate(req.params.id, req.body, actor(req))));
 router.post('/admin/affiliates/withdrawals/:id', ...write('#withdrawals', 'Withdrawal decision recorded.', (req) => repo.decideWithdrawal(req.params.id, req.body.decision, req.body.note, actor(req))));
 

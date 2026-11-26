@@ -269,6 +269,19 @@ async function getReferralSettings(tx = null) {
   return defaults;
 }
 
+const REFERRER_TABLES = { customer: 'customers', vendor: 'vendors', reseller: 'resellers' };
+const localPhone = (value) => String(value || '').replace(/\D/g, '').slice(-10);
+
+async function isReferrerPhone(referrer, refereePhone, tx) {
+  const table = REFERRER_TABLES[referrer.actorType];
+  const phone = localPhone(refereePhone);
+  if (!table || phone.length < 10) return false;
+  const client = getClient(tx);
+  const sql = `SELECT phone FROM ${table} WHERE id=?`;
+  const row = isMysql() ? await client.queryOne(sql, [referrer.actorId]) : client.get(sql, referrer.actorId);
+  return localPhone(row?.phone) === phone;
+}
+
 /**
  * Record a pending referral reward when an order is placed
  */
@@ -288,6 +301,8 @@ async function recordReferralOrderPending({
   if (refereeCustomerId && validated.actorType === 'customer' && Number(refereeCustomerId) === validated.actorId) {
     return null;
   }
+
+  if (await isReferrerPhone(validated, refereePhone, tx)) return null;
 
   const settings = await getReferralSettings(tx);
   if (!settings.enabled) return null;

@@ -36,6 +36,15 @@
     </form>
   </div></div>
 
+  <div class="card" id="wallet"><div class="card-body">
+    <h5><%= bn ? 'কাস্টমার ওয়ালেট দিয়ে পেমেন্ট' : 'Customer wallet payment' %></h5>
+    <p class="small text-muted"><%= bn ? 'একটি অর্ডারের পণ্যের দামের (কুপন বাদে, ডেলিভারি চার্জ ছাড়া) সর্বোচ্চ কত শতাংশ ওয়ালেট ব্যালেন্স দিয়ে দেওয়া যাবে। 0 দিলে ওয়ালেট পেমেন্ট বন্ধ থাকবে।' : 'The most of an order that can be paid from wallet balance, as a percentage of the product price after coupon, without delivery charge. 0 switches wallet payment off.' %></p>
+    <form method="post" action="/admin/affiliates/wallet-settings" class="row g-2 align-items-end"><input type="hidden" name="_csrf" value="<%= csrf %>">
+      <div class="col-md-3"><label class="form-label" for="walletPct"><%= bn ? 'সর্বোচ্চ সীমা (%)' : 'Maximum limit (%)' %></label><input class="form-control" id="walletPct" name="wallet_max_percent" type="number" min="0" max="99" step="1" value="<%= walletMaxPercent %>" required></div>
+      <div class="col-md-2"><button class="btn btn-primary w-100"><%= bn ? 'সেভ' : 'Save' %></button></div>
+    </form>
+  </div></div>
+
   <div class="row"><div class="col-lg-6"><div class="card"><div class="card-body"><h5><%= bn ? 'সাম্প্রতিক অ্যাফিলিয়েট কমিশন' : 'Recent affiliate commissions' %></h5><div class="table-responsive"><table class="table table-sm"><tbody><% commissions.forEach(c => { %><tr><td><%= c.invoice_no || c.order_id %></td><td><%= c.affiliate_code %> (T<%= c.tier %>)</td><td><%= taka(c.commission_paisa) %></td><td><%= c.status %></td></tr><% }) %></tbody></table></div></div></div></div>
   <div class="col-lg-6"><div class="card"><div class="card-body"><h5><%= bn ? 'সাম্প্রতিক রেফারেল পুরস্কার' : 'Recent referral rewards' %></h5><div class="table-responsive"><table class="table table-sm"><tbody><% rewards.forEach(r => { %><tr><td><%= r.invoice_no || r.order_id %></td><td><%= r.referral_code %> (<%= r.referrer_type %>)</td><td><%= taka(r.reward_paisa) %> + <%= r.reward_points %> pt</td><td><%= r.status %></td></tr><% }) %></tbody></table></div></div></div></div></div>
 </div></div>
