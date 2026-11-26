@@ -1,6 +1,6 @@
 # HANDOVER — Mr. Tumi (read this first)
 
-Updated: 2026-11-26 (Asia/Dhaka). Single maintained branch: `main` (all earlier work is merged into it; previous release tag `v3.5.0` = `23e6045`).
+Updated: 2026-11-26 (Asia/Dhaka). Single maintained branch: `main`. Previous release tag `v3.5.0` = `23e6045`. Old branches are already contained in `main`, except `backup/main-before-hardening-alignment` (8 commits not in `main`). Branch deletion and tag push were refused from the assistant session, so the owner does these on GitHub.
 **Release status: NO-GO. This code has not been deployed. The server still runs `v3.5.0`.**
 This file is the current status. Older status/report documents are history; do not rely on their "ready" claims.
 Security details are intentionally brief. Ask the owner.
@@ -48,13 +48,13 @@ Security details are intentionally brief. Ask the owner.
 8. On narrow phones the admin order list and customer order history need sideways scrolling.
 
 ## Not verified
-- MySQL 8.0, cPanel, the live site; restore rehearsal.
+- cPanel deployment of this code, and a restore rehearsal on the server. (GitHub CI on commit `adce404` passed on MySQL 8.0 and MariaDB 10.11, including its disposable backup/restore step and demo browser checks.)
 - Browser checks used local Chromium with CDN libraries served from local copies (charts library not loaded). Real phones and other browsers not checked.
 - Not every admin form was submitted; password recovery was checked only with a local test mail server.
 - Live SMS (only BulkSMSBD is implemented), Brevo delivery, full password recovery, live Pathao.
 
 ## Test evidence
-682/682 tests, lint pass, 0 production dependency advisories, on MariaDB 10.11 locally. On a throwaway database the real forms were submitted for: vendor registration to withdrawal, reseller registration to withdrawal, affiliate link to withdrawal approval, customer account, COD order, cancellation and return, admin create forms and category-type edit popups. Desktop and 375 px mobile checkout passed in Chromium.
+682/682 tests, lint pass, 0 production dependency advisories, on MariaDB 10.11 locally; GitHub CI also passed on MySQL 8.0. On a throwaway database the real forms were submitted for: vendor registration to withdrawal, reseller registration to withdrawal, affiliate link to withdrawal approval, customer account, COD order, cancellation and return, admin create forms and category-type edit popups. Desktop and 375 px mobile checkout passed in Chromium.
 
 ## Owner configuration after deploy
 - Reseller Commerce: set the return window, and for every product resellers may sell, its eligibility and base (entitlement) price, own products included.
