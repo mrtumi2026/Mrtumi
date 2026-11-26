@@ -1,0 +1,42 @@
+<%- include('partials/head', { title: locale === 'bn' ? 'অ্যাফিলিয়েট ও রেফারেল' : 'Affiliate & Referral' }) %>
+<%- include('partials/topbar') %>
+<%- include('partials/sidebar') %>
+<% const bn = locale === 'bn'; const taka = (p) => '৳' + (Number(p || 0) / 100).toFixed(2); const csrf = typeof csrfToken !== 'undefined' ? csrfToken : ''; %>
+<div class="content-page"><div class="content container-fluid py-3">
+  <h4 class="fw-bold mb-3"><%= bn ? 'অ্যাফিলিয়েট ও রেফারেল' : 'Affiliate & Referral' %></h4>
+
+  <div class="card" id="withdrawals"><div class="card-body">
+    <h5><%= bn ? 'অ্যাফিলিয়েট টাকা তোলার অনুরোধ' : 'Affiliate withdrawal requests' %></h5>
+    <p class="text-muted small"><%= bn ? 'আগে টাকা পাঠান, তারপর ট্রানজেকশন আইডি লিখে "পরিশোধিত" দিন। বাতিল করলে টাকা অ্যাফিলিয়েটের ব্যালেন্সে ফেরত যাবে।' : 'Send the money first, then enter the transaction ID and mark it paid. Rejecting returns the amount to the affiliate balance.' %></p>
+    <div class="table-responsive"><table class="table table-sm align-middle"><thead><tr><th>Affiliate</th><th><%= bn ? 'পরিমাণ' : 'Amount' %></th><th><%= bn ? 'কোথায়' : 'Pay to' %></th><th>Status</th><th><%= bn ? 'সিদ্ধান্ত' : 'Decision' %></th></tr></thead><tbody>
+    <% if (!withdrawals.length) { %><tr><td colspan="5" class="text-muted text-center"><%= bn ? 'কোনো অনুরোধ নেই' : 'No requests' %></td></tr><% } %>
+    <% withdrawals.forEach(w => { %><tr><td><%= w.name %><br><code><%= w.affiliate_code %></code></td><td><%= taka(w.amount_paisa) %></td><td><%= w.payout_method %><br><%= w.payout_account %></td><td><%= w.status %><% if (w.admin_note) { %><br><small><%= w.admin_note %></small><% } %></td><td>
+      <% if (w.status === 'pending') { %><form method="post" action="/admin/affiliates/withdrawals/<%= w.id %>" class="d-flex flex-wrap gap-1"><input type="hidden" name="_csrf" value="<%= csrf %>"><input class="form-control form-control-sm" style="width:220px" name="note" minlength="3" maxlength="255" required placeholder="<%= bn ? 'ট্রানজেকশন আইডি / কারণ' : 'Transaction ID / reason' %>" aria-label="Reference or reason"><button class="btn btn-sm btn-success" name="decision" value="approve"><%= bn ? 'পরিশোধিত' : 'Mark paid' %></button><button class="btn btn-sm btn-outline-danger" name="decision" value="reject"><%= bn ? 'বাতিল' : 'Reject' %></button></form><% } else { %>—<% } %>
+    </td></tr><% }) %></tbody></table></div>
+  </div></div>
+
+  <div class="card" id="partners"><div class="card-body">
+    <h5><%= bn ? 'অ্যাফিলিয়েট তালিকা' : 'Affiliates' %></h5>
+    <div class="table-responsive"><table class="table table-sm align-middle"><thead><tr><th>Affiliate</th><th><%= bn ? 'ব্যালেন্স / অপেক্ষমাণ / মোট আয়' : 'Balance / pending / lifetime' %></th><th><%= bn ? 'কমিশন %, টিয়ার-২ %, অবস্থা' : 'Commission %, tier-2 %, status' %></th></tr></thead><tbody>
+    <% if (!affiliates.length) { %><tr><td colspan="3" class="text-muted text-center"><%= bn ? 'এখনো কোনো অ্যাফিলিয়েট নেই' : 'No affiliates yet' %></td></tr><% } %>
+    <% affiliates.forEach(a => { %><tr><td><%= a.name %> · <%= a.phone %><br><code><%= a.affiliate_code %></code></td><td><%= taka(a.balance_paisa) %> / <%= taka(a.pending_balance_paisa) %> / <%= taka(a.lifetime_earnings_paisa) %></td><td>
+      <form method="post" action="/admin/affiliates/<%= a.id %>/update" class="d-flex flex-wrap gap-1"><input type="hidden" name="_csrf" value="<%= csrf %>"><input class="form-control form-control-sm" style="width:85px" type="number" step="0.01" min="0" max="100" name="commission_percent" value="<%= Number(a.commission_rate_bps) / 100 %>" aria-label="Commission percent"><input class="form-control form-control-sm" style="width:85px" type="number" step="0.01" min="0" max="100" name="tier2_percent" value="<%= Number(a.tier2_commission_rate_bps) / 100 %>" aria-label="Tier 2 percent"><select class="form-select form-select-sm" style="width:110px" name="status" aria-label="Status"><option value="1" <%= Number(a.status) === 1 ? 'selected' : '' %>><%= bn ? 'সক্রিয়' : 'Active' %></option><option value="0" <%= Number(a.status) === 1 ? '' : 'selected' %>><%= bn ? 'বন্ধ' : 'Disabled' %></option></select><button class="btn btn-sm btn-primary"><%= bn ? 'সেভ' : 'Save' %></button></form>
+    </td></tr><% }) %></tbody></table></div>
+  </div></div>
+
+  <div class="card" id="referral"><div class="card-body">
+    <h5><%= bn ? 'রেফারেল সেটিংস' : 'Referral settings' %></h5>
+    <form method="post" action="/admin/affiliates/referral-settings" class="row g-2 align-items-end"><input type="hidden" name="_csrf" value="<%= csrf %>">
+      <div class="col-md-2"><label class="form-label" for="refOn"><%= bn ? 'রেফারেল' : 'Referral' %></label><select class="form-select" id="refOn" name="referral_system_enabled"><option value="on" <%= referral.enabled ? 'selected' : '' %>>On</option><option value="off" <%= referral.enabled ? '' : 'selected' %>>Off</option></select></div>
+      <div class="col-md-2"><label class="form-label" for="refType"><%= bn ? 'পুরস্কারের ধরন' : 'Reward type' %></label><select class="form-select" id="refType" name="referral_reward_type"><option value="cashback" <%= referral.rewardType === 'cashback' ? 'selected' : '' %>>Cashback</option><option value="points" <%= referral.rewardType === 'points' ? 'selected' : '' %>>Points</option></select></div>
+      <div class="col-md-2"><label class="form-label" for="refTaka"><%= bn ? 'পুরস্কার (৳)' : 'Reward (৳)' %></label><input class="form-control" id="refTaka" name="referral_reward_taka" type="number" step="0.01" min="0" value="<%= referral.rewardValuePaisa / 100 %>" required></div>
+      <div class="col-md-2"><label class="form-label" for="refPoints"><%= bn ? 'পয়েন্ট' : 'Points' %></label><input class="form-control" id="refPoints" name="referral_reward_points" type="number" step="1" min="0" value="<%= referral.rewardPoints %>" required></div>
+      <div class="col-md-2"><label class="form-label" for="refMin"><%= bn ? 'সর্বনিম্ন অর্ডার (৳)' : 'Minimum order (৳)' %></label><input class="form-control" id="refMin" name="referral_min_order_taka" type="number" step="0.01" min="0" value="<%= referral.minOrderPaisa / 100 %>" required></div>
+      <div class="col-md-2"><button class="btn btn-primary w-100"><%= bn ? 'সেভ' : 'Save' %></button></div>
+    </form>
+  </div></div>
+
+  <div class="row"><div class="col-lg-6"><div class="card"><div class="card-body"><h5><%= bn ? 'সাম্প্রতিক অ্যাফিলিয়েট কমিশন' : 'Recent affiliate commissions' %></h5><div class="table-responsive"><table class="table table-sm"><tbody><% commissions.forEach(c => { %><tr><td><%= c.invoice_no || c.order_id %></td><td><%= c.affiliate_code %> (T<%= c.tier %>)</td><td><%= taka(c.commission_paisa) %></td><td><%= c.status %></td></tr><% }) %></tbody></table></div></div></div></div>
+  <div class="col-lg-6"><div class="card"><div class="card-body"><h5><%= bn ? 'সাম্প্রতিক রেফারেল পুরস্কার' : 'Recent referral rewards' %></h5><div class="table-responsive"><table class="table table-sm"><tbody><% rewards.forEach(r => { %><tr><td><%= r.invoice_no || r.order_id %></td><td><%= r.referral_code %> (<%= r.referrer_type %>)</td><td><%= taka(r.reward_paisa) %> + <%= r.reward_points %> pt</td><td><%= r.status %></td></tr><% }) %></tbody></table></div></div></div></div></div>
+</div></div>
+<%- include('partials/footer') %>

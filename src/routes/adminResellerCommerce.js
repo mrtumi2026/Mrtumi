@@ -24,7 +24,7 @@ router.get('/admin/reseller-commerce', asyncHandler(async (req, res) => {
     repo.listAuditTrail({ orderId: req.query.orderId || '', resellerId: req.query.resellerId || '', reference: req.query.reference || '' }),
   ]);
   res.render('admin/reseller-commerce', { title: 'Reseller Commerce Operations', settings, products, resellers, subOrders, codShipments, wallets, settlements, withdrawals, audit,
-    csrfToken: req.csrfToken ? req.csrfToken() : '', query: req.query, flash: req.session?.flash || null });
+    query: req.query });
 }));
 
 router.post('/admin/reseller-commerce/settings', ...write(async (req, res) => {

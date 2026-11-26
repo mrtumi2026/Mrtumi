@@ -11,7 +11,7 @@ async function decideManualPayment(paymentIdInput,decisionInput,actor={}, {pool=
   return mysql.withTransaction(async tx=>{
     const payment=await tx.queryOne(`SELECT op.id,op.order_id,op.gateway_code,op.provider_trx_id,op.sender_number,op.amount_paisa,op.status,
       o.invoice_no,o.total_paisa,o.payment_status,o.paid_paisa,o.order_status FROM order_payments op JOIN orders o ON o.id=op.order_id
-      WHERE op.id=? AND op.gateway_code IN ('bkash','nagad','rocket','manual_bkash','manual_nagad','manual_rocket') FOR UPDATE`,[paymentId]);
+      WHERE op.id=? AND op.gateway_code IN ('bkash','nagad','rocket','manual_bkash','manual_nagad','manual_rocket','bkash_manual','nagad_manual','rocket_manual') FOR UPDATE`,[paymentId]);
     if(!payment)throw new NotFoundError('Manual payment record not found.');
     const target=decision==='approve'?'verified':'rejected';
     if(payment.status===target)return{id:paymentId,orderId:Number(payment.order_id),status:target,replayed:true};

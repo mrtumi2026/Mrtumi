@@ -247,6 +247,13 @@
               </li>
 
               <li>
+                <a href="/admin/affiliates">
+                  <i data-feather="share-2"></i>
+                  <span><%= locale === 'bn' ? 'অ্যাফিলিয়েট ও রেফারেল' : 'Affiliate & Referral' %></span>
+                </a>
+              </li>
+
+              <li>
                 <a href="#sidebar-vendors" data-bs-toggle="collapse" aria-expanded="false" aria-controls="sidebar-vendors">
                   <i data-feather="users"></i>
                   <span><%= t('admin.menu.vendors') %></span>
@@ -258,6 +265,7 @@
                     <li><a href="/admin/vendor-verifications"><i data-feather="shield"></i> <%= t('admin.menu.pendingVendors') %></a></li>
                     <li><a href="/admin/vendor-applications?status=pending"><i data-feather="file-text"></i> <%= locale === 'bn' ? 'ভেন্ডর আবেদন পর্যালোচনা' : 'Vendor applications' %></a></li>
                     <li><a href="/admin/vendor-withdrawals"><i data-feather="dollar-sign"></i> <%= t('admin.menu.vendorWithdrawals') %></a></li>
+                    <li><a href="/admin/reseller-commerce#orders"><i data-feather="truck"></i> <%= locale === 'bn' ? 'ভেন্ডর অর্ডার ও সেটেলমেন্ট' : 'Vendor orders & settlement' %></a></li>
                   </ul>
                 </div>
               </li>

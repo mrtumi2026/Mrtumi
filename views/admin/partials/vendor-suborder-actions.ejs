@@ -1,0 +1,26 @@
+<%
+  const bn = locale === 'bn';
+  const base = '/admin/fulfillment/sub-orders/' + o.id;
+  const shipment = (o.shipments || [])[0];
+  const nextByStatus = { order_placed: ['vendor_accepted','cancelled'], vendor_accepted: ['processing','cancelled'], processing: ['packed','cancelled'], packed: ['ready_for_pickup','cancelled'], in_transit: ['delivered','failed_delivery'], failed_delivery: ['ready_for_pickup'] };
+  const labels = bn
+    ? { vendor_accepted: 'গ্রহণ করুন', processing: 'প্রসেসিং', packed: 'প্যাক হয়েছে', ready_for_pickup: 'পিকআপের জন্য প্রস্তুত', delivered: 'ডেলিভারি সম্পন্ন', failed_delivery: 'ডেলিভারি ব্যর্থ', cancelled: 'বাতিল' }
+    : { vendor_accepted: 'Accept', processing: 'Processing', packed: 'Packed', ready_for_pickup: 'Ready for pickup', delivered: 'Delivered', failed_delivery: 'Delivery failed', cancelled: 'Cancel' };
+%>
+<div class="d-flex flex-column gap-1" style="min-width:190px">
+  <% if (!o.delivery_mode && !['delivered','cancelled','returned'].includes(o.status)) { %>
+    <% [['platform_managed', bn ? 'আমি ডেলিভারি দেব' : 'Platform delivers'], ['vendor_managed', bn ? 'ভেন্ডর ডেলিভারি দেবে' : 'Vendor delivers']].forEach(([mode, text]) => { %>
+      <form method="post" action="<%= base %>/delivery-mode"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><input type="hidden" name="delivery_mode" value="<%= mode %>"><button class="btn btn-sm btn-outline-primary w-100"><%= text %></button></form>
+    <% }) %>
+  <% } %>
+  <% (nextByStatus[o.status] || []).forEach(target => { %>
+    <form method="post" action="<%= base %>/status"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><input type="hidden" name="to_status" value="<%= target %>"><input type="hidden" name="note" value="Updated by admin"><button class="btn btn-sm w-100 <%= ['cancelled','failed_delivery'].includes(target) ? 'btn-outline-danger' : 'btn-success' %>"><%= labels[target] %></button></form>
+  <% }) %>
+  <% if (o.status === 'ready_for_pickup' && o.delivery_mode && shipment) { %>
+    <% if (shipment.booking_status !== 'succeeded') { %>
+      <form method="post" action="<%= base %>/booking-result" class="d-flex flex-column gap-1"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><input type="hidden" name="result_code" value="succeeded"><input class="form-control form-control-sm" name="courier_code" maxlength="48" required placeholder="<%= bn ? 'কুরিয়ার (যেমন pathao, own)' : 'Courier (e.g. pathao, own)' %>" aria-label="Courier"><input class="form-control form-control-sm" name="tracking_reference" maxlength="120" placeholder="<%= bn ? 'ট্র্যাকিং নম্বর' : 'Tracking number' %>" aria-label="Tracking number"><button class="btn btn-sm btn-primary"><%= bn ? 'বুকিং রেকর্ড করুন' : 'Record booking' %></button></form>
+    <% } else if (!shipment.picked_up_at) { %>
+      <form method="post" action="<%= base %>/handover"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button class="btn btn-sm btn-warning w-100"><%= bn ? 'কুরিয়ারে হস্তান্তর হয়েছে' : 'Confirm handover' %></button></form>
+    <% } %>
+  <% } %>
+</div>

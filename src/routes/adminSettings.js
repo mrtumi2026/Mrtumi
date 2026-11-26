@@ -10,6 +10,7 @@ const upload = require('../middleware/upload');
 const { env } = require('../config/env');
 const settingsRepository = require('../repositories/settingsRepository');
 const smsService = require('../services/smsService');
+const mailService = require('../services/mailService');
 const bdCourierFraudService = require('../services/bdCourierFraudService');
 const adminFinanceReadRepository = require('../repositories/adminFinanceReadRepository');
 const adminPaymentGatewayRepository = require('../repositories/adminPaymentGatewayRepository');
@@ -211,6 +212,8 @@ router.post('/admin/settings/save', upload.single('logo_file'), requireCsrfAndCl
     changes.logo_dark = uploadedPath;
     changes.logo_light = uploadedPath;
   }
+  // A blank password field keeps the stored SMTP password.
+  if (Object.prototype.hasOwnProperty.call(changes, 'smtp_pass') && !String(changes.smtp_pass).trim()) delete changes.smtp_pass;
   const deliveryChargeUpdates = env.db.client === 'mysql' ? getDeliveryLocationChargeUpdates(changes) : [];
   if (Object.keys(changes).length && env.db.client === 'mysql') {
     await settingsRepository.saveSettings(changes, {
@@ -224,6 +227,17 @@ router.post('/admin/settings/save', upload.single('logo_file'), requireCsrfAndCl
   }
   req.flash('success', 'সেটিংস সফলভাবে সংরক্ষণ করা হয়েছে!');
   res.redirect(redirectTo);
+}));
+
+router.post('/admin/email-setting/test', requireCsrf, asyncHandler(async (req, res) => {
+  try {
+    await mailService.sendMail({ to: req.body.test_email, subject: 'Mr. Tumi SMTP test', text: 'SMTP settings are working. / ইমেইল সেটিংস কাজ করছে।' });
+    req.flash('success', 'টেস্ট ইমেইল SMTP সার্ভার গ্রহণ করেছে। ইনবক্স ও স্প্যাম ফোল্ডার দেখুন।');
+  } catch (error) {
+    if (![400, 409].includes(error.statusCode)) throw error;
+    req.flash('error', error.message);
+  }
+  res.redirect('/admin/email-setting');
 }));
 
 // ─── Site Settings & API Integrations Pages ───

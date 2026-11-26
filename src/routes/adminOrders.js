@@ -19,21 +19,27 @@ router.use('/admin', requireAdmin);
 
 const fulfillmentActor = (req) => ({ userId: req.adminUser?.id || null, platformAdmin: true });
 const fulfillmentRepository = () => require('../repositories/vendorOrderRepository');
+// Browser forms send Accept: text/html,*/* so html must be preferred over json here.
+const fulfillmentDone = (req,res,result) => {
+  if (req.accepts(['html','json'])==='json') return res.json({data:result});
+  req.session.flash = { type: 'success', message: 'Vendor order updated.' };
+  return res.redirect('/admin/reseller-commerce#orders');
+};
 router.post('/admin/fulfillment/sub-orders/:subOrderId/delivery-mode', requirePermission('orders.manage'), requireCsrf, asyncHandler(async (req,res) => {
   const result=await fulfillmentRepository().setDeliveryMode({subOrderId:req.params.subOrderId,deliveryMode:req.body.delivery_mode,actor:fulfillmentActor(req)});
-  return req.accepts('json')?res.json({data:result}):res.redirect('/admin/reseller-commerce');
+  return fulfillmentDone(req,res,result);
 }));
 router.post('/admin/fulfillment/sub-orders/:subOrderId/booking-result', requirePermission('orders.manage'), requireCsrf, asyncHandler(async (req,res) => {
   const result=await fulfillmentRepository().recordBookingResult({subOrderId:req.params.subOrderId,courierCode:req.body.courier_code,trackingReference:req.body.tracking_reference,resultCode:req.body.result_code,note:req.body.note,actor:fulfillmentActor(req)});
-  return req.accepts('json')?res.json({data:result}):res.redirect('/admin/reseller-commerce');
+  return fulfillmentDone(req,res,result);
 }));
 router.post('/admin/fulfillment/sub-orders/:subOrderId/handover', requirePermission('orders.manage'), requireCsrf, asyncHandler(async (req,res) => {
   const result=await fulfillmentRepository().recordPhysicalHandover({subOrderId:req.params.subOrderId,note:req.body.note,actor:fulfillmentActor(req)});
-  return req.accepts('json')?res.json({data:result}):res.redirect('/admin/reseller-commerce');
+  return fulfillmentDone(req,res,result);
 }));
 router.post('/admin/fulfillment/sub-orders/:subOrderId/status', requirePermission('orders.manage'), requireCsrf, asyncHandler(async (req,res) => {
   const result=await fulfillmentRepository().transitionSubOrder({subOrderId:req.params.subOrderId,toStatus:req.body.to_status,note:req.body.note,actor:fulfillmentActor(req)});
-  return req.accepts('json')?res.json({data:result}):res.redirect('/admin/reseller-commerce');
+  return fulfillmentDone(req,res,result);
 }));
 
 // ─── Vendor Courier Booking Approval Queue ───
@@ -243,12 +249,17 @@ router.post('/admin/fulfillment/shipments/:shipmentId/manual-override', requireP
   return res.redirect('/admin/fulfillment/ambiguous-shipments');
 }));
 
+function bdtInputToPaisa(value) {
+  try { return require('../utils/money').bdtToPaisa(value); }
+  catch (_error) { throw new (require('../utils/errors').ValidationError)('Enter a valid collected amount in taka.'); }
+}
+
 // Multi-courier COD remittance recording & reconciliation
 router.post('/admin/fulfillment/shipments/:shipmentId/reconcile-cod', requirePermission('orders.manage'), requireCsrf, asyncHandler(async (req, res) => {
   const codRepo = require('../repositories/courierCodRepository');
   const result = await codRepo.reconcileCourierCollection({
     shipmentId: req.params.shipmentId,
-    collectedAmountPaisa: req.body.collected_amount_paisa,
+    collectedAmountPaisa: req.body.collected_amount_bdt !== undefined ? bdtInputToPaisa(req.body.collected_amount_bdt) : req.body.collected_amount_paisa,
     remittanceRef: req.body.remittance_ref,
     bankTransRef: req.body.bank_trans_ref,
     courierName: req.body.courier_name,
@@ -262,6 +273,10 @@ router.post('/admin/fulfillment/shipments/:shipmentId/reconcile-cod', requirePer
     return res.json({ success: true, data: result });
   }
 
+  if (req.body.redirect === 'commerce') {
+    req.session.flash = { type: result.status === 'reconciled' ? 'success' : 'error', message: result.status === 'reconciled' ? 'COD collection reconciled.' : 'Collected amount does not match the expected COD; recorded as a discrepancy.' };
+    return res.redirect('/admin/reseller-commerce#cod');
+  }
   req.flash('success', result.orderPaid ? 'Courier COD collection reconciled. All order shipments verified; order payment marked as PAID.' : `Courier COD collection reconciled with status: ${result.status}.`);
   return res.redirect('/admin/fulfillment/ambiguous-shipments?status=all');
 }));

@@ -13,7 +13,6 @@ const sqliteDb = require('../db/database');
 const { recordAuditLog } = require('./auditLogRepository');
 const { requirePositiveInt } = require('../utils/validator');
 const { ValidationError, NotFoundError } = require('../utils/errors');
-const { splitOrderByVendor } = require('../services/splitOrderService');
 
 function normalizeUpdate(input = {}) {
   const accountNumber = String(input.account_number ?? '').trim();
@@ -289,18 +288,6 @@ async function verifyManualOrderPayment(orderIdInput, actor = {}, { pool = null,
         adminId,
       ]
     );
-
-    const existingSplit = await tx.queryOne(
-      'SELECT id FROM vendor_orders WHERE order_id = ? LIMIT 1',
-      [orderId]
-    );
-    if (!existingSplit) {
-      await splitOrderByVendor(orderId, {
-        gatewayCode: order.payment_method,
-        actor: { type: 'admin', id: adminId },
-        tx,
-      });
-    }
 
     await recordAuditLog(
       {

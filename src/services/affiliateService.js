@@ -468,7 +468,7 @@ async function requestWithdrawal(affiliateId, { amountPaisa, payoutMethod, payou
   const idNum = Number(affiliateId);
   const amt = Number(amountPaisa);
 
-  if (amt < 50000) {
+  if (!Number.isSafeInteger(amt) || amt < 50000) {
     throw new ValidationError('উত্তোলনের সর্বনিম্ন পরিমাণ ৫০০ টাকা।');
   }
 
@@ -481,14 +481,18 @@ async function requestWithdrawal(affiliateId, { amountPaisa, payoutMethod, payou
   const account = payoutAccount || aff.payout_account || aff.phone;
 
   if (isMysql()) {
-    await client.execute(
-      'UPDATE affiliates SET balance_paisa = balance_paisa - ? WHERE id = ?',
-      [amt, idNum]
-    );
-    const res = await client.execute(
-      'INSERT INTO affiliate_withdrawals (affiliate_id, amount_paisa, payout_method, payout_account, status) VALUES (?, ?, ?, ?, "pending")',
-      [idNum, amt, method, account]
-    );
+    // Deduct and record together; the balance condition stops two parallel requests overdrawing.
+    const res = await require('../db/mysqlPool').withTransaction(async (tx) => {
+      const debit = await tx.execute(
+        'UPDATE affiliates SET balance_paisa = balance_paisa - ? WHERE id = ? AND status = 1 AND balance_paisa >= ?',
+        [amt, idNum, amt]
+      );
+      if (debit.affectedRows !== 1) throw new ValidationError('আপনার ওয়ালেটে পর্যাপ্ত পরিমাণ ব্যালেন্স নেই।');
+      return tx.execute(
+        "INSERT INTO affiliate_withdrawals (affiliate_id, amount_paisa, payout_method, payout_account, status) VALUES (?, ?, ?, ?, 'pending')",
+        [idNum, amt, method, account]
+      );
+    });
     return { id: Number(res.insertId), amountPaisa: amt, status: 'pending' };
   } else {
     client.run(

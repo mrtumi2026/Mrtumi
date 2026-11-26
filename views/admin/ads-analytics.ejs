@@ -21,22 +21,22 @@
       <div class="sc">
         <div>
           <div class="sc-label">Facebook Ads Spend</div>
-          <div class="sc-val">৳<%= Number(adSettings.fb_ads_spend || 14500).toLocaleString('en-IN') %></div>
-          <div class="sc-note text-success">ROAS: <%= adSettings.fb_ads_roas || '4.6' %>x &bull; <%= fbOrders.c %> orders</div>
+          <div class="sc-val">৳<%= Number(adSettings.fb_ads_spend || 0).toLocaleString('en-IN') %></div>
+          <div class="sc-note text-success">ROAS: <%= adSettings.fb_ads_roas || 0 %>x &bull; <%= fbOrders.c %> orders</div>
         </div>
       </div>
       <div class="sc">
         <div>
           <div class="sc-label">Google Ads Spend</div>
-          <div class="sc-val">৳<%= Number(adSettings.google_ads_spend || 6200).toLocaleString('en-IN') %></div>
-          <div class="sc-note text-primary">ROAS: <%= adSettings.google_ads_roas || '3.8' %>x</div>
+          <div class="sc-val">৳<%= Number(adSettings.google_ads_spend || 0).toLocaleString('en-IN') %></div>
+          <div class="sc-note text-primary">ROAS: <%= adSettings.google_ads_roas || 0 %>x</div>
         </div>
       </div>
       <div class="sc">
         <div>
           <div class="sc-label">TikTok Ads Spend</div>
-          <div class="sc-val">৳<%= Number(adSettings.tiktok_ads_spend || 3800).toLocaleString('en-IN') %></div>
-          <div class="sc-note">ROAS: <%= adSettings.tiktok_ads_roas || '3.2' %>x</div>
+          <div class="sc-val">৳<%= Number(adSettings.tiktok_ads_spend || 0).toLocaleString('en-IN') %></div>
+          <div class="sc-note">ROAS: <%= adSettings.tiktok_ads_roas || 0 %>x</div>
         </div>
       </div>
       <div class="sc">
@@ -55,15 +55,15 @@
         <input type="hidden" name="_redirect" value="/admin/ads-analytics/<%= channel === 'overview' ? '' : channel %>" />
         <div class="col-md-4">
           <label class="form-label small fw-semibold">Facebook Ad Spend (৳)</label>
-          <input type="number" name="fb_ads_spend" value="<%= adSettings.fb_ads_spend || '14500' %>" class="form-control" />
+          <input type="number" name="fb_ads_spend" value="<%= adSettings.fb_ads_spend || 0 %>" class="form-control" />
         </div>
         <div class="col-md-4">
           <label class="form-label small fw-semibold">Google Ad Spend (৳)</label>
-          <input type="number" name="google_ads_spend" value="<%= adSettings.google_ads_spend || '6200' %>" class="form-control" />
+          <input type="number" name="google_ads_spend" value="<%= adSettings.google_ads_spend || 0 %>" class="form-control" />
         </div>
         <div class="col-md-4">
           <label class="form-label small fw-semibold">TikTok Ad Spend (৳)</label>
-          <input type="number" name="tiktok_ads_spend" value="<%= adSettings.tiktok_ads_spend || '3800' %>" class="form-control" />
+          <input type="number" name="tiktok_ads_spend" value="<%= adSettings.tiktok_ads_spend || 0 %>" class="form-control" />
         </div>
         <div class="col-12">
           <button type="submit" class="btn btn-forest btn-sm">Save Ad Metrics</button>

@@ -189,7 +189,7 @@ async function listVendorSubOrders({ pool = null } = {}) {
   const db = mysql.createQueryClient(pool || mysql.getPool());
   const rows = await db.queryAll(
     `SELECT so.id,so.order_id,so.vendor_id,so.vendor_order_no,so.status,so.cod_due_paisa,so.vendor_entitlement_paisa,
-            so.marketplace_fee_paisa,so.net_payable_paisa,so.shipment_carrier,so.tracking_code,so.delivered_at,
+            so.marketplace_fee_paisa,so.net_payable_paisa,so.shipment_carrier,so.tracking_code,so.delivered_at,so.delivery_mode,
             o.invoice_no,o.payment_method,o.payment_status,v.shop_name AS vendor_name
      FROM vendor_sub_orders so JOIN orders o ON o.id=so.order_id JOIN vendors v ON v.id=so.vendor_id
      ORDER BY so.created_at DESC,so.id DESC LIMIT 300`
@@ -202,7 +202,7 @@ async function listVendorSubOrders({ pool = null } = {}) {
        LEFT JOIN order_price_snapshots ps ON ps.order_item_id=oi.id WHERE si.vendor_sub_order_id=? ORDER BY oi.id`, [row.id]
     );
     row.shipments = await db.queryAll(
-      `SELECT fs.id,fs.courier_code AS courier_name,fs.tracking_id AS tracking_number,fs.status,fs.created_at
+      `SELECT fs.id,fs.courier_code AS courier_name,fs.tracking_id AS tracking_number,fs.status,fs.created_at,fs.booking_status,fs.picked_up_at
        FROM fulfillment_shipments fs WHERE fs.vendor_sub_order_id=? ORDER BY fs.created_at DESC,fs.id DESC`, [row.id]
     );
     for (const shipment of row.shipments) shipment.history = await db.queryAll(

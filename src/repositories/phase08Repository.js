@@ -306,25 +306,7 @@ async function transitionOrderTx(tx, orderIdInput, toStatus, note, actor = {}, r
       await insertAudit(tx, actor, 'reseller.order.earning.held', 'order', id, null, { resellerId:Number(reseller.id), amountPaisa:margin, reason:'Awaiting payment/COD reconciliation and return-window eligibility.' });
     }
   }
-  if (target === 'delivered') {
-    try {
-      const referralService = require('../services/referralService');
-      await referralService.creditReferralRewardForOrder(id, tx);
-    } catch (_refDeliveredErr) {}
-    try {
-      const affiliateService = require('../services/affiliateService');
-      await affiliateService.creditOrderAffiliateCommission(id, tx);
-    } catch (_affDeliveredErr) {}
-  } else if (target === 'cancelled' || target === 'failed') {
-    try {
-      const referralService = require('../services/referralService');
-      await referralService.cancelReferralRewardForOrder(id, tx);
-    } catch (_refCancelErr) {}
-    try {
-      const affiliateService = require('../services/affiliateService');
-      await affiliateService.cancelOrderAffiliateCommission(id, tx);
-    } catch (_affCancelErr) {}
-  }
+  await require('../services/orderRewardService').applyOrderOutcomeTx(tx, id, target);
   try {
     const pushService = require('../services/pushNotificationService');
     pushService.notifyCustomerOrderStatus({

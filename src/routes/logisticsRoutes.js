@@ -14,6 +14,10 @@ const { createRateLimiter } = require('../middleware/rateLimit');
 
 const router = express.Router();
 
+// Legacy courier endpoints are closed: no sign-in check on booking, no signature check
+// on webhooks, and their queries do not match the migrated courier_shipments table.
+router.use('/api/courier', (_req, res) => res.sendStatus(404));
+
 const bookingLimiter = createRateLimiter({
   keyPrefix: 'courier_book',
   windowMs: 60_000,

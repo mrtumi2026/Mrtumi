@@ -105,10 +105,18 @@ function signData(data) {
   return crypto.createHmac('sha256', NAGAD_CONFIG.merchantId || 'sandbox_key').update(dataStr).digest('base64');
 }
 
+/** Outside development/test, missing merchant credentials must fail, never simulate. */
+function assertConfigured() {
+  if (!env.isDevelopment && !env.isTest && !NAGAD_CONFIG.merchantId) {
+    throw new AppError('GATEWAY_NOT_CONFIGURED', 'Nagad gateway is not configured.', 503);
+  }
+}
+
 /**
  * Initialize automated Nagad payment checkout session.
  */
 async function createPayment({ orderId, amountPaisa, customerPhone, callbackUrl }) {
+  assertConfigured();
   if (!Number.isSafeInteger(amountPaisa) || amountPaisa <= 0) {
     throw new ValidationError('Valid amount in paisa is required.');
   }
@@ -118,7 +126,7 @@ async function createPayment({ orderId, amountPaisa, customerPhone, callbackUrl 
   const returnUrl = callbackUrl || NAGAD_CONFIG.callbackUrl;
 
   // Sandbox simulation mode when merchant credentials are not set
-  if (!NAGAD_CONFIG.merchantId || env.isDevelopment || env.isTest) {
+  if (env.isDevelopment || env.isTest) {
     const paymentRefId = `NAGAD-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
     return {
       success: true,
@@ -173,13 +181,14 @@ async function createPayment({ orderId, amountPaisa, customerPhone, callbackUrl 
  * Verify completed Nagad transaction upon return or IPN.
  */
 async function verifyPayment({ paymentRefId, paymentId }) {
+  assertConfigured();
   const refId = String(paymentRefId || paymentId || '').trim();
   if (!refId) {
     throw new ValidationError('Nagad payment_ref_id is required.');
   }
 
   // If in sandbox mode without live keys, confirm cleanly
-  if (!NAGAD_CONFIG.merchantId || env.isDevelopment || env.isTest) {
+  if (env.isDevelopment || env.isTest) {
     return {
       success: true,
       status: 'completed',

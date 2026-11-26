@@ -91,17 +91,17 @@ async function getShipmentQuotesAndRecommendation({ subOrderId, actor }) {
     assertActorAccess(subOrder, actor);
 
     const items = await client.query(
-      `SELECT soi.product_name, soi.quantity, p.weight_grams
-       FROM vendor_sub_order_items soi
-       LEFT JOIN products p ON p.id = soi.product_id
-       WHERE soi.sub_order_id = ?`,
+      `SELECT oi.product_name, si.quantity
+       FROM vendor_sub_order_items si
+       JOIN order_items oi ON oi.id = si.order_item_id
+       WHERE si.vendor_sub_order_id = ?`,
       [subOrderId]
     );
 
     // Calculate total parcel weight
     let totalWeightGrams = 0;
     for (const it of items) {
-      totalWeightGrams += (Number(it.weight_grams || 500) * Number(it.quantity || 1));
+      totalWeightGrams += 500 * Number(it.quantity || 1); // products have no weight column; assume 500 g per unit
     }
     if (totalWeightGrams <= 0) totalWeightGrams = 1000;
 

@@ -83,10 +83,18 @@ function httpsPost(urlStr, data, headers = {}) {
   });
 }
 
+/** Outside development/test, missing merchant credentials must fail, never simulate. */
+function assertConfigured() {
+  if (!env.isDevelopment && !env.isTest && !ROCKET_CONFIG.merchantId) {
+    throw new AppError('GATEWAY_NOT_CONFIGURED', 'Rocket gateway is not configured.', 503);
+  }
+}
+
 /**
  * Initialize automated DBBL Rocket payment session.
  */
 async function createPayment({ orderId, amountPaisa, customerPhone, callbackUrl }) {
+  assertConfigured();
   if (!Number.isSafeInteger(amountPaisa) || amountPaisa <= 0) {
     throw new ValidationError('Valid amount in paisa is required.');
   }
@@ -96,7 +104,7 @@ async function createPayment({ orderId, amountPaisa, customerPhone, callbackUrl 
   const returnUrl = callbackUrl || ROCKET_CONFIG.callbackUrl;
 
   // Sandbox simulation mode when live credentials are not present
-  if (!ROCKET_CONFIG.merchantId || env.isDevelopment || env.isTest) {
+  if (env.isDevelopment || env.isTest) {
     const paymentId = `ROCKET-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
     return {
       success: true,
@@ -152,13 +160,14 @@ async function createPayment({ orderId, amountPaisa, customerPhone, callbackUrl 
  * Verify completed DBBL Rocket payment.
  */
 async function verifyPayment({ paymentId, trxId }) {
+  assertConfigured();
   const pId = String(paymentId || '').trim();
   if (!pId) {
     throw new ValidationError('Rocket payment ID is required.');
   }
 
   // Simulation mode
-  if (!ROCKET_CONFIG.merchantId || env.isDevelopment || env.isTest) {
+  if (env.isDevelopment || env.isTest) {
     return {
       success: true,
       status: 'completed',

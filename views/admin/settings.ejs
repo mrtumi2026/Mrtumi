@@ -276,6 +276,25 @@
               <label class="form-label small fw-semibold">SMTP Username</label>
               <input type="text" name="smtp_user" value="<%= siteSettings.smtp_user || '' %>" class="form-control" />
             </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold">SMTP Password / Key</label>
+              <input type="password" name="smtp_pass" value="" autocomplete="new-password" class="form-control" placeholder="<%= siteSettings.smtp_pass ? 'সেভ করা আছে (বদলাতে চাইলে নতুনটি লিখুন)' : '' %>" />
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold">Sender Email (verified)</label>
+              <input type="email" name="smtp_from_email" value="<%= siteSettings.smtp_from_email || '' %>" class="form-control" />
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold">Sender Name</label>
+              <input type="text" name="smtp_from_name" value="<%= siteSettings.smtp_from_name || '' %>" class="form-control" />
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold">Password recovery by email</label>
+              <select name="customer_recovery_email_enabled" class="form-select">
+                <option value="0" <%= String(siteSettings.customer_recovery_email_enabled || '0') === '1' ? '' : 'selected' %>>Disabled</option>
+                <option value="1" <%= String(siteSettings.customer_recovery_email_enabled || '0') === '1' ? 'selected' : '' %>>Enabled</option>
+              </select>
+            </div>
 
           <% } else if (section === 'seo') { %>
             <div class="col-12">
@@ -430,6 +449,13 @@
           <button type="submit" class="btn btn-forest px-4">💾 Save Settings</button>
         </div>
       </form>
+      <% if (section === 'email') { %>
+      <form action="/admin/email-setting/test" method="POST" class="tbl-card p-4 mt-3">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+        <label class="form-label small fw-semibold">টেস্ট ইমেইল (আগে সেটিংস সেভ করুন)</label>
+        <div class="d-flex gap-2"><input type="email" name="test_email" class="form-control" required /><button class="btn btn-outline-primary">Send test</button></div>
+      </form>
+      <% } %>
     <% } %>
   </div>
 </div>

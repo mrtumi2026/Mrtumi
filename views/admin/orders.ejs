@@ -143,7 +143,7 @@
         </table>
       </div>
     </div>
-    <% if (pagination && pagination.totalPages > 1) { %>
+    <% if (typeof pagination !== 'undefined' && pagination && pagination.totalPages > 1) { %>
       <nav class="d-flex justify-content-between align-items-center p-3" aria-label="Order pages">
         <span class="small text-muted">Page <%= pagination.page %> of <%= pagination.totalPages %> (<%= pagination.total %> orders)</span>
         <div class="d-flex gap-2">

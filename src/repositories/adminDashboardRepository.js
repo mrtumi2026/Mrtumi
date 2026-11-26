@@ -71,9 +71,9 @@ async function getDashboardData({ pool = null, now = new Date() } = {}) {
       FROM expenses`, [today, monthStart, new Date(Date.UTC(Number(today.slice(0,4)), Number(today.slice(5,7)), 1)).toISOString().slice(0,10)]),
     client.queryAll(`SELECT op.id,op.order_id,o.invoice_no,o.customer_phone,op.gateway_code,g.name AS gateway_name,op.sender_number,op.provider_trx_id,op.amount_paisa
       FROM order_payments op JOIN orders o ON o.id=op.order_id LEFT JOIN payment_gateways g ON g.code=op.gateway_code WHERE op.status='pending_verification'
-      AND op.gateway_code IN ('bkash','nagad','rocket','manual_bkash','manual_nagad','manual_rocket')
+      AND op.gateway_code IN ('bkash','nagad','rocket','manual_bkash','manual_nagad','manual_rocket','bkash_manual','nagad_manual','rocket_manual')
       ORDER BY op.created_at,op.id LIMIT 8`),
-    client.queryOne("SELECT COUNT(*) AS count FROM order_payments WHERE status='pending_verification' AND gateway_code IN ('bkash','nagad','rocket','manual_bkash','manual_nagad','manual_rocket')"),
+    client.queryOne("SELECT COUNT(*) AS count FROM order_payments WHERE status='pending_verification' AND gateway_code IN ('bkash','nagad','rocket','manual_bkash','manual_nagad','manual_rocket','bkash_manual','nagad_manual','rocket_manual')"),
     client.queryOne("SELECT COUNT(*) AS count FROM vendors v JOIN vendor_applications a ON a.vendor_id=v.id WHERE v.lifecycle_status='pending'"),
     client.queryOne("SELECT COUNT(*) AS count FROM products WHERE vendor_id IS NOT NULL AND is_archived=0 AND approval_status='pending'")
   ]);

@@ -13,6 +13,12 @@ const { createRateLimiter } = require('../middleware/rateLimit');
 
 const router = express.Router();
 
+// Automated gateway checkout is NOT launch-ready: callbacks take order_id from the
+// request without binding it to a provider-verified payment. These routes stay closed
+// until that is implemented and verified with real merchant credentials.
+router.use(['/payment/initiate', '/payment/bkash', '/payment/nagad', '/payment/rocket', '/webhooks'],
+  (_req, res) => res.sendStatus(404));
+
 const paymentInitiateLimiter = createRateLimiter({
   keyPrefix: 'pay_initiate',
   windowMs: 60_000,

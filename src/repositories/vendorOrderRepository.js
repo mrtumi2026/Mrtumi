@@ -72,6 +72,7 @@ async function syncParentStatus(tx, orderId, priorStatus, userId) {
   if (!Object.hasOwn(rank,priorStatus) || (rank[target] ?? 0) <= rank[priorStatus]) return priorStatus;
   const changed = await tx.execute('UPDATE orders SET order_status=? WHERE id=? AND order_status=?', [target,orderId,priorStatus]);
   if (changed.affectedRows === 1) await tx.execute('INSERT INTO order_status_history(order_id,from_status,to_status,note,changed_by_user_id) VALUES(?,?,?,?,?)', [orderId,priorStatus,target,target==='delivered'?'All applicable vendor sub-orders delivered':'All applicable vendor sub-orders handed over',userId]);
+  if (changed.affectedRows === 1) await require('../services/orderRewardService').applyOrderOutcomeTx(tx, orderId, target);
   return changed.affectedRows === 1 ? target : priorStatus;
 }
 

@@ -119,7 +119,7 @@ async function saveSettings(input,actor={}){
   });
 }
 async function getSettings(){const db=client(),rows=await db.queryAll("SELECT setting_key,setting_value FROM settings WHERE setting_key LIKE 'd7_%'");return Object.fromEntries(rows.map(r=>[r.setting_key,r.setting_value]));}
-async function listCategoryPolicies(){return client().queryAll('SELECT c.id,c.name,COALESCE(p.eligible,0) AS eligible,COALESCE(p.window_days,7) AS window_days FROM categories c LEFT JOIN return_category_policies p ON p.category_id=c.id ORDER BY c.name');}
+async function listCategoryPolicies(){return client().queryAll('SELECT c.id,c.name_bn AS name,COALESCE(p.eligible,0) AS eligible,COALESCE(p.window_days,7) AS window_days FROM categories c LEFT JOIN return_category_policies p ON p.category_id=c.id ORDER BY c.name_bn');}
 async function saveCategoryPolicy(categoryId,eligible,windowDays,actor={}){
   const id=requirePositiveInt(categoryId,'category ID'),days=Number(windowDays);if(!['0','1',0,1,false,true].includes(eligible)||!Number.isInteger(days)||days<1||days>60)throw new ValidationError('Category eligibility and return window are invalid.');
   const enabled=eligible===true||eligible===1||eligible==='1';

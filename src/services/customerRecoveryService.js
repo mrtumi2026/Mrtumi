@@ -3,6 +3,7 @@
 const { env } = require('../config/env');
 const settingsRepository = require('../repositories/settingsRepository');
 const smsService = require('./smsService');
+const mailService = require('./mailService');
 const { ValidationError, ConflictError } = require('../utils/errors');
 const { logger } = require('../utils/logger');
 
@@ -35,18 +36,11 @@ async function getRecoveryProviderStatus() {
   const smsAvailable = missingSmsItems.length === 0;
 
   // 2. SMTP Email Gateway Check
-  const smtpHost = String(settings.smtp_host || env.smtpHost || '').trim();
-  const smtpPort = String(settings.smtp_port || env.smtpPort || '').trim();
-  const smtpUser = String(settings.smtp_user || env.smtpUser || '').trim();
-  const smtpPass = String(settings.smtp_pass || env.smtpPassword || '').trim();
+  const missingEmailItems = [...(await mailService.getMailConfig(settings)).missing];
   const customerRecoveryEmailEnabled =
     String(settings.customer_recovery_email_enabled || env.customerRecoveryEmailEnabled || '0') === '1' ||
     env.customerRecoveryEmailEnabled === true;
 
-  const missingEmailItems = [];
-  if (!smtpHost) missingEmailItems.push('SMTP Host');
-  if (!smtpUser) missingEmailItems.push('SMTP User');
-  if (!smtpPass) missingEmailItems.push('SMTP Password / App Password');
   if (!customerRecoveryEmailEnabled) missingEmailItems.push('Owner authorization for live customer recovery Email (customer_recovery_email_enabled=1)');
 
   const emailAvailable = missingEmailItems.length === 0;
@@ -106,7 +100,13 @@ async function deliverRecoveryMessage({ channel, destination, token, expiresInSe
         `Email recovery delivery is disabled. Missing: ${status.email.missing.join(', ')}`
       );
     }
-    throw new ConflictError('SMTP transactional email delivery adapter is pending owner SMTP configuration.');
+    const minutes = Math.round(expiresInSeconds / 60);
+    await mailService.sendMail({
+      to: destination,
+      subject: 'Mr. Tumi — পাসওয়ার্ড পুনরুদ্ধার কোড / Password recovery code',
+      text: `আপনার পাসওয়ার্ড পুনরুদ্ধারের কোড: ${token}\nমেয়াদ ${minutes} মিনিট। এই কোড কাউকে জানাবেন না।\n\nYour password recovery code: ${token}\nIt expires in ${minutes} minutes. Do not share it.`,
+    });
+    return { delivered: true, channel: 'email' };
   }
 
   throw new ValidationError('Invalid recovery channel.');

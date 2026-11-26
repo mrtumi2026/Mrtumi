@@ -470,25 +470,31 @@ async function creditReferralRewardForOrder(orderId, tx = null) {
       }
     } else if (referrerType === 'vendor') {
       if (isMysql()) {
-        await client.execute('UPDATE vendors SET balance_paisa = balance_paisa + ? WHERE id = ?', [rewardPaisa, referrerId]);
-        try {
+        if (rewardPaisa > 0) {
+          await client.execute('UPDATE vendors SET balance_paisa = balance_paisa + ? WHERE id = ?', [rewardPaisa, referrerId]);
+          await client.execute('INSERT IGNORE INTO vendor_wallets (vendor_id) VALUES (?)', [referrerId]);
+          await client.execute('UPDATE vendor_wallets SET available_balance = available_balance + ? WHERE vendor_id = ?', [rewardPaisa, referrerId]);
           await client.execute(
-            'UPDATE vendor_wallets SET available_paisa = available_paisa + ?, lifetime_earned_paisa = lifetime_earned_paisa + ? WHERE vendor_id = ?',
-            [rewardPaisa, rewardPaisa, referrerId]
+            `INSERT INTO vendor_transactions (vendor_id, sub_order_id, idempotency_key, transaction_type, amount_paisa, balance_bucket, metadata_json)
+             VALUES (?, NULL, ?, 'referral_reward', ?, 'available', ?)`,
+            [referrerId, `referral:vendor:${reward.id}`, rewardPaisa, JSON.stringify({ orderId: idNum })]
           );
-        } catch (_e) {}
+        }
       } else {
         client.run('UPDATE vendors SET balance = balance + ? WHERE id = ?', Math.round(rewardPaisa / 100), referrerId);
       }
     } else if (referrerType === 'reseller') {
       if (isMysql()) {
-        await client.execute('UPDATE resellers SET balance_paisa = balance_paisa + ? WHERE id = ?', [rewardPaisa, referrerId]);
-        try {
+        if (rewardPaisa > 0) {
+          await client.execute('UPDATE resellers SET balance_paisa = balance_paisa + ? WHERE id = ?', [rewardPaisa, referrerId]);
+          await client.execute('INSERT IGNORE INTO partner_wallets (reseller_id) VALUES (?)', [referrerId]);
+          await client.execute('UPDATE partner_wallets SET available_balance = available_balance + ? WHERE reseller_id = ?', [rewardPaisa, referrerId]);
           await client.execute(
-            'UPDATE partner_wallets SET available_balance = available_balance + ? WHERE reseller_id = ?',
-            [rewardPaisa, referrerId]
+            `INSERT INTO partner_transactions (reseller_id, sub_order_id, idempotency_key, transaction_type, amount_paisa, balance_bucket, metadata_json)
+             VALUES (?, NULL, ?, 'referral_reward', ?, 'available', ?)`,
+            [referrerId, `referral:reseller:${reward.id}`, rewardPaisa, JSON.stringify({ orderId: idNum })]
           );
-        } catch (_e) {}
+        }
       } else {
         client.run('UPDATE resellers SET balance_paisa = balance_paisa + ? WHERE id = ?', rewardPaisa, referrerId);
       }
@@ -510,6 +516,7 @@ async function creditReferralRewardForOrder(orderId, tx = null) {
     return { success: true, rewardId: reward.id, rewardPaisa, rewardPoints };
   } catch (err) {
     logger.error('Failed to credit referral reward', { orderId: idNum, error: err.message });
+    if (tx) throw err; // never commit a half-applied reward
     return null;
   }
 }
@@ -536,6 +543,7 @@ async function cancelReferralRewardForOrder(orderId, tx = null) {
     }
   } catch (err) {
     logger.warn('Failed to cancel referral reward', { orderId: idNum, error: err.message });
+    if (tx) throw err;
   }
 }
 

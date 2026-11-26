@@ -981,6 +981,7 @@ router.post('/order/quick-submit', publicFormLimiter, requireCsrf, asyncHandler(
       cart:[{product_id:productId,variant_id:variantId,qty:req.body.qty}],
       clearSavedCart:false,
       referralCode: req.body.referral_code || req.session?.referralCode || req.cookies?.mrtumi_ref || null,
+      affiliateCode: req.body.affiliate_code || req.session?.affiliateCode || req.cookies?.mrtumi_aff || null,
     });
     const redirect=`/order-success/${encodeURIComponent(result.invoiceNo)}`;
     return res.json({success:true,invoice_id:result.invoiceNo,redirect,message:req.locale==='en'?`Order #${result.invoiceNo} was submitted successfully.`:`অর্ডার #${result.invoiceNo} সফলভাবে গ্রহণ করা হয়েছে!`,replayed:Boolean(result.replayed)});

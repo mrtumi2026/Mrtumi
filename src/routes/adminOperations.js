@@ -943,7 +943,7 @@ router.get('/admin/vendor-withdrawals', asyncHandler(async (_req, res) => {
     return res.render('admin/crud-module', {
       pageTitle: 'Vendor Withdrawals',
       subtitle: 'ভেন্ডরদের পেমেন্ট উত্তোলন রিকোয়েস্ট ও অনুমোদন',
-      createAction: null,
+      createAction: null, // vendors request withdrawals from their own panel against a verified payout account
       customActionPrefix: '/admin/vendor-withdrawals/approve',
       customActionLabel: 'Approve / Pay',
       customActionHideWhenPaid: true,
@@ -1137,7 +1137,7 @@ router.get('/admin/reseller-withdrawals', asyncHandler(async (_req, res) => {
     return res.render('admin/crud-module', {
       pageTitle: 'Reseller Withdrawals',
       subtitle: 'রিসেলারদের কমিশন উত্তোলন রিকোয়েস্ট ও অনুমোদন',
-      createAction: null,
+      createAction: '/admin/reseller-tx/withdrawal/create',
       customActionPrefix: '/admin/reseller-tx/approve',
       customActionLabel: 'Approve / Pay',
       customActionHideWhenPaid: true,
@@ -1150,7 +1150,12 @@ router.get('/admin/reseller-withdrawals', asyncHandler(async (_req, res) => {
         { key: 'trx_id', label: 'Transaction / Account' },
         { key: 'status', label: 'Status', type: 'badge' },
       ],
-      fields: [],
+      fields: [
+        { name: 'reseller_id', label: 'Reseller', type: 'select', options: (await pool.query('SELECT id,name,phone FROM resellers WHERE status=1 ORDER BY id DESC LIMIT 500'))[0].map((r) => ({ value: r.id, label: `${r.name} · ${r.phone}` })) },
+        { name: 'amount', label: 'Amount (৳)', type: 'number', required: true },
+        { name: 'method', label: 'Method', type: 'text', value: 'bKash' },
+        { name: 'trx_id', label: 'Account No', type: 'text', required: true },
+      ],
       rows,
     });
   }

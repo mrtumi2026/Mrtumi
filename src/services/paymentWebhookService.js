@@ -61,6 +61,7 @@ async function settleOrderPayment(tx, orderId, {
 }) {
   const oId = Number(orderId);
   assertSafePaisa(amountPaisa, 'amountPaisa');
+  if (amountPaisa === 0) throw new ValidationError('A settlement amount of zero cannot update an order.');
 
   // 1. Lock the order row to prevent concurrent settlement race conditions
   const order = await tx.queryOne(
