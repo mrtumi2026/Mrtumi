@@ -205,6 +205,8 @@ function buildConfig(overrides = {}) {
       host: String(raw.DB_HOST || raw.MYSQL_TEST_HOST || '127.0.0.1'),
       port: Number(raw.DB_PORT || 3306),
       name: String(raw.DB_NAME || raw.MYSQL_TEST_DB || ''),
+      // Alias used by the backup, recovery and deploy tooling.
+      database: String(raw.DB_NAME || raw.MYSQL_TEST_DB || ''),
       user: String(raw.DB_USER || raw.MYSQL_TEST_USER || ''),
       password: String(raw.DB_PASSWORD || raw.MYSQL_TEST_PASSWORD || ''),
       charset: String(raw.DB_CHARSET || 'utf8mb4'),
