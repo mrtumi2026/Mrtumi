@@ -2,7 +2,7 @@ name: Disposable DEMO browser E2E (MySQL and MariaDB)
 
 on:
   push:
-    branches: [main, "arena/**", "antigravity/**"]
+    branches: [main, "fix/**", "feature/**"]
   pull_request:
 
 permissions:

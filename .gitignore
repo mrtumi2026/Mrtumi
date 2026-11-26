@@ -46,3 +46,6 @@ android/*/local.properties
 .DS_Store
 Thumbs.db
 Unselected files/
+
+# Local QA run output
+qa-evidence/

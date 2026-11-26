@@ -1,12 +1,12 @@
 # HANDOVER — Mr. Tumi (read this first)
 
-Updated: 2026-11-26 (Asia/Dhaka). Branch: `fix/launch-blockers`, based on tag `v3.5.0` (`23e6045`).
-**Release status: NO-GO. Nothing on this branch has been deployed.**
+Updated: 2026-11-26 (Asia/Dhaka). Single maintained branch: `main` (all earlier work is merged into it; previous release tag `v3.5.0` = `23e6045`).
+**Release status: NO-GO. This code has not been deployed. The server still runs `v3.5.0`.**
 This file is the current status. Older status/report documents are history; do not rely on their "ready" claims.
-Security details are intentionally brief because the repository is public. Ask the owner.
+Security details are intentionally brief. Ask the owner.
 
 ## Rules
-- Do NOT deploy `main`: it is older than `v3.5.0` and includes a destructive payment-gateway migration.
+- Deploy only a tagged, owner-approved release from `main`.
 - Owner launch scope: own products, vendors and resellers together; referral and affiliate must work.
 - Keep every super admin option. Repair broken ones; do not remove them.
 - No secrets in Git or chat. No production deploy, migration or deletion without the owner's approval.
@@ -65,3 +65,10 @@ Security details are intentionally brief because the repository is public. Ask t
 ## Deploy facts (owner supplied)
 App root `/home/mrtumico/mrtumi`; startup `app.js`; Node 22; DB `mrtumico_Mrtumi`; rehearsal DB `mrtumico_rehearsal`; uploads `/home/mrtumico/uploads`; vendor docs `/home/mrtumico/vendor_docs`; restart `tmp/restart.txt`.
 `deploy.sh` requires a signed approval ticket, an out-of-band trust anchor and separate rehearsal DB credentials. Run `npm ci` so nodemailer is installed. Back up database and uploads first.
+
+## Server and repository cleanup (2026-11-26, owner approved)
+- Removed from the server: the old PHP site in `public_html` (kept `.htaccess`, `.well-known`, `cgi-bin`), old backups, archives, copies, the old rehearsal checkout and trash. One archive there had been downloadable from the web; it is gone. Owner must change every password and key it could have held.
+- `~/pre_launch_backup` holds copies of the old `.htaccess` and app `.env`. Delete after the new release has run well.
+- `public_html/.htaccess` still has old PHP and unrelated redirect lines. Remove them at release time; keep the Passenger lines.
+- Database and uploads are not yet reset. Reset them during the fresh release.
+- Repository: old reports and QA output removed (still in Git history); older planning records moved to `docs/internal/`.

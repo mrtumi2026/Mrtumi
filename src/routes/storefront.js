@@ -872,7 +872,7 @@ router.get('/cart/json', asyncHandler(async (req, res) => {
 
 // ============================================================================
 // DEFERRED CHECKOUT, ORDER & LANDING PAGE ROUTES (SCHEDULED PHASES 07, 08, 15)
-// Documented in `docs/PHASE_05_CUSTOMER_STOREFRONT.md` §2.2
+// Documented in `docs/internal/PHASE_05_CUSTOMER_STOREFRONT.md` §2.2
 // ============================================================================
 
 // ─── Direct 1-Click Quick Order (from Quick Order Modal or Product Page) ───

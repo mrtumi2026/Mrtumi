@@ -80,21 +80,21 @@ const requiredDocs = [
   '.env.example',
   '.gitignore',
   'README.md',
-  'PROJECT_STATUS.md',
-  'MASTER_CHECKLIST.md',
-  'DECISIONS.md',
-  'INTEGRATION_STATUS.md',
+  'docs/internal/PROJECT_STATUS.md',
+  'docs/internal/MASTER_CHECKLIST.md',
+  'docs/internal/DECISIONS.md',
+  'docs/internal/INTEGRATION_STATUS.md',
   'DEPLOYMENT.md',
-  'docs/PHASE_F_OPERATIONS.md',
-  'docs/PHASE_F_OWNER_DECISIONS.md',
-  'docs/PHASE_F_PRODUCTION_READINESS_CHECKLIST.md',
-  'docs/PHASE_01_REFERENCE_AUDIT.md',
+  'docs/internal/PHASE_F_OPERATIONS.md',
+  'docs/internal/PHASE_F_OWNER_DECISIONS.md',
+  'docs/internal/PHASE_F_PRODUCTION_READINESS_CHECKLIST.md',
+  'docs/internal/PHASE_01_REFERENCE_AUDIT.md',
   'docs/ARCHITECTURE.md',
   'docs/CPANEL_COMPATIBILITY.md',
-  'docs/MYSQL_MIGRATION_PLAN.md',
-  'docs/PHASE_03_DB_TRANSITION.md',
-  'docs/PHASE_04_UI_DESIGN_SYSTEM.md',
-  'docs/PHASE_05_CUSTOMER_STOREFRONT.md',
+  'docs/internal/MYSQL_MIGRATION_PLAN.md',
+  'docs/internal/PHASE_03_DB_TRANSITION.md',
+  'docs/internal/PHASE_04_UI_DESIGN_SYSTEM.md',
+  'docs/internal/PHASE_05_CUSTOMER_STOREFRONT.md',
   'src/repositories/storefrontRepository.js',
   'public/shared/css/mrtumi-design-system.css',
   'public/shared/js/mrtumi-ui.js',
@@ -161,7 +161,7 @@ for (const upPath of upMigrations) {
   );
 }
 
-const checklist = fs.readFileSync(path.join(ROOT, 'MASTER_CHECKLIST.md'), 'utf8');
+const checklist = fs.readFileSync(path.join(ROOT, 'docs', 'internal', 'MASTER_CHECKLIST.md'), 'utf8');
 const rows = checklist.split(/\r?\n/).filter((l) => /^\| P\d{2}-\d{2}\s*\|/.test(l));
 check(rows.length >= 70, `MASTER_CHECKLIST.md tracks ${rows.length} items`);
 for (const row of rows) {
