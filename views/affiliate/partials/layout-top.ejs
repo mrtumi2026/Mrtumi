@@ -77,3 +77,6 @@
 
       <main id="mainContent" class="content-page">
         <div class="content py-3 px-3 px-md-4">
+        <% if (typeof flash !== 'undefined' && flash && flash.message) { %>
+          <div class="alert <%= flash.type === 'success' ? 'alert-success' : 'alert-danger' %>" role="alert"><%= flash.message %></div>
+        <% } %>

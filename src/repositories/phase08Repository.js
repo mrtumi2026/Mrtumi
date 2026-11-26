@@ -293,7 +293,11 @@ async function transitionOrderTx(tx, orderIdInput, toStatus, note, actor = {}, r
     if(!incomplete||Number(incomplete.n)>0)throw new ConflictError('An order can be marked returned only after every ordered unit is approved and inspected with a recorded disposition.');
   }
   if (target === 'confirmed') await reserveOrderInventoryTx(tx, id, actor);
-  if (target === 'cancelled' || target === 'failed') await releaseOrderInventoryTx(tx, id, actor, reason);
+  if (target === 'cancelled' || target === 'failed') {
+    await releaseOrderInventoryTx(tx, id, actor, reason);
+    // A cancelled order must also disappear from the vendor's to-ship list.
+    await tx.execute("UPDATE vendor_sub_orders SET status='cancelled',cancelled_at=UTC_TIMESTAMP() WHERE order_id=? AND status IN ('order_placed','accepted','processing','packed','ready_for_pickup')", [id]);
+  }
   if (target === 'shipped') await consumeOrderInventoryTx(tx, id, actor);
   await tx.execute('UPDATE orders SET order_status=?,is_seen=1 WHERE id=?', [target,id]);
   if (target === 'delivered' && order.reseller_id && Number(order.reseller_margin_paisa || 0) > 0) {

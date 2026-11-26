@@ -69,6 +69,7 @@ async function getAdminOrderDetail(orderId, poolOverride = null) {
             o.subtotal_paisa,o.shipping_paisa,o.discount_paisa,o.total_paisa,
             (SELECT -COALESCE(SUM(w.amount_paisa),0) FROM customer_wallet_transactions w WHERE w.customer_id=o.customer_id AND w.tx_type='order_spend' AND w.reference_id=CONCAT('order:',o.id)) AS wallet_used_paisa,
             o.coupon_code,o.payment_method,o.payment_status,o.order_status AS status,
+            EXISTS(SELECT 1 FROM vendor_sub_orders vso WHERE vso.order_id=o.id) AS has_vendor_part,
             COALESCE(os.name,o.order_status) AS status_label,
             COALESCE(os.badge_class,'sb-1') AS badge_class,
             COALESCE(NULLIF(ca.name,''),o.courier_code,'') AS courier_name,

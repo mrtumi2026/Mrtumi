@@ -700,6 +700,18 @@ function creditEarningsOnOrderCompleted(prevOrder, newStatus) {
   }
 }
 
+router.post('/admin/order/:id/confirm-cod-payment', requirePermission('orders.manage'), requireCsrf, asyncHandler(async (req, res) => {
+  const back = `/admin/order/view/${Number(req.params.id) || 0}`;
+  try {
+    await require('../repositories/partnerSettlementRepository').confirmDeliveredOrderPayment({ orderId: req.params.id, reference: req.body.reference, actor: orderActor(req) });
+    req.adminDomainAudit = true; req.flash('success', 'টাকা পাওয়া রেকর্ড করা হয়েছে; অর্ডার এখন Paid।');
+  } catch (err) {
+    if (!(err instanceof AppError) || err.statusCode >= 500) throw err;
+    req.flash('error', err.message);
+  }
+  return res.redirect(back);
+}));
+
 router.post('/admin/order/:id/status', asyncHandler(async (req,res)=>{
   if(env.db.client==='mysql'){
     try{

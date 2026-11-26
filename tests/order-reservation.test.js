@@ -15,3 +15,7 @@ test('a placed order keeps its stock reservation long enough to be shipped', () 
 test('vendor delivery consumes reserved stock when it moves the parent order forward', () => {
   assert.match(read('vendorOrderRepository.js'), /consumeParentStockTx\(tx, orderId/);
 });
+
+test('cancelling an order also cancels the vendor parts that have not been dispatched', () => {
+  assert.match(read('phase08Repository.js'), /UPDATE vendor_sub_orders SET status='cancelled'[^"]+status IN \('order_placed'/);
+});

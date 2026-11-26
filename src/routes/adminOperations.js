@@ -869,6 +869,7 @@ router.post('/admin/vendors/create', asyncHandler(async (req, res) => {
     const mysql=require('../db/mysqlPool');
     const result=await mysql.withTransaction(async tx=>{
       const inserted=await tx.execute('INSERT INTO vendors(shop_name,owner_name,phone,email,address,commission_rate_bps,password_hash,verified,status) VALUES(?,?,?,?,?,?,?,1,1)',[shop,owner,phoneValue,mail||null,addr,Math.round(rate*100),hash]);
+      await tx.execute('UPDATE vendors SET slug=? WHERE id=? AND slug IS NULL',[`store-${Number(inserted.insertId)}`,inserted.insertId]);
       await tx.execute("INSERT INTO audit_logs(actor_type,actor_id,action,entity_type,entity_id,before_json,after_json) VALUES('admin',?,'vendor.account.admin_created','vendor',?,'{}',?)",[req.adminUser?.id||null,String(inserted.insertId),JSON.stringify({shop_name:shop,verified:true,status:1,commission_rate_bps:Math.round(rate*100)})]);
       return inserted.insertId;
     });

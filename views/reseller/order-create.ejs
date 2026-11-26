@@ -25,7 +25,7 @@
         <div class="col-12">
           <label class="form-label small fw-semibold">পণ্য নির্বাচন করুন *</label>
           <select name="product_id" id="rsProdSelect" class="form-select" onchange="onResellerProdChange()">
-            <% products.forEach(function(p) { %>
+            <% products.filter(function(p) { return !Number(p.has_variants || 0); }).forEach(function(p) { %>
               <option
                 value="<%= p.id %>"
                 data-retail="<%= p.new_price %>"
@@ -38,9 +38,10 @@
               </option>
             <% }) %>
           </select>
+          <div class="form-text">সাইজ/রঙ (variant) আলাদা করা পণ্যে আপাতত রিসেলার অর্ডার করা যায় না, তাই সেগুলো এই তালিকায় নেই।</div>
         </div>
 
-        <div class="col-sm-4">
+        <div class="col-sm-4"<% if (typeof canonicalOrder !== 'undefined' && canonicalOrder) { %> hidden<% } %>>
           <label class="form-label small fw-semibold">সাইজ / প্যাক</label>
           <select name="size" id="rsSizeSelect" class="form-select"></select>
         </div>

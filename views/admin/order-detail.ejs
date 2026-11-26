@@ -18,6 +18,14 @@
           <input type="hidden" name="courier_name" value="Pathao Courier" />
           <button type="submit" class="btn btn-outline-danger btn-sm">🛵 Send to Pathao</button>
         </form>
+        <% if (order.status === 'delivered' && order.payment_status === 'unpaid' && order.payment_method === 'cod' && Number(order.has_vendor_part) === 0) { %>
+          <form action="/admin/order/<%= order.id %>/confirm-cod-payment" method="POST" class="d-inline-flex gap-1">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+            <label class="visually-hidden" for="cod-reference">Payment reference</label>
+            <input type="text" id="cod-reference" name="reference" class="form-control form-control-sm" minlength="3" maxlength="120" placeholder="রসিদ / রেমিট্যান্স নম্বর" required />
+            <button type="submit" class="btn btn-success btn-sm text-nowrap" onclick="return confirm('এই অর্ডারের টাকা হাতে পেয়েছেন?');">💵 টাকা পেয়েছি</button>
+          </form>
+        <% } %>
         <a href="/admin/manual-fraud-check?phone=<%= encodeURIComponent(order.phone) %>" class="btn btn-outline-info btn-sm">🛡️ Check Fraud Ratio</a>
         <% if (order.payment_status !== 'paid' && (order.manual_trx_id || order.trx_id || String(order.payment_method || '').includes('manual'))) { %>
           <form action="/admin/order/<%= order.id %>/verify-payment" method="POST" class="d-inline">

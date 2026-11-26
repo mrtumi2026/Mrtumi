@@ -164,21 +164,22 @@ async function listOwnProductResellerEarnings({ returnWindowDays = 7, pool = nul
   );
 }
 
-async function confirmResellerOrderPayment({ orderId, reference = '', actor = {} } = {}) {
+async function confirmDeliveredOrderPayment({ orderId, reference = '', actor = {}, resellerOnly = false } = {}) {
   assertMysql();
   const id = requirePositiveInt(orderId, 'order ID');
   const text = String(reference || '').trim();
   if (text.length < 3 || text.length > 120) throw new ValidationError('Enter the payment or courier remittance reference (3 to 120 characters).');
   return mysql.withTransaction(async (tx) => {
-    const order = await tx.queryOne('SELECT id,reseller_id,order_status,payment_status,total_paisa,paid_paisa FROM orders WHERE id=? FOR UPDATE', [id]);
-    if (!order || !order.reseller_id) throw new NotFoundError('Reseller order not found.');
+    const order = await tx.queryOne('SELECT id,reseller_id,order_status,payment_status,payment_method,total_paisa,paid_paisa FROM orders WHERE id=? FOR UPDATE', [id]);
+    if (!order || (resellerOnly && !order.reseller_id)) throw new NotFoundError(resellerOnly ? 'Reseller order not found.' : 'Order not found.');
+    if (!order.reseller_id && order.payment_method !== 'cod') throw new ConflictError('Only cash on delivery orders can be confirmed here.');
     const vendorPart = await tx.queryOne('SELECT id FROM vendor_sub_orders WHERE order_id=? LIMIT 1', [id]);
     if (vendorPart) throw new ConflictError('Vendor product orders are confirmed through COD reconciliation.');
     if (order.order_status !== 'delivered') throw new ConflictError('Money can be confirmed only after the order is delivered.');
     if (order.payment_status === 'paid') return { orderId: id, replayed: true };
     await tx.execute("UPDATE orders SET payment_status='paid',paid_paisa=total_paisa,cod_due_paisa=0,verified_by_user_id=?,verified_at=UTC_TIMESTAMP() WHERE id=?", [actor.id || null, id]);
     await tx.execute("UPDATE order_payments SET status='verified',verified_at=UTC_TIMESTAMP(),verified_by_user_id=? WHERE order_id=? AND status='pending_verification'", [actor.id || null, id]);
-    await recordAuditLog({ actorType: 'admin', actorId: actor.id || null, action: 'reseller_commerce.order.payment_confirmed',
+    await recordAuditLog({ actorType: 'admin', actorId: actor.id || null, action: order.reseller_id ? 'reseller_commerce.order.payment_confirmed' : 'order.cod_payment_confirmed',
       entityType: 'order', entityId: id,
       beforeState: { paymentStatus: order.payment_status, paidPaisa: Number(order.paid_paisa) },
       afterState: { paymentStatus: 'paid', paidPaisa: Number(order.total_paisa), reference: text },
@@ -186,6 +187,8 @@ async function confirmResellerOrderPayment({ orderId, reference = '', actor = {}
     return { orderId: id, replayed: false };
   });
 }
+
+async function confirmResellerOrderPayment(input = {}) { return confirmDeliveredOrderPayment({ ...input, resellerOnly: true }); }
 
 async function releaseOwnProductEarningsTx(tx, days, actor = {}) {
   const rows = await tx.queryAll(
@@ -251,4 +254,4 @@ async function processMaturedSettlements({ returnWindowDays = 7, actor = {} } = 
   });
 }
 
-module.exports = { listOwnProductResellerEarnings, confirmResellerOrderPayment, processMaturedSettlements, recordPendingSettlementTx, settleOneTx, settlementAmounts };
+module.exports = { listOwnProductResellerEarnings, confirmResellerOrderPayment, confirmDeliveredOrderPayment, processMaturedSettlements, recordPendingSettlementTx, settleOneTx, settlementAmounts };

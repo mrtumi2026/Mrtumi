@@ -445,7 +445,7 @@
   document.addEventListener('DOMContentLoaded', recalcCheckout);
 </script>
 
-
+<script>
   var otpModeEnabled = <%= (typeof siteSettings !== 'undefined' && siteSettings && siteSettings.otp_mode === 'on') ? 'true' : 'false' %>;
   var otpVerifiedInSession = false;
 
@@ -599,5 +599,6 @@
       }, 1000);
     }
   });
+</script>
 
 <%- include('partials/footer') %>

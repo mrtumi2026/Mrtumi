@@ -46,6 +46,7 @@ async function register(input,documents,{pool}={}){
     if(duplicateNid)throw new ConflictError('This NID is already associated with a vendor application.');
     const result=await tx.execute("INSERT INTO vendors(shop_name,owner_name,phone,email,address,district,upazila,password_hash,commission_rate_bps,balance_paisa,verified,status,lifecycle_status,trust_level) VALUES(?,?,?,?,?,?,?,?,0,0,0,1,'pending','new')",[shop,owner,phone,mail,address,district,upazila,passwordHash]);
     const id=Number(result.insertId);
+    await tx.execute('UPDATE vendors SET slug=? WHERE id=? AND slug IS NULL',[`store-${id}`,id]);
     await tx.execute('INSERT INTO vendor_applications(vendor_id,business_type,business_category,district,upazila,nid_ciphertext,nid_hash,nid_front_document,nid_back_document,trade_license_document,shop_logo_document) VALUES(?,?,?,?,?,?,?,?,?,?,?)',[id,kind.type,category,district,upazila,nidCipher,nidHash,documents.nid_front,documents.nid_back,kind.trade,documents.shop_logo||'']);
     await history(tx,id,'','pending','Vendor application submitted',{type:'vendor',id});
     await audit(tx,{type:'vendor',id},'vendor.application.submitted',id,null,{lifecycle_status:'pending',business_type:kind.type,district,upazila,nid_last4:nid.slice(-4)});
