@@ -567,10 +567,34 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
       assert.equal(Number(orderCount.n),1,`recovery order idempotency key was not persisted (found ${orderCount.n})`);
       const recoveryState=await client.queryOne('SELECT status,recovered_order_id,notification_allowed FROM incomplete_orders WHERE id=?',[capturePayload.id]);
       assert.equal(recoveryState.status,'recovered');assert.equal(Number(recoveryState.recovered_order_id),Number(placed.id),`recovery link ${recoveryState.recovered_order_id} does not match order ${placed.id}`);assert.equal(Number(recoveryState.notification_allowed),0);
+      // First order from a new mobile number: the confirmation signs the buyer in to the new
+      // account (fresh session) and asks for a password on the account page.
       const successPage = await httpRequest(baseUrl, submitted.headers.location, { headers: { Cookie: cookieHeader } });
-      assert.equal(successPage.statusCode,200); assert.match(successPage.body,/No online payment has been recorded/);
-      assert.doesNotMatch(successPage.body,/01712345678|House 1, Test Road/,'public success page does not expose customer contact or address');
+      assert.equal(successPage.statusCode,302); assert.equal(successPage.headers.location,'/customer/account');
+      const signedInCookie=(Array.isArray(successPage.headers['set-cookie'])?successPage.headers['set-cookie']:[successPage.headers['set-cookie']]).filter(Boolean).map(value=>value.split(';')[0]).filter(value=>!value.startsWith('mrtumi_lang=')).join('; ');
+      assert.ok(signedInCookie && !cookieHeader.includes(signedInCookie),'signing in issues a new session identifier');
+      const accountPage = await httpRequest(baseUrl, '/customer/account?lang=en', { headers: { Cookie: signedInCookie } });
+      assert.equal(accountPage.statusCode,200); assert.ok(accountPage.body.includes(invoice)); assert.match(accountPage.body,/action="\/customer\/account\/set-password"/);
+      assert.match(accountPage.body,/id="passwordReminder"/);
+      const oldSessionAccount = await httpRequest(baseUrl, '/customer/account', { headers: { Cookie: cookieHeader } });
+      assert.equal(oldSessionAccount.statusCode,302,'the pre-sign-in session identifier is not signed in');
+      const pageCsrf=accountPage.body.match(/name="_csrf" value="([^"]+)"/)[1];
+      const policyVersion=accountPage.body.match(/name="privacy_policy_version" value="([^"]+)"/)[1];
+      const setPassword = await httpRequest(baseUrl, '/customer/account/set-password', { method:'POST', headers:{Cookie:signedInCookie,'Content-Type':'application/x-www-form-urlencoded'}, body:new URLSearchParams({_csrf:pageCsrf,privacy_policy_version:policyVersion,privacy_notice_acknowledged:'yes',password:'FirstOrderPass!2026',password_confirmation:'FirstOrderPass!2026'}).toString() });
+      assert.equal(setPassword.statusCode,302);
+      assert.ok(await customerRepo.authenticateCustomer('01712345678','FirstOrderPass!2026'),'the buyer can sign in with the new password');
+      await assert.rejects(customerRepo.setInitialPassword(Number((await client.queryOne("SELECT id FROM customers WHERE phone='01712345678'")).id),{password:'AnotherPass!2026',confirmation:'AnotherPass!2026'}),{name:'ConflictError'},'the first password can be set only once');
 
+      // Support-assisted recovery: find by invoice, one-time link, works once.
+      const support = require('../src/repositories/adminCustomerRecoveryRepository');
+      const found = await support.findForSupport(invoice);
+      assert.equal(found.account.phone,'01712345678');
+      const firstLink = await support.createRecoveryLink(found.account.id,{});
+      const secondLink = await support.createRecoveryLink(found.account.id,{});
+      await assert.rejects(customerRepo.consumeCustomerRecoveryToken(firstLink.token,'ReplacedPass!2026'),/invalid or expired/,'a newer link cancels the older one');
+      await customerRepo.consumeCustomerRecoveryToken(secondLink.token,'RecoveredPass!2026');
+      await assert.rejects(customerRepo.consumeCustomerRecoveryToken(secondLink.token,'SecondUsePass!2026'),/invalid or expired/);
+      assert.ok(await customerRepo.authenticateCustomer('01712345678','RecoveredPass!2026'));
       const concurrentKeys=[`p08-checkout-stock-a-${Date.now()}`,`p08-checkout-stock-b-${Date.now()}`];
       const concurrentOrders=await Promise.allSettled(concurrentKeys.map((requestKey)=>checkoutRepo.createOrder({customer_name:'Concurrent Checkout',phone:'01912345678',address:'House 2, Concurrent Road',delivery_location_id:deliveryLocationId,payment_method:'cod'}, {locale:'en',requestKey,cart:[{product_id:inhouseProdId,variant_id:variant5KgId,qty:3}]})));
       assert.equal(concurrentOrders.filter(x=>x.status==='fulfilled').length,1,`row locks should allow one checkout; outcomes=${concurrentOrders.map(x=>x.status==='fulfilled'?'fulfilled':x.reason?.message).join('; ')}`);

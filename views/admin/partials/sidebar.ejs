@@ -301,6 +301,7 @@
                     <% if (hasPermission('roles.manage')) { %><li><a href="/admin/roles/manage"><i data-feather="lock"></i> <%= locale === 'bn' ? 'রোলসমূহ (Roles)' : 'Roles' %></a></li>
                     <li><a href="/admin/permissions/manage"><i data-feather="key"></i> <%= locale === 'bn' ? 'পারমিশনসমূহ' : 'Permissions' %></a></li><% } %>
                     <li><a href="/admin/customer"><i data-feather="users"></i> <%= t('admin.menu.customers') %></a></li>
+                    <li><a href="/admin/customer/recovery"><i data-feather="unlock"></i> <%= locale === 'bn' ? 'ক্রেতার অ্যাকাউন্ট উদ্ধার' : 'Customer account recovery' %></a></li>
                     <% if (hasPermission('audit_logs.view')) { %><li><a href="/admin/audit-logs"><i data-feather="clipboard"></i> <%= locale === 'bn' ? 'অ্যাডমিন অডিট লগ' : 'Admin Audit Log' %></a></li><% } %>
                     <% if (hasPermission('test_data.manage')) { %><li><a href="/admin/test-data"><i data-feather="trash-2"></i> <%= locale === 'bn' ? 'টেস্ট ডেটা ব্যবস্থাপনা' : 'Test Data Management' %></a></li><% } %>
                   </ul>

@@ -1,0 +1,52 @@
+<%- include('partials/head', { title: isEn ? 'Account recovery' : 'অ্যাকাউন্ট উদ্ধার' }) %><%- include('partials/topbar') %><%- include('partials/sidebar') %>
+<div class="content-page"><div class="content container-fluid py-3">
+  <h1 class="h3"><%= isEn ? 'Customer account recovery' : 'ক্রেতার অ্যাকাউন্ট উদ্ধার' %></h1>
+  <p class="text-muted"><%= isEn ? 'When a customer calls, search by mobile number or invoice number, then create a one-time password link.' : 'ক্রেতা ফোন করলে মোবাইল নম্বর বা ইনভয়েস নম্বর দিয়ে খুঁজুন, তারপর একবার ব্যবহারযোগ্য পাসওয়ার্ড লিংক তৈরি করুন।' %></p>
+  <form class="row g-2 mb-3" method="get" action="/admin/customer/recovery">
+    <div class="col-md-6"><label class="visually-hidden" for="recoverySearch"><%= isEn ? 'Mobile or invoice number' : 'মোবাইল বা ইনভয়েস নম্বর' %></label><input id="recoverySearch" class="form-control" name="q" value="<%= query %>" required maxlength="64" placeholder="<%= isEn ? '01XXXXXXXXX or invoice number' : '01XXXXXXXXX অথবা ইনভয়েস নম্বর' %>"></div>
+    <div class="col-auto"><button class="btn btn-primary"><%= isEn ? 'Search' : 'খুঁজুন' %></button></div>
+  </form>
+
+  <% if (link) { %>
+    <section class="card border-success mb-3"><div class="card-body">
+      <h2 class="h5 text-success"><%= isEn ? 'Recovery link created' : 'রিকভারি লিংক তৈরি হয়েছে' %></h2>
+      <div class="alert alert-warning"><%= isEn ? 'Before sending, call back the number below yourself and confirm the person. Send the link only to that number. Anyone who has this link can take over the account.' : 'পাঠানোর আগে নিচের নম্বরে আপনি নিজে ফোন করে ব্যক্তিটি যাচাই করুন। লিংক শুধু ওই নম্বরেই পাঠাবেন। এই লিংক যার হাতে যাবে, সে অ্যাকাউন্টটি নিতে পারবে।' %></div>
+      <p class="mb-1"><strong><%= link.account.name %></strong> — <%= link.account.phone %></p>
+      <label class="form-label" for="recoveryLink"><%= isEn ? 'One-time link (shown only now)' : 'একবার ব্যবহারযোগ্য লিংক (শুধু এখনই দেখা যাবে)' %></label>
+      <div class="input-group mb-2"><input id="recoveryLink" class="form-control" readonly value="<%= link.url %>"><button type="button" class="btn btn-outline-primary" id="copyRecoveryLink"><%= isEn ? 'Copy' : 'কপি' %></button></div>
+      <p class="small text-muted"><%= isEn ? `Works once and expires in ${link.hours} hours. Creating a new link cancels this one.` : `লিংকটি একবারই কাজ করবে, ${link.hours} ঘণ্টা পর বাতিল হবে। নতুন লিংক তৈরি করলে এটি বাতিল হয়ে যাবে।` %></p>
+      <a class="btn btn-success" target="_blank" rel="noopener noreferrer" href="https://wa.me/88<%= link.account.phone %>"><%= isEn ? 'Open WhatsApp chat (paste the link there)' : 'WhatsApp চ্যাট খুলুন (সেখানে লিংক পেস্ট করুন)' %></a>
+      <% if (link.smsSent === true) { %><div class="alert alert-success mt-2 mb-0"><%= isEn ? 'The link was also sent by SMS to this number.' : 'লিংকটি এই নম্বরে SMS-এও পাঠানো হয়েছে।' %></div><% } %>
+      <% if (link.smsSent === false) { %><div class="alert alert-danger mt-2 mb-0"><%= isEn ? 'SMS could not be sent. Copy the link and send it yourself.' : 'SMS পাঠানো যায়নি। লিংক কপি করে নিজে পাঠান।' %></div><% } %>
+    </div></section>
+    <script>document.getElementById('copyRecoveryLink').addEventListener('click', function () { var f = document.getElementById('recoveryLink'); f.select(); if (navigator.clipboard) navigator.clipboard.writeText(f.value); else document.execCommand('copy'); this.textContent = <%- JSON.stringify(isEn ? 'Copied' : 'কপি হয়েছে') %>; });</script>
+  <% } %>
+
+  <% if (result) { %>
+    <% if (result.order) { %><div class="alert alert-light border"><%= isEn ? 'Order' : 'অর্ডার' %> <strong><%= result.order.invoice_no %></strong>: <%= result.order.customer_name %>, <%= result.order.customer_phone %> · <%= result.order.order_status %></div><% } %>
+    <% if (result.order && !result.order.customer_id) { %>
+      <div class="alert alert-info"><%= isEn ? 'This order is not linked to any account yet.' : 'এই অর্ডারটি এখনও কোনো অ্যাকাউন্টের সাথে যুক্ত নয়।' %>
+        <form method="post" action="/admin/customer/recovery/attach" class="mt-2"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><input type="hidden" name="invoice" value="<%= result.order.invoice_no %>"><button class="btn btn-primary btn-sm"><%= isEn ? "Link it to the account of the order's mobile number" : 'অর্ডারের মোবাইল নম্বরের অ্যাকাউন্টে যুক্ত করুন' %></button></form>
+      </div>
+    <% } %>
+    <% if (result.account) { %>
+      <section class="card mb-3"><div class="card-body">
+        <h2 class="h5"><%= result.account.name %></h2>
+        <p class="mb-1"><%= result.account.phone %><% if (result.account.email) { %> · <%= result.account.email %><% } %></p>
+        <p><%= Number(result.account.has_password) ? (isEn ? 'Password is set.' : 'পাসওয়ার্ড সেট করা আছে।') : (isEn ? 'No password set yet.' : 'এখনও পাসওয়ার্ড সেট করা হয়নি।') %></p>
+        <% if (result.order && result.order.customer_phone !== result.account.phone) { %><div class="alert alert-danger"><%= isEn ? 'The order mobile and account mobile differ. Verify carefully; send only to the account mobile.' : 'অর্ডারের মোবাইল ও অ্যাকাউন্টের মোবাইল আলাদা। ভালোভাবে যাচাই করুন; শুধু অ্যাকাউন্টের নম্বরে পাঠাবেন।' %></div><% } %>
+        <form method="post" action="/admin/customer/recovery/link" class="d-flex flex-wrap gap-3 align-items-center">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>"><input type="hidden" name="customer_id" value="<%= result.account.id %>"><input type="hidden" name="q" value="<%= query %>">
+          <% if (smsReady) { %><label class="form-check mb-0"><input class="form-check-input" type="checkbox" name="send_sms" value="1"> <span class="form-check-label"><%= isEn ? 'Also send by SMS to the account mobile' : 'অ্যাকাউন্টের নম্বরে SMS-ও পাঠান' %></span></label><% } else { %><span class="small text-muted"><%= isEn ? 'SMS is not set up, so copy and send the link yourself.' : 'SMS চালু করা নেই, তাই লিংক কপি করে নিজে পাঠান।' %></span><% } %>
+          <button class="btn btn-success"><%= isEn ? 'Create recovery link' : 'রিকভারি লিংক তৈরি করুন' %></button>
+        </form>
+      </div></section>
+      <div class="table-responsive card"><table class="table mb-0"><thead><tr><th><%= isEn ? 'Invoice' : 'ইনভয়েস' %></th><th><%= isEn ? 'Name / mobile' : 'নাম / মোবাইল' %></th><th><%= isEn ? 'Total' : 'মোট' %></th><th><%= isEn ? 'Status' : 'অবস্থা' %></th></tr></thead><tbody>
+        <% result.orders.forEach((o) => { %><tr><td><%= o.invoice_no %></td><td><%= o.customer_name %> · <%= o.customer_phone %></td><td>৳<%= (Number(o.total_paisa) / 100).toFixed(2) %></td><td><%= o.order_status %></td></tr><% }) %>
+        <% if (!result.orders.length) { %><tr><td colspan="4" class="text-muted text-center"><%= isEn ? 'No orders in this account.' : 'এই অ্যাকাউন্টে কোনো অর্ডার নেই।' %></td></tr><% } %>
+      </tbody></table></div>
+    <% } else if (!result.order) { %>
+      <div class="alert alert-secondary"><%= isEn ? 'No account or order matches this number.' : 'এই নম্বরে কোনো অ্যাকাউন্ট বা অর্ডার পাওয়া যায়নি।' %></div>
+    <% } %>
+  <% } %>
+</div></div><%- include('partials/footer') %>

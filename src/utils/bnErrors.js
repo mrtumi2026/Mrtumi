@@ -70,6 +70,12 @@ const EXACT = new Map(Object.entries({
   'Returns can only be requested for dispatched orders.': 'পাঠানো হয়েছে এমন অর্ডারেই কেবল রিটার্ন চাওয়া যায়।',
   'The category return window has expired.': 'রিটার্নের সময় শেষ হয়ে গেছে।',
   'Return quantity exceeds the purchased quantity.': 'কেনা পরিমাণের চেয়ে বেশি রিটার্ন করা যাবে না।',
+  'The two passwords do not match.': 'দুটি পাসওয়ার্ড মেলেনি।',
+  'A password is already set for this account.': 'এই অ্যাকাউন্টে আগে থেকেই পাসওয়ার্ড দেওয়া আছে।',
+  'The privacy notice changed. Reload the page and review the current version.': 'গোপনীয়তা নীতি বদলেছে। পেজটি রিলোড করে আবার দেখুন।',
+  'This order is already linked to an account.': 'অর্ডারটি আগে থেকেই একটি অ্যাকাউন্টে যুক্ত।',
+  'The order does not have a valid mobile number.': 'অর্ডারে সঠিক মোবাইল নম্বর নেই।',
+  'This account is blocked or inactive.': 'অ্যাকাউন্টটি ব্লক করা বা নিষ্ক্রিয়।',
 }));
 
 const PATTERNS = [

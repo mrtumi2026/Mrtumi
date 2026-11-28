@@ -95,6 +95,13 @@
     <% } %>
   </head>
   <body>
+<% if (typeof customerNeedsPassword !== 'undefined' && customerNeedsPassword) { %>
+<div class="alert alert-warning rounded-0 border-0 mb-0 py-2 text-center small" role="alert" id="passwordReminder">
+  <strong><%= locale === 'en' ? 'Your password is not set.' : 'আপনার পাসওয়ার্ড এখনও সেট হয়নি।' %></strong>
+  <%= locale === 'en' ? 'Set it now, or you may have trouble tracking your order later.' : 'এখনই দিন, না হলে পরে অর্ডার ট্র্যাক করতে সমস্যা হবে।' %>
+  <a class="alert-link" href="/customer/account#set-password"><%= locale === 'en' ? 'Set password' : 'পাসওয়ার্ড দিন' %></a>
+</div>
+<% } %>
     <% if (typeof siteSettings !== 'undefined' && siteSettings && siteSettings.gtm_id && siteSettings.gtm_enabled !== '0') { %>
       <!-- Google Tag Manager (noscript) -->
       <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=<%= siteSettings.gtm_id %>"

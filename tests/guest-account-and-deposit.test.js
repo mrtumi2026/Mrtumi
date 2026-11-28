@@ -13,13 +13,12 @@ test('first-order account is created without a password and never attaches to an
   assert.match(checkout, /affectedRows\)===1/);
 });
 
-test('only the ordering browser may set the first password, once, for a single-order account', () => {
-  const customers = read('src/repositories/customerRepository.js');
-  assert.match(customers, /c\.password_hash='' AND c\.status=1 AND c\.is_blocked=0 AND \(SELECT COUNT\(\*\) FROM orders o WHERE o\.customer_id=c\.id\)=1/);
+test('only the ordering browser is signed in to a new account, never to an existing one', () => {
   const store = read('src/routes/storefront.js');
-  assert.match(store, /'\/order-success\/:invoiceId\/account', publicFormLimiter, requireCsrf/);
-  assert.match(store, /setup\.invoiceNo !== String\(invoiceNo \|\| ''\)/);
-  assert.doesNotMatch(read('views/store/order-success-mysql.ejs'), /newAccount\.phone/);
+  assert.match(store, /result\.newAccountId && !req\.customerUser\?\.id/);
+  assert.match(store, /pending\.invoiceNo !== String\(invoiceNo\)/);
+  assert.match(store, /req\.session\.regenerate/);
+  assert.match(read('src/repositories/customerRepository.js'), /UPDATE customers SET password_hash=\? WHERE id=\? AND password_hash=''/);
 });
 
 test('registering over a password-less account detaches history unless an order number proves ownership', () => {

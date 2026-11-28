@@ -54,7 +54,9 @@ test('order success views contain Purchase tracking for FB Pixel and TikTok Pixe
   assert.match(orderSuccess, /fbq\('track', 'Purchase'/);
   assert.match(orderSuccess, /ttq\.track\('CompletePayment'/);
 
-  const orderSuccessMysql = read('views/store/order-success-mysql.ejs');
+  assert.match(read('views/store/order-success-mysql.ejs'), /include\('partials\/purchase-pixel'/);
+  assert.match(read('views/customer/account.ejs'), /include\('\.\.\/store\/partials\/purchase-pixel'/);
+  const orderSuccessMysql = read('views/store/partials/purchase-pixel.ejs');
   assert.match(orderSuccessMysql, /fbq\('track', 'Purchase'/);
   assert.match(orderSuccessMysql, /ttq\.track\('CompletePayment'/);
 });

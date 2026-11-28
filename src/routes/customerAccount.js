@@ -116,7 +116,40 @@ router.get('/customer/account', requireCustomer, asyncHandler(async (req, res) =
   const [profile, addresses, consents, consentHistory, requests, acceptances, consentOptions] = await Promise.all([
     customers.getProfile(id), customers.listAddresses(id), privacy.listConsents(id), privacy.listConsentHistory(id), privacy.listCustomerRequests(id), privacy.listPolicyAcceptances(id), privacy.getEnabledConsentOptions(req.locale),
   ]);
-  return res.render('customer/account', { profile, addresses, consents, consentHistory, requests, acceptances, consentOptions, isEn: isEn(req) });
+  const mysqlMode = env.db.client === 'mysql';
+  const needsPassword = mysqlMode && Boolean(await customers.getPasswordlessAccount(id));
+  if (!needsPassword) delete req.session.customerNeedsPassword; else req.session.customerNeedsPassword = true;
+  res.locals.customerNeedsPassword = needsPassword;
+  const policy = needsPassword ? await privacy.getCurrentPolicy(req.locale) : null;
+  // The first visit after a first order also confirms that order (and fires the purchase pixel once).
+  let welcome = null;
+  if (req.session.welcomeInvoice) {
+    welcome = (await require('../repositories/checkoutRepository').getOrderForSuccess(req.session.welcomeInvoice))?.order || null;
+    delete req.session.welcomeInvoice;
+  }
+  return res.render('customer/account', { profile, addresses, consents, consentHistory, requests, acceptances, consentOptions, needsPassword, welcome, policyVersion: policy?.version || '', isEn: isEn(req) });
+}));
+
+router.post('/customer/account/set-password', requireCustomer, requireCsrf, asyncHandler(async (req, res) => {
+  const english = isEn(req);
+  if (req.body.privacy_notice_acknowledged !== 'yes' || !req.body.privacy_policy_version) {
+    req.flash('error', english ? 'Accept the privacy notice to set your password.' : 'পাসওয়ার্ড দিতে গোপনীয়তা নীতিতে সম্মতি দিন।');
+    return res.redirect('/customer/account#set-password');
+  }
+  let account;
+  try {
+    account = await customers.setInitialPassword(req.session.customerUser.id, { password: req.body.password, confirmation: req.body.password_confirmation, policyVersion: req.body.privacy_policy_version, evidence: auditEvidence(req) });
+  } catch (error) {
+    if (!error.statusCode || error.statusCode >= 500) throw error;
+    req.flash('error', error.message);
+    return res.redirect('/customer/account#set-password');
+  }
+  const locale = req.session.locale;
+  const cart = req.session.cart;
+  await new Promise((resolve, reject) => req.session.regenerate((err) => (err ? reject(err) : resolve())));
+  Object.assign(req.session, { customerUser: account, locale, cart: cart || [] });
+  req.flash('success', english ? 'Password saved. Next time, sign in with your mobile number and this password.' : 'পাসওয়ার্ড সংরক্ষণ হয়েছে। পরের বার মোবাইল নম্বর ও এই পাসওয়ার্ড দিয়ে লগইন করবেন।');
+  return res.redirect('/customer/account');
 }));
 
 router.get('/customer/account/referrals', requireCustomer, asyncHandler(async (req, res) => {

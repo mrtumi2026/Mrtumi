@@ -9,10 +9,12 @@ const adminComplaintRepository = require('../repositories/adminComplaintReposito
 const adminFinanceReadRepository = require('../repositories/adminFinanceReadRepository');
 const adminManualPaymentRepository = require('../repositories/adminManualPaymentRepository');
 const adminCustomerRepository = require('../repositories/adminCustomerRepository');
+const adminCustomerRecoveryRepository = require('../repositories/adminCustomerRecoveryRepository');
 const phase06Repository = require('../repositories/phase06Repository');
 const adminPartnerDirectoryRepository = require('../repositories/adminPartnerDirectoryRepository');
 const adminResellerCommerceRepository = require('../repositories/adminResellerCommerceRepository');
 const mysqlPool = require('../db/mysqlPool');
+const smsService = require('../services/smsService');
 const { asyncHandler } = require('../utils/asyncHandler');
 const { requireAdmin } = require('../middleware/auth');
 const { requireCsrf } = require('../middleware/csrf');
@@ -1361,6 +1363,42 @@ router.post('/admin/permissions/delete/:id', (req, res) => {
   db.run('DELETE FROM permissions WHERE id = ?', req.params.id);
   res.redirect('/admin/permissions/manage');
 });
+
+// ─── Support-assisted customer account recovery ───
+async function renderCustomerRecovery(req, res, query, link = null) {
+  const settings = await smsService.getSmsSettings();
+  const smsReady = Boolean(String(settings.bulksms_api_key || '').trim()) && settings.bulksms_enabled !== '0';
+  const result = query ? await adminCustomerRecoveryRepository.findForSupport(query) : null;
+  res.set('Cache-Control', 'no-store');
+  return res.render('admin/customer-recovery', { isEn: req.locale === 'en', query: query || '', result, link, smsReady });
+}
+const recoveryText = (req, en, bn) => (req.locale === 'en' ? en : bn);
+
+router.get('/admin/customer/recovery', asyncHandler(async (req, res) => {
+  if (env.db.client !== 'mysql') return res.redirect('/admin/customer');
+  return renderCustomerRecovery(req, res, String(req.query.q || '').trim());
+}));
+
+router.post('/admin/customer/recovery/attach', requireCsrf, asyncHandler(async (req, res) => {
+  const invoice = String(req.body.invoice || '').trim();
+  await adminCustomerRecoveryRepository.attachOrderToAccount(invoice, actor(req));
+  req.adminDomainAudit = true;
+  req.flash('success', recoveryText(req, 'Order linked to the account.', 'অর্ডারটি অ্যাকাউন্টে যুক্ত হয়েছে।'));
+  return res.redirect(`/admin/customer/recovery?q=${encodeURIComponent(invoice)}`);
+}));
+
+router.post('/admin/customer/recovery/link', requireCsrf, asyncHandler(async (req, res) => {
+  const created = await adminCustomerRecoveryRepository.createRecoveryLink(req.body.customer_id, actor(req));
+  req.adminDomainAudit = true;
+  // Built from the configured site address, never from the request's Host header.
+  const base = String(env.appUrl || '').replace(/\/+$/, '');
+  const link = { ...created, url: `${base}/customer/recovery/reset?token=${created.token}` };
+  if (req.body.send_sms === '1') {
+    const sent = await smsService.sendSms({ phone: created.account.phone, message: `Mr. Tumi password link (valid ${created.hours} hours): ${link.url}`, templateKey: 'customer_recovery' });
+    link.smsSent = Boolean(sent && sent.success);
+  }
+  return renderCustomerRecovery(req, res, String(req.body.q || created.account.phone), link);
+}));
 
 router.get('/admin/customer', asyncHandler(async (req, res) => {
   const rows = env.db.client==='mysql'

@@ -98,6 +98,7 @@ async function attachGlobals(req, res, next) {
     res.locals.vendorUser = vendorUser;
     res.locals.resellerUser = resellerUser;
     res.locals.customerUser = customerUser;
+    res.locals.customerNeedsPassword = Boolean(customerUser && req.session.customerNeedsPassword);
     res.locals.hasPermission = (permKey) => hasPermission(adminUser, permKey);
 
     // Flash messages for Toastr

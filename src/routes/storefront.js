@@ -983,7 +983,7 @@ router.post('/order/quick-submit', publicFormLimiter, requireCsrf, asyncHandler(
       referralCode: req.body.referral_code || req.session?.referralCode || req.cookies?.mrtumi_ref || null,
       affiliateCode: req.body.affiliate_code || req.session?.affiliateCode || req.cookies?.mrtumi_aff || null,
     });
-    rememberOrderForSuccess(req,result);
+    rememberOrderForSuccess(req, result);
     const redirect=`/order-success/${encodeURIComponent(result.invoiceNo)}`;
     return res.json({success:true,invoice_id:result.invoiceNo,redirect,message:req.locale==='en'?`Order #${result.invoiceNo} was submitted successfully.`:`অর্ডার #${result.invoiceNo} সফলভাবে গ্রহণ করা হয়েছে!`,replayed:Boolean(result.replayed)});
   }
@@ -1472,54 +1472,39 @@ router.post('/customer/checkout', requireCsrf, asyncHandler(async (req, res) => 
 
 // Remembers, in this browser session only, which order may be viewed and which new account it created.
 // Only that browser may set the new account's first password, and only for 30 minutes.
-const ACCOUNT_SETUP_MS = 30 * 60 * 1000;
+// A first order creates the account. When the ordering browser opens the confirmation,
+// it is signed in to that new account only (which contains nothing but this order) and
+// taken to account settings to set a password. A guest order never signs in to an
+// existing account.
 function rememberOrderForSuccess(req, result) {
   req.session.checkoutLastInvoice = String(result.invoiceNo);
   if (result.newAccountId && !req.customerUser?.id) {
-    req.session.accountSetup = { customerId: Number(result.newAccountId), invoiceNo: String(result.invoiceNo), expiresAt: Date.now() + ACCOUNT_SETUP_MS };
+    req.session.newAccountSignIn = { customerId: result.newAccountId, invoiceNo: String(result.invoiceNo) };
   }
-}
-function pendingAccountSetup(req, invoiceNo) {
-  const setup = req.session.accountSetup;
-  if (!setup || req.customerUser?.id || setup.invoiceNo !== String(invoiceNo || '') || Number(setup.expiresAt) < Date.now()) return null;
-  return setup;
 }
 
-router.post('/order-success/:invoiceId/account', publicFormLimiter, requireCsrf, asyncHandler(async (req, res) => {
-  const setup = storefrontRepo.isMysqlMode() ? pendingAccountSetup(req, req.params.invoiceId) : null;
-  if (!setup) return res.redirect('/customer/register');
-  const back = `/order-success/${encodeURIComponent(setup.invoiceNo)}`;
-  const english = req.locale === 'en';
-  if (req.body.privacy_notice_acknowledged !== 'yes' || !req.body.privacy_policy_version) {
-    req.flash('error', english ? 'Accept the privacy notice to activate your account.' : 'অ্যাকাউন্ট চালু করতে গোপনীয়তা নীতিতে সম্মতি দিন।');
-    return res.redirect(back);
-  }
-  let account;
-  try {
-    account = await customerRepo.setGuestAccountPassword({ customerId: setup.customerId, invoiceNo: setup.invoiceNo, password: req.body.password, confirmation: req.body.password_confirmation, policyVersion: req.body.privacy_policy_version, evidence: { ip: req.ip || '', userAgent: req.get('user-agent') || '' } });
-  } catch (error) {
-    if (!error.statusCode || error.statusCode >= 500) throw error;
-    req.flash('error', !english && /10–72/.test(error.message) ? 'পাসওয়ার্ড ১০ থেকে ৭২ অক্ষরের হতে হবে।' : error.message);
-    return res.redirect(back);
-  }
+async function signInNewAccount(req, invoiceNo) {
+  const pending = req.session.newAccountSignIn;
+  if (!pending || pending.invoiceNo !== String(invoiceNo) || req.customerUser?.id) return false;
+  delete req.session.newAccountSignIn;
+  const account = await customerRepo.getPasswordlessAccount(pending.customerId);
+  if (!account) return false;
+  const carried = { ...req.session };
+  delete carried.cookie;
+  delete carried.flash;
   await new Promise((resolve, reject) => req.session.regenerate((err) => (err ? reject(err) : resolve())));
-  req.session.customerUser = account;
-  req.session.analyticsConsent = false;
-  req.session.analyticsConsentChoice = '';
-  req.session.cart = [];
-  req.flash('success', english ? 'Your account is ready.' : 'আপনার অ্যাকাউন্ট চালু হয়েছে। পরের বার মোবাইল নম্বর ও এই পাসওয়ার্ড দিয়ে লগইন করবেন।');
-  return res.redirect('/customer/account');
-}));
+  Object.assign(req.session, carried, { customerUser: account, customerNeedsPassword: true, welcomeInvoice: pending.invoiceNo });
+  return true;
+}
 
 router.get('/order-success/:invoiceId', asyncHandler(async (req, res) => {
   if (String(req.session.checkoutLastInvoice || '') !== String(req.params.invoiceId || '')) return res.redirect('/');
   if (storefrontRepo.isMysqlMode()) {
     const result = await checkoutRepo.getOrderForSuccess(req.params.invoiceId);
     if (!result) return res.redirect('/');
-    const setup = pendingAccountSetup(req, req.params.invoiceId);
-    const account = setup ? await customerRepo.canSetGuestAccountPassword(setup.customerId, setup.invoiceNo) : null;
-    const policy = account ? await customerPrivacyRepo.getCurrentPolicy(req.locale) : null;
-    return res.render('store/order-success-mysql', { order: result.order, items: result.items, isEn: req.locale === 'en', newAccount: account, policyVersion: policy?.version || '', csrfToken: req.csrfToken() });
+    // New accounts see this confirmation on their account page, next to the password form.
+    if (await signInNewAccount(req, req.params.invoiceId) || req.session.welcomeInvoice === String(req.params.invoiceId)) return res.redirect('/customer/account');
+    return res.render('store/order-success-mysql', { order: result.order, items: result.items, isEn: req.locale === 'en' });
   }
   const order = db.get(
     `SELECT o.*, COALESCE(os.name, o.status) AS status_label
@@ -1634,7 +1619,7 @@ router.post('/campaign/:slug/order', publicFormLimiter, requireCsrf, asyncHandle
     const isCampOtpVerified = Boolean(req.session.orderOtpVerified && req.session.orderOtpPhone === cleanCampPhone);
     const result=await checkoutRepo.createCampaignOrder({customer_name:req.body.customer_name,phone:req.body.phone,address:req.body.address,delivery_location_id:req.body.delivery_location_id,payment_method:'cod'}, {campaignSlug:req.params.slug,qty:req.body.qty,requestKey:`${req.sessionID}:${supplied}`,locale:req.locale,ip:req.ip||'',sessionSid:req.sessionID,userAgent:req.get('user-agent'),fbp:req.cookies?._fbp,fbc:req.cookies?._fbc,otpVerified:isCampOtpVerified});
     delete req.session.orderOtpVerified; delete req.session.orderOtpPhone;
-    rememberOrderForSuccess(req,result);
+    rememberOrderForSuccess(req, result);
     delete req.session.campaignCheckoutKey;delete req.session.campaignCheckoutSlug;
     return res.redirect(`/order-success/${encodeURIComponent(result.invoiceNo)}`);
   }

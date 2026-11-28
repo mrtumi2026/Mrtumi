@@ -5,8 +5,8 @@
     <h1 class="h3 mt-2"><%= isEn ? 'Reset password' : 'পাসওয়ার্ড রিসেট করুন' %></h1>
     <p class="text-muted small">
       <%= isEn
-        ? 'Enter the recovery code delivered to your verified phone or email and set a new secure password.'
-        : 'আপনার যাচাইকৃত ফোন বা ইমেইলে প্রাপ্ত রিকভারি কোডটি লিখুন এবং নতুন পাসওয়ার্ড সেট করুন।' %>
+        ? 'If you opened a password link, the code is already filled in. Otherwise enter the code you received. Then choose a new password.'
+        : 'পাসওয়ার্ড লিংক থেকে এলে কোডটি আগেই বসানো থাকবে। না হলে আপনার পাওয়া কোডটি লিখুন। তারপর নতুন পাসওয়ার্ড দিন।' %>
     </p>
   </div>
 
@@ -34,8 +34,8 @@
       >
       <div class="form-text">
         <%= isEn
-          ? 'Codes expire after 20 minutes and can only be used once.'
-          : 'কোডের মেয়াদ ২০ মিনিট এবং এটি শুধুমাত্র একবার ব্যবহারযোগ্য।' %>
+          ? 'Each code works only once and expires (SMS/email codes in 20 minutes, customer care links in 24 hours).'
+          : 'প্রতিটি কোড একবারই কাজ করে এবং মেয়াদ আছে (SMS/ইমেইল কোড ২০ মিনিট, কাস্টমার কেয়ারের লিংক ২৪ ঘণ্টা)।' %>
       </div>
     </div>
 

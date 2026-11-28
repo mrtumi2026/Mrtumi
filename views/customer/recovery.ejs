@@ -12,8 +12,8 @@
       </h2>
       <p class="mb-1">
         <%= isEn
-          ? 'If an active account with a verified channel matches this information, recovery instructions have been sent. Please check your SMS or Email messages.'
-          : 'যদি এই তথ্যের সাথে কোনো সক্রিয় এবং যাচাইকৃত অ্যাকাউন্ট মিলে থাকে, তবে পুনরুদ্ধার নির্দেশনা পাঠানো হয়েছে। অনুগ্রহ করে আপনার এসএমএস বা ইমেইল ইনবক্স চেক করুন।' %>
+          ? 'If an active account matches this information, a recovery code has been sent. Check your SMS or email. If nothing arrives, call customer care with your invoice number.'
+          : 'এই তথ্যের সাথে কোনো সক্রিয় অ্যাকাউন্ট থাকলে রিকভারি কোড পাঠানো হয়েছে। SMS বা ইমেইল দেখুন। কিছু না এলে ইনভয়েস নম্বর নিয়ে কাস্টমার কেয়ারে ফোন করুন।' %>
       </p>
       <p class="small text-muted mb-3">
         <%= isEn
@@ -27,57 +27,14 @@
       </div>
     </div>
   <% } else if (!status || !status.enabled) { %>
-    <div class="alert alert-warning card card-body border-warning gap-3 shadow-sm" role="region" aria-label="<%= isEn ? 'Recovery status notice' : 'রিকভারি স্ট্যাটাস নোটিশ' %>">
-      <div>
-        <h2 class="h5 alert-heading mb-2">
-          <%= isEn ? 'Account Recovery Currently Inactive' : 'অ্যাকাউন্ট পুনরুদ্ধার বর্তমানে বন্ধ রয়েছে' %>
-        </h2>
-        <p class="mb-2">
-          <%= isEn
-            ? 'Automated self-service password recovery is safely disabled until an approved delivery provider gateway (BulkSMSBD or SMTP) is fully configured and authorized by store administration.'
-            : 'স্টোর অ্যাডমিনিস্ট্রেশনের মাধ্যমে অনুমোদিত ডেলিভারি প্রোভাইডার গেটওয়ে (BulkSMSBD বা SMTP) সম্পূর্ণভাবে কনফিগার এবং অনুমোদিত না হওয়া পর্যন্ত সেলফ-সার্ভিস পাসওয়ার্ড পুনরুদ্ধার নিরাপদে বন্ধ রাখা হয়েছে।' %>
-        </p>
-      </div>
-
-      <div class="bg-white p-3 rounded border small text-muted">
-        <strong class="d-block text-dark mb-1">
-          <%= isEn ? 'Required Production Configuration:' : 'প্রয়োজনীয় প্রোডাকশন কনফিগারেশন:' %>
-        </strong>
-        <ul class="mb-0 ps-3">
-          <li>
-            <strong><%= isEn ? 'SMS Channel (BulkSMSBD):' : 'এসএমএস মাধ্যম (BulkSMSBD):' %></strong>
-            <%= status && status.sms && status.sms.missing && status.sms.missing.length > 0
-              ? status.sms.missing.join(', ')
-              : (isEn ? 'Not configured / pending owner authorization' : 'কনফিগার করা হয়নি / অ্যাডমিন অনুমোদনের অপেক্ষায়') %>
-          </li>
-          <li>
-            <strong><%= isEn ? 'Email Channel (SMTP):' : 'ইমেইল মাধ্যম (SMTP):' %></strong>
-            <%= status && status.email && status.email.missing && status.email.missing.length > 0
-              ? status.email.missing.join(', ')
-              : (isEn ? 'Not configured' : 'কনফিগার করা হয়নি') %>
-          </li>
-          <li>
-            <strong><%= isEn ? 'Verified Contact Security:' : 'যাচাইকৃত যোগাযোগ নিরাপত্তা:' %></strong>
-            <%= isEn
-              ? 'Tokens are only issued to customer accounts with pre-verified phone or email records to prevent unauthorized takeover.'
-              : 'অননুমোদিত অ্যাক্সেস রোধে কেবলমাত্র পূর্বে যাচাইকৃত ফোন বা ইমেইল থাকা অ্যাকাউন্টে রিকভারি কোড পাঠানো হয়।' %>
-          </li>
-        </ul>
-      </div>
-
-      <p class="small text-muted mb-0">
-        <%= isEn
-          ? 'If you have forgotten your password and need immediate access to your account or orders, please contact Mr. Tumi customer support with your registered phone number or order invoice.'
-          : 'আপনি যদি পাসওয়ার্ড ভুলে গিয়ে থাকেন এবং দ্রুত অ্যাক্সেস প্রয়োজন হয়, তবে আপনার নিবন্ধিত ফোন নম্বর বা অর্ডার চালান সহ মি. তুমি কাস্টমার সাপোর্টে যোগাযোগ করুন।' %>
-      </p>
-
+    <div class="alert alert-warning card card-body border-warning gap-3 shadow-sm" role="region" aria-label="<%= isEn ? 'How to recover your account' : 'অ্যাকাউন্ট যেভাবে ফিরে পাবেন' %>">
+      <h2 class="h5 alert-heading mb-0"><%= isEn ? 'Call customer care to recover your account' : 'অ্যাকাউন্ট ফিরে পেতে কাস্টমার কেয়ারে ফোন করুন' %></h2>
+      <p class="mb-0"><%= isEn ? 'Automatic recovery by SMS or email is not available right now. Tell us your invoice number or registered mobile number. After checking, we will send a password link to your mobile number.' : 'এখন SMS বা ইমেইলে স্বয়ংক্রিয় পুনরুদ্ধার চালু নেই। আমাদের আপনার ইনভয়েস নম্বর বা নিবন্ধিত মোবাইল নম্বর বলুন। যাচাই করে আমরা আপনার মোবাইল নম্বরে পাসওয়ার্ড লিংক পাঠাব।' %></p>
+      <% const carePhone = (typeof siteSettings !== 'undefined' && siteSettings && siteSettings.site_phone) || ''; %>
+      <% if (carePhone) { %><p class="mb-0"><a class="btn btn-success" href="tel:<%= carePhone %>"><%= isEn ? 'Call' : 'ফোন করুন' %>: <%= carePhone %></a></p><% } %>
       <div class="d-flex gap-2 flex-wrap pt-2">
-        <a class="btn btn-outline-primary" href="/customer/login">
-          <%= isEn ? 'Return to login' : 'লগইনে ফিরুন' %>
-        </a>
-        <a class="btn btn-outline-secondary" href="/">
-          <%= isEn ? 'Back to storefront' : 'হোমপেজে ফিরুন' %>
-        </a>
+        <a class="btn btn-outline-primary" href="/contact"><%= isEn ? 'Contact us' : 'যোগাযোগ করুন' %></a>
+        <a class="btn btn-outline-secondary" href="/customer/login"><%= isEn ? 'Return to login' : 'লগইনে ফিরুন' %></a>
       </div>
     </div>
   <% } else { %>
@@ -105,7 +62,7 @@
       <% } else if (status.availableChannels && status.availableChannels.includes('phone')) { %>
         <input type="hidden" name="channel" value="phone">
         <div class="text-muted small">
-          <%= isEn ? 'Recovery code will be delivered via SMS to your verified Bangladesh mobile number.' : 'আপনার যাচাইকৃত বাংলাদেশি মোবাইল নম্বরে এসএমএসের মাধ্যমে রিকভারি কোড পাঠানো হবে।' %>
+          <%= isEn ? 'A recovery code will be sent by SMS to the account mobile number.' : 'অ্যাকাউন্টের মোবাইল নম্বরে SMS-এ রিকভারি কোড পাঠানো হবে।' %>
         </div>
       <% } else { %>
         <input type="hidden" name="channel" value="email">

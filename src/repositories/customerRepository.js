@@ -76,22 +76,20 @@ async function claimUnusedAccountTx(tx, customerId, orderInvoice, evidence = {})
   await tx.execute("INSERT INTO audit_logs(actor_type,actor_id,action,entity_type,entity_id,after_json,ip_address,user_agent) VALUES('customer',?,'customer.account.claimed_without_order','customer',?,?,?,?)", [customerId, String(customerId), JSON.stringify({ detached_orders: Number(detached?.affectedRows || 0) }), String(evidence.ip || '').slice(0,64), String(evidence.userAgent || '').slice(0,255)]);
 }
 // True while the account made by this exact order still has no password and holds nothing else.
-async function canSetGuestAccountPassword(customerId, invoiceNo, db = null) {
+// An account created by a first order has no password until its owner chooses one.
+async function getPasswordlessAccount(customerId, db = null) {
   const q = db || mysqlClient();
-  const row = await q.queryOne(
-    "SELECT c.id,c.name,c.phone FROM customers c WHERE c.id=? AND c.password_hash='' AND c.status=1 AND c.is_blocked=0 AND (SELECT COUNT(*) FROM orders o WHERE o.customer_id=c.id)=1 AND EXISTS(SELECT 1 FROM orders o2 WHERE o2.customer_id=c.id AND o2.invoice_no=?)",
-    [requirePositiveInt(customerId, 'customer ID'), String(invoiceNo || '')]
-  );
+  const row = await q.queryOne("SELECT id,name,phone FROM customers WHERE id=? AND password_hash='' AND status=1 AND is_blocked=0", [requirePositiveInt(customerId, 'customer ID')]);
   return row ? { id: Number(row.id), name: row.name, phone: row.phone } : null;
 }
-async function setGuestAccountPassword({ customerId, invoiceNo, password, confirmation, policyVersion = '', evidence = {} }) {
+async function setInitialPassword(customerId, { password, confirmation, policyVersion = '', evidence = {} } = {}) {
   const clean = validatePassword(password);
-  if (clean !== String(confirmation || '')) throw new ValidationError('দুইবার লেখা পাসওয়ার্ড মেলেনি।');
+  if (clean !== String(confirmation || '')) throw new ValidationError('The two passwords do not match.');
   const hash = await bcrypt.hash(clean, 12);
   return withTransaction(async (tx) => {
     await tx.queryOne('SELECT id FROM customers WHERE id=? FOR UPDATE', [requirePositiveInt(customerId, 'customer ID')]);
-    const account = await canSetGuestAccountPassword(customerId, invoiceNo, tx);
-    if (!account) throw new ConflictError('এই অ্যাকাউন্টে এখান থেকে আর পাসওয়ার্ড সেট করা যাবে না। নিবন্ধন পেজ ব্যবহার করুন।');
+    const account = await getPasswordlessAccount(customerId, tx);
+    if (!account) throw new ConflictError('A password is already set for this account.');
     await tx.execute("UPDATE customers SET password_hash=? WHERE id=? AND password_hash=''", [hash, account.id]);
     if (policyVersion) {
       const policy = await tx.queryOne("SELECT version FROM privacy_policy_versions WHERE version=? AND status='published' FOR UPDATE", [String(policyVersion)]);
@@ -118,7 +116,8 @@ async function issueCustomerRecovery(identifier, channel, deliver, { pool = null
   let issue = null;
   await withTransaction(async (tx) => {
     const verifiedColumn = channel === 'email' ? 'email_verified_at' : 'phone_verified_at';
-    const customer = await tx.queryOne(`SELECT id,${channel} AS destination FROM customers WHERE ${channel}=? AND ${verifiedColumn} IS NOT NULL AND status=1 AND is_blocked=0 LIMIT 1 FOR UPDATE`, [match]);
+    const proof = channel === 'email' ? `AND ${verifiedColumn} IS NOT NULL` : '';
+    const customer = await tx.queryOne(`SELECT id,${channel} AS destination FROM customers WHERE ${channel}=? ${proof} AND status=1 AND is_blocked=0 LIMIT 1 FOR UPDATE`, [match]);
     if (!customer) return;
     const result = await tx.execute('INSERT INTO customer_recovery_tokens(customer_id,channel,token_hash,expires_at) VALUES(?,?,?,DATE_ADD(CURRENT_TIMESTAMP,INTERVAL 20 MINUTE))',[customer.id,channel,tokenHash]);
     await tx.execute("INSERT INTO audit_logs(actor_type,actor_id,action,entity_type,entity_id,after_json) VALUES('system',?,'customer.recovery.issued','customer_recovery_token',?,?)",[customer.id,String(result.insertId),JSON.stringify({channel,expires_minutes:20})]);
@@ -139,11 +138,12 @@ async function consumeCustomerRecoveryToken(token, password, { pool = null } = {
   const tokenHash=require('node:crypto').createHash('sha256').update(raw).digest('hex');
   const passwordHash=await bcrypt.hash(validatePassword(password),12);
   return withTransaction(async tx=>{
-    const row=await tx.queryOne('SELECT id,customer_id,expires_at,consumed_at,revoked_at FROM customer_recovery_tokens WHERE token_hash=? FOR UPDATE',[tokenHash]);
+    const row=await tx.queryOne('SELECT id,customer_id,channel,expires_at,consumed_at,revoked_at FROM customer_recovery_tokens WHERE token_hash=? FOR UPDATE',[tokenHash]);
     if(!row||row.consumed_at||row.revoked_at||new Date(row.expires_at).getTime()<=Date.now())throw new ValidationError('Recovery link is invalid or expired.');
     const customer=await tx.queryOne('SELECT id FROM customers WHERE id=? AND status=1 AND is_blocked=0 FOR UPDATE',[row.customer_id]);
     if(!customer)throw new ValidationError('Recovery link is invalid or expired.');
     await tx.execute('UPDATE customers SET password_hash=? WHERE id=?',[passwordHash,row.customer_id]);
+    if(row.channel==='phone')await tx.execute('UPDATE customers SET phone_verified_at=COALESCE(phone_verified_at,UTC_TIMESTAMP()) WHERE id=?',[row.customer_id]);
     await tx.execute('UPDATE customer_recovery_tokens SET consumed_at=CURRENT_TIMESTAMP WHERE id=?',[row.id]);
     await tx.execute('UPDATE customer_recovery_tokens SET revoked_at=CURRENT_TIMESTAMP WHERE customer_id=? AND id<>? AND consumed_at IS NULL AND revoked_at IS NULL',[row.customer_id,row.id]);
     await tx.execute("DELETE FROM web_sessions WHERE actor_type='customer' AND actor_id=?",[row.customer_id]);
@@ -471,5 +471,5 @@ async function clearCart(customerId) {
   });
 }
 module.exports = {
-  canSetGuestAccountPassword,
-  setGuestAccountPassword, normalizeBdPhone, validatePassword, registerCustomer, issueCustomerRecovery, consumeCustomerRecoveryToken, authenticateCustomer, getProfile, updateProfile, changePassword, listAddresses, listOrders, getOrderDetails, getOrderSelfServiceDetails, getReturnEvidence, saveAddress, updateAddress, setDefaultAddress, getAddressForCheckout, deleteAddress, mergeCart, listCart, addCartLine, setCartLine, removeCartLine, reconcileCart, replaceCart, clearCart };
+  getPasswordlessAccount,
+  setInitialPassword, normalizeBdPhone, validatePassword, registerCustomer, issueCustomerRecovery, consumeCustomerRecoveryToken, authenticateCustomer, getProfile, updateProfile, changePassword, listAddresses, listOrders, getOrderDetails, getOrderSelfServiceDetails, getReturnEvidence, saveAddress, updateAddress, setDefaultAddress, getAddressForCheckout, deleteAddress, mergeCart, listCart, addCartLine, setCartLine, removeCartLine, reconcileCart, replaceCart, clearCart };
