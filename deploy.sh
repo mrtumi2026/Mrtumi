@@ -203,6 +203,10 @@ handle_deployment_failure() {
 
   echo ""
   echo "❌ DEPLOYMENT HALTED. System remains in 503 Maintenance Mode for operator investigation."
+  if [ "$DEPLOYMENT_STAGE" = "PRE_MIGRATION" ]; then
+    echo "   After checking the cause, bring the unchanged site back with:"
+    echo "     cd $SCRIPT_DIR && node -e 'require(\"./scripts/ops/maintenance-guard\").disengageMaintenance()' && touch tmp/restart.txt"
+  fi
   echo "   To review pinned manifest: cat $BACKUP_DIR/.latest_verified_manifest"
   echo "   To perform verified DB recovery (if approved by operator):"
   echo "     CONFIRM_DESTRUCTIVE_DATABASE_RECOVERY=I_CONFIRM_DESTRUCTIVE_DATABASE_RECOVERY node -e '...'"
@@ -329,7 +333,7 @@ if [ -n "${REHEARSAL_DB_NAME:-}" ]; then
     const manifestFilename = fs.readFileSync(pointerPath, "utf8").trim();
     const manifestPath = path.join(backupDir, manifestFilename);
     const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-    const dumpFile = manifest.artifacts.database_dump.canonical_path;
+    const dumpFile = manifest.dump.canonical_path;
 
     const rehearsalDbName = process.env.REHEARSAL_DB_NAME.trim();
     const rehearsalUser = process.env.REHEARSAL_DB_USER.trim();

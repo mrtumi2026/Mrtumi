@@ -21,7 +21,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { spawn, spawnSync } = require('child_process');
-const { pipeline } = require('stream');
+const { pipeline, Transform } = require('stream');
 
 const CURRENT_MANIFEST_SCHEMA_VERSION = '3.7';
 const SUPPORTED_MANIFEST_SCHEMA_VERSIONS = new Set(['3.5', '3.6', '3.7']);
@@ -194,6 +194,36 @@ function getMysqlBinary() {
 }
 
 /**
+ * A dump names the production database user as DEFINER of its triggers, routines
+ * and views. Another (rehearsal) user may not create objects for that user without
+ * SUPER, which shared hosting never grants. Only object definition lines are
+ * rewritten; table data lines are passed through byte for byte.
+ */
+function stripDefinerFromLine(line) {
+  if (!/^(\/\*!5\d{4}|CREATE )/.test(line)) return line;
+  return line
+    .replace(/\/\*!5\d{4} DEFINER=`(?:[^`]|``)*`@`(?:[^`]|``)*`(?: SQL SECURITY DEFINER)?\s*\*\//, '')
+    .replace(/ DEFINER=`(?:[^`]|``)*`@`(?:[^`]|``)*`/, '');
+}
+
+function createDefinerFilter() {
+  // latin1 maps every byte to one character, so untouched bytes survive exactly.
+  let pending = '';
+  return new Transform({
+    transform(chunk, _encoding, callback) {
+      const lines = (pending + chunk.toString('latin1')).split('\n');
+      pending = lines.pop();
+      if (lines.length) this.push(Buffer.from(`${lines.map(stripDefinerFromLine).join('\n')}\n`, 'latin1'));
+      callback();
+    },
+    flush(callback) {
+      if (pending) this.push(Buffer.from(stripDefinerFromLine(pending), 'latin1'));
+      callback();
+    }
+  });
+}
+
+/**
  * True Streaming Restore with Backpressure & Error Propagation
  */
 function streamRestore(sqlFilePath, dbConfig, opts = {}) {
@@ -258,7 +288,8 @@ function streamRestore(sqlFilePath, dbConfig, opts = {}) {
       }
     });
 
-    pipeline(readStream, child.stdin, (err) => {
+    const stages = opts.stripDefiner ? [readStream, createDefinerFilter(), child.stdin] : [readStream, child.stdin];
+    pipeline(...stages, (err) => {
       if (err && err.code !== 'ERR_STREAM_PREMATURE_CLOSE') {
         setTimeout(() => {
           if (restored) return;
@@ -417,7 +448,7 @@ async function rehearseDatabaseRestore(dumpFilePath, disposableDbConfig, manifes
     // Execute streaming restore
     let restoreRes = { success: true };
     if (!opts.skipStreamRestore) {
-      restoreRes = await streamRestore(dumpFilePath, disposableDbConfig, opts);
+      restoreRes = await streamRestore(dumpFilePath, disposableDbConfig, { ...opts, stripDefiner: true });
     }
 
     // Post-Restore Parity and Schema Validation (MANDATORY CONTRACT)
@@ -1200,6 +1231,8 @@ if (require.main === module) {
 }
 
 module.exports = {
+  stripDefinerFromLine,
+  createDefinerFilter,
   CURRENT_MANIFEST_SCHEMA_VERSION,
   SUPPORTED_MANIFEST_SCHEMA_VERSIONS,
   sha256File,
