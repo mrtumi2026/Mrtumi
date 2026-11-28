@@ -38,7 +38,14 @@ mkdir -p tmp && touch tmp/restart.txt
 node scripts/health-check.js
 ```
 
-Then place one test order and log in to each portal.
+Then check the following, in Bangla and in English:
+
+1. Place one test order with a new phone number. The browser must land on the account page and ask for a password.
+2. Log in to the admin, vendor, reseller, affiliate and customer portals.
+3. Admin: open the customer wallet page and confirm the per-order wallet percentage.
+4. Admin: open Courier API and confirm that no saved key is present in the page source.
+
+Delete buttons now remove records permanently. Do not try them on real records.
 
 ## Rollback
 
