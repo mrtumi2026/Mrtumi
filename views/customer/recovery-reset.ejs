@@ -17,6 +17,13 @@
   <form method="post" action="/customer/recovery/reset" class="card card-body gap-3 shadow-sm">
     <input type="hidden" name="_csrf" value="<%= csrfToken %>">
 
+    <% if (!prefilledToken || /^[0-9]{6}$/.test(prefilledToken)) { %>
+    <div>
+      <label for="recoveryPhone" class="form-label fw-semibold"><%= isEn ? 'Mobile number (needed with a 6-digit SMS code)' : 'মোবাইল নম্বর (৬ সংখ্যার SMS কোড দিলে লাগবে)' %></label>
+      <input id="recoveryPhone" class="form-control" name="phone" type="tel" maxlength="20" autocomplete="tel" placeholder="01XXXXXXXXX" value="<%= (typeof prefilledPhone !== 'undefined' && prefilledPhone) || '' %>">
+    </div>
+    <% } %>
+
     <div>
       <label for="recoveryToken" class="form-label fw-semibold">
         <%= isEn ? 'Recovery code' : 'রিকভারি কোড' %>
@@ -34,8 +41,8 @@
       >
       <div class="form-text">
         <%= isEn
-          ? 'Each code works only once and expires (SMS/email codes in 20 minutes, customer care links in 24 hours).'
-          : 'প্রতিটি কোড একবারই কাজ করে এবং মেয়াদ আছে (SMS/ইমেইল কোড ২০ মিনিট, কাস্টমার কেয়ারের লিংক ২৪ ঘণ্টা)।' %>
+          ? 'Each code works only once and expires (SMS code 10 minutes, email code 20 minutes, customer care link 24 hours).'
+          : 'প্রতিটি কোড একবারই কাজ করে এবং মেয়াদ আছে (SMS কোড ১০ মিনিট, ইমেইল কোড ২০ মিনিট, কাস্টমার কেয়ারের লিংক ২৪ ঘণ্টা)।' %>
       </div>
     </div>
 

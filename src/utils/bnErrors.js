@@ -5,6 +5,9 @@ const { BN_TO_EN, EN_TO_BN, PATTERNS: MESSAGE_PATTERNS } = require('./messagePai
 // Bangla wording for the messages that customers, vendors, resellers and shop staff meet in normal use.
 // A message with no entry is shown unchanged, so nothing is ever hidden or replaced by a guess.
 const EXACT = new Map(Object.entries({
+  'This mobile number already has an account. Enter its password to place the order.': 'এই মোবাইল নম্বরে আগে থেকে অ্যাকাউন্ট আছে। অর্ডার করতে অ্যাকাউন্টের পাসওয়ার্ড দিন।',
+  'The account password does not match. Try again, or use Forgot password.': 'অ্যাকাউন্টের পাসওয়ার্ড মেলেনি। আবার চেষ্টা করুন, অথবা "পাসওয়ার্ড ভুলে গেছেন?" ব্যবহার করুন।',
+  'Too many password tries. Wait 15 minutes, or use Forgot password.': 'অনেকবার পাসওয়ার্ড দেওয়া হয়েছে। ১৫ মিনিট পর চেষ্টা করুন, অথবা "পাসওয়ার্ড ভুলে গেছেন?" ব্যবহার করুন।',
   'Courier setting not found.': 'কুরিয়ার সেটিংটি পাওয়া যায়নি।',
   'An order can be marked returned only after every ordered unit is approved and inspected with a recorded disposition.': 'অর্ডারের প্রতিটি পণ্যের রিটার্ন অনুমোদন ও যাচাই (disposition) রেকর্ড করার পরই অর্ডারটি "returned" করা যাবে।',
   'This courier still has open parcels or booking requests. Turn it off with Toggle Active instead, and delete it after they are finished.': 'এই কুরিয়ারে এখনও চলমান পার্সেল বা বুকিং অনুরোধ আছে। আপাতত Toggle Active দিয়ে বন্ধ রাখুন, শেষ হলে মুছুন।',

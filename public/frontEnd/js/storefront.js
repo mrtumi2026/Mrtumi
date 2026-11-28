@@ -628,6 +628,9 @@
               window.location.href = navUrl(d.redirect);
             } else {
               var errMsg = (d && (d.message || (d.error && d.error.message))) || i18nStr('networkErrorMsg', 'Unable to place order.');
+              if (d && d.error && d.error.code === 'ACCOUNT_PASSWORD_REQUIRED' && window.mtShowAccountPassword) {
+                window.mtShowAccountPassword(errMsg);
+              }
               notify('error', errMsg);
               if (submitBtn) submitBtn.disabled = false;
             }

@@ -62,13 +62,15 @@ describe('D6 privacy lifecycle MySQL/MariaDB integration', { skip: !host && !req
     await db.execute('UPDATE customers SET phone_verified_at=CURRENT_TIMESTAMP WHERE id=?',[customer.id]);
     let issued;
     await customers.issueCustomerRecovery(phone,'phone',async message=>{issued=message;});
-    assert.ok(issued?.token);
-    await customers.consumeCustomerRecoveryToken(issued.token,'a-new-d6-password-long');
-    await assert.rejects(()=>customers.consumeCustomerRecoveryToken(issued.token,'another-new-password-long'),(e)=>e.code==='VALIDATION_ERROR');
+    // SMS recovery is a 6-digit one-time code tied to the mobile number.
+    assert.match(issued?.token || '', /^\d{6}$/);
+    await assert.rejects(()=>customers.consumeCustomerRecoveryToken(issued.token,'a-new-d6-password-long'),(e)=>e.code==='VALIDATION_ERROR');
+    await customers.consumeCustomerPhoneOtp(phone,issued.token,'a-new-d6-password-long');
+    assert.ok(await customers.authenticateCustomer(phone,'a-new-d6-password-long'));
+    await assert.rejects(()=>customers.consumeCustomerPhoneOtp(phone,issued.token,'another-new-password-long'),(e)=>e.code==='VALIDATION_ERROR');
     await customers.issueCustomerRecovery(phone,'phone',async message=>{issued=message;});
-    const tokenHash=crypto.createHash('sha256').update(issued.token).digest('hex');
-    await db.execute('UPDATE customer_recovery_tokens SET expires_at=DATE_SUB(CURRENT_TIMESTAMP,INTERVAL 1 MINUTE) WHERE token_hash=?',[tokenHash]);
-    await assert.rejects(()=>customers.consumeCustomerRecoveryToken(issued.token,'a-third-d6-password-long'),(e)=>e.code==='VALIDATION_ERROR');
+    await db.execute('UPDATE customer_recovery_tokens SET expires_at=DATE_SUB(CURRENT_TIMESTAMP,INTERVAL 1 MINUTE) WHERE customer_id=? AND consumed_at IS NULL AND revoked_at IS NULL',[customer.id]);
+    await assert.rejects(()=>customers.consumeCustomerPhoneOtp(phone,issued.token,'a-third-d6-password-long'),(e)=>e.code==='VALIDATION_ERROR');
 
     await privacy.anonymizeCustomer(deletionId,'Approved with retained order/financial evidence.',{id:1,type:'admin'});
     const anonymized=await db.queryOne('SELECT status,phone,email FROM customers WHERE id=?',[customer.id]);

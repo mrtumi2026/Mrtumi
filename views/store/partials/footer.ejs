@@ -262,6 +262,7 @@
                     <label for="qoCustPhone" class="visually-hidden"><%= t('store.mobileNumber') %></label>
                     <input type="tel" id="qoCustPhone" name="phone" class="form-control form-control-sm" placeholder="<%= t('store.mobilePlaceholder') %> *" required />
                   </div>
+                  <%- include('account-password', { fieldId: 'qoAccountPassword', columnClass: 'col-12' }) %>
                   <div class="col-sm-7">
                     <label for="qoCustAddress" class="visually-hidden"><%= t('store.fullAddress') %></label>
                     <input type="text" id="qoCustAddress" name="address" class="form-control form-control-sm" placeholder="<%= t('store.fullAddress') %> *" required />
@@ -414,6 +415,7 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
     <script src="/frontEnd/js/storefront.js"></script>
+    <script src="/frontEnd/js/checkout-account.js"></script>
     <script src="/shared/js/mrtumi-ui.js"></script>
     <% if (flash && flash.message) { %>
       <script>

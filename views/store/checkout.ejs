@@ -22,7 +22,7 @@
       actionLabel: t('common.allProducts') + ' →'
     }) %>
   <% } else { %>
-    <form action="/customer/checkout" method="POST" id="mainCheckoutForm">
+    <form action="/customer/checkout" method="POST" id="mainCheckoutForm" data-checkout-account>
       <% if (csrfToken) { %><input type="hidden" name="_csrf" value="<%= csrfToken %>" /><% } %>
       <% if (canonicalMysqlCheckout) { %>
         <input type="hidden" name="checkout_request_key" value="<%= checkoutRequestKey %>" />
@@ -47,6 +47,7 @@
                 <label for="ckPhone" class="form-label small fw-semibold"><%= t('store.mobileNumber') %> *</label>
                 <input type="tel" name="phone" id="ckPhone" class="form-control" placeholder="<%= t('store.mobilePlaceholder') %>" minlength="11" required value="<%= typeof checkoutCustomer !== 'undefined' && checkoutCustomer ? checkoutCustomer.phone : '' %>" />
               </div>
+              <%- include('partials/account-password', { fieldId: 'ckAccountPassword', columnClass: 'col-12' }) %>
               <% if (canonicalMysqlCheckout && checkoutCustomer && savedAddresses && savedAddresses.length) { %>
                 <div class="col-12">
                   <label for="savedAddressSelect" class="form-label small fw-semibold"><%= checkoutEnglish ? 'Use a saved address (optional)' : 'সংরক্ষিত ঠিকানা ব্যবহার করুন (ঐচ্ছিক)' %></label>

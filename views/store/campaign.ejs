@@ -45,7 +45,7 @@
     <% if (canonicalCampaignCheckout && !campaignCheckoutAvailable) { %>
       <div class="alert alert-warning" role="status"><%= L('Orders cannot be taken: no active delivery area or COD payment method is configured.', 'অর্ডার নেওয়া যাচ্ছে না: সক্রিয় ডেলিভারি এলাকা বা COD পেমেন্ট পদ্ধতি কনফিগার করা নেই।') %></div>
     <% } else { %>
-    <form action="/campaign/<%= campaign.slug %>/order" method="POST">
+    <form action="/campaign/<%= campaign.slug %>/order" method="POST" data-checkout-account>
       <input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>">
       <% if (canonicalCampaignCheckout) { %><input type="hidden" name="checkout_request_key" value="<%= campaignCheckoutKey %>"><% } %>
       <div class="row g-3">
@@ -57,6 +57,7 @@
           <label class="form-label fw-semibold small"><%= L('Mobile number *', 'মোবাইল নম্বর *') %></label>
           <input type="tel" name="phone" class="form-control" placeholder="017XXXXXXXX" required />
         </div>
+        <% if (canonicalCampaignCheckout) { %><%- include('partials/account-password', { fieldId: 'campAccountPassword', columnClass: 'col-12' }) %><% } %>
         <div class="col-12">
           <label class="form-label fw-semibold small"><%= L('Full address *', 'সম্পূর্ণ ঠিকানা *') %></label>
           <textarea name="address" rows="2" class="form-control" placeholder="<%= L('House, road, thana and district...', 'বাসা, রোড, থানা ও জেলা লিখুন...') %>" required></textarea>

@@ -17,8 +17,8 @@
       </p>
       <p class="small text-muted mb-3">
         <%= isEn
-          ? 'Recovery codes are single-use, cryptographically secure, and expire in 20 minutes.'
-          : 'রিকভারি কোডটি একবার ব্যবহারের জন্য প্রযোজ্য, সুরক্ষিত এবং এর মেয়াদ ২০ মিনিট।' %>
+          ? 'Each code works once. An SMS code has 6 digits and lasts 10 minutes (3 codes per hour); an email code lasts 20 minutes.'
+          : 'প্রতিটি কোড একবারই কাজ করে। SMS কোড ৬ সংখ্যার, মেয়াদ ১০ মিনিট (ঘণ্টায় সর্বোচ্চ ৩ বার); ইমেইল কোডের মেয়াদ ২০ মিনিট।' %>
       </p>
       <div>
         <a href="/customer/recovery/reset" class="btn btn-primary">
@@ -62,7 +62,7 @@
       <% } else if (status.availableChannels && status.availableChannels.includes('phone')) { %>
         <input type="hidden" name="channel" value="phone">
         <div class="text-muted small">
-          <%= isEn ? 'A recovery code will be sent by SMS to the account mobile number.' : 'অ্যাকাউন্টের মোবাইল নম্বরে SMS-এ রিকভারি কোড পাঠানো হবে।' %>
+          <%= isEn ? 'A 6-digit code (OTP) will be sent by SMS to the account mobile number.' : 'অ্যাকাউন্টের মোবাইল নম্বরে SMS-এ ৬ সংখ্যার কোড (OTP) পাঠানো হবে।' %>
         </div>
       <% } else { %>
         <input type="hidden" name="channel" value="email">

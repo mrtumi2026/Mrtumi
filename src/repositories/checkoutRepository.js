@@ -4,7 +4,7 @@ const crypto=require('crypto');
 const mysql=require('../db/mysqlPool');
 const {env}=require('../config/env');
 const {normalizeBdPhone,requirePositiveInt,requireString}=require('../utils/validator');
-const {ValidationError,ConflictError,NotFoundError}=require('../utils/errors');
+const {ValidationError,ConflictError,AccountPasswordError,NotFoundError}=require('../utils/errors');
 const lifecycle=require('./phase08Repository');
 const settingsRepository=require('./settingsRepository');
 const paymentMethodEligibility=require('../services/paymentMethodEligibility');
@@ -132,7 +132,7 @@ async function quoteQuickOrder({productId,qty,size,color,deliveryLocationId,loca
   return{variantId,subtotalPaisa:cartQuote.subtotalPaisa,shippingPaisa,totalPaisa,unitPricePaisa:cartQuote.items[0].price_paisa};
 }
 async function createOrder(input,options={}){
-  const {locale='bn',sessionCustomer=null,ip='',requestKey,cart,incompleteOrderId=null,sessionSid='',analyticsConsent=false,attribution=null,clearSavedCart=true,deadlockRetry=0,campaignSlug=''}=options;
+  const {locale='bn',sessionCustomer=null,ip='',requestKey,cart,incompleteOrderId=null,sessionSid='',analyticsConsent=false,attribution=null,clearSavedCart=true,deadlockRetry=0,campaignSlug='',verifiedAccountId=null}=options;
   const attributionAllowed=env.analyticsAttributionEnabled&&analyticsConsent===true;
   const attributionData=attributionAllowed?normalizeAttribution(attribution||{}):EMPTY_ATTRIBUTION;
   assertMysql();const name=requireString(input.customer_name,'customer name',{min:2,max:191});const phone=normalizeBdPhone(input.phone);const address=requireString(input.address,'shipping address',{min:5,max:2000});const zoneId=requirePositiveInt(input.delivery_location_id,'delivery location');const note=String(input.note||'').trim().slice(0,1000);
@@ -181,6 +181,15 @@ async function createOrder(input,options={}){
     if(couponCode){const row=await tx.queryOne('SELECT code,discount_type,discount_value,min_purchase_paisa,max_discount_paisa,usage_limit,used_count,expires_at,status FROM coupons WHERE UPPER(code)=? FOR UPDATE',[couponCode]);coupon=couponAmount(row,subtotal);}
     let customerId=null;
     if(sessionCustomer?.id){const customer=await tx.queryOne('SELECT id,phone,status,is_blocked FROM customers WHERE id=? FOR UPDATE',[requirePositiveInt(sessionCustomer.id,'customer ID')]);if(!customer||Number(customer.status)!==1||Number(customer.is_blocked)===1||normalizeBdPhone(customer.phone)!==phone)throw new ConflictError('Sign in with an account matching the delivery phone, or continue as a guest.');customerId=Number(customer.id);}
+    // A number that already has a password account can only be used by someone who knows that password.
+    let linkedByPassword=false;
+    if(!customerId){
+      const owner=await tx.queryOne("SELECT id FROM customers WHERE phone=? AND password_hash<>'' AND status=1 AND is_blocked=0 LIMIT 1",[phone]);
+      if(owner?.id){
+        if(Number(verifiedAccountId)!==Number(owner.id))throw new AccountPasswordError(require('../services/checkoutAccountService').REQUIRED_MESSAGE);
+        customerId=Number(owner.id);linkedByPassword=true;
+      }
+    }
     let walletUsed=0;
     if(useWallet){
       if(!customerId)throw new ConflictError('Sign in to your account to pay part of the order from your wallet.');
@@ -298,7 +307,8 @@ async function createOrder(input,options={}){
     }
     if(customerId){
       await tx.execute('UPDATE customers SET total_orders=total_orders+1,address=? WHERE id=?',[address,customerId]);
-      if(clearSavedCart){
+      // A password-verified guest keeps whatever was already saved in that account's cart.
+      if(clearSavedCart&&!linkedByPassword){
         // The order, inventory reservation, and saved-cart clear must commit or roll back together.
         // Cart mutations acquire the same customer lock, so this clear cannot race a line-scoped write.
         await tx.execute('DELETE FROM customer_cart_items WHERE customer_id=?',[customerId]);
@@ -314,7 +324,7 @@ async function createOrder(input,options={}){
       await tx.execute("UPDATE orders SET otp_status='verified' WHERE id=?",[order.insertId]);
       await tx.execute("UPDATE order_otps SET order_id=? WHERE phone=? AND order_id IS NULL AND verified_at IS NOT NULL",[order.insertId,phone]);
     }
-    return{id:Number(order.insertId),invoiceNo:invoice,replayed:false,newAccountId:accountCreated?customerId:null,totalPaisa:total,walletUsedPaisa:walletUsed,paidPaisa:0,codDuePaisa:codDue,paymentStatus};
+    return{id:Number(order.insertId),invoiceNo:invoice,replayed:false,newAccountId:accountCreated?customerId:null,passwordAccountId:linkedByPassword?customerId:null,totalPaisa:total,walletUsedPaisa:walletUsed,paidPaisa:0,codDuePaisa:codDue,paymentStatus};
   });
   if (result && !result.replayed) {
     try {

@@ -81,7 +81,7 @@ async function deliverRecoveryMessage({ channel, destination, token, expiresInSe
       );
     }
     const expiryMinutes = Math.round(expiresInSeconds / 60);
-    const message = `[Mr. Tumi] আপনার পাসওয়ার্ড পুনরুদ্ধারের কোড: ${token}। মেয়াদ ${expiryMinutes} মিনিট। এই কোড কাউকে জানাবেন না।`;
+    const message = `Mr. Tumi পাসওয়ার্ড কোড (OTP): ${token}। মেয়াদ ${expiryMinutes} মিনিট। কাউকে জানাবেন না।`;
     const result = await smsService.sendSms({
       phone: destination,
       message,

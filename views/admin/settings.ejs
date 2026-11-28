@@ -199,8 +199,15 @@
                 <option value="1" <%= siteSettings.vendor_otp_sms_enabled === '1' ? 'selected' : '' %>><%= L('On (turn on after a test SMS arrives)', 'চালু (টেস্ট SMS পৌঁছানোর পর চালু করুন)') %></option>
               </select>
             </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold" for="recoverySms"><%= L('Password recovery by SMS code (OTP)', 'SMS কোডে (OTP) পাসওয়ার্ড উদ্ধার') %></label>
+              <select name="customer_recovery_sms_enabled" id="recoverySms" class="form-select">
+                <option value="0" <%= siteSettings.customer_recovery_sms_enabled === '1' ? '' : 'selected' %>><%= L('Off', 'বন্ধ') %></option>
+                <option value="1" <%= siteSettings.customer_recovery_sms_enabled === '1' ? 'selected' : '' %>><%= L('On (turn on after a test SMS arrives)', 'চালু (টেস্ট SMS পৌঁছানোর পর চালু করুন)') %></option>
+              </select>
+            </div>
             <div class="col-12">
-              <div class="form-text"><%= L('Customer order OTP is switched on in', 'ক্রেতার অর্ডার OTP চালু করার জায়গা:') %> <a href="/admin/phase08/settings"><%= L('Order settings → OTP policy', 'অর্ডার সেটিংস → OTP নীতি') %></a></div>
+              <div class="form-text"><%= L('Customers do not need an OTP to order: a number that already has an account uses its password. The separate order OTP is optional and normally stays off:', 'অর্ডার করতে ক্রেতার OTP লাগে না: যে নম্বরে অ্যাকাউন্ট আছে সে পাসওয়ার্ড দেয়। আলাদা অর্ডার OTP ঐচ্ছিক, সাধারণত বন্ধ থাকবে:') %> <a href="/admin/phase08/settings"><%= L('Order settings → OTP policy', 'অর্ডার সেটিংস → OTP নীতি') %></a></div>
             </div>
             <div class="col-md-4">
               <label class="form-label small fw-semibold"><%= L('Automatic SMS to the customer on a new order', 'অর্ডার হলে কাস্টমারকে অটো SMS') %></label>

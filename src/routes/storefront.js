@@ -13,6 +13,8 @@ const customerRepo = require('../repositories/customerRepository');
 const customerPrivacyRepo = require('../repositories/privacyRepository');
 const { env } = require('../config/env');
 const { ValidationError } = require('../utils/errors');
+const { localizeError } = require('../utils/bnErrors');
+const checkoutAccount = require('../services/checkoutAccountService');
 const { captureAttribution, consentGranted } = require('../analytics/attribution');
 const { safeReferrer } = require('../utils/urlSecurity');
 const { isReservedRoute, SLUG_REGEX } = require('../utils/vendorSlug');
@@ -978,6 +980,18 @@ router.get('/api/checkout/quick-quote', quickQuoteLimiter, asyncHandler(async (r
   return res.json({success:true,...quote});
 }));
 
+const accountCheckLimiter = createRateLimiter({ keyPrefix: 'checkout_account_check', windowMs: 60_000, max: 30 });
+router.post('/api/checkout/account-check', accountCheckLimiter, requireCsrf, asyncHandler(async (req, res) => {
+  const result = await checkoutAccount.checkAccount({ phone: req.body.phone, password: req.body.password, sessionCustomer: req.customerUser || null, ip: req.ip || '' });
+  const english = req.locale === 'en';
+  let message = '';
+  if (result.passwordRequired && !result.passwordOk) {
+    const source = req.body.password ? checkoutAccount.WRONG_MESSAGE : checkoutAccount.REQUIRED_MESSAGE;
+    message = english ? source : localizeError(source, 'bn');
+  }
+  return res.json({ success: true, passwordRequired: result.passwordRequired, passwordOk: result.passwordOk, message });
+}));
+
 router.post('/order/quick-submit', publicFormLimiter, requireCsrf, asyncHandler(async (req, res) => {
   if (storefrontRepo.isMysqlMode()) {
     const rawKey=String(req.body.quick_order_request_key||'').trim();
@@ -985,6 +999,7 @@ router.post('/order/quick-submit', publicFormLimiter, requireCsrf, asyncHandler(
     const productId=Number(req.body.product_id);
     const variantId=await checkoutRepo.resolveQuickOrderVariant(productId,req.body.size,req.body.color);
     const sessionHash=crypto.createHash('sha256').update(String(req.sessionID||'anon')).digest('hex').slice(0,16);
+    const verifiedAccountId=await checkoutAccount.resolveCheckoutAccount({phone:req.body.phone,password:req.body.account_password,sessionCustomer:req.customerUser||null,ip:req.ip||''});
     const result=await checkoutRepo.createOrder({
       customer_name:req.body.customer_name,
       phone:req.body.phone,
@@ -997,6 +1012,7 @@ router.post('/order/quick-submit', publicFormLimiter, requireCsrf, asyncHandler(
     },{
       locale:req.locale,
       sessionCustomer:req.customerUser||null,
+      verifiedAccountId,
       ip:req.ip||'',
       requestKey:`quick:${sessionHash}:${rawKey}`,
       cart:[{product_id:productId,variant_id:variantId,qty:req.body.qty}],
@@ -1317,12 +1333,13 @@ router.post('/customer/checkout', requireCsrf, asyncHandler(async (req, res) => 
     const { normalizeBdPhone } = require('../utils/validator');
     const cleanCustomerPhone = normalizeBdPhone(checkoutInput.phone);
     const isOtpSessionVerified = Boolean(req.session.orderOtpVerified && req.session.orderOtpPhone === cleanCustomerPhone);
+    const verifiedAccountId = await checkoutAccount.resolveCheckoutAccount({ phone: cleanCustomerPhone, password: req.body.account_password, sessionCustomer: req.customerUser || null, ip: req.ip || '' });
     const result = await checkoutRepo.createOrder({
       customer_name: checkoutInput.customer_name, phone: checkoutInput.phone, address: checkoutInput.address,
       delivery_location_id: checkoutInput.delivery_location_id, payment_method: checkoutInput.payment_method,
       trx_id: req.body.trx_id, sender_number: req.body.sender_number, use_wallet: req.body.use_wallet,
       note: req.body.note, coupon_code: matches(replayKey) ? String(req.body.coupon_code || '') : (req.session.appliedCoupon?.code || ''),
-    }, { locale: req.locale, sessionCustomer: req.customerUser || null, ip: req.ip, userAgent: req.get('user-agent'), fbp: req.cookies?._fbp, fbc: req.cookies?._fbc, requestKey: expected, cart: sourceCart, incompleteOrderId, sessionSid: req.sessionID, otpVerified: isOtpSessionVerified, referralCode: req.body.referral_code || req.session.referralCode || req.cookies?.mrtumi_ref || null, affiliateCode: req.body.affiliate_code || req.session?.affiliateCode || req.cookies?.mrtumi_aff || null, analyticsConsent: consentGranted(req.session, env.analyticsAttributionEnabled), attribution: req.session.analyticsAttribution || null });
+    }, { locale: req.locale, sessionCustomer: req.customerUser || null, verifiedAccountId, ip: req.ip, userAgent: req.get('user-agent'), fbp: req.cookies?._fbp, fbc: req.cookies?._fbc, requestKey: expected, cart: sourceCart, incompleteOrderId, sessionSid: req.sessionID, otpVerified: isOtpSessionVerified, referralCode: req.body.referral_code || req.session.referralCode || req.cookies?.mrtumi_ref || null, affiliateCode: req.body.affiliate_code || req.session?.affiliateCode || req.cookies?.mrtumi_aff || null, analyticsConsent: consentGranted(req.session, env.analyticsAttributionEnabled), attribution: req.session.analyticsAttribution || null });
     delete req.session.orderOtpVerified; delete req.session.orderOtpPhone;
     if (!isReplay) { req.session.checkoutLastCart = JSON.parse(JSON.stringify(sourceCart)); req.session.checkoutLastRequestKey = expected; req.session.checkoutLastRecoveryId = incompleteOrderId; delete req.session.incompleteCheckoutId; req.session.cart = cartSelection.savedLines(req.session); delete req.session.appliedCoupon; }
     // The order transaction empties the saved cart, so write back the lines the customer did not order.
@@ -1510,6 +1527,30 @@ function rememberOrderForSuccess(req, result) {
   if (result.newAccountId && !req.customerUser?.id) {
     req.session.newAccountSignIn = { customerId: result.newAccountId, invoiceNo: String(result.invoiceNo) };
   }
+  if (result.passwordAccountId && !req.customerUser?.id) {
+    req.session.passwordSignIn = { customerId: result.passwordAccountId, invoiceNo: String(result.invoiceNo) };
+  }
+}
+
+// The buyer typed this account's password to place the order, so sign them in to follow it.
+async function signInPasswordAccount(req, invoiceNo) {
+  const pending = req.session.passwordSignIn;
+  if (!pending || pending.invoiceNo !== String(invoiceNo) || req.customerUser?.id) return;
+  delete req.session.passwordSignIn;
+  const profile = await customerRepo.getProfile(pending.customerId).catch(() => null);
+  if (!profile) return;
+  const account = { id: Number(profile.id), name: profile.name, phone: profile.phone };
+  const consents = await require('../repositories/privacyRepository').listConsents(account.id).catch(() => []);
+  const analytics = Number(consents.find((item) => item.consent_key === 'analytics')?.granted) === 1;
+  const carried = { ...req.session };
+  delete carried.cookie;
+  delete carried.flash;
+  await new Promise((resolve, reject) => req.session.regenerate((err) => (err ? reject(err) : resolve())));
+  Object.assign(req.session, carried, { customerUser: account, analyticsConsent: analytics, analyticsConsentChoice: analytics ? 'accepted' : 'rejected' });
+  if (Array.isArray(carried.cart) && carried.cart.length) await customerRepo.mergeCart(account.id, carried.cart).catch((err) => console.error('[cart] could not keep un-ordered lines:', err.message));
+  req.session.cart = await customerRepo.listCart(account.id, req.locale).catch(() => carried.cart || []);
+  req.customerUser = account;
+  req.res.locals.customerUser = account;
 }
 
 async function signInNewAccount(req, invoiceNo) {
@@ -1532,6 +1573,7 @@ router.get('/order-success/:invoiceId', asyncHandler(async (req, res) => {
   if (storefrontRepo.isMysqlMode()) {
     const result = await checkoutRepo.getOrderForSuccess(req.params.invoiceId);
     if (!result) return res.redirect('/');
+    await signInPasswordAccount(req, req.params.invoiceId);
     // New accounts see this confirmation on their account page, next to the password form.
     if (await signInNewAccount(req, req.params.invoiceId) || req.session.welcomeInvoice === String(req.params.invoiceId)) return res.redirect('/customer/account');
     return res.render('store/order-success-mysql', { order: result.order, items: result.items, isEn: req.locale === 'en' });
@@ -1647,7 +1689,8 @@ router.post('/campaign/:slug/order', publicFormLimiter, requireCsrf, asyncHandle
     const { normalizeBdPhone: normPhoneCamp } = require('../utils/validator');
     const cleanCampPhone = normPhoneCamp(req.body.phone);
     const isCampOtpVerified = Boolean(req.session.orderOtpVerified && req.session.orderOtpPhone === cleanCampPhone);
-    const result=await checkoutRepo.createCampaignOrder({customer_name:req.body.customer_name,phone:req.body.phone,address:req.body.address,delivery_location_id:req.body.delivery_location_id,payment_method:'cod'}, {campaignSlug:req.params.slug,qty:req.body.qty,requestKey:`${req.sessionID}:${supplied}`,locale:req.locale,ip:req.ip||'',sessionSid:req.sessionID,userAgent:req.get('user-agent'),fbp:req.cookies?._fbp,fbc:req.cookies?._fbc,otpVerified:isCampOtpVerified});
+    const verifiedAccountId=await checkoutAccount.resolveCheckoutAccount({phone:cleanCampPhone,password:req.body.account_password,sessionCustomer:req.customerUser||null,ip:req.ip||''});
+    const result=await checkoutRepo.createCampaignOrder({customer_name:req.body.customer_name,phone:req.body.phone,address:req.body.address,delivery_location_id:req.body.delivery_location_id,payment_method:'cod'}, {campaignSlug:req.params.slug,qty:req.body.qty,requestKey:`${req.sessionID}:${supplied}`,locale:req.locale,ip:req.ip||'',sessionSid:req.sessionID,userAgent:req.get('user-agent'),fbp:req.cookies?._fbp,fbc:req.cookies?._fbc,otpVerified:isCampOtpVerified,verifiedAccountId});
     delete req.session.orderOtpVerified; delete req.session.orderOtpPhone;
     rememberOrderForSuccess(req, result);
     delete req.session.campaignCheckoutKey;delete req.session.campaignCheckoutSlug;

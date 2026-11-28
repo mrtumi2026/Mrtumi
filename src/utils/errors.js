@@ -42,6 +42,12 @@ class ConflictError extends AppError {
   }
 }
 
+class AccountPasswordError extends AppError {
+  constructor(message) {
+    super('ACCOUNT_PASSWORD_REQUIRED', message, 409);
+  }
+}
+
 class RateLimitError extends AppError {
   constructor(message = 'Too many requests. Please try again later.', retryAfterSec = 60) {
     super('RATE_LIMITED', message, 429, { retryAfterSec });
@@ -62,6 +68,7 @@ module.exports = {
   AuthorizationError,
   NotFoundError,
   ConflictError,
+  AccountPasswordError,
   RateLimitError,
   DatabaseError,
 };

@@ -100,6 +100,13 @@ async function setInitialPassword(customerId, { password, confirmation, policyVe
     return account;
   });
 }
+// SMS recovery uses a short code that people can type, so it is limited three ways: it expires in
+// 10 minutes, one account gets at most 3 codes an hour, and a number gets at most 10 tries an hour.
+const OTP_MINUTES = 10;
+const OTP_MAX_PER_HOUR = 3;
+const OTP_MAX_TRIES_PER_HOUR = 10;
+const phoneOtpHash = (customerId, code) => require('node:crypto').createHmac('sha256', env.sessionSecret).update(`recovery-otp:${customerId}:${code}`).digest('hex');
+
 async function issueCustomerRecovery(identifier, channel, deliver, { pool = null } = {}) {
   if (!['email','phone'].includes(channel) || typeof deliver !== 'function') throw new ValidationError('A verified recovery channel and configured delivery provider are required.');
   const key = String(identifier || '').trim();
@@ -111,26 +118,55 @@ async function issueCustomerRecovery(identifier, channel, deliver, { pool = null
     return { accepted: true };
   }
   if (channel === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(match)) return { accepted: true };
-  const rawToken = require('node:crypto').randomBytes(32).toString('base64url');
-  const tokenHash = require('node:crypto').createHash('sha256').update(rawToken).digest('hex');
+  const crypto = require('node:crypto');
+  const minutes = channel === 'phone' ? OTP_MINUTES : 20;
   let issue = null;
   await withTransaction(async (tx) => {
     const verifiedColumn = channel === 'email' ? 'email_verified_at' : 'phone_verified_at';
     const proof = channel === 'email' ? `AND ${verifiedColumn} IS NOT NULL` : '';
     const customer = await tx.queryOne(`SELECT id,${channel} AS destination FROM customers WHERE ${channel}=? ${proof} AND status=1 AND is_blocked=0 LIMIT 1 FOR UPDATE`, [match]);
     if (!customer) return;
-    const result = await tx.execute('INSERT INTO customer_recovery_tokens(customer_id,channel,token_hash,expires_at) VALUES(?,?,?,DATE_ADD(CURRENT_TIMESTAMP,INTERVAL 20 MINUTE))',[customer.id,channel,tokenHash]);
-    await tx.execute("INSERT INTO audit_logs(actor_type,actor_id,action,entity_type,entity_id,after_json) VALUES('system',?,'customer.recovery.issued','customer_recovery_token',?,?)",[customer.id,String(result.insertId),JSON.stringify({channel,expires_minutes:20})]);
-    issue = { id:result.insertId,customerId:Number(customer.id),destination:customer.destination };
+    let token; let tokenHash;
+    if (channel === 'phone') {
+      const recent = await tx.queryOne("SELECT COUNT(*) AS n FROM customer_recovery_tokens WHERE customer_id=? AND channel='phone' AND created_at>DATE_SUB(CURRENT_TIMESTAMP,INTERVAL 1 HOUR)", [customer.id]);
+      if (Number(recent?.n || 0) >= OTP_MAX_PER_HOUR) return;
+      // Only the newest code works.
+      await tx.execute("UPDATE customer_recovery_tokens SET revoked_at=CURRENT_TIMESTAMP WHERE customer_id=? AND channel='phone' AND consumed_at IS NULL AND revoked_at IS NULL", [customer.id]);
+      for (let attempt = 0; attempt < 5 && !tokenHash; attempt++) {
+        const code = String(crypto.randomInt(100000, 1000000));
+        const hashed = phoneOtpHash(customer.id, code);
+        if (!await tx.queryOne('SELECT id FROM customer_recovery_tokens WHERE token_hash=?', [hashed])) { token = code; tokenHash = hashed; }
+      }
+      if (!tokenHash) return;
+    } else {
+      token = crypto.randomBytes(32).toString('base64url');
+      tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    }
+    const result = await tx.execute(`INSERT INTO customer_recovery_tokens(customer_id,channel,token_hash,expires_at) VALUES(?,?,?,DATE_ADD(CURRENT_TIMESTAMP,INTERVAL ${minutes} MINUTE))`,[customer.id,channel,tokenHash]);
+    await tx.execute("INSERT INTO audit_logs(actor_type,actor_id,action,entity_type,entity_id,after_json) VALUES('system',?,'customer.recovery.issued','customer_recovery_token',?,?)",[customer.id,String(result.insertId),JSON.stringify({channel,expires_minutes:minutes})]);
+    issue = { id:result.insertId,customerId:Number(customer.id),destination:customer.destination,token };
   },{pool});
   if (!issue) return { accepted:true };
-  try { await deliver({ channel, destination:issue.destination, token:rawToken, expiresInSeconds:1200 }); }
+  try { await deliver({ channel, destination:issue.destination, token:issue.token, expiresInSeconds:minutes * 60 }); }
   catch (_error) {
     const db=createQueryClient(pool||getPool());
     await db.execute('UPDATE customer_recovery_tokens SET revoked_at=CURRENT_TIMESTAMP WHERE id=? AND consumed_at IS NULL',[issue.id]);
     return { accepted:true };
   }
   return { accepted:true };
+}
+// Sets the new password for a locked, still-usable recovery row. Runs inside the caller's transaction.
+async function finishRecoveryTx(tx, row, passwordHash) {
+  if(!row||row.consumed_at||row.revoked_at||new Date(row.expires_at).getTime()<=Date.now())throw new ValidationError('Recovery link is invalid or expired.');
+  const customer=await tx.queryOne('SELECT id FROM customers WHERE id=? AND status=1 AND is_blocked=0 FOR UPDATE',[row.customer_id]);
+  if(!customer)throw new ValidationError('Recovery link is invalid or expired.');
+  await tx.execute('UPDATE customers SET password_hash=? WHERE id=?',[passwordHash,row.customer_id]);
+  if(row.channel==='phone')await tx.execute('UPDATE customers SET phone_verified_at=COALESCE(phone_verified_at,UTC_TIMESTAMP()) WHERE id=?',[row.customer_id]);
+  await tx.execute('UPDATE customer_recovery_tokens SET consumed_at=CURRENT_TIMESTAMP WHERE id=?',[row.id]);
+  await tx.execute('UPDATE customer_recovery_tokens SET revoked_at=CURRENT_TIMESTAMP WHERE customer_id=? AND id<>? AND consumed_at IS NULL AND revoked_at IS NULL',[row.customer_id,row.id]);
+  await tx.execute("DELETE FROM web_sessions WHERE actor_type='customer' AND actor_id=?",[row.customer_id]);
+  await tx.execute("INSERT INTO audit_logs(actor_type,actor_id,action,entity_type,entity_id,after_json) VALUES('customer',?,'customer.recovery.completed','customer',?,?)",[row.customer_id,String(row.customer_id),JSON.stringify({password_changed:true,active_sessions_revoked:true})]);
+  return {customerId:Number(row.customer_id)};
 }
 async function consumeCustomerRecoveryToken(token, password, { pool = null } = {}) {
   const raw=String(token||'');
@@ -139,17 +175,24 @@ async function consumeCustomerRecoveryToken(token, password, { pool = null } = {
   const passwordHash=await bcrypt.hash(validatePassword(password),12);
   return withTransaction(async tx=>{
     const row=await tx.queryOne('SELECT id,customer_id,channel,expires_at,consumed_at,revoked_at FROM customer_recovery_tokens WHERE token_hash=? FOR UPDATE',[tokenHash]);
-    if(!row||row.consumed_at||row.revoked_at||new Date(row.expires_at).getTime()<=Date.now())throw new ValidationError('Recovery link is invalid or expired.');
-    const customer=await tx.queryOne('SELECT id FROM customers WHERE id=? AND status=1 AND is_blocked=0 FOR UPDATE',[row.customer_id]);
-    if(!customer)throw new ValidationError('Recovery link is invalid or expired.');
-    await tx.execute('UPDATE customers SET password_hash=? WHERE id=?',[passwordHash,row.customer_id]);
-    if(row.channel==='phone')await tx.execute('UPDATE customers SET phone_verified_at=COALESCE(phone_verified_at,UTC_TIMESTAMP()) WHERE id=?',[row.customer_id]);
-    await tx.execute('UPDATE customer_recovery_tokens SET consumed_at=CURRENT_TIMESTAMP WHERE id=?',[row.id]);
-    await tx.execute('UPDATE customer_recovery_tokens SET revoked_at=CURRENT_TIMESTAMP WHERE customer_id=? AND id<>? AND consumed_at IS NULL AND revoked_at IS NULL',[row.customer_id,row.id]);
-    await tx.execute("DELETE FROM web_sessions WHERE actor_type='customer' AND actor_id=?",[row.customer_id]);
-    await tx.execute("INSERT INTO audit_logs(actor_type,actor_id,action,entity_type,entity_id,after_json) VALUES('customer',?,'customer.recovery.completed','customer',?,?)",[row.customer_id,String(row.customer_id),JSON.stringify({password_changed:true,active_sessions_revoked:true})]);
-    return {customerId:Number(row.customer_id)};
+    return finishRecoveryTx(tx,row,passwordHash);
   },{pool});
+}
+async function consumeCustomerPhoneOtp(phone, code, password, { pool = null, consume = require('./loginRateLimitRepository').consumeLoginBucket } = {}) {
+  const invalid = () => new ValidationError('Recovery link is invalid or expired.');
+  const digits = String(code || '').trim();
+  let clean;
+  try { clean = normalizeBdPhone(phone); } catch (_error) { throw invalid(); }
+  if (!/^\d{6}$/.test(digits)) throw invalid();
+  const passwordHash = await bcrypt.hash(validatePassword(password), 12);
+  const outcome = await consume({ bucketKey: `customer-recovery-otp:${require('node:crypto').createHash('sha256').update(clean).digest('hex')}`, max: OTP_MAX_TRIES_PER_HOUR, windowMs: 60 * 60 * 1000 });
+  if (!outcome.allowed) throw new ValidationError('Too many wrong codes. Wait one hour, then ask for a new code.');
+  return withTransaction(async tx => {
+    const customer = await tx.queryOne('SELECT id FROM customers WHERE phone=? AND status=1 AND is_blocked=0 LIMIT 1', [clean]);
+    if (!customer) throw invalid();
+    const row = await tx.queryOne("SELECT id,customer_id,channel,expires_at,consumed_at,revoked_at FROM customer_recovery_tokens WHERE token_hash=? AND customer_id=? AND channel='phone' FOR UPDATE", [phoneOtpHash(customer.id, digits), customer.id]);
+    return finishRecoveryTx(tx, row, passwordHash);
+  }, { pool });
 }
 async function authenticateCustomer(phone, password) {
   const cleanPhone = normalizeBdPhone(phone);
@@ -472,4 +515,4 @@ async function clearCart(customerId) {
 }
 module.exports = {
   getPasswordlessAccount,
-  setInitialPassword, normalizeBdPhone, validatePassword, registerCustomer, issueCustomerRecovery, consumeCustomerRecoveryToken, authenticateCustomer, getProfile, updateProfile, changePassword, listAddresses, listOrders, getOrderDetails, getOrderSelfServiceDetails, getReturnEvidence, saveAddress, updateAddress, setDefaultAddress, getAddressForCheckout, deleteAddress, mergeCart, listCart, addCartLine, setCartLine, removeCartLine, reconcileCart, replaceCart, clearCart };
+  setInitialPassword, normalizeBdPhone, validatePassword, registerCustomer, issueCustomerRecovery, consumeCustomerRecoveryToken, consumeCustomerPhoneOtp, authenticateCustomer, getProfile, updateProfile, changePassword, listAddresses, listOrders, getOrderDetails, getOrderSelfServiceDetails, getReturnEvidence, saveAddress, updateAddress, setDefaultAddress, getAddressForCheckout, deleteAddress, mergeCart, listCart, addCartLine, setCartLine, removeCartLine, reconcileCart, replaceCart, clearCart };

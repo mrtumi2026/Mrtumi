@@ -258,6 +258,11 @@ router.post('/customer/recovery', recoveryLimiter, requireCsrf, asyncHandler(asy
     customerRecoveryService.deliverRecoveryMessage
   );
 
+  // Remember the typed number so the code screen does not ask for it again.
+  if (channel === 'phone') {
+    try { req.session.recoveryPhone = customers.normalizeBdPhone(identifier); } catch (_error) { delete req.session.recoveryPhone; }
+  }
+
   return res.redirect('/customer/recovery?submitted=1');
 }));
 
@@ -277,6 +282,7 @@ router.get('/customer/recovery/reset', (req, res) => {
     isEn: isEn(req),
     csrfToken: req.csrfToken ? req.csrfToken() : (res.locals.csrfToken || ''),
     prefilledToken,
+    prefilledPhone: prefilledToken ? '' : (req.session.recoveryPhone || ''),
     error: flashError || '',
     customer: req.session.customerUser || null,
   });
@@ -286,6 +292,9 @@ router.post('/customer/recovery/reset', resetLimiter, requireCsrf, asyncHandler(
   const token = String(req.body.recovery_token || '').trim();
   const password = String(req.body.password || '');
   const confirmPassword = String(req.body.confirm_password || '');
+  const phone = String(req.body.phone || '').trim().slice(0, 20);
+  const isSmsCode = /^\d{6}$/.test(token);
+  res.locals.prefilledPhone = phone;
 
   if (!token) {
     return res.status(400).render('customer/recovery-reset', {
@@ -317,15 +326,29 @@ router.post('/customer/recovery/reset', resetLimiter, requireCsrf, asyncHandler(
     });
   }
 
+  if (isSmsCode && !phone) {
+    return res.status(400).render('customer/recovery-reset', {
+      isEn: isEn(req),
+      csrfToken: req.csrfToken ? req.csrfToken() : (res.locals.csrfToken || ''),
+      prefilledToken: token,
+      error: isEn(req) ? 'Enter the mobile number that received the 6-digit code.' : '৬ সংখ্যার কোডটি যে মোবাইল নম্বরে এসেছে সেটি লিখুন।',
+      customer: req.session.customerUser || null,
+    });
+  }
+
   try {
-    await customers.consumeCustomerRecoveryToken(token, password);
+    if (isSmsCode) await customers.consumeCustomerPhoneOtp(phone, token, password);
+    else await customers.consumeCustomerRecoveryToken(token, password);
   } catch (err) {
     if (err instanceof ValidationError) {
+      const locked = /^Too many wrong codes/.test(err.message);
       return res.status(400).render('customer/recovery-reset', {
         isEn: isEn(req),
         csrfToken: req.csrfToken ? req.csrfToken() : (res.locals.csrfToken || ''),
         prefilledToken: '',
-        error: isEn(req) ? 'Recovery code is invalid, expired, or already used.' : 'রিকভারি কোডটি সঠিক নয়, মেয়াদোত্তীর্ণ বা ইতিমধ্যে ব্যবহৃত হয়েছে।',
+        error: locked
+          ? (isEn(req) ? err.message : 'অনেকবার ভুল কোড দেওয়া হয়েছে। এক ঘণ্টা পর নতুন কোড নিন।')
+          : (isEn(req) ? 'Recovery code is invalid, expired, or already used.' : 'রিকভারি কোডটি সঠিক নয়, মেয়াদোত্তীর্ণ বা ইতিমধ্যে ব্যবহৃত হয়েছে।'),
         customer: req.session.customerUser || null,
       });
     }
