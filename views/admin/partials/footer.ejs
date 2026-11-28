@@ -118,8 +118,8 @@
             <strong class="text-dark d-block mt-1"><%= siteSettings.site_name %></strong>
             <p class="small mb-3"><%= locale === 'bn' ? 'অর্ডার, প্রোডাক্ট, স্টক বা হিসাব — যেকোনো কিছু জিজ্ঞাসা করুন।' : 'Ask about live orders, inventory, or store operations.' %></p>
             <div class="d-flex flex-wrap gap-1 justify-content-center">
-              <button type="button" class="btn btn-sm btn-outline-success rounded-pill gaw-sug" data-q="আজ কতটি অর্ডার হয়েছে?">আজকের অর্ডার</button>
-              <button type="button" class="btn btn-sm btn-outline-success rounded-pill gaw-sug" data-q="স্টক ও প্রোডাক্ট রিপোর্ট দাও">স্টক রিপোর্ট</button>
+              <button type="button" class="btn btn-sm btn-outline-success rounded-pill gaw-sug" data-q="আজ কতটি অর্ডার হয়েছে?"><%= locale === 'bn' ? 'আজকের অর্ডার' : "Today's orders" %></button>
+              <button type="button" class="btn btn-sm btn-outline-success rounded-pill gaw-sug" data-q="স্টক ও প্রোডাক্ট রিপোর্ট দাও"><%= locale === 'bn' ? 'স্টক রিপোর্ট' : 'Stock report' %></button>
               <button type="button" class="btn btn-sm btn-outline-success rounded-pill gaw-sug" data-q="Fraud check কিভাবে করব?">Fraud check</button>
             </div>
           </div>

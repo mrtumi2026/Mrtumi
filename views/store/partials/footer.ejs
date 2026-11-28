@@ -1,3 +1,4 @@
+<% const L = (en, bn) => (typeof locale !== 'undefined' && locale === 'en' ? en : bn); %>
     <!-- Trust Feature Strip -->
     <section class="container my-5" aria-label="Store Highlights">
       <div class="mt-trust-strip">
@@ -330,7 +331,7 @@
         <a id="voLink" href="/all-products" class="fw-bold text-success text-decoration-none d-block text-truncate" style="max-width:195px;">
           <span id="voProd"></span>
         </a>
-        <span class="badge bg-success-subtle text-success mt-1" style="font-size:10px;">🛡️ Verified Order</span>
+        <span class="badge bg-success-subtle text-success mt-1" style="font-size:10px;"><%= L('🛡️ Verified Order', '🛡️ যাচাইকৃত অর্ডার') %></span>
       </div>
       <button type="button" class="btn-close ms-auto" style="font-size:10px;" aria-label="<%= t('a11y.closeModal') %>" onclick="document.getElementById('verifiedOrderToast').classList.remove('show')"></button>
     </div>
@@ -389,7 +390,7 @@
               <input type="tel" id="compPhone" name="phone" class="form-control form-control-sm" required />
             </div>
             <div class="mb-2">
-              <label for="compInvoice" class="form-label small fw-semibold">Invoice ID</label>
+              <label for="compInvoice" class="form-label small fw-semibold"><%= L('Invoice ID', 'ইনভয়েস নম্বর') %></label>
               <input type="text" id="compInvoice" name="invoice_id" class="form-control form-control-sm" />
             </div>
             <div class="mb-2">

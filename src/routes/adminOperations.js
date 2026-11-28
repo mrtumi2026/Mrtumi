@@ -1438,7 +1438,7 @@ router.post('/admin/customer/recovery/link', requireCsrf, asyncHandler(async (re
   const base = String(env.appUrl || '').replace(/\/+$/, '');
   const link = { ...created, url: `${base}/customer/recovery/reset?token=${created.token}` };
   if (req.body.send_sms === '1') {
-    const sent = await smsService.sendSms({ phone: created.account.phone, message: `Mr. Tumi password link (valid ${created.hours} hours): ${link.url}`, templateKey: 'customer_recovery' });
+    const sent = await smsService.sendSms({ phone: created.account.phone, message: req.locale === 'en' ? `Mr. Tumi password link (valid ${created.hours} hours): ${link.url}` : `Mr. Tumi পাসওয়ার্ড লিংক (${created.hours} ঘণ্টা চলবে): ${link.url}`, templateKey: 'customer_recovery' });
     link.smsSent = Boolean(sent && sent.success);
   }
   return renderCustomerRecovery(req, res, String(req.body.q || created.account.phone), link);

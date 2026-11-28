@@ -1,0 +1,76 @@
+'use strict';
+
+// English wording for the Bangla titles, hints and option labels that admin
+// routes pass to shared admin views. Unknown text is returned unchanged.
+const BN_TO_EN = Object.freeze({
+  "🔑 অনুমতি": "🔑 Permissions",
+  "প্রোডাক্ট ক্যাটাগরি তৈরি, সম্পাদনা ও সাজিয়ে নিন": "Create, edit and arrange product categories",
+  "ক্যাটাগরির অধীনে সাব-ক্যাটাগরি ব্যবস্থাপনা": "Manage sub-categories under a category",
+  "সাব-ক্যাটাগরির অধীনে চাইল্ড-ক্যাটাগরি ব্যবস্থাপনা": "Manage child categories under a sub-category",
+  "প্রোডাক্ট ব্র্যান্ড ও অর্গানিক ফার্ম পার্টনার তালিকা": "Product brands and organic farm partners",
+  "প্রোডাক্ট ভ্যারিয়েন্ট কালার তালিকা": "Product variant colour list",
+  "ওজন ও প্যাক সাইজ ভ্যারিয়েন্ট (যেমন ৫০০ গ্রাম, ১ কেজি, ২ কেজি)": "Weight and pack size variants (e.g. 500 g, 1 kg, 2 kg)",
+  "চেকআউট ডিসকাউন্ট কুপন কোড তৈরি ও পরিচালনা করুন": "Create and manage checkout discount coupon codes",
+  "গ্রাহকের রিভিউ অ্যাপ্রুভ, ডিলিট অথবা নতুন রিভিউ যুক্ত করুন": "Approve, delete or add customer reviews",
+  "দৈনিক হাজিরা ও অফিস সময় লগ": "Daily attendance and office time log",
+  "ছুটির আবেদন ও অনুমোদন ব্যবস্থাপনা": "Leave applications and approvals",
+  "মাসিক বেতন শিট ও পরিশোধের বিবরণী": "Monthly salary sheet and payment details",
+  "কর্মচারীদের উৎসব ও পারফরম্যান্স বোনাস তালিকা": "Employee festival and performance bonuses",
+  "অফার ও আপডেট পেতে সাবস্ক্রাইব করা গ্রাহকদের তালিকা": "Customers who subscribed for offers and updates",
+  "নিজস্ব ডেলিভারি রাইডার ও কমিশন ব্যবস্থাপনা": "Own delivery riders and their commission",
+  "ডেলিভারি রাইডারদের কমিশন উত্তোলন": "Delivery rider commission withdrawals",
+  "বিভাগ, জেলা ও উপজেলা ভিত্তিক ডেলিভারি চার্জ নির্ধারণ করুন": "Set delivery charges by division, district and upazila",
+  "ওয়েবসাইটের হেডার ও ফুটারে প্রদর্শিত সোশ্যাল মিডিয়া লিংকসমূহ": "Social media links shown in the website header and footer",
+  "হোমপেজ ও ফুটারের ট্রাস্ট ব্যাজ ফিচার বার": "Trust badge bar on the home page and footer",
+  "Terms ও Return Policy পেজে \"Edit\" চেপে লেখা বসান, তারপর Status \"প্রকাশিত\" করে Save করুন": "For the Terms and Return Policy pages press \"Edit\", write your text, set Status to \"Published\" and Save",
+  "প্রকাশিত (সবাই দেখবে)": "Published (everyone can see it)",
+  "খসড়া (লুকানো)": "Draft (hidden)",
+  "সিঙ্গেল প্রোডাক্ট হাই-কনভার্টিং ল্যান্ডিং পেজ তৈরি ও লাইভ লিংক কপি করুন": "Create a single-product landing page and copy its live link",
+  "সার্ভার ইভেন্ট ও সিস্টেম লগসমূহ": "Server events and system logs",
+  "Credit (জমা)": "Credit (money in)",
+  "Debit (খরচ)": "Debit (expense)",
+  "প্যাকেজিং, মার্কেটিং, পরিবহন ও অফিস খরচের হিসাব": "Packaging, marketing, transport and office expenses",
+  "রিসেলার ডিপোজিট লেনদেন": "Reseller deposit transactions",
+  "ফল ও স্বাস্থ্য বিষয়ক ব্লগ আর্টিকেল প্রকাশ ও সম্পাদনা করুন": "Publish and edit fruit and health blog articles",
+  "বাগান মালিক ও পাইকারি সরবরাহকারীদের তালিকা ও বকেয়া হিসাব": "Farm owners and wholesale suppliers, with their dues",
+  "সাপ্লায়ার থেকে পণ্য ক্রয় এন্ট্রি করুন (স্বয়ংক্রিয়ভাবে প্রোডাক্ট স্টক বৃদ্ধি পাবে)": "Record purchases from suppliers (product stock increases automatically)",
+  "প্রতিষ্ঠানের কর্মকর্তা ও কর্মচারীদের তালিকা": "Officers and employees of the business",
+  "ওয়েবসাইটের লাইভ সাপোর্ট উইজেট থেকে জমা পড়া অভিযোগসমূহ": "Complaints sent from the website's support widget",
+  "কাস্টমারদের পাঠানো যোগাযোগ বার্তাসমূহ": "Contact messages sent by customers",
+  "ব্যবসায়িক ক্যাশ ও ব্যাংক ফান্ডে টাকা জমা (Credit) এবং উত্তোলন (Debit) হিসাব": "Money paid into (credit) and taken out of (debit) the business cash and bank fund",
+  "Credit (জমা +)": "Credit (money in +)",
+  "Debit (খরচ / উত্তোলন -)": "Debit (expense / withdrawal -)",
+  "Category (প্যাকেজিং / অফিস / বিজ্ঞাপন)": "Category (packaging / office / advertising)",
+  "মাল্টি-ভেন্ডর সেলার অ্যাকাউন্ট, কমিশন রেট এবং ভেরিফিকেশন": "Multi-vendor seller accounts, commission rates and verification",
+  "ভেন্ডরদের পেমেন্ট উত্তোলন রিকোয়েস্ট ও অনুমোদন": "Vendor payout requests and approvals",
+  "👁 পুরো অ্যাকাউন্ট নম্বর": "👁 Full account number",
+  "ভেন্ডরদের পেমেন্ট উত্তোলন রিকোয়েস্ট": "Vendor payout requests",
+  "রিসেলার পার্টনার অ্যাকাউন্ট ও ব্যালেন্স ব্যবস্থাপনা": "Reseller partner accounts and balances",
+  "রিসেলারদের কমিশন উত্তোলন রিকোয়েস্ট ও অনুমোদন": "Reseller commission withdrawal requests and approvals",
+  "অ্যাডমিন প্যানেল ব্যবহারকারী ও রোল অ্যাক্সেস ব্যবস্থাপনা": "Admin panel users and role access",
+  "রোল ভিত্তিক অ্যাক্সেস কন্ট্রোল (RBAC)": "Role based access control (RBAC)",
+  "মডিউল পারমিশন কি তালিকা": "Module permission key list",
+  "স্টোরের সকল গ্রাহকের তালিকা ও মোট অর্ডার সংখ্যা": "All store customers and their order counts",
+  "Division (বিভাগ)": "Division",
+  "District (জেলা)": "District",
+  "Upazila (উপজেলা/থানা)": "Upazila / Thana",
+  "কুরিয়ার বুকিং, অমীমাংসিত পার্সেল ও ডেলিভারি ট্র্যাকিং অপারেশন্স": "Courier booking, unresolved parcels and delivery tracking operations",
+  "চেকআউট ফর্ম পূরণ শুরু করে অসম্পূর্ণ রাখা অর্ডারসমূহ (এক ক্লিকে অর্ডারে রূপান্তর করুন)": "Orders where checkout was started but not finished (convert to an order in one click)",
+  "অর্ডার প্রসেসিং স্ট্যাটাস ও ব্যাজ কালার কাস্টমাইজ করুন": "Customise order processing statuses and badge colours",
+  "ফেইক অর্ডার প্রতিরোধে সন্দেহজনক IP অ্যাড্রেস অথবা মোবাইল নম্বর ব্লক করুন": "Block suspicious IP addresses or mobile numbers to prevent fake orders",
+  "কাস্টমার রিফান্ড রিকোয়েস্ট যাচাই, অ্যাপ্রুভ এবং প্রসেস করুন": "Check, approve and process customer refund requests",
+  "প্রাইভেসি পলিসি, রিটার্ন পলিসি ও আমাদের সম্পর্কে পেজ তৈরি করুন": "Create privacy policy, return policy and about us pages",
+  "হোমপেজের মেইন স্লাইডার ও প্রোমো ব্যানার পরিচালনা করুন": "Manage the home page main slider and promo banners",
+  "চেকআউট পেজের পেমেন্ট গেটওয়ে ও অ্যাকাউন্ট নম্বর পরিচালনা করুন": "Manage checkout payment gateways and account numbers",
+  "কুরিয়ার API কী ও ব্যালেন্স কনফিগারেশন": "Courier API keys and balance configuration",
+  "রিসেলার উইথড্রয়াল লেনদেন": "Reseller withdrawal transactions",
+  "অর্ডার প্রসেসিং, কুরিয়ার অ্যাসাইন এবং ইনভয়েস প্রিন্ট করুন": "Process orders, assign couriers and print invoices",
+  "কোনো রেকর্ড পাওয়া যায়নি।": "No records found."
+});
+
+function adminText(value, locale) {
+  if (locale !== 'en' || typeof value !== 'string') return value;
+  return Object.prototype.hasOwnProperty.call(BN_TO_EN, value) ? BN_TO_EN[value] : value;
+}
+
+module.exports = { adminText };

@@ -173,7 +173,7 @@
                 <tbody>
                   <% referralStats.rewards.forEach(function(r) { %>
                     <tr>
-                      <td><%= new Date(r.created_at).toLocaleDateString('bn-BD') %></td>
+                      <td><%= new Date(r.created_at).toLocaleDateString(typeof locale !== 'undefined' && locale === 'en' ? 'en-GB' : 'bn-BD') %></td>
                       <td>
                         <strong>#<%= r.order_id || '—' %></strong>
                         <% if (r.referee_phone) { %>

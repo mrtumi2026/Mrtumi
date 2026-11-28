@@ -1,3 +1,4 @@
+<% const L = (en, bn) => (typeof locale !== 'undefined' && locale === 'en' ? en : bn); %>
 <%- include('partials/layout-top', { title: 'Vendor Dashboard' }) %>
 
 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
@@ -10,13 +11,13 @@
         <span class="badge bg-warning text-dark ms-1" style="font-size:11px;">⏳ Verification Pending</span>
       <% } %>
     </h4>
-    <p class="text-muted small mb-0">মালিক: <%= vendor.owner_name %> &bull; মোবাইল: <%= vendor.phone %> &bull; অ্যাডমিন কমিশন রেট: <%= vendor.commission_rate %>%</p>
+    <p class="text-muted small mb-0"><%= L('Owner:', 'মালিক:') %> <%= vendor.owner_name %> <%- L('&bull; Mobile:', '&bull; মোবাইল:') %> <%= vendor.phone %> <%- L('&bull; Admin commission rate:', '&bull; অ্যাডমিন কমিশন রেট:') %> <%= vendor.commission_rate %>%</p>
   </div>
   <div class="d-flex gap-2">
-    <a href="/vendor/fraud-check" class="btn btn-outline-primary btn-sm"><i class="fas fa-shield-alt me-1"></i>কুরিয়ার ফ্রড চেক</a>
-    <a href="/vendor/products/create" class="btn btn-forest btn-sm">+ নতুন পণ্য যোগ করুন</a>
-    <a href="/vendor/withdrawals" class="btn btn-outline-success btn-sm">💰 টাকা উত্তোলন (Withdraw)</a>
-    <a href="/vendor/referrals" class="btn btn-outline-warning text-dark btn-sm">🎁 রেফারেল প্রোগ্রাম</a>
+    <a href="/vendor/fraud-check" class="btn btn-outline-primary btn-sm"><i class="fas fa-shield-alt me-1"></i><%= L('Courier fraud check', 'কুরিয়ার ফ্রড চেক') %></a>
+    <a href="/vendor/products/create" class="btn btn-forest btn-sm"><%= L('+ Add new product', '+ নতুন পণ্য যোগ করুন') %></a>
+    <a href="/vendor/withdrawals" class="btn btn-outline-success btn-sm"><%= L('💰 Withdraw money', '💰 টাকা উত্তোলন (Withdraw)') %></a>
+    <a href="/vendor/referrals" class="btn btn-outline-warning text-dark btn-sm"><%= L('🎁 Referral programme', '🎁 রেফারেল প্রোগ্রাম') %></a>
   </div>
 </div>
 
@@ -24,33 +25,33 @@
   <div class="sc">
     <div class="sc-ico" style="background:#f0fdf4;"><i class="fas fa-wallet text-success"></i></div>
     <div>
-      <div class="sc-label">ওয়ালেট ব্যালেন্স</div>
+      <div class="sc-label"><%= L('Wallet balance', 'ওয়ালেট ব্যালেন্স') %></div>
       <div class="sc-val">৳<%= Number(vendor.balance || 0).toLocaleString('en-IN') %></div>
-      <div class="sc-note">উত্তোলনযোগ্য নিট আয়</div>
+      <div class="sc-note"><%= L('Net withdrawable earnings', 'উত্তোলনযোগ্য নিট আয়') %></div>
     </div>
   </div>
   <div class="sc">
     <div class="sc-ico" style="background:#eff6ff;"><i class="fas fa-box-open text-primary"></i></div>
     <div>
-      <div class="sc-label">মোট প্রোডাক্ট</div>
+      <div class="sc-label"><%= L('Total products', 'মোট প্রোডাক্ট') %></div>
       <div class="sc-val"><%= totalProducts %></div>
-      <div class="sc-note"><%= approvedProducts %> অনুমোদিত • <%= pendingProducts %> পেন্ডিং</div>
+      <div class="sc-note"><%= approvedProducts %> <%= L('Approved •', 'অনুমোদিত •') %> <%= pendingProducts %> <%= L('Pending', 'পেন্ডিং') %></div>
     </div>
   </div>
   <div class="sc">
     <div class="sc-ico" style="background:#fffbeb;"><i class="fas fa-shopping-basket text-warning"></i></div>
     <div>
-      <div class="sc-label">মোট অর্ডার আইটেম</div>
+      <div class="sc-label"><%= L('Total order items', 'মোট অর্ডার আইটেম') %></div>
       <div class="sc-val"><%= totalOrders %></div>
-      <div class="sc-note">গ্রস সেলস: ৳<%= Number(grossSales).toLocaleString('en-IN') %></div>
+      <div class="sc-note"><%= L('Gross sales: ৳', 'গ্রস সেলস: ৳') %><%= Number(grossSales).toLocaleString('en-IN') %></div>
     </div>
   </div>
   <div class="sc">
     <div class="sc-ico" style="background:#faf5ff;"><i class="fas fa-hand-holding-dollar text-info"></i></div>
     <div>
-      <div class="sc-label">পেন্ডিং উইথড্রয়াল</div>
+      <div class="sc-label"><%= L('Pending withdrawals', 'পেন্ডিং উইথড্রয়াল') %></div>
       <div class="sc-val">৳<%= Number(pendingWithdrawals).toLocaleString('en-IN') %></div>
-      <div class="sc-note">নিট এস্টিমেটেড আয়: ৳<%= Number(netEstimated).toLocaleString('en-IN') %></div>
+      <div class="sc-note"><%= L('Net estimated earnings: ৳', 'নিট এস্টিমেটেড আয়: ৳') %><%= Number(netEstimated).toLocaleString('en-IN') %></div>
     </div>
   </div>
 </div>
@@ -59,23 +60,23 @@
   <div class="col-lg-7">
     <div class="tbl-card">
       <div class="tbl-card-head">
-        <h4>আমার পণ্যের সাম্প্রতিক অর্ডারসমূহ</h4>
-        <a href="/vendor/orders" class="link-green">সব দেখুন →</a>
+        <h4><%= L('Recent orders for my products', 'আমার পণ্যের সাম্প্রতিক অর্ডারসমূহ') %></h4>
+        <a href="/vendor/orders" class="link-green"><%= L('View all →', 'সব দেখুন →') %></a>
       </div>
       <div class="tbl-card-body">
         <table class="table clean mb-0">
           <thead>
             <tr>
-              <th>ইনভয়েস</th>
-              <th>পণ্য</th>
-              <th>পরিমাণ</th>
-              <th>মোট</th>
-              <th>স্ট্যাটাস</th>
+              <th><%= L('Invoice', 'ইনভয়েস') %></th>
+              <th><%= L('Product', 'পণ্য') %></th>
+              <th><%= L('Quantity', 'পরিমাণ') %></th>
+              <th><%= L('Total', 'মোট') %></th>
+              <th><%= L('Status', 'স্ট্যাটাস') %></th>
             </tr>
           </thead>
           <tbody>
             <% if (!recentOrderLines.length) { %>
-              <tr><td colspan="5" class="text-center py-4 text-muted">এখনো কোনো অর্ডার আসেনি।</td></tr>
+              <tr><td colspan="5" class="text-center py-4 text-muted"><%= L('No orders yet.', 'এখনো কোনো অর্ডার আসেনি।') %></td></tr>
             <% } %>
             <% recentOrderLines.forEach(function(ol) { %>
               <tr>
@@ -95,22 +96,22 @@
   <div class="col-lg-5">
     <div class="tbl-card">
       <div class="tbl-card-head">
-        <h4>আমার প্রোডাক্টস (<%= totalProducts %>)</h4>
-        <a href="/vendor/products" class="link-green">ম্যানেজ করুন →</a>
+        <h4><%= L('My products (', 'আমার প্রোডাক্টস (') %><%= totalProducts %>)</h4>
+        <a href="/vendor/products" class="link-green"><%= L('Manage →', 'ম্যানেজ করুন →') %></a>
       </div>
       <div class="tbl-card-body">
         <table class="table clean mb-0">
           <thead>
             <tr>
-              <th>পণ্য</th>
-              <th>মূল্য</th>
-              <th>স্টক</th>
-              <th>স্ট্যাটাস</th>
+              <th><%= L('Product', 'পণ্য') %></th>
+              <th><%= L('Price', 'মূল্য') %></th>
+              <th><%= L('Stock', 'স্টক') %></th>
+              <th><%= L('Status', 'স্ট্যাটাস') %></th>
             </tr>
           </thead>
           <tbody>
             <% if (!myProducts.length) { %>
-              <tr><td colspan="4" class="text-center py-4 text-muted">কোনো প্রোডাক্ট নেই।</td></tr>
+              <tr><td colspan="4" class="text-center py-4 text-muted"><%= L('No products.', 'কোনো প্রোডাক্ট নেই।') %></td></tr>
             <% } %>
             <% myProducts.forEach(function(p) { %>
               <tr>

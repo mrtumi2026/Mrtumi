@@ -1,22 +1,23 @@
+<% const L = (en, bn) => (typeof locale !== 'undefined' && locale === 'en' ? en : bn); %>
 <%- include('partials/layout-top', { title: product ? 'Edit Product' : 'Add Product' }) %>
 
 <div class="d-flex justify-content-between align-items-center mb-3">
   <div>
-    <h4 class="fw-bold mb-0"><%= product ? 'পণ্য সম্পাদনা করুন' : 'নতুন পণ্য যোগ করুন' %></h4>
-    <p class="text-muted small mb-0">সঠিক ছবি, মূল্য ও স্টক তথ্য প্রদান করুন</p>
+    <h4 class="fw-bold mb-0"><%= product ? L('Edit product', 'পণ্য সম্পাদনা করুন') : L('Add new product', 'নতুন পণ্য যোগ করুন') %></h4>
+    <p class="text-muted small mb-0"><%= L('Give a correct photo, price and stock information', 'সঠিক ছবি, মূল্য ও স্টক তথ্য প্রদান করুন') %></p>
   </div>
-  <a href="/vendor/products" class="btn btn-outline-secondary btn-sm">← ফিরে যান</a>
+  <a href="/vendor/products" class="btn btn-outline-secondary btn-sm"><%= L('← Back', '← ফিরে যান') %></a>
 </div>
 
 <form action="<%= product ? ('/vendor/products/edit/' + product.id) : '/vendor/products/create' %>" method="POST" enctype="multipart/form-data" class="tbl-card p-4">
   <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
   <div class="row g-3">
     <div class="col-md-6">
-      <label class="form-label fw-semibold small">পণ্যের নাম *</label>
+      <label class="form-label fw-semibold small"><%= L('Product name *', 'পণ্যের নাম *') %></label>
       <input type="text" name="name" value="<%= product ? product.name : '' %>" class="form-control" required />
     </div>
     <div class="col-md-3">
-      <label class="form-label fw-semibold small">ক্যাটাগরি *</label>
+      <label class="form-label fw-semibold small"><%= L('Category *', 'ক্যাটাগরি *') %></label>
       <select name="category_id" class="form-select">
         <% categories.forEach(function(c) { %>
           <option value="<%= c.id %>" <%= product && product.category_id === c.id ? 'selected' : '' %>><%= c.name %></option>
@@ -24,7 +25,7 @@
       </select>
     </div>
     <div class="col-md-3">
-      <label class="form-label fw-semibold small">ব্র্যান্ড</label>
+      <label class="form-label fw-semibold small"><%= L('Brand', 'ব্র্যান্ড') %></label>
       <select name="brand_id" class="form-select">
         <% brands.forEach(function(b) { %>
           <option value="<%= b.id %>" <%= product && product.brand_id === b.id ? 'selected' : '' %>><%= b.name %></option>
@@ -33,24 +34,24 @@
     </div>
 
     <div class="col-md-3">
-      <label class="form-label fw-semibold small">পূর্বের মূল্য / MRP (৳)</label>
+      <label class="form-label fw-semibold small"><%= L('Previous price / MRP (৳)', 'পূর্বের মূল্য / MRP (৳)') %></label>
       <input type="number" name="old_price" value="<%= product ? product.old_price : 1500 %>" class="form-control" />
     </div>
     <div class="col-md-3">
-      <label class="form-label fw-semibold small">বিক্রয় মূল্য (৳) *</label>
+      <label class="form-label fw-semibold small"><%= L('Sale price (৳) *', 'বিক্রয় মূল্য (৳) *') %></label>
       <input type="number" name="new_price" value="<%= product ? product.new_price : 1250 %>" class="form-control" required />
     </div>
     <div class="col-md-3">
-      <label class="form-label fw-semibold small">পাইকারি মূল্য (৳)</label>
+      <label class="form-label fw-semibold small"><%= L('Wholesale price (৳)', 'পাইকারি মূল্য (৳)') %></label>
       <input type="number" name="wholesale_price" value="<%= product ? product.wholesale_price : 1100 %>" class="form-control" />
     </div>
     <div class="col-md-3">
-      <label class="form-label fw-semibold small">স্টক সংখ্যা *</label>
+      <label class="form-label fw-semibold small"><%= L('Stock quantity *', 'স্টক সংখ্যা *') %></label>
       <input type="number" name="stock" value="<%= product ? product.stock : 100 %>" class="form-control" required />
     </div>
 
     <div class="col-md-3">
-      <label class="form-label fw-semibold small">একক / Unit *</label>
+      <label class="form-label fw-semibold small"><%= L('Unit *', 'একক / Unit *') %></label>
       <input type="text" name="unit_label" list="vendor-unit-list" value="<%= (product && (product.unit_label || product.unit || product.sizes)) ? (product.unit_label || product.unit || product.sizes) : '1 pc' %>" class="form-control" placeholder="1 pc, 1 kg, 1 dozen, 1 packet..." required />
       <datalist id="vendor-unit-list">
         <option value="1 pc">১ পিস / 1 Piece</option>
@@ -71,29 +72,29 @@
       </datalist>
     </div>
     <div class="col-md-3">
-      <label class="form-label fw-semibold small">গ্রেড / অপশন</label>
-      <input type="text" name="colors" value="<%= product ? (product.colors || '') : '' %>" class="form-control" placeholder="যেমন: প্রিমিয়াম গ্রেড, লাল" />
+      <label class="form-label fw-semibold small"><%= L('Grade / option', 'গ্রেড / অপশন') %></label>
+      <input type="text" name="colors" value="<%= product ? (product.colors || '') : '' %>" class="form-control" placeholder="<%= L('e.g. Premium grade, red', 'যেমন: প্রিমিয়াম গ্রেড, লাল') %>" />
     </div>
     <div class="col-md-6">
-      <label class="form-label fw-semibold small">পণ্যের ছবি আপলোড</label>
+      <label class="form-label fw-semibold small"><%= L('Upload product photo', 'পণ্যের ছবি আপলোড') %></label>
       <input type="file" name="image" accept="image/*" class="form-control" />
     </div>
 
     <div class="col-12">
-      <label class="form-label fw-semibold small">বিস্তারিত বিবরণ</label>
+      <label class="form-label fw-semibold small"><%= L('Full description', 'বিস্তারিত বিবরণ') %></label>
       <textarea name="description" rows="4" class="form-control"><%= product ? product.description : '' %></textarea>
     </div>
 
     <% if (!product) { %>
       <div class="col-12">
         <div class="alert alert-light border small text-muted mb-0">
-          💡 <strong>ভ্যারিয়েন্ট টিপ:</strong> পণ্যটির একাধিক সাইজ, ওজন বা বিকল্প থাকলে (যেমন ৫০০ গ্রাম, ১ কেজি, ২ কেজি) পণ্যটি সংরক্ষণ করার পর নিচে ভ্যারিয়েন্ট সেকশন থেকে আলাদা SKU, মূল্য ও স্টক যুক্ত করতে পারবেন। সাধারণ পণ্যের ক্ষেত্রে উপরের তথ্যই যথেষ্ট।
+          💡 <strong><%= L('Variant tip:', 'ভ্যারিয়েন্ট টিপ:') %></strong> <%= L('If the product has several sizes, weights or options (for example 500 g, 1 kg, 2 kg), save the product first and then add a separate SKU, price and stock in the variant section below. For a simple product the details above are enough.', 'পণ্যটির একাধিক সাইজ, ওজন বা বিকল্প থাকলে (যেমন ৫০০ গ্রাম, ১ কেজি, ২ কেজি) পণ্যটি সংরক্ষণ করার পর নিচে ভ্যারিয়েন্ট সেকশন থেকে আলাদা SKU, মূল্য ও স্টক যুক্ত করতে পারবেন। সাধারণ পণ্যের ক্ষেত্রে উপরের তথ্যই যথেষ্ট।') %>
         </div>
       </div>
     <% } %>
 
     <div class="col-12 pt-2">
-      <button type="submit" class="btn btn-forest px-5 py-2 fw-bold">✓ সংরক্ষণ করুন</button>
+      <button type="submit" class="btn btn-forest px-5 py-2 fw-bold"><%= L('✓ Save', '✓ সংরক্ষণ করুন') %></button>
     </div>
   </div>
 </form>
@@ -102,8 +103,8 @@
       <div class="tbl-card p-4 mt-4">
         <div class="d-flex justify-content-between align-items-center mb-3">
           <div>
-            <h5 class="fw-bold mb-1">পণ্যের ভ্যারিয়েন্ট (Product Variants)</h5>
-            <p class="text-muted small mb-0">বিভিন্ন সাইজ, ওজন বা বিকল্পের জন্য আলাদা SKU, মূল্য ও স্টক নির্ধারণ করুন।</p>
+            <h5 class="fw-bold mb-1"><%= L('Product variants', 'পণ্যের ভ্যারিয়েন্ট (Product Variants)') %></h5>
+            <p class="text-muted small mb-0"><%= L('Set a separate SKU, price and stock for each size, weight or option.', 'বিভিন্ন সাইজ, ওজন বা বিকল্পের জন্য আলাদা SKU, মূল্য ও স্টক নির্ধারণ করুন।') %></p>
           </div>
         </div>
 
@@ -113,12 +114,12 @@
               <thead class="table-light small">
                 <tr>
                   <th style="min-width: 140px;">Variant SKU *</th>
-                  <th style="min-width: 120px;">সাইজ / লেবেল (যেমন: ৫০০ গ্রাম)</th>
-                  <th style="min-width: 100px;">অপশন / গ্রেড</th>
-                  <th style="min-width: 110px;">বিক্রয় মূল্য (৳) *</th>
-                  <th style="min-width: 100px;">স্টক *</th>
-                  <th style="min-width: 110px;">অবস্থা</th>
-                  <th style="width: 80px;">অ্যাকশন</th>
+                  <th style="min-width: 120px;"><%= L('Size / label (e.g. 500 g)', 'সাইজ / লেবেল (যেমন: ৫০০ গ্রাম)') %></th>
+                  <th style="min-width: 100px;"><%= L('Option / grade', 'অপশন / গ্রেড') %></th>
+                  <th style="min-width: 110px;"><%= L('Sale price (৳) *', 'বিক্রয় মূল্য (৳) *') %></th>
+                  <th style="min-width: 100px;"><%= L('Stock *', 'স্টক *') %></th>
+                  <th style="min-width: 110px;"><%= L('State', 'অবস্থা') %></th>
+                  <th style="width: 80px;"><%= L('Action', 'অ্যাকশন') %></th>
                 </tr>
               </thead>
               <tbody>
@@ -131,10 +132,10 @@
                           <input class="form-control form-control-sm" name="variant_sku" value="<%= v.variant_sku %>" required maxlength="80" aria-label="Variant SKU" />
                         </div>
                         <div class="col-md-2">
-                          <input class="form-control form-control-sm" name="size_label" value="<%= v.size_label || '' %>" maxlength="80" placeholder="৫০০ গ্রাম / ১ কেজি" aria-label="Size" />
+                          <input class="form-control form-control-sm" name="size_label" value="<%= v.size_label || '' %>" maxlength="80" placeholder="<%= L('500 g / 1 kg', '৫০০ গ্রাম / ১ কেজি') %>" aria-label="Size" />
                         </div>
                         <div class="col-md-2">
-                          <input class="form-control form-control-sm" name="color_label" value="<%= v.color_label || '' %>" maxlength="80" placeholder="অপশন" aria-label="Option" />
+                          <input class="form-control form-control-sm" name="color_label" value="<%= v.color_label || '' %>" maxlength="80" placeholder="<%= L('Option', 'অপশন') %>" aria-label="Option" />
                         </div>
                         <div class="col-md-2">
                           <input class="form-control form-control-sm" name="price_bdt" type="number" min="0" step="0.01" value="<%= (Number(v.price_paisa)/100).toFixed(2) %>" required aria-label="Variant price BDT" />
@@ -144,8 +145,8 @@
                         </div>
                         <div class="col-md-1">
                           <select class="form-select form-select-sm" name="status" aria-label="Status">
-                            <option value="1" <%= Number(v.status) ? 'selected' : '' %>>সক্রিয়</option>
-                            <option value="0" <%= !Number(v.status) ? 'selected' : '' %>>নিষ্ক্রিয়</option>
+                            <option value="1" <%= Number(v.status) ? 'selected' : '' %>><%= L('Active', 'সক্রিয়') %></option>
+                            <option value="0" <%= !Number(v.status) ? 'selected' : '' %>><%= L('Inactive', 'নিষ্ক্রিয়') %></option>
                           </select>
                         </div>
                         <div class="col-md-1 text-end">
@@ -160,31 +161,31 @@
           </div>
         <% } else { %>
           <div class="alert alert-light border small text-muted mb-3">
-            এখনো কোনো আলাদা ভ্যারিয়েন্ট যোগ করা হয়নি। ভ্যারিয়েন্ট যোগ না করলে মূল পণ্যের মূল্য ও স্টক ব্যবহার হবে।
+            <%= L('No separate variant added yet. Without variants, the main product price and stock are used.', 'এখনো কোনো আলাদা ভ্যারিয়েন্ট যোগ করা হয়নি। ভ্যারিয়েন্ট যোগ না করলে মূল পণ্যের মূল্য ও স্টক ব্যবহার হবে।') %>
           </div>
         <% } %>
 
         <div class="card bg-light border p-3">
-          <h6 class="fw-bold mb-2 small text-dark">+ নতুন ভ্যারিয়েন্ট যোগ করুন</h6>
+          <h6 class="fw-bold mb-2 small text-dark"><%= L('+ Add a new variant', '+ নতুন ভ্যারিয়েন্ট যোগ করুন') %></h6>
           <form action="/vendor/products/<%= product.id %>/variants" method="POST" class="row g-2 align-items-center">
             <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
             <div class="col-md-2">
-              <input class="form-control form-control-sm" name="variant_sku" placeholder="ভ্যারিয়েন্ট SKU *" required maxlength="80" />
+              <input class="form-control form-control-sm" name="variant_sku" placeholder="<%= L('Variant SKU *', 'ভ্যারিয়েন্ট SKU *') %>" required maxlength="80" />
             </div>
             <div class="col-md-2">
-              <input class="form-control form-control-sm" name="size_label" placeholder="সাইজ / ওজন (যেমন: ১ কেজি)" maxlength="80" />
+              <input class="form-control form-control-sm" name="size_label" placeholder="<%= L('Size / weight (e.g. 1 kg)', 'সাইজ / ওজন (যেমন: ১ কেজি)') %>" maxlength="80" />
             </div>
             <div class="col-md-2">
-              <input class="form-control form-control-sm" name="color_label" placeholder="গ্রেড / বিকল্প (ঐচ্ছিক)" maxlength="80" />
+              <input class="form-control form-control-sm" name="color_label" placeholder="<%= L('Grade / option (optional)', 'গ্রেড / বিকল্প (ঐচ্ছিক)') %>" maxlength="80" />
             </div>
             <div class="col-md-2">
-              <input class="form-control form-control-sm" name="price_bdt" type="number" min="0" step="0.01" placeholder="মূল্য (টাকা) *" required />
+              <input class="form-control form-control-sm" name="price_bdt" type="number" min="0" step="0.01" placeholder="<%= L('Price (taka) *', 'মূল্য (টাকা) *') %>" required />
             </div>
             <div class="col-md-2">
-              <input class="form-control form-control-sm" name="stock_on_hand" type="number" min="0" value="0" placeholder="স্টক" required />
+              <input class="form-control form-control-sm" name="stock_on_hand" type="number" min="0" value="0" placeholder="<%= L('Stock', 'স্টক') %>" required />
             </div>
             <div class="col-md-2">
-              <button class="btn btn-success btn-sm w-100" type="submit">+ যোগ করুন</button>
+              <button class="btn btn-success btn-sm w-100" type="submit"><%= L('+ Add', '+ যোগ করুন') %></button>
             </div>
           </form>
         </div>

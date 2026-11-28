@@ -1,11 +1,12 @@
+<% const L = (en, bn) => (typeof locale !== 'undefined' && locale === 'en' ? en : bn); %>
 <%- include('partials/layout-top', { title: 'Place Reseller Order' }) %>
 
 <div class="d-flex justify-content-between align-items-center mb-3">
   <div>
-    <h4 class="fw-bold mb-0">🚀 নতুন ড্রপশিপ / রিসেলার অর্ডার তৈরি করুন</h4>
-    <p class="text-muted small mb-0">আপনার নির্ধারিত বিক্রয়মূল্যে কাস্টমারের কাছে পণ্য যাবে এবং অতিরিক্ত টাকা আপনার লাভ হিসেবে ওয়ালেটে জমা হবে</p>
+    <h4 class="fw-bold mb-0"><%= L('🚀 Create a new dropship / reseller order', '🚀 নতুন ড্রপশিপ / রিসেলার অর্ডার তৈরি করুন') %></h4>
+    <p class="text-muted small mb-0"><%= L('The products go to your customer at the sale price you set, and the extra amount is added to your wallet as profit', 'আপনার নির্ধারিত বিক্রয়মূল্যে কাস্টমারের কাছে পণ্য যাবে এবং অতিরিক্ত টাকা আপনার লাভ হিসেবে ওয়ালেটে জমা হবে') %></p>
   </div>
-  <a href="/reseller/orders" class="btn btn-outline-secondary btn-sm">← আমার সকল অর্ডার</a>
+  <a href="/reseller/orders" class="btn btn-outline-secondary btn-sm"><%= L('← All my orders', '← আমার সকল অর্ডার') %></a>
 </div>
 
 <form action="/reseller/orders/create" method="POST" class="row g-4">
@@ -13,17 +14,17 @@
   <% if (typeof canonicalOrder !== 'undefined' && canonicalOrder) { %><input type="hidden" name="request_key" value="<%= requestKey %>"><% } %>
   <div class="col-lg-7">
     <div class="tbl-card p-4">
-      <h6 class="fw-bold border-bottom pb-2 mb-3">১. পণ্য ও আপনার বিক্রয়মূল্য নির্ধারণ</h6>
+      <h6 class="fw-bold border-bottom pb-2 mb-3"><%= L('1. Choose the product and your sale price', '১. পণ্য ও আপনার বিক্রয়মূল্য নির্ধারণ') %></h6>
       <div class="row g-3 mb-4">
         <div class="col-12">
-          <label class="form-label small fw-semibold">Pricing mode *</label>
+          <label class="form-label small fw-semibold"><%= L('Pricing mode *', 'মূল্য পদ্ধতি *') %></label>
           <select name="pricing_mode" id="rsPricingMode" class="form-select" required onchange="recalcResellerProfit()">
-            <option value="reseller_price">Reseller selling price (if enabled)</option>
-            <option value="marketplace_official">Marketplace official price (if enabled)</option>
+            <option value="reseller_price"><%= L('Reseller selling price (if enabled)', 'আমার নির্ধারিত বিক্রয়মূল্য (চালু থাকলে)') %></option>
+            <option value="marketplace_official"><%= L('Marketplace official price (if enabled)', 'মার্কেটপ্লেসের নির্ধারিত মূল্য (চালু থাকলে)') %></option>
           </select>
         </div>
         <div class="col-12">
-          <label class="form-label small fw-semibold">পণ্য নির্বাচন করুন *</label>
+          <label class="form-label small fw-semibold"><%= L('Select a product *', 'পণ্য নির্বাচন করুন *') %></label>
           <select name="product_id" id="rsProdSelect" class="form-select" onchange="onResellerProdChange()">
             <% products.filter(function(p) { return !Number(p.has_variants || 0); }).forEach(function(p) { %>
               <option
@@ -34,51 +35,51 @@
                 data-sizes="<%= p.sizes || '১ কেজি' %>"
                 <%= p.id === selectedId ? 'selected' : '' %>
               >
-                <%= p.name %> — Marketplace price: ৳<%= p.new_price %>
+                <%= p.name %> <%= L('— Marketplace price: ৳', '— মার্কেটপ্লেস মূল্য: ৳') %><%= p.new_price %>
               </option>
             <% }) %>
           </select>
-          <div class="form-text">সাইজ/রঙ (variant) আলাদা করা পণ্যে আপাতত রিসেলার অর্ডার করা যায় না, তাই সেগুলো এই তালিকায় নেই।</div>
+          <div class="form-text"><%= L('Products with separate size/colour variants cannot be ordered through reseller orders yet, so they are not in this list.', 'সাইজ/রঙ (variant) আলাদা করা পণ্যে আপাতত রিসেলার অর্ডার করা যায় না, তাই সেগুলো এই তালিকায় নেই।') %></div>
         </div>
 
         <div class="col-sm-4"<% if (typeof canonicalOrder !== 'undefined' && canonicalOrder) { %> hidden<% } %>>
-          <label class="form-label small fw-semibold">সাইজ / প্যাক</label>
+          <label class="form-label small fw-semibold"><%= L('Size / pack', 'সাইজ / প্যাক') %></label>
           <select name="size" id="rsSizeSelect" class="form-select"></select>
         </div>
         <div class="col-sm-4">
-          <label class="form-label small fw-semibold">পরিমাণ (Qty) *</label>
+          <label class="form-label small fw-semibold"><%= L('Quantity *', 'পরিমাণ (Qty) *') %></label>
           <input type="number" name="qty" id="rsQty" value="1" min="1" class="form-control fw-bold" oninput="recalcResellerProfit()" required />
         </div>
         <div class="col-sm-4">
-          <label class="form-label small fw-semibold text-primary">কাস্টমারের কাছে প্রতি পিস বিক্রয়মূল্য (৳) *</label>
+          <label class="form-label small fw-semibold text-primary"><%= L('Sale price per piece to the customer (৳) *', 'কাস্টমারের কাছে প্রতি পিস বিক্রয়মূল্য (৳) *') %></label>
           <input type="number" name="selling_unit_price" id="rsSellPrice" value="0" min="1" class="form-control fw-bold border-primary" oninput="recalcResellerProfit()" required />
         </div>
       </div>
 
-      <h6 class="fw-bold border-bottom pb-2 mb-3">২. আপনার কাস্টমারের ডেলিভারি তথ্য</h6>
+      <h6 class="fw-bold border-bottom pb-2 mb-3"><%= L('2. Your customer\'s delivery details', '২. আপনার কাস্টমারের ডেলিভারি তথ্য') %></h6>
       <div class="row g-3">
         <div class="col-sm-6">
-          <label class="form-label small fw-semibold">কাস্টমারের নাম *</label>
-          <input type="text" name="customer_name" class="form-control" placeholder="গ্রাহকের পূর্ণ নাম" required />
+          <label class="form-label small fw-semibold"><%= L('Customer name *', 'কাস্টমারের নাম *') %></label>
+          <input type="text" name="customer_name" class="form-control" placeholder="<%= L('Customer\'s full name', 'গ্রাহকের পূর্ণ নাম') %>" required />
         </div>
         <div class="col-sm-6">
-          <label class="form-label small fw-semibold">কাস্টমারের মোবাইল নম্বর *</label>
+          <label class="form-label small fw-semibold"><%= L('Customer mobile number *', 'কাস্টমারের মোবাইল নম্বর *') %></label>
           <input type="tel" name="phone" class="form-control" placeholder="017XXXXXXXX" required />
         </div>
         <div class="col-12">
-          <label class="form-label small fw-semibold">সম্পূর্ণ ডেলিভারি ঠিকানা *</label>
-          <textarea name="address" rows="2" class="form-control" placeholder="বাসা, রোড, থানা ও জেলা" required></textarea>
+          <label class="form-label small fw-semibold"><%= L('Full delivery address *', 'সম্পূর্ণ ডেলিভারি ঠিকানা *') %></label>
+          <textarea name="address" rows="2" class="form-control" placeholder="<%= L('House, road, thana and district', 'বাসা, রোড, থানা ও জেলা') %>" required></textarea>
         </div>
         <div class="col-sm-6">
-          <label class="form-label small fw-semibold">ডেলিভারি এরিয়া *</label>
+          <label class="form-label small fw-semibold"><%= L('Delivery area *', 'ডেলিভারি এরিয়া *') %></label>
           <select name="shipping_area" id="rsShipArea" class="form-select" onchange="recalcResellerProfit()">
-            <option value="ঢাকার ভিতরে" data-ship="<%= insideCharge %>">ঢাকার ভিতরে (৳<%= insideCharge %>)</option>
-            <option value="ঢাকার বাইরে" data-ship="<%= outsideCharge %>">ঢাকার বাইরে (৳<%= outsideCharge %>)</option>
+            <option value="ঢাকার ভিতরে" data-ship="<%= insideCharge %>"><%= L('Inside Dhaka (৳', 'ঢাকার ভিতরে (৳') %><%= insideCharge %>)</option>
+            <option value="ঢাকার বাইরে" data-ship="<%= outsideCharge %>"><%= L('Outside Dhaka (৳', 'ঢাকার বাইরে (৳') %><%= outsideCharge %>)</option>
           </select>
         </div>
         <div class="col-sm-6">
-          <label class="form-label small fw-semibold">বিশেষ নির্দেশনা / নোট</label>
-          <input type="text" name="note" class="form-control" placeholder="প্যাকেজিং বা ডেলিভারি নোট..." />
+          <label class="form-label small fw-semibold"><%= L('Special instruction / note', 'বিশেষ নির্দেশনা / নোট') %></label>
+          <input type="text" name="note" class="form-control" placeholder="<%= L('Packaging or delivery note...', 'প্যাকেজিং বা ডেলিভারি নোট...') %>" />
         </div>
       </div>
     </div>
@@ -87,33 +88,33 @@
   <!-- Live Profit & COD Breakdown -->
   <div class="col-lg-5">
     <div class="tbl-card p-4 sticky-top" style="top: 84px;">
-      <h6 class="fw-bold border-bottom pb-2 mb-3">💰 লাইভ প্রফিট ও কাস্টমার বিল ক্যালকুলেটর</h6>
+      <h6 class="fw-bold border-bottom pb-2 mb-3"><%= L('💰 Live profit and customer bill calculator', '💰 লাইভ প্রফিট ও কাস্টমার বিল ক্যালকুলেটর') %></h6>
 
       <div class="d-flex justify-content-between py-2 border-bottom small">
-        <span>Vendor settlement (confidential):</span>
+        <span><%= L('Vendor settlement (confidential):', 'ভেন্ডরের পাওনা (গোপন):') %></span>
         <strong>৳<span id="lblWholesaleTotal">0</span></strong>
       </div>
       <div class="d-flex justify-content-between py-2 border-bottom small">
-        <span>কাস্টমার পণ্যের মূল্য:</span>
+        <span><%= L('Product price for the customer:', 'কাস্টমার পণ্যের মূল্য:') %></span>
         <strong>৳<span id="lblCustomerSub">0</span></strong>
       </div>
       <div class="d-flex justify-content-between py-2 border-bottom small">
-        <span>ডেলিভারি চার্জ:</span>
+        <span><%= L('Delivery charge:', 'ডেলিভারি চার্জ:') %></span>
         <strong>৳<span id="lblShipCharge"><%= insideCharge %></span></strong>
       </div>
       <div class="d-flex justify-content-between py-2 border-bottom fw-bold fs-6">
-        <span>কাস্টমার ডেলিভারি ম্যানকে দিবে (COD):</span>
+        <span><%= L('Customer pays the delivery person (COD):', 'কাস্টমার ডেলিভারি ম্যানকে দিবে (COD):') %></span>
         <span class="text-dark">৳<span id="lblCodTotal">0</span></span>
       </div>
 
       <div class="p-3 rounded-3 bg-success bg-opacity-10 border border-success my-3 text-center">
-        <div class="small fw-semibold text-success">Expected reseller earnings</div>
+        <div class="small fw-semibold text-success"><%= L('Expected reseller earnings', 'রিসেলারের সম্ভাব্য আয়') %></div>
         <div class="display-6 fw-bold text-success"><span id="lblNetProfit">—</span></div>
-        <div class="small text-muted mt-1">The server validates configured entitlement, fees and adjustments before accepting an order. Earnings are not payable until delivery and settlement eligibility.</div>
+        <div class="small text-muted mt-1"><%= L('The server validates configured entitlement, fees and adjustments before accepting an order. Earnings are not payable until delivery and settlement eligibility.', 'অর্ডার নেওয়ার আগে সিস্টেম প্রাপ্য টাকা, ফি ও সমন্বয় যাচাই করে। ডেলিভারি ও সেটেলমেন্টের শর্ত পূরণের আগে আয় তোলা যাবে না।') %></div>
       </div>
 
       <button type="submit" class="btn btn-primary w-100 py-3 fw-bold rounded-3" style="background:#3730a3;border-color:#3730a3;">
-        ✓ রিসেলার অর্ডার সাবমিট করুন
+        <%= L('✓ Submit reseller order', '✓ রিসেলার অর্ডার সাবমিট করুন') %>
       </button>
     </div>
   </div>

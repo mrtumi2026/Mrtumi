@@ -1,3 +1,5 @@
+<% const L = (en, bn) => (typeof locale !== 'undefined' && locale === 'en' ? en : bn); %>
+<% const AT = (value) => (typeof adminText === 'function' ? adminText(value) : value); %>
 <%- include('partials/head', { title: pageTitle }) %>
 <%- include('partials/topbar') %>
 <%- include('partials/sidebar') %>
@@ -7,7 +9,7 @@
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
       <div>
         <h4 class="fw-bold mb-0"><%= pageTitle %> (<%= rows.length %>)</h4>
-        <p class="text-muted small mb-0"><%= typeof subtitle !== 'undefined' ? subtitle : '' %></p>
+        <p class="text-muted small mb-0"><%= typeof subtitle !== 'undefined' ? AT(subtitle) : '' %></p>
       </div>
       <div class="d-flex gap-2">
         <% if (typeof createAction !== 'undefined' && createAction && fields && fields.length) { %>
@@ -30,7 +32,7 @@
           <thead>
             <tr>
               <% columns.forEach(function(col) { %>
-                <th><%= col.label %></th>
+                <th><%= AT(col.label) %></th>
               <% }) %>
               <th class="text-end">Action</th>
             </tr>
@@ -38,7 +40,7 @@
           <tbody>
             <% if (!rows.length) { %>
               <tr>
-                <td colspan="<%= columns.length + 1 %>" class="text-center py-4 text-muted">কোনো রেকর্ড পাওয়া যায়নি।</td>
+                <td colspan="<%= columns.length + 1 %>" class="text-center py-4 text-muted"><%= L('No records found.', 'কোনো রেকর্ড পাওয়া যায়নি।') %></td>
               </tr>
             <% } %>
             <% rows.forEach(function(r) { %>
@@ -72,7 +74,7 @@
                     </a>
                   <% } %>
                   <% if (typeof rowLink !== 'undefined' && rowLink && !(rowLink.hideSlugs || []).includes(r.slug)) { %>
-                    <a href="<%= rowLink.prefix %><%= r[rowLink.idKey || 'id'] %><%= rowLink.suffix %>" class="btn btn-sm btn-outline-primary py-1 px-2 me-1"><%= rowLink.label %></a>
+                    <a href="<%= rowLink.prefix %><%= r[rowLink.idKey || 'id'] %><%= rowLink.suffix %>" class="btn btn-sm btn-outline-primary py-1 px-2 me-1"><%= AT(rowLink.label) %></a>
                   <% } %>
                   <% if (typeof customActionPrefix !== 'undefined' && customActionPrefix && !((typeof customActionHideWhenInactive !== 'undefined' && customActionHideWhenInactive) && Number(r.status) === 0) && !((typeof customActionHideWhenPaid !== 'undefined' && customActionHideWhenPaid) && ['paid', 'approved', 'rejected', 'completed'].includes(String(r.status || '').toLowerCase()))) { %>
                     <form action="<%= customActionPrefix %>/<%= r.id %>" method="POST" class="d-inline">
@@ -85,8 +87,8 @@
                   <% if (typeof rejectActionPrefix !== 'undefined' && rejectActionPrefix && r.status === 'pending') { %>
                     <form action="<%= rejectActionPrefix %>/<%= r.id %>" method="POST" class="d-inline-flex gap-1">
                       <input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>" />
-                      <input type="text" name="reason" class="form-control form-control-sm" style="width:150px" minlength="3" maxlength="200" required placeholder="বাতিলের কারণ" aria-label="Reject reason" />
-                      <button type="submit" class="btn btn-sm btn-outline-danger py-1 px-2">বাতিল</button>
+                      <input type="text" name="reason" class="form-control form-control-sm" style="width:150px" minlength="3" maxlength="200" required placeholder="<%= typeof locale !== 'undefined' && locale === 'en' ? 'Rejection reason' : 'বাতিলের কারণ' %>" aria-label="<%= typeof locale !== 'undefined' && locale === 'en' ? 'Rejection reason' : 'বাতিলের কারণ' %>" />
+                      <button type="submit" class="btn btn-sm btn-outline-danger py-1 px-2"><%= typeof locale !== 'undefined' && locale === 'en' ? 'Reject' : 'বাতিল' %></button>
                     </form>
                   <% } %>
                   <% if (typeof updatePrefix !== 'undefined' && updatePrefix && fields && fields.length) { %>
@@ -126,11 +128,11 @@
         <% if (typeof multipartForm !== 'undefined' && multipartForm) { %><img id="crudAddImagePreview" src="" alt="New banner image preview" class="img-thumbnail mb-3 d-none" style="max-height:180px;max-width:100%;object-fit:contain;"><% } %>
         <% fields.forEach(function(f) { %>
           <div class="mb-3">
-            <label class="form-label small fw-semibold mb-1"><%= f.label %> <%= f.required ? '*' : '' %></label>
+            <label class="form-label small fw-semibold mb-1"><%= AT(f.label) %> <%= f.required ? '*' : '' %></label>
             <% if (f.type === 'select') { %>
               <select name="<%= f.name %>" class="form-select" <%= f.required ? 'required' : '' %>>
                 <% (f.options || []).forEach(function(opt) { %>
-                  <option value="<%= opt.value %>"><%= opt.label %></option>
+                  <option value="<%= opt.value %>"><%= AT(opt.label) %></option>
                 <% }) %>
               </select>
             <% } else if (f.type === 'textarea') { %>
@@ -168,10 +170,10 @@
         <img id="crudEditImagePreview" src="" alt="Current image preview" class="img-thumbnail mb-3 d-none" style="max-height:140px;max-width:220px;object-fit:contain;" />
         <% fields.forEach(function(f) { %>
           <div class="mb-3">
-            <label class="form-label small fw-semibold mb-1" for="crud-edit-<%= f.name %>"><%= f.label %><%= f.type === 'file' ? ' (Leave blank to keep existing image)' : '' %> <%= f.required ? '*' : '' %></label>
+            <label class="form-label small fw-semibold mb-1" for="crud-edit-<%= f.name %>"><%= AT(f.label) %><%= f.type === 'file' ? ' (Leave blank to keep existing image)' : '' %> <%= f.required ? '*' : '' %></label>
             <% if (f.type === 'select') { %>
               <select id="crud-edit-<%= f.name %>" name="<%= f.name %>" class="form-select crud-edit-field" data-field="<%= f.name %>" <%= (f.required && f.type !== 'password' && f.type !== 'file') ? 'required' : '' %>>
-                <% (f.options || []).forEach(function(opt) { %><option value="<%= opt.value %>"><%= opt.label %></option><% }) %>
+                <% (f.options || []).forEach(function(opt) { %><option value="<%= opt.value %>"><%= AT(opt.label) %></option><% }) %>
               </select>
             <% } else if (f.type === 'textarea') { %>
               <textarea id="crud-edit-<%= f.name %>" name="<%= f.name %>" rows="<%= f.rows || 3 %>" class="form-control crud-edit-field" data-field="<%= f.name %>" <%= (f.required && f.type !== 'password' && f.type !== 'file') ? 'required' : '' %>></textarea>
@@ -215,7 +217,7 @@
       return new Promise(function(resolve, reject) {
         var url = URL.createObjectURL(file), image = new Image();
         image.onload = function() { URL.revokeObjectURL(url); resolve(image); };
-        image.onerror = function() { URL.revokeObjectURL(url); reject(new Error('ছবিটি পড়া যায়নি। JPG/PNG/WebP ফাইল দিয়ে আবার চেষ্টা করুন।')); };
+        image.onerror = function() { URL.revokeObjectURL(url); reject(new Error(<%- JSON.stringify(L('Could not read the image. Try again with a JPG/PNG/WebP file.', 'ছবিটি পড়া যায়নি। JPG/PNG/WebP ফাইল দিয়ে আবার চেষ্টা করুন।')) %>)); };
         image.src = url;
       });
     }
@@ -229,7 +231,7 @@
         canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
         canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
         var ctx = canvas.getContext('2d', { alpha: false });
-        if (!ctx) throw new Error('এই ব্রাউজারে image compression চালু করা যায়নি।');
+        if (!ctx) throw new Error(<%- JSON.stringify(L('Image compression is not available in this browser.', 'এই ব্রাউজারে image compression চালু করা যায়নি।')) %>);
         ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
         for (var quality = 0.82; quality >= 0.42; quality -= 0.1) {
           var blob = await canvasBlob(canvas, quality);
@@ -237,7 +239,7 @@
         }
         scale *= 0.82;
       }
-      throw new Error('Compress করার পরও ছবিটি 180 KB-এর নিচে আনা যায়নি। ছোট ছবি ব্যবহার করুন।');
+      throw new Error(<%- JSON.stringify(L('The image is still above 180 KB after compression. Use a smaller image.', 'Compress করার পরও ছবিটি 180 KB-এর নিচে আনা যায়নি। ছোট ছবি ব্যবহার করুন।')) %>);
     }
     document.querySelectorAll('form#crudAddForm, form#crudEditForm').forEach(function(form) {
       form.addEventListener('submit', function(event) {
@@ -252,7 +254,7 @@
         var urlField = form.querySelector('input[name="image_url"]');
         if (hidden) hidden.value = '';
         if (urlField) urlField.value = '';
-        input.disabled = true; form.dataset.bannerCompressing = '1'; setNotice(form, 'ছবি compress হচ্ছে…');
+        input.disabled = true; form.dataset.bannerCompressing = '1'; setNotice(form, <%- JSON.stringify(L('Compressing the image…', 'ছবি compress হচ্ছে…')) %>);
         try {
           var blob = await compress(file);
           var dataUrl = await new Promise(function(resolve, reject) {
@@ -262,9 +264,9 @@
           hidden.value = dataUrl;
           var preview = previewFor(form); if (preview) { preview.src = dataUrl; preview.classList.remove('d-none'); }
           input.value = ''; // Submit the compressed payload, never the multi-megabyte original.
-          setNotice(form, 'ছবি প্রস্তুত: ' + Math.ceil(blob.size / 1024) + ' KB, সর্বোচ্চ প্রস্থ 1920 px.');
+          setNotice(form, <%- JSON.stringify(L('Image ready: ', 'ছবি প্রস্তুত: ')) %> + Math.ceil(blob.size / 1024) + <%- JSON.stringify(L(' KB, maximum width 1920 px.', ' KB, সর্বোচ্চ প্রস্থ 1920 px.')) %>);
         } catch (error) {
-          setNotice(form, error && error.message ? error.message : 'ছবি compress করা যায়নি।');
+          setNotice(form, error && error.message ? error.message : <%- JSON.stringify(L('Could not compress the image.', 'ছবি compress করা যায়নি।')) %>);
           if (hidden) hidden.value = '';
           input.value = '';
         } finally { input.disabled = false; delete form.dataset.bannerCompressing; }

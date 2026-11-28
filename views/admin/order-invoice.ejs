@@ -17,7 +17,7 @@
   </head>
   <body>
     <div class="text-center mb-3 no-print">
-      <button onclick="window.print()" class="btn btn-success px-4">🖨️ ইনভয়েস প্রিন্ট করুন</button>
+      <button onclick="window.print()" class="btn btn-success px-4">🖨️ <%= typeof locale !== 'undefined' && locale === 'en' ? 'Print invoice' : 'ইনভয়েস প্রিন্ট করুন' %></button>
       <a href="/admin/order/view/<%= order.id %>" class="btn btn-outline-secondary ms-2">← ফিরে যান</a>
     </div>
 

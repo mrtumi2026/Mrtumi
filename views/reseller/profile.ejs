@@ -1,35 +1,36 @@
+<% const L = (en, bn) => (typeof locale !== 'undefined' && locale === 'en' ? en : bn); %>
 <%- include('partials/layout-top', { title: 'Reseller Profile' }) %>
 
 <div class="tbl-card p-4" style="max-width: 650px;">
-  <h5 class="fw-bold border-bottom pb-2 mb-3">🤝 রিসেলার প্রোফাইল ও ফেসবুক পেজ সেটিংস</h5>
+  <h5 class="fw-bold border-bottom pb-2 mb-3"><%= L('🤝 Reseller profile and Facebook page settings', '🤝 রিসেলার প্রোফাইল ও ফেসবুক পেজ সেটিংস') %></h5>
   <form action="/reseller/profile" method="POST" class="row g-3">
     <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
     <div class="col-md-6">
-      <label class="form-label small fw-semibold">আপনার নাম *</label>
+      <label class="form-label small fw-semibold"><%= L('Your name *', 'আপনার নাম *') %></label>
       <input type="text" name="name" value="<%= reseller.name %>" class="form-control" required />
     </div>
     <div class="col-md-6">
-      <label class="form-label small fw-semibold">ফেসবুক পেজ / শপের নাম</label>
+      <label class="form-label small fw-semibold"><%= L('Facebook page / shop name', 'ফেসবুক পেজ / শপের নাম') %></label>
       <input type="text" name="shop_name" value="<%= reseller.shop_name %>" class="form-control" />
     </div>
     <div class="col-md-6">
-      <label class="form-label small fw-semibold">মোবাইল নম্বর *</label>
+      <label class="form-label small fw-semibold"><%= L('Mobile number *', 'মোবাইল নম্বর *') %></label>
       <input type="text" name="phone" value="<%= reseller.phone %>" class="form-control" required <%= typeof canonicalProfile !== 'undefined' && canonicalProfile ? 'readonly' : '' %> />
     </div>
     <div class="col-md-6">
-      <label class="form-label small fw-semibold">ইমেইল</label>
+      <label class="form-label small fw-semibold"><%= L('Email', 'ইমেইল') %></label>
       <input type="email" name="email" value="<%= reseller.email %>" class="form-control" />
     </div>
     <div class="col-12">
-      <label class="form-label small fw-semibold">বর্তমান পাসওয়ার্ড (পাসওয়ার্ড পরিবর্তনের জন্য আবশ্যক)</label>
+      <label class="form-label small fw-semibold"><%= L('Current password (required to change the password)', 'বর্তমান পাসওয়ার্ড (পাসওয়ার্ড পরিবর্তনের জন্য আবশ্যক)') %></label>
       <input type="password" name="current_password" class="form-control" autocomplete="current-password" />
     </div>
     <div class="col-12">
-      <label class="form-label small fw-semibold">নতুন পাসওয়ার্ড (পরিবর্তন করতে চাইলে দিন)</label>
-      <input type="password" name="new_password" class="form-control" placeholder="কমপক্ষে ৬ অক্ষর" />
+      <label class="form-label small fw-semibold"><%= L('New password (only if you want to change it)', 'নতুন পাসওয়ার্ড (পরিবর্তন করতে চাইলে দিন)') %></label>
+      <input type="password" name="new_password" class="form-control" placeholder="<%= L('At least 6 characters', 'কমপক্ষে ৬ অক্ষর') %>" />
     </div>
     <div class="col-12">
-      <button type="submit" class="btn btn-primary px-4 py-2 fw-bold" style="background:#3730a3;">প্রোফাইল আপডেট করুন</button>
+      <button type="submit" class="btn btn-primary px-4 py-2 fw-bold" style="background:#3730a3;"><%= L('Update profile', 'প্রোফাইল আপডেট করুন') %></button>
     </div>
   </form>
 </div>

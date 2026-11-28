@@ -12,6 +12,7 @@
 
 const { env } = require('../config/env');
 const { SUPPORTED_LOCALES, normalizeLocale, createI18nContext } = require('../i18n');
+const { adminText } = require('../utils/adminTexts');
 
 const LOCALE_COOKIE_NAME = 'mrtumi_lang';
 const LOCALE_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 180; // 180 days
@@ -124,6 +125,7 @@ function i18nMiddleware(req, res, next) {
   res.locals.isBangla = ctx.isBangla;
   res.locals.isEnglish = ctx.isEnglish;
   res.locals.t = ctx.t;
+  res.locals.adminText = (value) => adminText(value, ctx.locale);
   res.locals.fmt = ctx.fmt;
   res.locals.switchUrls = {
     bn: buildLocaleSwitchUrl(req, 'bn'),

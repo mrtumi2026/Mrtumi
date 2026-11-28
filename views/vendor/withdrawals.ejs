@@ -1,33 +1,34 @@
+<% const L = (en, bn) => (typeof locale !== 'undefined' && locale === 'en' ? en : bn); %>
 <%- include('partials/layout-top', { title: 'Vendor Wallet & Withdrawals' }) %>
 
 <div class="row g-3">
   <div class="col-lg-5">
     <div class="tbl-card p-4 mb-3">
       <div class="p-3 rounded-3 bg-success bg-opacity-10 border border-success mb-3 text-center">
-        <div class="small text-muted">বর্তমান উত্তোলনযোগ্য ব্যালেন্স</div>
+        <div class="small text-muted"><%= L('Current withdrawable balance', 'বর্তমান উত্তোলনযোগ্য ব্যালেন্স') %></div>
         <div class="display-6 fw-bold text-success">৳<%= Number(vendor.balance || 0).toLocaleString('en-IN') %></div>
       </div>
 
-      <h6 class="fw-bold mb-3">💸 নতুন উইথড্র রিকোয়েস্ট পাঠান</h6>
+      <h6 class="fw-bold mb-3"><%= L('💸 Send a new withdrawal request', '💸 নতুন উইথড্র রিকোয়েস্ট পাঠান') %></h6>
       <form action="/vendor/withdrawals/request" method="POST">
         <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
         <% if (typeof payoutAccounts !== 'undefined') { %>
           <% const verifiedPayouts = payoutAccounts.filter(function(p) { return p.verification_status === 'verified'; }); %>
-          <% if (vendor.lifecycle_status !== 'active' || !vendor.payout_verified_at) { %><div class="alert alert-warning">উত্তোলনের আগে সক্রিয় ভেন্ডর স্ট্যাটাস ও যাচাইকৃত পেআউট অ্যাকাউন্ট প্রয়োজন। <a href="/vendor/onboarding">Onboarding দেখুন</a></div><% } %>
-          <div class="mb-2"><label class="form-label small fw-semibold" for="payout-account">যাচাইকৃত পেআউট অ্যাকাউন্ট *</label><select id="payout-account" name="payout_account_id" class="form-select" required <%= !verifiedPayouts.length || vendor.lifecycle_status !== 'active' ? 'disabled' : '' %>><option value="">অ্যাকাউন্ট নির্বাচন করুন</option><% verifiedPayouts.forEach(function(p) { %><option value="<%= p.id %>"><%= p.method %> · <%= p.masked_account %></option><% }) %></select></div>
+          <% if (vendor.lifecycle_status !== 'active' || !vendor.payout_verified_at) { %><div class="alert alert-warning"><%= L('You need an active vendor status and a verified payout account before withdrawing.', 'উত্তোলনের আগে সক্রিয় ভেন্ডর স্ট্যাটাস ও যাচাইকৃত পেআউট অ্যাকাউন্ট প্রয়োজন।') %> <a href="/vendor/onboarding"><%= L('View onboarding', 'Onboarding দেখুন') %></a></div><% } %>
+          <div class="mb-2"><label class="form-label small fw-semibold" for="payout-account"><%= L('Verified payout account *', 'যাচাইকৃত পেআউট অ্যাকাউন্ট *') %></label><select id="payout-account" name="payout_account_id" class="form-select" required <%= !verifiedPayouts.length || vendor.lifecycle_status !== 'active' ? 'disabled' : '' %>><option value=""><%= L('Select an account', 'অ্যাকাউন্ট নির্বাচন করুন') %></option><% verifiedPayouts.forEach(function(p) { %><option value="<%= p.id %>"><%= p.method %> · <%= p.masked_account %></option><% }) %></select></div>
         <% } else { %>
-          <div class="mb-2"><label class="form-label small fw-semibold">উত্তোলন মাধ্যম *</label><select name="method" class="form-select"><option value="bKash Personal">bKash Personal</option><option value="Nagad Personal">Nagad Personal</option><option value="Bank Transfer">Bank Transfer</option></select></div>
-          <div class="mb-2"><label class="form-label small fw-semibold">অ্যাকাউন্ট / মোবাইল নম্বর *</label><input type="text" name="account_number" value="<%= vendor.phone %>" class="form-control" required /></div>
+          <div class="mb-2"><label class="form-label small fw-semibold"><%= L('Withdrawal method *', 'উত্তোলন মাধ্যম *') %></label><select name="method" class="form-select"><option value="bKash Personal">bKash Personal</option><option value="Nagad Personal">Nagad Personal</option><option value="Bank Transfer">Bank Transfer</option></select></div>
+          <div class="mb-2"><label class="form-label small fw-semibold"><%= L('Account / mobile number *', 'অ্যাকাউন্ট / মোবাইল নম্বর *') %></label><input type="text" name="account_number" value="<%= vendor.phone %>" class="form-control" required /></div>
         <% } %>
         <div class="mb-2">
-          <label class="form-label small fw-semibold">টাকার পরিমাণ (৳) *</label>
-          <input type="number" name="amount" min="100" max="<%= vendor.balance %>" placeholder="ন্যূনতম ৳১০০" class="form-control" required />
+          <label class="form-label small fw-semibold"><%= L('Amount (৳) *', 'টাকার পরিমাণ (৳) *') %></label>
+          <input type="number" name="amount" min="100" max="<%= vendor.balance %>" placeholder="<%= L('Minimum ৳100', 'ন্যূনতম ৳১০০') %>" class="form-control" required />
         </div>
         <div class="mb-3">
-          <label class="form-label small fw-semibold">নোট (ঐচ্ছিক)</label>
-          <input type="text" name="note" class="form-control" placeholder="ব্যাংক ব্রাঞ্চ বা অতিরিক্ত তথ্য..." />
+          <label class="form-label small fw-semibold"><%= L('Note (optional)', 'নোট (ঐচ্ছিক)') %></label>
+          <input type="text" name="note" class="form-control" placeholder="<%= L('Bank branch or other details...', 'ব্যাংক ব্রাঞ্চ বা অতিরিক্ত তথ্য...') %>" />
         </div>
-        <button type="submit" class="btn btn-forest w-100 py-2 fw-bold">উইথড্র রিকোয়েস্ট জমা দিন →</button>
+        <button type="submit" class="btn btn-forest w-100 py-2 fw-bold"><%= L('Submit withdrawal request →', 'উইথড্র রিকোয়েস্ট জমা দিন →') %></button>
       </form>
     </div>
   </div>
@@ -35,22 +36,22 @@
   <div class="col-lg-7">
     <div class="tbl-card">
       <div class="tbl-card-head">
-        <h4>উইথড্রয়াল হিস্ট্রি (<%= withdrawals.length %>)</h4>
+        <h4><%= L('Withdrawal history (', 'উইথড্রয়াল হিস্ট্রি (') %><%= withdrawals.length %>)</h4>
       </div>
       <div class="tbl-card-body">
         <table class="table clean mb-0">
           <thead>
             <tr>
               <th>#</th>
-              <th>মাধ্যম ও নম্বর</th>
-              <th>পরিমাণ</th>
-              <th>স্ট্যাটাস</th>
-              <th>তারিখ</th>
+              <th><%= L('Method and number', 'মাধ্যম ও নম্বর') %></th>
+              <th><%= L('Quantity', 'পরিমাণ') %></th>
+              <th><%= L('Status', 'স্ট্যাটাস') %></th>
+              <th><%= L('Date', 'তারিখ') %></th>
             </tr>
           </thead>
           <tbody>
             <% if (!withdrawals.length) { %>
-              <tr><td colspan="5" class="text-center py-4 text-muted">কোনো উত্তোলন রেকর্ড নেই।</td></tr>
+              <tr><td colspan="5" class="text-center py-4 text-muted"><%= L('No withdrawal records.', 'কোনো উত্তোলন রেকর্ড নেই।') %></td></tr>
             <% } %>
             <% withdrawals.forEach(function(w) { %>
               <tr>
@@ -58,7 +59,7 @@
                 <td><strong><%= w.method %></strong> — <%= w.masked_account || w.account_number %></td>
                 <td class="fw-bold">৳<%= Number(w.amount).toLocaleString('en-IN') %></td>
                 <td><span class="sb <%= w.status === 'paid' ? 'sb-6' : 'sb-1' %>"><%= w.status %></span></td>
-                <td class="small text-muted"><%= String(w.created_at).slice(0, 10) %></td>
+                <td class="small text-muted"><%= (isNaN(new Date(w.created_at)) ? '' : new Date(w.created_at).toLocaleDateString(typeof locale !== 'undefined' && locale === 'en' ? 'en-GB' : 'bn-BD', { timeZone: 'Asia/Dhaka' })) %></td>
               </tr>
             <% }) %>
           </tbody>

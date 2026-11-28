@@ -164,16 +164,16 @@
               <h4 style="font-size:15px;font-weight:700;color:#1a1f2e;margin:0;">📊 Platform-wise Visitors & Device Analytics</h4>
               <span class="badge bg-success bg-opacity-10 text-success border border-success-subtle" style="font-size:11px;">Live Tracking</span>
             </div>
-            <p style="font-size:11.5px;color:#6b7280;margin:3px 0 0;">ভিজিটররা কোন প্ল্যাটফর্ম (Facebook, TikTok, Google, Direct) এবং কোন ডিভাইসে সাইট ব্রাউজ করছেন</p>
+            <p style="font-size:11.5px;color:#6b7280;margin:3px 0 0;"><%= locale === 'en' ? 'Which platform (Facebook, TikTok, Google, Direct) and which device visitors use' : 'ভিজিটররা কোন প্ল্যাটফর্ম (Facebook, TikTok, Google, Direct) এবং কোন ডিভাইসে সাইট ব্রাউজ করছেন' %></p>
           </div>
           <div style="display:flex;align-items:center;gap:12px;">
             <div style="text-align:right;">
-              <span style="font-size:11px;color:#9ca3af;display:block;">আজকের ভিজিটর</span>
-              <strong style="font-size:14px;color:#1b4332;"><%= vAnalytics.todayVisitors || 0 %> জন</strong>
+              <span style="font-size:11px;color:#9ca3af;display:block;"><%= locale === 'en' ? 'Visitors today' : 'আজকের ভিজিটর' %></span>
+              <strong style="font-size:14px;color:#1b4332;"><%= vAnalytics.todayVisitors || 0 %><%= locale === 'en' ? '' : ' জন' %></strong>
             </div>
             <div style="text-align:right;border-left:1px solid #e5e7eb;padding-left:12px;">
-              <span style="font-size:11px;color:#9ca3af;display:block;">মোট সেশন</span>
-              <strong style="font-size:14px;color:#1b4332;"><%= vAnalytics.totalViews || totalOrders %> বার</strong>
+              <span style="font-size:11px;color:#9ca3af;display:block;"><%= locale === 'en' ? 'Total sessions' : 'মোট সেশন' %></span>
+              <strong style="font-size:14px;color:#1b4332;"><%= vAnalytics.totalViews || totalOrders %><%= locale === 'en' ? '' : ' বার' %></strong>
             </div>
           </div>
         </div>
@@ -623,7 +623,7 @@
       .then(function(d) {
         if (d.success) {
           main.textContent = d.balance_display;
-          det.textContent = 'ইন রিভিউতে: ' + d.in_review_count + ' টি পার্সেল\nকুরিয়ারে মোট (অ্যাপ): ' + d.courier_pending_orders + ' টি অর্ডার';
+          det.textContent = '<%= locale === "en" ? "In review: " : "ইন রিভিউতে: " %>' + d.in_review_count + '<%= locale === "en" ? " parcels" : " টি পার্সেল" %>\n<%= locale === "en" ? "Total with courier (app): " : "কুরিয়ারে মোট (অ্যাপ): " %>' + d.courier_pending_orders + '<%= locale === "en" ? " orders" : " টি অর্ডার" %>';
         } else {
           main.textContent = '<%= locale === "bn" ? "অনুপলব্ধ" : "Unavailable" %>';
           det.textContent = d.message || '<%= locale === "bn" ? "লাইভ ডেটা পাওয়া যায়নি" : "Live data unavailable" %>';

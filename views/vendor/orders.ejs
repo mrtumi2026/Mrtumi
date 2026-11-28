@@ -1,3 +1,4 @@
+<% const L = (en, bn) => (typeof locale !== 'undefined' && locale === 'en' ? en : bn); %>
 <%- include('partials/layout-top', { title: t('vendorFulfillment.subOrder') }) %>
 
 <div class="mb-3">
@@ -12,7 +13,7 @@
         <thead><tr>
           <th><%= t('vendorFulfillment.invoice') %></th><th><%= t('vendorFulfillment.customerAddress') %></th><th><%= t('vendorFulfillment.productPack') %></th><th><%= t('vendorFulfillment.salePrice') %></th>
           <th><%= t('vendorFulfillment.netIncome') %> (<%= 100 - Number(vendor.commission_rate || 10) %>%)</th><th><%= t('vendorFulfillment.parentOrder') %></th>
-          <th><%= t('vendorFulfillment.subOrder') %></th><th class="text-end">অ্যাকশন</th>
+          <th><%= t('vendorFulfillment.subOrder') %></th><th class="text-end"><%= L('Action', 'অ্যাকশন') %></th>
         </tr></thead>
         <tbody>
           <% if (!orderLines.length) { %><tr><td colspan="8" class="text-center py-4 text-muted"><%= t('vendorFulfillment.noOrders') %></td></tr><% } %>
@@ -28,7 +29,7 @@
                const legacyLabels={pending:t('vendorFulfillment.legacyPending'),processing:t('vendorFulfillment.legacyProcessing'),ready:t('vendorFulfillment.legacyReady'),dispatched:t('vendorFulfillment.legacyDispatched')};
           %>
             <tr>
-              <td><div class="fw-bold">#<%= ol.invoice_id %></div><small class="text-muted"><%= String(ol.created_at).slice(0,10) %></small></td>
+              <td><div class="fw-bold">#<%= ol.invoice_id %></div><small class="text-muted"><%= (isNaN(new Date(ol.created_at)) ? '' : new Date(ol.created_at).toLocaleDateString(typeof locale !== 'undefined' && locale === 'en' ? 'en-GB' : 'bn-BD', { timeZone: 'Asia/Dhaka' })) %></small></td>
               <td><div class="small text-muted"><%= t('vendorFulfillment.customerPrivacy') %></div></td>
               <td><%= ol.product_name %> <span class="badge bg-light text-dark border"><%= ol.size %> × <%= ol.qty %></span></td>
               <td>৳<%= gross.toLocaleString('en-IN') %></td><td class="fw-bold text-success">৳<%= net.toLocaleString('en-IN') %></td>
@@ -54,20 +55,20 @@
                   <% }); } %>
                   <% if (ol.vendor_sub_order_id && subKey==='ready_for_pickup') { %>
                     <% if (ol.courier_request_status === 'pending') { %>
-                      <span class="badge bg-warning text-dark"><i class="fas fa-clock me-1"></i>কুরিয়ার বুকিং অনুরোধ অপেক্ষমাণ</span>
+                      <span class="badge bg-warning text-dark"><i class="fas fa-clock me-1"></i><%= L('Courier booking request pending', 'কুরিয়ার বুকিং অনুরোধ অপেক্ষমাণ') %></span>
                     <% } else if (ol.courier_request_status === 'booking') { %>
-                      <span class="badge bg-info"><i class="fas fa-spinner fa-spin me-1"></i>বুকিং প্রক্রিয়াধীন...</span>
+                      <span class="badge bg-info"><i class="fas fa-spinner fa-spin me-1"></i><%= L('Booking in progress...', 'বুকিং প্রক্রিয়াধীন...') %></span>
                     <% } else if (ol.courier_request_status === 'booked' || ol.booking_status === 'succeeded') { %>
-                      <span class="badge bg-success"><i class="fas fa-check-circle me-1"></i>বুকড (<%= ol.courier_request_tracking || ol.tracking_code || 'সফল' %>)</span>
+                      <span class="badge bg-success"><i class="fas fa-check-circle me-1"></i><%= L('Booked (', 'বুকড (') %><%= ol.courier_request_tracking || ol.tracking_code || L('Success', 'সফল') %>)</span>
                     <% } else if (ol.courier_request_status === 'failed') { %>
-                      <div class="badge bg-danger mb-1 text-wrap text-start" style="font-size:11px;"><i class="fas fa-triangle-exclamation me-1"></i>ব্যর্থ: <%= ol.courier_request_failure || '' %></div>
+                      <div class="badge bg-danger mb-1 text-wrap text-start" style="font-size:11px;"><i class="fas fa-triangle-exclamation me-1"></i><%= L('Failed:', 'ব্যর্থ:') %> <%= ol.courier_request_failure || '' %></div>
                       <button type="button" class="btn btn-sm btn-primary" onclick="openCourierCompareModal('<%= ol.vendor_sub_order_id %>')">
-                        <i class="fas fa-rotate me-1"></i>পুনরায় বুকিং অনুরোধ
+                        <i class="fas fa-rotate me-1"></i><%= L('Request booking again', 'পুনরায় বুকিং অনুরোধ') %>
                       </button>
                     <% } else if (ol.courier_request_status === 'rejected') { %>
-                      <div class="badge bg-secondary mb-1 text-wrap text-start" style="font-size:11px;"><i class="fas fa-ban me-1"></i>প্রত্যাখ্যাত: <%= ol.courier_request_rejection || '' %></div>
+                      <div class="badge bg-secondary mb-1 text-wrap text-start" style="font-size:11px;"><i class="fas fa-ban me-1"></i><%= L('Rejected:', 'প্রত্যাখ্যাত:') %> <%= ol.courier_request_rejection || '' %></div>
                       <button type="button" class="btn btn-sm btn-primary" onclick="openCourierCompareModal('<%= ol.vendor_sub_order_id %>')">
-                        <i class="fas fa-paper-plane me-1"></i>নতুন বুকিং অনুরোধ
+                        <i class="fas fa-paper-plane me-1"></i><%= L('New booking request', 'নতুন বুকিং অনুরোধ') %>
                       </button>
                     <% } else if (!['succeeded', 'unknown_timeout', 'in_review'].includes(ol.booking_status)) { %>
                       <button type="button" class="btn btn-sm btn-primary" onclick="openCourierCompareModal('<%= ol.vendor_sub_order_id %>')">
@@ -126,9 +127,9 @@
       <div class="modal-body p-4" id="courierModalBody">
         <div id="courierLoadingState" class="text-center py-5">
           <div class="spinner-border text-primary" role="status">
-            <span class="visually-hidden">Loading quotes...</span>
+            <span class="visually-hidden"><%= L('Loading quotes...', 'কুরিয়ার রেট আনা হচ্ছে...') %></span>
           </div>
-          <p class="mt-2 text-muted small">কুরিয়ার সার্ভিসগুলোর লাইভ রেট ও সার্ভিসেবিলিটি যাচাই করা হচ্ছে...</p>
+          <p class="mt-2 text-muted small"><%= L('Checking live courier rates and serviceability...', 'কুরিয়ার সার্ভিসগুলোর লাইভ রেট ও সার্ভিসেবিলিটি যাচাই করা হচ্ছে...') %></p>
         </div>
         <div id="courierContentState" style="display:none;">
           <!-- Content dynamically rendered via openCourierCompareModal -->
@@ -156,7 +157,7 @@ function openCourierCompareModal(subOrderId) {
       content.style.display = 'block';
 
       if (!res.success || !res.data) {
-        content.innerHTML = '<div class="alert alert-danger">কুরিয়ার তথ্য লোড করতে সমস্যা হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন।</div>';
+        content.innerHTML = <%- JSON.stringify(L('<div class="alert alert-danger">Could not load courier information. Please try again.</div>', '<div class="alert alert-danger">কুরিয়ার তথ্য লোড করতে সমস্যা হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন।</div>')).replace(/</g, '\\u003c') %>;
         return;
       }
 
@@ -168,8 +169,8 @@ function openCourierCompareModal(subOrderId) {
 
       // Header summary
       html += '<div class="alert alert-secondary py-2 px-3 small d-flex justify-content-between flex-wrap gap-2 mb-3">';
-      html += '<div><strong>ইনভয়েস:</strong> #' + (d.invoiceId || d.subOrderId) + ' &bull; <strong>গ্রাহক:</strong> ' + (d.customerName || 'N/A') + '</div>';
-      html += '<div><strong>গন্তব্য:</strong> ' + (d.destinationArea || d.address || 'ঢাকা') + ' &bull; <strong>ওজন:</strong> ~' + (d.weightGrams/1000).toFixed(1) + ' কেজি</div>';
+      html += <%- JSON.stringify(L('<div><strong>Invoice:</strong> #', '<div><strong>ইনভয়েস:</strong> #')).replace(/</g, '\\u003c') %> + (d.invoiceId || d.subOrderId) + <%- JSON.stringify(L(' &bull; <strong>Customer:</strong> ', ' &bull; <strong>গ্রাহক:</strong> ')).replace(/</g, '\\u003c') %> + (d.customerName || 'N/A') + '</div>';
+      html += <%- JSON.stringify(L('<div><strong>Destination:</strong> ', '<div><strong>গন্তব্য:</strong> ')).replace(/</g, '\\u003c') %> + (d.destinationArea || d.address || <%- JSON.stringify(L('Dhaka', 'ঢাকা')).replace(/</g, '\\u003c') %>) + <%- JSON.stringify(L(' &bull; <strong>Weight:</strong> ~', ' &bull; <strong>ওজন:</strong> ~')).replace(/</g, '\\u003c') %> + (d.weightGrams/1000).toFixed(1) + <%- JSON.stringify(L(' kg</div>', ' কেজি</div>')).replace(/</g, '\\u003c') %>;
       html += '</div>';
 
       // Recommended Courier Box
@@ -187,21 +188,21 @@ function openCourierCompareModal(subOrderId) {
         html += '    <div class="row align-items-center">';
         html += '      <div class="col-md-7">';
         html += '        <h5 class="fw-bold text-dark mb-1">' + rec.providerName + '</h5>';
-        html += '        <div class="text-success small fw-semibold mb-2"><i class="fas fa-check-circle me-1"></i>' + (d.reasonBn || d.reasonEn) + '</div>';
+        html += '        <div class="text-success small fw-semibold mb-2"><i class="fas fa-check-circle me-1"></i>' + (<%- locale === 'en' ? 'd.reasonEn || d.reasonBn' : 'd.reasonBn || d.reasonEn' %>) + '</div>';
         html += '        <div class="d-flex gap-3 small text-muted">';
-        html += '          <span><strong>ডেলিভারি চার্জ:</strong> ৳' + (rec.chargePaisa/100) + '</span>';
-        if (rec.codFeePaisa > 0) html += '<span><strong>COD ফি:</strong> ৳' + (rec.codFeePaisa/100) + '</span>';
-        html += '          <span><strong>সময়:</strong> ' + rec.estimatedDaysMin + '-' + rec.estimatedDaysMax + ' দিন</span>';
+        html += <%- JSON.stringify(L('          <span><strong>Delivery charge:</strong> ৳', '          <span><strong>ডেলিভারি চার্জ:</strong> ৳')).replace(/</g, '\\u003c') %> + (rec.chargePaisa/100) + '</span>';
+        if (rec.codFeePaisa > 0) html += <%- JSON.stringify(L('<span><strong>COD fee:</strong> ৳', '<span><strong>COD ফি:</strong> ৳')).replace(/</g, '\\u003c') %> + (rec.codFeePaisa/100) + '</span>';
+        html += <%- JSON.stringify(L('          <span><strong>Time:</strong> ', '          <span><strong>সময়:</strong> ')).replace(/</g, '\\u003c') %> + rec.estimatedDaysMin + '-' + rec.estimatedDaysMax + <%- JSON.stringify(L(' days</span>', ' দিন</span>')).replace(/</g, '\\u003c') %>;
         html += '        </div>';
         html += '      </div>';
         html += '      <div class="col-md-5 text-md-end mt-3 mt-md-0">';
-        html += '        <div class="h4 fw-bold text-success mb-2">৳' + totalBdt.toLocaleString('en-IN') + '</div>';
+        html += <%- JSON.stringify(L('        <div class="h4 fw-bold text-success mb-2">৳', '        <div class="h4 fw-bold text-success mb-2">৳')).replace(/</g, '\\u003c') %> + totalBdt.toLocaleString('en-IN') + '</div>';
         html += '        <form method="POST" action="/vendor/sub-orders/' + encodeURIComponent(d.subOrderId) + '/request-courier-booking">';
         html += '          <input type="hidden" name="_csrf" value="' + csrfToken + '" />';
         html += '          <input type="hidden" name="courier_code" value="' + rec.providerCode + '" />';
         html += '          <input type="hidden" name="idempotency_key" value="' + idempotencyKey + '" />';
         html += '          <button type="submit" class="btn btn-success fw-bold px-3 shadow-sm">';
-        html += '            <i class="fas fa-paper-plane me-1"></i>কুরিয়ার বুকিং অনুরোধ করুন';
+        html += <%- JSON.stringify(L('            <i class="fas fa-paper-plane me-1"></i>Request courier booking', '            <i class="fas fa-paper-plane me-1"></i>কুরিয়ার বুকিং অনুরোধ করুন')).replace(/</g, '\\u003c') %>;
         html += '          </button>';
         html += '        </form>';
         html += '      </div>';
@@ -209,7 +210,7 @@ function openCourierCompareModal(subOrderId) {
         html += '  </div>';
         html += '</div>';
       } else {
-        html += '<div class="alert alert-warning">' + (d.reasonBn || d.reasonEn || 'কোন কুরিয়ার অপশন পাওয়া যায়নি।') + '</div>';
+        html += '<div class="alert alert-warning">' + (<%- locale === 'en' ? 'd.reasonEn || d.reasonBn' : 'd.reasonBn || d.reasonEn' %> || <%- JSON.stringify(L('No courier option found.', 'কোন কুরিয়ার অপশন পাওয়া যায়নি।')).replace(/</g, '\\u003c') %>) + '</div>';
       }
 
       // Alternative Couriers
@@ -217,20 +218,20 @@ function openCourierCompareModal(subOrderId) {
         html += '<h6 class="fw-bold text-muted mb-2"><i class="fas fa-arrows-split-up-and-left me-1"></i><%= t("vendorFulfillment.alternativeCouriers") %></h6>';
         html += '<div class="table-responsive">';
         html += '<table class="table table-sm align-middle table-bordered mb-0">';
-        html += '<thead class="table-light"><tr><th>কুরিয়ার</th><th>মোট চার্জ</th><th>আনুমানিক সময়</th><th>তুলনা ও পার্থক্য</th><th class="text-end">অ্যাকশন</th></tr></thead>';
+        html += <%- JSON.stringify(L('<thead class="table-light"><tr><th>Courier</th><th>Total charge</th><th>Estimated time</th><th>Comparison</th><th class="text-end">Action</th></tr></thead>', '<thead class="table-light"><tr><th>কুরিয়ার</th><th>মোট চার্জ</th><th>আনুমানিক সময়</th><th>তুলনা ও পার্থক্য</th><th class="text-end">অ্যাকশন</th></tr></thead>')).replace(/</g, '\\u003c') %>;
         html += '<tbody>';
         d.alternatives.forEach(alt => {
           html += '<tr>';
           html += '<td><strong>' + alt.providerName + '</strong> ' + (alt.isLiveQuote ? '<span class="badge bg-info-subtle text-info" style="font-size:10px;">Live</span>' : '') + '</td>';
-          html += '<td class="fw-bold">৳' + alt.totalCostBdt + '</td>';
-          html += '<td>' + alt.estimatedDaysMin + '-' + alt.estimatedDaysMax + ' দিন</td>';
-          html += '<td class="small text-muted">' + (alt.tradeOffBn || alt.tradeOffEn) + '</td>';
+          html += <%- JSON.stringify(L('<td class="fw-bold">৳', '<td class="fw-bold">৳')).replace(/</g, '\\u003c') %> + alt.totalCostBdt + '</td>';
+          html += '<td>' + alt.estimatedDaysMin + '-' + alt.estimatedDaysMax + <%- JSON.stringify(L(' days</td>', ' দিন</td>')).replace(/</g, '\\u003c') %>;
+          html += '<td class="small text-muted">' + (<%- locale === 'en' ? 'alt.tradeOffEn || alt.tradeOffBn' : 'alt.tradeOffBn || alt.tradeOffEn' %>) + '</td>';
           html += '<td class="text-end">';
           html += '  <form method="POST" action="/vendor/sub-orders/' + encodeURIComponent(d.subOrderId) + '/request-courier-booking" class="d-inline">';
           html += '    <input type="hidden" name="_csrf" value="' + csrfToken + '" />';
           html += '    <input type="hidden" name="courier_code" value="' + alt.providerCode + '" />';
           html += '    <input type="hidden" name="idempotency_key" value="' + idempotencyKey + '" />';
-          html += '    <button type="submit" class="btn btn-sm btn-outline-primary"><i class="fas fa-paper-plane me-1"></i>অনুরোধ করুন</button>';
+          html += <%- JSON.stringify(L('    <button type="submit" class="btn btn-sm btn-outline-primary"><i class="fas fa-paper-plane me-1"></i>Request</button>', '    <button type="submit" class="btn btn-sm btn-outline-primary"><i class="fas fa-paper-plane me-1"></i>অনুরোধ করুন</button>')).replace(/</g, '\\u003c') %>;
           html += '  </form>';
           html += '</td>';
           html += '</tr>';
@@ -243,7 +244,7 @@ function openCourierCompareModal(subOrderId) {
     .catch(err => {
       loading.style.display = 'none';
       content.style.display = 'block';
-      content.innerHTML = '<div class="alert alert-danger">নেটওয়ার্ক এরর: ' + err.message + '</div>';
+      content.innerHTML = <%- JSON.stringify(L('<div class="alert alert-danger">Network error: ', '<div class="alert alert-danger">নেটওয়ার্ক এরর: ')).replace(/</g, '\\u003c') %> + err.message + '</div>';
     });
 }
 </script>

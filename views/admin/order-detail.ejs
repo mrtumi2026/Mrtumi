@@ -27,7 +27,7 @@
           </form>
         <% } %>
         <% if (Number(order.has_vendor_part) === 1) { %>
-          <a href="/admin/reseller-commerce#orders" class="btn btn-outline-primary btn-sm">🏪 ভেন্ডর পার্সেল ও কুরিয়ারের টাকা মেলানো</a>
+          <a href="/admin/reseller-commerce#orders" class="btn btn-outline-primary btn-sm">🏪 <%= locale === 'en' ? 'Vendor parcels & courier money' : 'ভেন্ডর পার্সেল ও কুরিয়ারের টাকা মেলানো' %></a>
         <% } %>
         <a href="/admin/manual-fraud-check?phone=<%= encodeURIComponent(order.phone) %>" class="btn btn-outline-info btn-sm">🛡️ Check Fraud Ratio</a>
         <% if (order.payment_status === 'pending_verification') { %>
@@ -99,7 +99,7 @@
               <input type="hidden" name="request_key" value="<%= mutationKeys?.itemAdd || '' %>" />
               <div class="col-sm-7">
                 <select name="product_id" class="form-select form-select-sm" required>
-                  <option value="">+ এই অর্ডারে নতুন পণ্য যোগ করুন...</option>
+                  <option value="">+ <%= typeof locale !== 'undefined' && locale === 'en' ? 'Add a product to this order...' : 'এই অর্ডারে নতুন পণ্য যোগ করুন...' %></option>
                   <% (allProducts || []).forEach(function(ap) { %>
                     <option value="<%= ap.id %>"><%= ap.name %> — ৳<%= ap.new_price %></option>
                   <% }) %>
@@ -214,7 +214,7 @@
 
           <div class="mb-3">
             <label class="form-label small fw-semibold mb-1">Admin Internal Note</label>
-            <textarea name="admin_note" rows="2" class="form-control form-control-sm" placeholder="প্যাকিং বা কুরিয়ার নোট..."><%= order.admin_note %></textarea>
+            <textarea name="admin_note" rows="2" class="form-control form-control-sm" placeholder="<%= typeof locale !== 'undefined' && locale === 'en' ? 'Packing or courier note...' : 'প্যাকিং বা কুরিয়ার নোট...' %>"><%= order.admin_note %></textarea>
           </div>
 
           <button type="submit" class="btn btn-forest w-100">Save &amp; Update Order</button>

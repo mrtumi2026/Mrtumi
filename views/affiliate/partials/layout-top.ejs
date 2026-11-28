@@ -1,9 +1,10 @@
+<% const L = (en, bn) => (typeof locale !== 'undefined' && locale === 'en' ? en : bn); %>
 <!DOCTYPE html>
 <html lang="<%= typeof htmlLang !== 'undefined' ? htmlLang : 'bn' %>">
   <head>
     <meta charset="utf-8" />
     <meta name="csrf-token" content="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>" />
-    <title><%= typeof title !== 'undefined' ? title : 'এফিলিয়েট পোর্টাল' %> — <%= typeof siteSettings !== 'undefined' ? siteSettings.site_name : 'Mr. Tumi' %></title>
+    <title><%= typeof title !== 'undefined' ? title : L('Affiliate portal', 'এফিলিয়েট পোর্টাল') %> — <%= typeof siteSettings !== 'undefined' ? siteSettings.site_name : 'Mr. Tumi' %></title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="shortcut icon" href="<%= (typeof siteSettings !== 'undefined' && siteSettings.favicon) || '/uploads/brand/mrtumi-placeholder-favicon.svg' %>" />
     <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -29,13 +30,13 @@
                 <span class="pro-user-name ms-1"><%= (typeof affiliate !== 'undefined' && affiliate.name) || 'Affiliate' %> <i class="fas fa-chevron-down ms-1" style="font-size:10px;"></i></span>
               </a>
               <div class="dropdown-menu dropdown-menu-end profile-dropdown">
-                <a href="/affiliate/dashboard" class="dropdown-item notify-item"><i class="fas fa-chart-line me-2"></i>ড্যাশবোর্ড</a>
-                <a href="/affiliate/withdrawals" class="dropdown-item notify-item"><i class="fas fa-wallet me-2"></i>উইথড্রয়াল</a>
+                <a href="/affiliate/dashboard" class="dropdown-item notify-item"><i class="fas fa-chart-line me-2"></i><%= L('Dashboard', 'ড্যাশবোর্ড') %></a>
+                <a href="/affiliate/withdrawals" class="dropdown-item notify-item"><i class="fas fa-wallet me-2"></i><%= L('Withdrawals', 'উইথড্রয়াল') %></a>
                 <div class="dropdown-divider"></div>
                 <form action="/affiliate/logout" method="POST">
                   <input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>">
                   <button type="submit" class="dropdown-item notify-item text-danger border-0 bg-transparent w-100 text-start">
-                    <i class="fas fa-sign-out-alt me-2"></i>লগআউট
+                    <i class="fas fa-sign-out-alt me-2"></i><%= L('Sign out', 'লগআউট') %>
                   </button>
                 </form>
               </div>
@@ -53,10 +54,10 @@
               <button class="button-menu-mobile" type="button" aria-label="Toggle Sidebar"><i class="fas fa-bars"></i></button>
             </li>
             <li class="d-none d-sm-flex align-items-center">
-              <span class="badge bg-primary-subtle text-primary ms-2 px-2.5 py-1 fw-bold">💼 এফিলিয়েট পার্টনার পোর্টাল</span>
+              <span class="badge bg-primary-subtle text-primary ms-2 px-2.5 py-1 fw-bold"><%= L('💼 Affiliate partner portal', '💼 এফিলিয়েট পার্টনার পোর্টাল') %></span>
             </li>
             <li class="d-flex">
-              <a class="nav-link" href="/" target="_blank" rel="noopener"><i class="fas fa-external-link-alt me-1"></i><span>মেইন স্টোর</span></a>
+              <a class="nav-link" href="/" target="_blank" rel="noopener"><i class="fas fa-external-link-alt me-1"></i><span><%= L('Main store', 'মেইন স্টোর') %></span></a>
             </li>
           </ul>
         </div>
@@ -66,10 +67,10 @@
         <div class="h-100 pt-2">
           <nav id="sidebar-menu">
             <ul id="side-menu">
-              <li><a href="/affiliate/dashboard"><i class="fas fa-tachometer-alt me-2"></i><span>ড্যাশবোর্ড</span></a></li>
-              <li><a href="/affiliate/links"><i class="fas fa-link me-2"></i><span>এফিলিয়েট লিংক ও প্রমোশন</span></a></li>
-              <li><a href="/affiliate/commissions"><i class="fas fa-coins me-2"></i><span>কমিশন হিস্ট্রি</span></a></li>
-              <li><a href="/affiliate/withdrawals"><i class="fas fa-hand-holding-usd me-2"></i><span>টাকা উত্তোলন (Withdraw)</span></a></li>
+              <li><a href="/affiliate/dashboard"><i class="fas fa-tachometer-alt me-2"></i><span><%= L('Dashboard', 'ড্যাশবোর্ড') %></span></a></li>
+              <li><a href="/affiliate/links"><i class="fas fa-link me-2"></i><span><%= L('Affiliate links and promotion', 'এফিলিয়েট লিংক ও প্রমোশন') %></span></a></li>
+              <li><a href="/affiliate/commissions"><i class="fas fa-coins me-2"></i><span><%= L('Commission history', 'কমিশন হিস্ট্রি') %></span></a></li>
+              <li><a href="/affiliate/withdrawals"><i class="fas fa-hand-holding-usd me-2"></i><span><%= L('Withdraw money', 'টাকা উত্তোলন (Withdraw)') %></span></a></li>
             </ul>
           </nav>
         </div>

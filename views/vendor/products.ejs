@@ -1,11 +1,12 @@
+<% const L = (en, bn) => (typeof locale !== 'undefined' && locale === 'en' ? en : bn); %>
 <%- include('partials/layout-top', { title: 'My Products' }) %>
 
 <div class="d-flex justify-content-between align-items-center mb-3">
   <div>
-    <h4 class="fw-bold mb-0">📦 আমার সকল প্রোডাক্ট (<%= products.length %>)</h4>
-    <p class="text-muted small mb-0">আপনার শপের প্রোডাক্ট আপলোড, স্টক ও মূল্য পরিবর্তন করুন</p>
+    <h4 class="fw-bold mb-0"><%= L('📦 All my products (', '📦 আমার সকল প্রোডাক্ট (') %><%= products.length %>)</h4>
+    <p class="text-muted small mb-0"><%= L('Upload your shop\'s products and change stock and prices', 'আপনার শপের প্রোডাক্ট আপলোড, স্টক ও মূল্য পরিবর্তন করুন') %></p>
   </div>
-  <a href="/vendor/products/create" class="btn btn-forest btn-sm">+ নতুন পণ্য যোগ করুন</a>
+  <a href="/vendor/products/create" class="btn btn-forest btn-sm"><%= L('+ Add new product', '+ নতুন পণ্য যোগ করুন') %></a>
 </div>
 
 <div class="tbl-card">
@@ -13,18 +14,18 @@
     <table class="table clean mb-0 align-middle">
       <thead>
         <tr>
-          <th>পণ্য</th>
-          <th>ক্যাটাগরি</th>
-          <th>রেগুলার / বিক্রয় মূল্য</th>
-          <th>স্টক</th>
-          <th>বিক্রি</th>
-          <th>অ্যাপ্রুভাল</th>
-          <th class="text-end">অ্যাকশন</th>
+          <th><%= L('Product', 'পণ্য') %></th>
+          <th><%= L('Category', 'ক্যাটাগরি') %></th>
+          <th><%= L('Regular / sale price', 'রেগুলার / বিক্রয় মূল্য') %></th>
+          <th><%= L('Stock', 'স্টক') %></th>
+          <th><%= L('Sold', 'বিক্রি') %></th>
+          <th><%= L('Approval', 'অ্যাপ্রুভাল') %></th>
+          <th class="text-end"><%= L('Action', 'অ্যাকশন') %></th>
         </tr>
       </thead>
       <tbody>
         <% if (!products.length) { %>
-          <tr><td colspan="7" class="text-center py-4 text-muted">আপনি এখনো কোনো পণ্য যোগ করেননি।</td></tr>
+          <tr><td colspan="7" class="text-center py-4 text-muted"><%= L('You have not added any product yet.', 'আপনি এখনো কোনো পণ্য যোগ করেননি।') %></td></tr>
         <% } %>
         <% products.forEach(function(p) { %>
           <tr>
@@ -44,7 +45,7 @@
               <% } %>
               <strong class="text-success">৳<%= p.new_price %></strong>
             </td>
-            <td><span class="sb <%= p.stock > 10 ? 'sb-6' : 'sb-7' %>"><%= p.stock %></span><form action="/vendor/products/<%= p.id %>/inventory" method="POST" class="d-flex gap-1 mt-1"><input type="hidden" name="_csrf" value="<%= csrfToken || '' %>"><input name="quantity" type="number" min="0" value="<%= p.stock %>" class="form-control form-control-sm" aria-label="Inventory quantity"><input name="reason" type="hidden" value="Vendor portal stock count"><button class="btn btn-sm btn-outline-success" type="submit">Save stock</button></form></td>
+            <td><span class="sb <%= p.stock > 10 ? 'sb-6' : 'sb-7' %>"><%= p.stock %></span><form action="/vendor/products/<%= p.id %>/inventory" method="POST" class="d-flex gap-1 mt-1"><input type="hidden" name="_csrf" value="<%= csrfToken || '' %>"><input name="quantity" type="number" min="0" value="<%= p.stock %>" class="form-control form-control-sm" aria-label="<%= L('Inventory quantity', 'স্টকের পরিমাণ') %>"><input name="reason" type="hidden" value="Vendor portal stock count"><button class="btn btn-sm btn-outline-success" type="submit"><%= L('Save stock', 'স্টক সংরক্ষণ') %></button></form></td>
             <td><%= p.sold_count || 0 %></td>
             <td>
               <span class="sb <%= p.approval_status === 'approved' ? 'sb-6' : 'sb-1' %>">

@@ -1,13 +1,14 @@
+<% const L = (en, bn) => (typeof locale !== 'undefined' && locale === 'en' ? en : bn); %>
 <%- include('partials/layout-top', { title: 'Store Profile & Branding' }) %>
 
 <div class="row g-4">
   <div class="col-lg-8">
     <div class="tbl-card p-4">
       <div class="d-flex justify-content-between align-items-center border-bottom pb-2 mb-3">
-        <h5 class="fw-bold mb-0">🏪 শপ প্রোফাইল ও স্টোর ব্র্যান্ডিং</h5>
+        <h5 class="fw-bold mb-0"><%= L('🏪 Shop profile and store branding', '🏪 শপ প্রোফাইল ও স্টোর ব্র্যান্ডিং') %></h5>
         <% if (vendor.slug || vendor.id) { %>
           <a href="/<%= vendor.slug || ('store-' + vendor.id) %>" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-success rounded-pill px-3">
-            <i class="fas fa-external-link-alt me-1"></i> লাইভ স্টোর দেখুন
+            <i class="fas fa-external-link-alt me-1"></i> <%= L('View live store', 'লাইভ স্টোর দেখুন') %>
           </a>
         <% } %>
       </div>
@@ -18,7 +19,7 @@
         <!-- Store Identity & Branding Section -->
         <div class="col-12">
           <div class="p-3 rounded-3 bg-light border">
-            <h6 class="fw-bold text-success mb-3"><i class="fas fa-store me-1"></i> স্টোর ব্র্যান্ডিং ও কাস্টমার ডিসপ্লে</h6>
+            <h6 class="fw-bold text-success mb-3"><i class="fas fa-store me-1"></i> <%= L('Store branding and customer display', 'স্টোর ব্র্যান্ডিং ও কাস্টমার ডিসপ্লে') %></h6>
             <div class="row g-3 align-items-center">
               <div class="col-sm-3 text-center">
                 <img
@@ -27,37 +28,37 @@
                   class="rounded-circle border p-1 bg-white shadow-sm mb-2"
                   style="width: 84px; height: 84px; object-fit: cover;"
                 />
-                <div class="small text-muted" style="font-size: 11px;">বর্তমান লোগো</div>
+                <div class="small text-muted" style="font-size: 11px;"><%= L('Current logo', 'বর্তমান লোগো') %></div>
               </div>
               <div class="col-sm-9">
-                <label class="form-label small fw-semibold" for="logoInput">নতুন স্টোর লোগো আপলোড (PNG, JPG, WebP - সর্বোচ্চ ২MB)</label>
+                <label class="form-label small fw-semibold" for="logoInput"><%= L('Upload a new store logo (PNG, JPG, WebP - up to 2 MB)', 'নতুন স্টোর লোগো আপলোড (PNG, JPG, WebP - সর্বোচ্চ ২MB)') %></label>
                 <input id="logoInput" type="file" name="logo" accept="image/png,image/jpeg,image/webp,image/jpg" class="form-control form-control-sm" />
-                <div class="form-text" style="font-size: 11px;">কাস্টমারদের কাছে আপনার স্টোরের বিশ্বস্ততা বাড়াতে স্পষ্ট লোগো দিন।</div>
+                <div class="form-text" style="font-size: 11px;"><%= L('A clear logo helps customers trust your store.', 'কাস্টমারদের কাছে আপনার স্টোরের বিশ্বস্ততা বাড়াতে স্পষ্ট লোগো দিন।') %></div>
               </div>
             </div>
 
             <div class="row g-3 mt-1">
               <div class="col-md-6">
-                <label class="form-label small fw-semibold" for="shopName">শপ / স্টোরের নাম *</label>
+                <label class="form-label small fw-semibold" for="shopName"><%= L('Shop / store name *', 'শপ / স্টোরের নাম *') %></label>
                 <input id="shopName" type="text" name="shop_name" value="<%= vendor.shop_name %>" class="form-control" required />
               </div>
               <div class="col-md-6">
-                <label class="form-label small fw-semibold" for="storeSlug">স্টোর লিঙ্ক স্লাগ (URL Slug) *</label>
+                <label class="form-label small fw-semibold" for="storeSlug"><%= L('Store link slug (URL slug) *', 'স্টোর লিঙ্ক স্লাগ (URL Slug) *') %></label>
                 <div class="input-group input-group-sm">
                   <span class="input-group-text bg-white" style="font-size: 12px;">mrtumi.com/</span>
                   <input id="storeSlug" type="text" name="slug" value="<%= vendor.slug || ('store-' + vendor.id) %>" class="form-control" pattern="[a-z0-9\-]+" placeholder="my-shop" required />
                 </div>
-                <div class="form-text" style="font-size: 11px;">শুধুমাত্র ছোট হাতের ইংরেজি অক্ষর, সংখ্যা এবং হাইফেন (-) ব্যবহার করুন।</div>
+                <div class="form-text" style="font-size: 11px;"><%= L('Use only lowercase English letters, numbers and hyphens (-).', 'শুধুমাত্র ছোট হাতের ইংরেজি অক্ষর, সংখ্যা এবং হাইফেন (-) ব্যবহার করুন।') %></div>
               </div>
 
               <div class="col-12">
-                <label class="form-label small fw-semibold" for="storeTagline">স্টোর ট্যাগলাইন / স্লোগান</label>
-                <input id="storeTagline" type="text" name="tagline" value="<%= vendor.tagline || '' %>" class="form-control" maxlength="255" placeholder="যেমন: তাজা গ্রোসারি ও সেরা মানের নিশ্চয়তা" />
+                <label class="form-label small fw-semibold" for="storeTagline"><%= L('Store tagline / slogan', 'স্টোর ট্যাগলাইন / স্লোগান') %></label>
+                <input id="storeTagline" type="text" name="tagline" value="<%= vendor.tagline || '' %>" class="form-control" maxlength="255" placeholder="<%= L('e.g. Fresh grocery and the best quality, guaranteed', 'যেমন: তাজা গ্রোসারি ও সেরা মানের নিশ্চয়তা') %>" />
               </div>
 
               <div class="col-12">
-                <label class="form-label small fw-semibold" for="storeDesc">স্টোর সম্পর্কে বিবরণ (Store Story / Description)</label>
-                <textarea id="storeDesc" name="description" class="form-control" rows="3" maxlength="2000" placeholder="আপনার স্টোর, খামার বা পণ্যের বিশেষত্ব সম্পর্কে সংক্ষেপে লিখুন..."><%= vendor.description || '' %></textarea>
+                <label class="form-label small fw-semibold" for="storeDesc"><%= L('Store description (store story)', 'স্টোর সম্পর্কে বিবরণ (Store Story / Description)') %></label>
+                <textarea id="storeDesc" name="description" class="form-control" rows="3" maxlength="2000" placeholder="<%= L('Write briefly about what makes your store, farm or products special...', 'আপনার স্টোর, খামার বা পণ্যের বিশেষত্ব সম্পর্কে সংক্ষেপে লিখুন...') %>"><%= vendor.description || '' %></textarea>
               </div>
             </div>
           </div>
@@ -65,58 +66,58 @@
 
         <!-- Owner & Contact Section -->
         <div class="col-12">
-          <h6 class="fw-bold border-bottom pb-1 text-secondary mb-2"><i class="fas fa-id-card me-1"></i> স্বত্বাধিকারী ও যোগাযোগের তথ্য</h6>
+          <h6 class="fw-bold border-bottom pb-1 text-secondary mb-2"><i class="fas fa-id-card me-1"></i> <%= L('Owner and contact details', 'স্বত্বাধিকারী ও যোগাযোগের তথ্য') %></h6>
         </div>
 
         <div class="col-md-6">
-          <label class="form-label small fw-semibold">মালিকের নাম *</label>
+          <label class="form-label small fw-semibold"><%= L('Owner name *', 'মালিকের নাম *') %></label>
           <input type="text" name="owner_name" value="<%= vendor.owner_name %>" class="form-control" required />
         </div>
         <div class="col-md-6">
-          <label class="form-label small fw-semibold">মোবাইল নম্বর *</label>
+          <label class="form-label small fw-semibold"><%= L('Mobile number *', 'মোবাইল নম্বর *') %></label>
           <input type="text" name="phone" value="<%= vendor.phone %>" class="form-control" required <%= mysqlMode ? 'readonly aria-describedby="phone-help"' : '' %> />
-          <% if(mysqlMode){ %><div class="form-text" id="phone-help" style="font-size: 11px;">ভেরিফায়েড মোবাইল নম্বর সরাসরি পরিবর্তনযোগ্য নয়।</div><% } %>
+          <% if(mysqlMode){ %><div class="form-text" id="phone-help" style="font-size: 11px;"><%= L('A verified mobile number cannot be changed directly.', 'ভেরিফায়েড মোবাইল নম্বর সরাসরি পরিবর্তনযোগ্য নয়।') %></div><% } %>
         </div>
         <div class="col-md-6">
-          <label class="form-label small fw-semibold">ইমেইল</label>
+          <label class="form-label small fw-semibold"><%= L('Email', 'ইমেইল') %></label>
           <input type="email" name="email" value="<%= vendor.email %>" class="form-control" />
         </div>
         <div class="col-md-6">
-          <label class="form-label small fw-semibold" for="address">শপ / গোডাউনের ঠিকানা *</label>
+          <label class="form-label small fw-semibold" for="address"><%= L('Shop / warehouse address *', 'শপ / গোডাউনের ঠিকানা *') %></label>
           <input id="address" type="text" name="address" value="<%= vendor.address || '' %>" class="form-control" required />
         </div>
 
         <% if(mysqlMode){ %>
           <div class="col-md-6">
-            <label class="form-label small fw-semibold" for="district">জেলা (District) *</label>
+            <label class="form-label small fw-semibold" for="district"><%= L('District *', 'জেলা (District) *') %></label>
             <select id="district" name="district" class="form-select" required data-current="<%= vendor.district || '' %>">
-              <option value="">জেলা নির্বাচন করুন</option>
+              <option value=""><%= L('Select a district', 'জেলা নির্বাচন করুন') %></option>
             </select>
           </div>
           <div class="col-md-6">
-            <label class="form-label small fw-semibold" for="upazila">উপজেলা / থানা (Upazila) *</label>
+            <label class="form-label small fw-semibold" for="upazila"><%= L('Upazila / Thana *', 'উপজেলা / থানা (Upazila) *') %></label>
             <select id="upazila" name="upazila" class="form-select" required data-current="<%= vendor.upazila || '' %>" disabled>
-              <option value="">আগে জেলা নির্বাচন করুন</option>
+              <option value=""><%= L('Select a district first', 'আগে জেলা নির্বাচন করুন') %></option>
             </select>
           </div>
         <% } %>
 
         <!-- Security / Password Section -->
         <div class="col-12 mt-4">
-          <h6 class="fw-bold border-bottom pb-1 text-secondary mb-2"><i class="fas fa-shield-alt me-1"></i> নিরাপত্তা ও পাসওয়ার্ড পরিবর্তন</h6>
+          <h6 class="fw-bold border-bottom pb-1 text-secondary mb-2"><i class="fas fa-shield-alt me-1"></i> <%= L('Security and password change', 'নিরাপত্তা ও পাসওয়ার্ড পরিবর্তন') %></h6>
         </div>
         <div class="col-md-6">
-          <label class="form-label small fw-semibold">বর্তমান পাসওয়ার্ড (পাসওয়ার্ড বদলাতে আবশ্যক)</label>
+          <label class="form-label small fw-semibold"><%= L('Current password (required to change the password)', 'বর্তমান পাসওয়ার্ড (পাসওয়ার্ড বদলাতে আবশ্যক)') %></label>
           <input type="password" name="current_password" class="form-control" autocomplete="current-password" />
         </div>
         <div class="col-md-6">
-          <label class="form-label small fw-semibold">নতুন পাসওয়ার্ড (পরিবর্তন করতে চাইলে লিখুন)</label>
-          <input type="password" name="new_password" class="form-control" minlength="<%= mysqlMode ? 10 : 6 %>" maxlength="72" autocomplete="new-password" placeholder="<%= mysqlMode ? 'কমপক্ষে ১০ অক্ষর' : 'কমপক্ষে ৬ অক্ষর' %>" />
+          <label class="form-label small fw-semibold"><%= L('New password (only if you want to change it)', 'নতুন পাসওয়ার্ড (পরিবর্তন করতে চাইলে লিখুন)') %></label>
+          <input type="password" name="new_password" class="form-control" minlength="<%= mysqlMode ? 10 : 6 %>" maxlength="72" autocomplete="new-password" placeholder="<%= mysqlMode ? L('At least 10 characters', 'কমপক্ষে ১০ অক্ষর') : L('At least 6 characters', 'কমপক্ষে ৬ অক্ষর') %>" />
         </div>
 
         <div class="col-12 mt-4">
           <button type="submit" class="btn btn-forest px-4 py-2 fw-bold">
-            <i class="fas fa-save me-1"></i> প্রোফাইল ও স্টোর ব্র্যান্ডিং সংরক্ষণ করুন
+            <i class="fas fa-save me-1"></i> <%= L('Save profile and store branding', 'প্রোফাইল ও স্টোর ব্র্যান্ডিং সংরক্ষণ করুন') %>
           </button>
         </div>
       </form>
@@ -126,7 +127,7 @@
   <div class="col-lg-4">
     <!-- Store Status & Preview Card -->
     <div class="tbl-card p-3 mb-3">
-      <h6 class="fw-bold mb-2">🏪 আপনার পাবলিক স্টোর</h6>
+      <h6 class="fw-bold mb-2"><%= L('🏪 Your public store', '🏪 আপনার পাবলিক স্টোর') %></h6>
       <div class="text-center p-3 bg-light rounded-3 mb-3">
         <img
           src="<%= vendor.logo_url || '/uploads/default/store-logo.svg' %>"
@@ -139,19 +140,19 @@
           <div class="small text-muted fst-italic mb-1"><%= vendor.tagline %></div>
         <% } %>
         <span class="badge <%= (vendor.lifecycle_status === 'active' || vendor.verified) ? 'bg-success' : 'bg-warning text-dark' %> mb-2">
-          <%= (vendor.lifecycle_status === 'active' || vendor.verified) ? '✓ ভেরিফায়েড মার্চেন্ট' : 'পেন্ডিং ভেরিফিকেশন' %>
+          <%= (vendor.lifecycle_status === 'active' || vendor.verified) ? L('✓ Verified merchant', '✓ ভেরিফায়েড মার্চেন্ট') : L('Verification pending', 'পেন্ডিং ভেরিফিকেশন') %>
         </span>
         <div class="small text-muted mb-2">
-          📍 <%= vendor.upazila ? vendor.upazila + ', ' : '' %><%= vendor.district || 'বাংলাদেশ' %>
+          📍 <%= vendor.upazila ? vendor.upazila + ', ' : '' %><%= vendor.district || L('Bangladesh', 'বাংলাদেশ') %>
         </div>
         <a href="/<%= vendor.slug || ('store-' + vendor.id) %>" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-success w-100">
-          স্টোর প্রিভিউ দেখুন →
+          <%= L('View store preview →', 'স্টোর প্রিভিউ দেখুন →') %>
         </a>
       </div>
       <ul class="list-unstyled small text-muted mb-0">
-        <li class="mb-1">✔ স্টোর স্লাগ আপনার নিজস্ব ব্র্যান্ড পেজের অ্যাড্রেস।</li>
-        <li class="mb-1">✔ আপনার সকল অনুমোদিত পণ্য এই স্টোরে একসঙ্গে প্রদর্শিত হবে।</li>
-        <li>✔ পণ্যের ডিটেইল পেজে কাস্টমাররা "Sold by <%= vendor.shop_name %>" দেখতে পাবেন।</li>
+        <li class="mb-1"><%= L('✔ The store slug is the address of your own brand page.', '✔ স্টোর স্লাগ আপনার নিজস্ব ব্র্যান্ড পেজের অ্যাড্রেস।') %></li>
+        <li class="mb-1"><%= L('✔ All your approved products are shown together in this store.', '✔ আপনার সকল অনুমোদিত পণ্য এই স্টোরে একসঙ্গে প্রদর্শিত হবে।') %></li>
+        <li><%= L('✔ On product detail pages customers will see "Sold by', '✔ পণ্যের ডিটেইল পেজে কাস্টমাররা "Sold by') %> <%= vendor.shop_name %><%= L('"', '" দেখতে পাবেন।') %></li>
       </ul>
     </div>
   </div>

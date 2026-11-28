@@ -1,3 +1,4 @@
+<% const L = (en, bn) => (typeof locale !== 'undefined' && locale === 'en' ? en : bn); %>
 <%- include('partials/header', { title: t('common.checkout') }) %>
 <% const checkoutEnglish = typeof isEn !== 'undefined' ? Boolean(isEn) : Boolean(typeof isEnglish !== 'undefined' && isEnglish); %>
 <% const wallet = typeof checkoutWallet !== 'undefined' && checkoutWallet ? checkoutWallet : null; %>
@@ -154,7 +155,7 @@
         <!-- Right Column: Order Summary & Live Editable Cart Items -->
         <div class="col-lg-5">
           <div class="checkout-order-summary bg-white rounded-4 border p-4 shadow-sm sticky-top" style="top: 90px;">
-            <h5 class="fw-bold border-bottom pb-2 mb-3">🧾 অর্ডার সামারি (<span class="js-cart-count"><%= cartCount %></span> টি পণ্য)</h5>
+            <h5 class="fw-bold border-bottom pb-2 mb-3"><%= L('🧾 Order summary (', '🧾 অর্ডার সামারি (') %><span class="js-cart-count"><%= cartCount %></span> <%= L(' items)', 'টি পণ্য)') %></h5>
 
             <div id="checkoutCartItemsList" class="mb-3" style="max-height: 280px; overflow-y: auto;">
               <% cart.forEach(function(it) { %>
@@ -173,7 +174,7 @@
                   </div>
                   <div class="text-end">
                     <div class="fw-bold small text-success">৳<%= Number(it.price * it.qty).toLocaleString('en-IN') %></div>
-                    <button type="button" class="btn btn-link text-danger p-0 small text-decoration-none" style="font-size:11.5px;" onclick="window.removeCartItem('<%= it.key %>')">মুছুন</button>
+                    <button type="button" class="btn btn-link text-danger p-0 small text-decoration-none" style="font-size:11.5px;" onclick="window.removeCartItem('<%= it.key %>')"><%= L('Remove', 'মুছুন') %></button>
                   </div>
                 </div>
               <% }) %>
@@ -181,22 +182,22 @@
 
             <!-- Coupon Code Box -->
             <div class="input-group input-group-sm mb-2">
-              <input type="text" id="couponInput" class="form-control" placeholder="কুপন কোড (যেমন: FRESH10)" value="<%= appliedCoupon ? appliedCoupon.code : '' %>" />
-              <button class="btn btn-outline-success fw-semibold" type="button" onclick="applyCouponCode()">প্রয়োগ</button>
+              <input type="text" id="couponInput" class="form-control" placeholder="<%= L('Coupon code (e.g. FRESH10)', 'কুপন কোড (যেমন: FRESH10)') %>" value="<%= appliedCoupon ? appliedCoupon.code : '' %>" />
+              <button class="btn btn-outline-success fw-semibold" type="button" onclick="applyCouponCode()"><%= L('Apply', 'প্রয়োগ') %></button>
             </div>
             <div id="couponMsg" class="small mb-2"></div>
 
             <div class="border-top pt-2">
               <div class="d-flex justify-content-between py-1 small">
-                <span>সাবটোটাল:</span>
+                <span><%= L('Subtotal:', 'সাবটোটাল:') %></span>
                 <strong>৳<span id="ckSubtotal"><%= Number(cartSubtotal).toLocaleString('en-IN') %></span></strong>
               </div>
               <div class="d-flex justify-content-between py-1 small">
-                <span>ডেলিভারি চার্জ:</span>
+                <span><%= L('Delivery charge:', 'ডেলিভারি চার্জ:') %></span>
                 <strong>৳<span id="ckShipVal"><%= siteSettings.inside_dhaka_charge || 60 %></span></strong>
               </div>
               <div class="d-flex justify-content-between py-1 small text-danger">
-                <span>ডিসকাউন্ট ছাড়:</span>
+                <span><%= L('Discount:', 'ডিসকাউন্ট ছাড়:') %></span>
                 <strong>-৳<span id="ckDiscVal"><%= appliedCoupon ? appliedCoupon.discount : 0 %></span></strong>
               </div>
               <% if (wallet) { %>
@@ -211,7 +212,7 @@
               </div>
               <% } %>
               <div class="d-flex justify-content-between py-2 border-top mt-1 fs-5 fw-bold text-success">
-                <span>সর্বমোট প্রদেয়:</span>
+                <span><%= L('Total payable:', 'সর্বমোট প্রদেয়:') %></span>
                 <span>৳<span id="ckGrandTotal">0</span></span>
               </div>
             </div>
@@ -220,12 +221,12 @@
               <div class="form-check small mb-2"><input class="form-check-input" type="checkbox" id="confirmOrder" name="confirm_order" value="yes" required /><label class="form-check-label" for="confirmOrder"><%= checkoutEnglish ? 'I reviewed the contact, delivery, items and total above and confirm this order.' : 'উপরের যোগাযোগ, ডেলিভারি, পণ্য ও মোট মূল্য যাচাই করে অর্ডারটি নিশ্চিত করছি।' %></label></div>
             <% } %>
             <button type="submit" <%= canonicalMysqlCheckout && !checkoutAvailable ? 'disabled' : '' %> class="btn btn-success w-100 py-3 fw-bold fs-6 rounded-3 mt-2 shadow-sm" style="background:#1b4332;border-color:#1b4332;">
-              ✓ অর্ডার নিশ্চিত করুন
+              <%= L('✓ Confirm order', '✓ অর্ডার নিশ্চিত করুন') %>
             </button>
 
             <div class="d-flex justify-content-around text-muted small mt-3 pt-2 border-top" style="font-size:11.5px;">
               <span>🔒 SSL Secured</span>
-              <span>🛡️ ১০০% নিরাপদ</span>
+              <span><%= L('🛡️ 100% secure', '🛡️ ১০০% নিরাপদ') %></span>
               <span>↩️ Easy Return</span>
             </div>
           </div>
@@ -239,7 +240,7 @@
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content rounded-4 border-0 shadow">
       <div class="modal-header border-0 pb-0">
-        <h5 class="modal-title fw-bold" id="orderOtpModalLabel">📱 মোবাইল ভেরিফিকেশন (OTP)</h5>
+        <h5 class="modal-title fw-bold" id="orderOtpModalLabel"><%= L('📱 Mobile verification (OTP)', '📱 মোবাইল ভেরিফিকেশন (OTP)') %></h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body text-center py-4">
@@ -247,17 +248,17 @@
           <i class="fas fa-shield-halved text-success fa-3x"></i>
         </div>
         <p class="text-muted small mb-3">
-          অর্ডার সুরক্ষিত রাখতে <strong id="otpTargetPhone">017XXXXXXXX</strong> নম্বরে পাঠানো ৬ সংখ্যার ওটিপি (OTP) কোডটি লিখুন:
+          <%= L('To keep your order safe, enter the 6-digit code (OTP) sent to', 'অর্ডার সুরক্ষিত রাখতে') %> <strong id="otpTargetPhone">017XXXXXXXX</strong> <%= L(':', 'নম্বরে পাঠানো ৬ সংখ্যার ওটিপি (OTP) কোডটি লিখুন:') %>
         </p>
         <div class="mb-3 d-flex justify-content-center">
           <input type="text" id="orderOtpInput" class="form-control form-control-lg text-center fw-bold fs-4" style="max-width: 220px; letter-spacing: 6px;" maxlength="6" placeholder="------" pattern="\d{6}" inputmode="numeric" autocomplete="one-time-code" />
         </div>
         <div id="otpErrorMessage" class="text-danger small mb-3" style="display:none;"></div>
         <button type="button" id="btnVerifyOtp" class="btn btn-success w-100 py-2.5 fw-bold rounded-3" style="background:#1b4332;">
-          ✓ কোড যাচাই করে অর্ডার কনফার্ম করুন
+          <%= L('✓ Verify code and confirm order', '✓ কোড যাচাই করে অর্ডার কনফার্ম করুন') %>
         </button>
         <div class="mt-3 text-muted small">
-          কোড পাননি? <button type="button" id="btnResendOtp" class="btn btn-link p-0 small text-decoration-none">পুনরায় কোড পাঠান</button>
+          <%= L('Didn\'t get the code?', 'কোড পাননি?') %> <button type="button" id="btnResendOtp" class="btn btn-link p-0 small text-decoration-none"><%= L('Send the code again', 'পুনরায় কোড পাঠান') %></button>
           <span id="otpTimerSpan" class="text-muted ms-1"></span>
         </div>
       </div>
@@ -330,7 +331,7 @@
           '</div>' +
           '<div class="text-end">' +
             '<div class="fw-bold small text-success">৳' + Number(it.price * it.qty).toLocaleString('en-IN') + '</div>' +
-            '<button type="button" class="btn btn-link text-danger p-0 small text-decoration-none" style="font-size:11.5px;" onclick="window.removeCartItem(\'' + it.key + '\')">মুছুন</button>' +
+            '<button type="button" class="btn btn-link text-danger p-0 small text-decoration-none" style="font-size:11.5px;" onclick="window.removeCartItem(\'' + it.key + '\')"><%= L('Remove', 'মুছুন') %></button>' +
           '</div>' +
         '</div>';
       }).join('');
@@ -460,7 +461,7 @@
       var phoneInput = document.getElementById('customerPhone') || document.querySelector('input[name="phone"]');
       var rawPhone = phoneInput ? phoneInput.value.trim() : '';
       if (!rawPhone || rawPhone.length < 11) {
-        if (typeof toastr !== 'undefined') toastr.error('অনুগ্রহ করে ১১ সংখ্যার সঠিক মোবাইল নম্বর লিখুন।');
+        if (typeof toastr !== 'undefined') toastr.error(<%- JSON.stringify(L('Please enter a valid 11-digit mobile number.', 'অনুগ্রহ করে ১১ সংখ্যার সঠিক মোবাইল নম্বর লিখুন।')).replace(/</g, '\\u003c') %>);
         return;
       }
 
@@ -468,7 +469,7 @@
       var csrfToken = csrfMeta ? csrfMeta.getAttribute('content') : '';
 
       var submitBtn = checkoutForm.querySelector('button[type="submit"]');
-      if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'ওটিপি পাঠানো হচ্ছে...'; }
+      if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = <%- JSON.stringify(L('Sending OTP...', 'ওটিপি পাঠানো হচ্ছে...')).replace(/</g, '\\u003c') %>; }
 
       fetch('/api/checkout/send-otp', {
         method: 'POST',
@@ -477,7 +478,7 @@
       })
       .then(function(res) { return res.json(); })
       .then(function(data) {
-        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '✓ অর্ডার নিশ্চিত করুন'; }
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = <%- JSON.stringify(L('✓ Confirm order', '✓ অর্ডার নিশ্চিত করুন')).replace(/</g, '\\u003c') %>; }
         if (data.success) {
           document.getElementById('otpTargetPhone').textContent = data.phone || rawPhone;
           var otpModalEl = document.getElementById('orderOtpModal');
@@ -491,12 +492,12 @@
             console.log('DEV / TEST OTP CODE:', data.devCode);
           }
         } else {
-          if (typeof toastr !== 'undefined') toastr.error(data.message || 'ওটিপি পাঠানো যায়নি।');
+          if (typeof toastr !== 'undefined') toastr.error(data.message || <%- JSON.stringify(L('Could not send the OTP.', 'ওটিপি পাঠানো যায়নি।')).replace(/</g, '\\u003c') %>);
         }
       })
       .catch(function() {
-        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '✓ অর্ডার নিশ্চিত করুন'; }
-        if (typeof toastr !== 'undefined') toastr.error('নেটওয়ার্ক ত্রুটি! অনুগ্রহ করে পুনরায় চেষ্টা করুন।');
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = <%- JSON.stringify(L('✓ Confirm order', '✓ অর্ডার নিশ্চিত করুন')).replace(/</g, '\\u003c') %>; }
+        if (typeof toastr !== 'undefined') toastr.error(<%- JSON.stringify(L('Network error! Please try again.', 'নেটওয়ার্ক ত্রুটি! অনুগ্রহ করে পুনরায় চেষ্টা করুন।')).replace(/</g, '\\u003c') %>);
       });
     });
 
@@ -511,13 +512,13 @@
 
         if (!/^\d{6}$/.test(code)) {
           var errDiv = document.getElementById('otpErrorMessage');
-          errDiv.textContent = '৬ সংখ্যার সঠিক ওটিপি কোড লিখুন।';
+          errDiv.textContent = <%- JSON.stringify(L('Enter the correct 6-digit OTP code.', '৬ সংখ্যার সঠিক ওটিপি কোড লিখুন।')).replace(/</g, '\\u003c') %>;
           errDiv.style.display = 'block';
           return;
         }
 
         verifyBtn.disabled = true;
-        verifyBtn.textContent = 'যাচাই করা হচ্ছে...';
+        verifyBtn.textContent = <%- JSON.stringify(L('Verifying...', 'যাচাই করা হচ্ছে...')).replace(/</g, '\\u003c') %>;
 
         fetch('/api/checkout/verify-otp', {
           method: 'POST',
@@ -527,24 +528,24 @@
         .then(function(res) { return res.json(); })
         .then(function(data) {
           verifyBtn.disabled = false;
-          verifyBtn.textContent = '✓ কোড যাচাই করে অর্ডার কনফার্ম করুন';
+          verifyBtn.textContent = <%- JSON.stringify(L('✓ Verify code and confirm order', '✓ কোড যাচাই করে অর্ডার কনফার্ম করুন')).replace(/</g, '\\u003c') %>;
           if (data.success) {
             otpVerifiedInSession = true;
             var modal = bootstrap.Modal.getInstance(document.getElementById('orderOtpModal'));
             if (modal) modal.hide();
-            if (typeof toastr !== 'undefined') toastr.success('ওটিপি সফলভাবে যাচাই হয়েছে!');
+            if (typeof toastr !== 'undefined') toastr.success(<%- JSON.stringify(L('OTP verified!', 'ওটিপি সফলভাবে যাচাই হয়েছে!')).replace(/</g, '\\u003c') %>);
             checkoutForm.submit();
           } else {
             var errDiv = document.getElementById('otpErrorMessage');
-            errDiv.textContent = data.message || 'ভুল ওটিপি কোড!';
+            errDiv.textContent = data.message || <%- JSON.stringify(L('Wrong OTP code!', 'ভুল ওটিপি কোড!')).replace(/</g, '\\u003c') %>;
             errDiv.style.display = 'block';
           }
         })
         .catch(function() {
           verifyBtn.disabled = false;
-          verifyBtn.textContent = '✓ কোড যাচাই করে অর্ডার কনফার্ম করুন';
+          verifyBtn.textContent = <%- JSON.stringify(L('✓ Verify code and confirm order', '✓ কোড যাচাই করে অর্ডার কনফার্ম করুন')).replace(/</g, '\\u003c') %>;
           var errDiv = document.getElementById('otpErrorMessage');
-          errDiv.textContent = 'যাচাইকরণে সমস্যা হয়েছে। পুনরায় চেষ্টা করুন।';
+          errDiv.textContent = <%- JSON.stringify(L('Verification failed. Please try again.', 'যাচাইকরণে সমস্যা হয়েছে। পুনরায় চেষ্টা করুন।')).replace(/</g, '\\u003c') %>;
           errDiv.style.display = 'block';
         });
       });
@@ -567,10 +568,10 @@
         .then(function(res) { return res.json(); })
         .then(function(data) {
           if (data.success) {
-            if (typeof toastr !== 'undefined') toastr.success('নতুন ওটিপি কোড পাঠানো হয়েছে।');
+            if (typeof toastr !== 'undefined') toastr.success(<%- JSON.stringify(L('A new OTP code has been sent.', 'নতুন ওটিপি কোড পাঠানো হয়েছে।')).replace(/</g, '\\u003c') %>);
             startOtpCountdown(60);
           } else {
-            if (typeof toastr !== 'undefined') toastr.error(data.message || 'কোড পাঠানো যায়নি।');
+            if (typeof toastr !== 'undefined') toastr.error(data.message || <%- JSON.stringify(L('Could not send the code.', 'কোড পাঠানো যায়নি।')).replace(/</g, '\\u003c') %>);
           }
         });
       });

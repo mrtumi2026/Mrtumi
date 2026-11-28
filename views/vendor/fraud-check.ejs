@@ -1,3 +1,4 @@
+<% const L = (en, bn) => (typeof locale !== 'undefined' && locale === 'en' ? en : bn); %>
 <%- include('partials/layout-top', { title: title || (locale === 'bn' ? 'কুরিয়ার ফ্রড চেক' : 'Courier Fraud Check') }) %>
 
 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
@@ -16,7 +17,7 @@
       <label class="form-label fw-semibold small"><%= locale === 'bn' ? 'কাস্টমারের ১১ সংখ্যার মোবাইল নম্বর লিখুন' : 'Enter 11-Digit Customer Mobile Number' %></label>
       <div class="input-group">
         <span class="input-group-text bg-light"><i class="fas fa-phone"></i></span>
-        <input type="tel" name="phone" value="<%= phone %>" class="form-control" placeholder="যেমন: 01711223301" minlength="11" maxlength="14" required />
+        <input type="tel" name="phone" value="<%= phone %>" class="form-control" placeholder="<%= L('e.g. 01711223301', 'যেমন: 01711223301') %>" minlength="11" maxlength="14" required />
       </div>
       <div class="form-text small"><%= locale === 'bn' ? 'পার্সেল প্যাকিং বা বুকিংয়ের পূর্বে কাস্টমারের বিশ্বস্ততা পরীক্ষা করতে ফোন নম্বর দিন।' : 'Check parcel history before packing or shipping.' %></div>
     </div>

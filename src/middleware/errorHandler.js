@@ -11,12 +11,15 @@ const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (c) => ({ '&': '
 function clientErrorPage(req, statusCode, message) {
   const area = String(req.originalUrl || req.url || '');
   const home = area.startsWith('/admin') ? '/admin/login' : '/';
-  const homeLabel = home === '/' ? 'হোম পেজ' : 'অ্যাডমিন লগইন';
-  const heading = statusCode === 401 ? 'আগে লগইন করুন' : statusCode === 403 ? 'এই কাজের অনুমতি নেই' : 'অনুরোধটি সম্পন্ন করা যায়নি';
-  return `<!doctype html><html lang="bn"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${heading}</title></head>`
+  const en = req.locale === 'en';
+  const homeLabel = home === '/' ? (en ? 'Home page' : 'হোম পেজ') : (en ? 'Admin sign in' : 'অ্যাডমিন লগইন');
+  const heading = statusCode === 401 ? (en ? 'Please sign in first' : 'আগে লগইন করুন')
+    : statusCode === 403 ? (en ? 'You do not have permission for this' : 'এই কাজের অনুমতি নেই')
+      : (en ? 'The request could not be completed' : 'অনুরোধটি সম্পন্ন করা যায়নি');
+  return `<!doctype html><html lang="${en ? 'en' : 'bn'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${heading}</title></head>`
     + '<body style="font-family:system-ui,sans-serif;max-width:520px;margin:12vh auto;padding:0 20px;line-height:1.6;color:#1f2937">'
     + `<h1 style="font-size:22px">${heading}</h1><p>${escapeHtml(message)}</p>`
-    + `<p><a href="${home}">${homeLabel}</a></p><p style="color:#6b7280;font-size:13px">আগের পেজে যেতে ব্রাউজারের Back বাটন চাপুন।</p></body></html>`;
+    + `<p><a href="${home}">${homeLabel}</a></p><p style="color:#6b7280;font-size:13px">${en ? "Use your browser's Back button to return to the previous page." : 'আগের পেজে যেতে ব্রাউজারের Back বাটন চাপুন।'}</p></body></html>`;
 }
 
 /**

@@ -1,14 +1,15 @@
-<%- include('partials/head', { title: 'রোলের অনুমতি' }) %>
+<% const L = (en, bn) => (typeof locale !== 'undefined' && locale === 'en' ? en : bn); %>
+<%- include('partials/head', { title: L('Role permissions','রোলের অনুমতি') }) %>
 <%- include('partials/topbar') %>
 <%- include('partials/sidebar') %>
 <div class="content-page">
   <div class="content">
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
       <div>
-        <h4 class="fw-bold mb-0">রোলের অনুমতি: <%= role.name %></h4>
-        <p class="text-muted small mb-0">এই রোলের স্টাফ শুধু টিক দেওয়া কাজগুলো করতে পারবে। লগইনের পর ড্যাশবোর্ড দেখতে <code>dashboard.view</code> টিক দিন।</p>
+        <h4 class="fw-bold mb-0"><%= L('Role permissions', 'রোলের অনুমতি') %>: <%= role.name %></h4>
+        <p class="text-muted small mb-0"><%= L('Staff with this role can do only the ticked tasks. To let them see the dashboard after sign-in, tick', 'এই রোলের স্টাফ শুধু টিক দেওয়া কাজগুলো করতে পারবে। লগইনের পর ড্যাশবোর্ড দেখতে টিক দিন:') %> <code>dashboard.view</code></p>
       </div>
-      <a href="/admin/roles/manage" class="btn btn-outline-secondary btn-sm">← সব রোল</a>
+      <a href="/admin/roles/manage" class="btn btn-outline-secondary btn-sm">← <%= L('All roles', 'সব রোল') %></a>
     </div>
     <form method="post" action="/admin/roles/<%= role.id %>/permissions" class="tbl-card p-3">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
@@ -22,7 +23,7 @@
           </div>
         <% }) %>
       </div>
-      <button type="submit" class="btn btn-forest mt-3">অনুমতি সেভ করুন</button>
+      <button type="submit" class="btn btn-forest mt-3"><%= L('Save permissions', 'অনুমতি সেভ করুন') %></button>
     </form>
   </div>
 </div>

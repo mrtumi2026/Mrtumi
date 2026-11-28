@@ -1,22 +1,23 @@
+<% const L = (en, bn) => (typeof locale !== 'undefined' && locale === 'en' ? en : bn); %>
 <% const formatPaisa = value => { const n=BigInt(String(value||0)); const whole=n/100n; const cents=(n%100n).toString().padStart(2,'0'); return whole.toLocaleString('en-IN')+'.'+cents; }; %>
-<%- include('partials/layout-top', { title: mode === 'history' ? 'Reseller Transaction History' : mode === 'deposit' ? 'Reseller Deposits' : 'Withdraw Profit' }) %>
+<%- include('partials/layout-top', { title: mode === 'history' ? L('Reseller Transaction History','লেনদেনের ইতিহাস') : mode === 'deposit' ? L('Reseller Deposits','রিসেলার ডিপোজিট') : L('Withdraw Profit','লাভ উত্তোলন') }) %>
 
 <div class="row g-3">
   <div class="col-lg-5">
     <div class="tbl-card p-4">
       <% if (canonicalWallet && mode === 'withdrawal') { %>
         <div class="p-3 rounded-3 bg-success bg-opacity-10 border border-success mb-3 text-center">
-          <div class="small text-muted">উত্তোলনযোগ্য কমিশন ব্যালেন্স</div>
+          <div class="small text-muted"><%= L('Withdrawable commission balance', 'উত্তোলনযোগ্য কমিশন ব্যালেন্স') %></div>
           <div class="display-6 fw-bold text-success">৳<%= Number(reseller.balance || reseller.available_balance || 0).toLocaleString('en-IN') %></div>
           <% if (Number(reseller.pending_balance || 0) > 0) { %>
-            <div class="small text-muted mt-1">অপেক্ষমাণ ব্যালেন্স: ৳<%= Number(reseller.pending_balance).toLocaleString('en-IN') %></div>
+            <div class="small text-muted mt-1"><%= L('Pending balance', 'অপেক্ষমাণ ব্যালেন্স') %>: ৳<%= Number(reseller.pending_balance).toLocaleString('en-IN') %></div>
           <% } %>
         </div>
-        <h6 class="fw-bold mb-3">💸 কমিশন লাভ উত্তোলন রিকোয়েস্ট</h6>
+        <h6 class="fw-bold mb-3"><%= L('💸 Request a commission withdrawal', '💸 কমিশন লাভ উত্তোলন রিকোয়েস্ট') %></h6>
         <form action="/reseller/withdrawals/create" method="POST">
           <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
           <div class="mb-2">
-            <label class="form-label small fw-semibold">পেমেন্ট মাধ্যম *</label>
+            <label class="form-label small fw-semibold"><%= L('Payment method *', 'পেমেন্ট মাধ্যম *') %></label>
             <select name="method" class="form-select">
               <option value="bKash">bKash</option>
               <option value="Nagad">Nagad</option>
@@ -24,73 +25,73 @@
             </select>
           </div>
           <div class="mb-2">
-            <label class="form-label small fw-semibold">আপনার বিকাশ / নগদ নম্বর *</label>
+            <label class="form-label small fw-semibold"><%= L('Your bKash / Nagad number *', 'আপনার বিকাশ / নগদ নম্বর *') %></label>
             <input type="text" name="trx_id" value="<%= reseller.phone %>" class="form-control" required />
           </div>
           <div class="mb-3">
-            <label class="form-label small fw-semibold">উত্তোলন পরিমাণ (৳) *</label>
-            <input type="number" name="amount" min="100" max="<%= reseller.balance || reseller.available_balance || 0 %>" placeholder="ন্যূনতম ৳১০০" class="form-control" required />
+            <label class="form-label small fw-semibold"><%= L('Withdrawal amount (৳) *', 'উত্তোলন পরিমাণ (৳) *') %></label>
+            <input type="number" name="amount" min="100" max="<%= reseller.balance || reseller.available_balance || 0 %>" placeholder="<%= L('Minimum ৳100', 'ন্যূনতম ৳১০০') %>" class="form-control" required />
           </div>
-          <button type="submit" class="btn btn-success w-100 py-2 fw-bold" <%= Number(reseller.balance || reseller.available_balance || 0) < 100 ? 'disabled' : '' %>>উইথড্র রিকোয়েস্ট পাঠান →</button>
+          <button type="submit" class="btn btn-success w-100 py-2 fw-bold" <%= Number(reseller.balance || reseller.available_balance || 0) < 100 ? 'disabled' : '' %>><%= L('Send withdrawal request →', 'উইথড্র রিকোয়েস্ট পাঠান →') %></button>
         </form>
       <% } else if (canonicalWallet && mode === 'deposit') { %>
         <div class="p-3 rounded-3 bg-info bg-opacity-10 border border-info mb-3 text-center">
-          <div class="small text-muted">বর্তমান সিকিউরিটি ডিপোজিট ব্যালেন্স</div>
+          <div class="small text-muted"><%= L('Current security deposit balance', 'বর্তমান সিকিউরিটি ডিপোজিট ব্যালেন্স') %></div>
           <div class="display-6 fw-bold text-primary">৳<%= Number(reseller.deposit_amount || 0).toLocaleString('en-IN') %></div>
         </div>
         <% const methods = typeof depositMethods !== 'undefined' ? depositMethods : []; %>
         <% if (!methods.length) { %>
-          <div class="alert alert-warning mb-0">এখন ডিপোজিট নেওয়া যাচ্ছে না। অ্যাডমিন bKash/Nagad/Rocket নম্বর চালু করলে এখান থেকে জমা দিতে পারবেন।</div>
+          <div class="alert alert-warning mb-0"><%= L('Deposits are not being taken now. You can submit one here after the admin switches on a bKash/Nagad/Rocket number.', 'এখন ডিপোজিট নেওয়া যাচ্ছে না। অ্যাডমিন bKash/Nagad/Rocket নম্বর চালু করলে এখান থেকে জমা দিতে পারবেন।') %></div>
         <% } else { %>
-          <h6 class="fw-bold mb-2">💳 নতুন ডিপোজিট</h6>
-          <p class="small text-muted mb-2">আগে নিচের যেকোনো নম্বরে টাকা পাঠান, তারপর Transaction ID জমা দিন। অ্যাডমিন যাচাই করে অনুমোদন করলে ব্যালেন্সে যোগ হবে।</p>
+          <h6 class="fw-bold mb-2"><%= L('💳 New deposit', '💳 নতুন ডিপোজিট') %></h6>
+          <p class="small text-muted mb-2"><%= L('First send money to one of the numbers below, then submit the Transaction ID. It is added to your balance after the admin checks and approves it.', 'আগে নিচের যেকোনো নম্বরে টাকা পাঠান, তারপর Transaction ID জমা দিন। অ্যাডমিন যাচাই করে অনুমোদন করলে ব্যালেন্সে যোগ হবে।') %></p>
           <ul class="list-group mb-3">
             <% methods.forEach(function(method) { %>
-              <li class="list-group-item small"><strong><%= method.name %>: <%= method.account_number %></strong><div class="text-muted"><%= method.instructions_bn || method.instructions %></div></li>
+              <li class="list-group-item small"><strong><%= method.name %>: <%= method.account_number %></strong><div class="text-muted"><%= locale === 'en' ? (method.instructions || method.instructions_bn) : (method.instructions_bn || method.instructions) %></div></li>
             <% }) %>
           </ul>
           <form action="/reseller/deposits/create" method="POST">
             <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
-            <div class="mb-2"><label class="form-label small fw-semibold" for="depMethod">মাধ্যম *</label>
+            <div class="mb-2"><label class="form-label small fw-semibold" for="depMethod"><%= L('Method *', 'মাধ্যম *') %></label>
               <select id="depMethod" name="method" class="form-select" required><% methods.forEach(function(method) { %><option value="<%= method.code %>"><%= method.name %></option><% }) %></select></div>
-            <div class="mb-2"><label class="form-label small fw-semibold" for="depAmount">টাকার পরিমাণ (৳) *</label>
+            <div class="mb-2"><label class="form-label small fw-semibold" for="depAmount"><%= L('Amount (৳) *', 'টাকার পরিমাণ (৳) *') %></label>
               <input id="depAmount" type="number" name="amount" min="100" max="500000" step="0.01" class="form-control" required></div>
-            <div class="mb-2"><label class="form-label small fw-semibold" for="depSender">যে নম্বর থেকে পাঠিয়েছেন *</label>
+            <div class="mb-2"><label class="form-label small fw-semibold" for="depSender"><%= L('Number you sent from *', 'যে নম্বর থেকে পাঠিয়েছেন *') %></label>
               <input id="depSender" type="tel" name="sender_number" class="form-control" placeholder="01XXXXXXXXX" required></div>
             <div class="mb-3"><label class="form-label small fw-semibold" for="depTrx">Transaction ID (TrxID) *</label>
               <input id="depTrx" type="text" name="trx_id" class="form-control" minlength="6" maxlength="40" pattern="[A-Za-z0-9]+" required></div>
-            <button type="submit" class="btn btn-primary w-100 py-2 fw-bold">ডিপোজিট জমা দিন →</button>
+            <button type="submit" class="btn btn-primary w-100 py-2 fw-bold"><%= L('Submit deposit →', 'ডিপোজিট জমা দিন →') %></button>
           </form>
         <% } %>
       <% } else if (canonicalWallet && mode === 'history') { %>
         <div class="p-3 rounded-3 bg-light border mb-3">
           <div class="d-flex justify-content-between align-items-center mb-2">
-            <span class="text-muted small">উত্তোলনযোগ্য কমিশন:</span>
+            <span class="text-muted small"><%= L('Withdrawable commission:', 'উত্তোলনযোগ্য কমিশন:') %></span>
             <span class="fw-bold text-success">৳<%= Number(reseller.balance || reseller.available_balance || 0).toLocaleString('en-IN') %></span>
           </div>
           <div class="d-flex justify-content-between align-items-center mb-2">
-            <span class="text-muted small">অপেক্ষমাণ (পেন্ডিং) কমিশন:</span>
+            <span class="text-muted small"><%= L('Pending commission:', 'অপেক্ষমাণ (পেন্ডিং) কমিশন:') %></span>
             <span class="fw-bold text-warning">৳<%= Number(reseller.pending_balance || 0).toLocaleString('en-IN') %></span>
           </div>
           <div class="d-flex justify-content-between align-items-center">
-            <span class="text-muted small">সিকিউরিটি ডিপোজিট:</span>
+            <span class="text-muted small"><%= L('Security deposit:', 'সিকিউরিটি ডিপোজিট:') %></span>
             <span class="fw-bold text-info">৳<%= Number(reseller.deposit_amount || 0).toLocaleString('en-IN') %></span>
           </div>
         </div>
         <div class="d-grid gap-2">
-          <a href="/reseller/withdrawals" class="btn btn-outline-success btn-sm">উইথড্র রিকোয়েস্ট পেজে যান</a>
+          <a href="/reseller/withdrawals" class="btn btn-outline-success btn-sm"><%= L('Go to withdrawal requests', 'উইথড্র রিকোয়েস্ট পেজে যান') %></a>
         </div>
       <% } else if (mode === 'deposit') { %>
         <div class="p-3 rounded-3 bg-info bg-opacity-10 border border-info mb-3 text-center">
-          <div class="small text-muted">বর্তমান সিকিউরিটি ডিপোজিট ব্যালেন্স</div>
+          <div class="small text-muted"><%= L('Current security deposit balance', 'বর্তমান সিকিউরিটি ডিপোজিট ব্যালেন্স') %></div>
           <div class="display-6 fw-bold text-primary">৳<%= Number(reseller.deposit_amount || 0).toLocaleString('en-IN') %></div>
         </div>
-        <h6 class="fw-bold mb-2">💳 নতুন ডিপোজিট অ্যাড করুন</h6>
-        <p class="small text-muted mb-3">অ্যাডমিন বিকাশ/নগদ নম্বরে (<%= typeof siteSettings !== 'undefined' && (siteSettings.phone || siteSettings.site_phone) ? (siteSettings.phone || siteSettings.site_phone) : '01973437395' %>) সেন্ড মানি করে নিচে TrxID দিন:</p>
+        <h6 class="fw-bold mb-2"><%= L('💳 Add a new deposit', '💳 নতুন ডিপোজিট অ্যাড করুন') %></h6>
+        <p class="small text-muted mb-3"><%= L('Send money to the admin bKash/Nagad number', 'অ্যাডমিন বিকাশ/নগদ নম্বরে') %> (<%= typeof siteSettings !== 'undefined' && (siteSettings.phone || siteSettings.site_phone) ? (siteSettings.phone || siteSettings.site_phone) : '01973437395' %>) <%= L('and enter the TrxID below:', 'সেন্ড মানি করে নিচে TrxID দিন:') %></p>
         <form action="/reseller/deposits/create" method="POST">
           <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
           <div class="mb-2">
-            <label class="form-label small fw-semibold">মাধ্যম *</label>
+            <label class="form-label small fw-semibold"><%= L('Method *', 'মাধ্যম *') %></label>
             <select name="method" class="form-select">
               <option value="bKash">bKash</option>
               <option value="Nagad">Nagad</option>
@@ -98,25 +99,25 @@
             </select>
           </div>
           <div class="mb-2">
-            <label class="form-label small fw-semibold">টাকার পরিমাণ (৳) *</label>
+            <label class="form-label small fw-semibold"><%= L('Amount (৳) *', 'টাকার পরিমাণ (৳) *') %></label>
             <input type="number" name="amount" min="100" value="500" class="form-control" required />
           </div>
           <div class="mb-3">
-            <label class="form-label small fw-semibold">ট্রানজেকশন আইডি (TrxID) *</label>
-            <input type="text" name="trx_id" class="form-control" placeholder="যেমন: BGH82KL9M" required />
+            <label class="form-label small fw-semibold"><%= L('Transaction ID (TrxID) *', 'ট্রানজেকশন আইডি (TrxID) *') %></label>
+            <input type="text" name="trx_id" class="form-control" placeholder="<%= L('e.g. BGH82KL9M', 'যেমন: BGH82KL9M') %>" required />
           </div>
-          <button type="submit" class="btn btn-primary w-100 py-2 fw-bold" style="background:#3730a3;">ডিপোজিট সাবমিট করুন →</button>
+          <button type="submit" class="btn btn-primary w-100 py-2 fw-bold" style="background:#3730a3;"><%= L('Submit deposit →', 'ডিপোজিট সাবমিট করুন →') %></button>
         </form>
       <% } else { %>
         <div class="p-3 rounded-3 bg-success bg-opacity-10 border border-success mb-3 text-center">
-          <div class="small text-muted">উত্তোলনযোগ্য কমিশন ব্যালেন্স</div>
+          <div class="small text-muted"><%= L('Withdrawable commission balance', 'উত্তোলনযোগ্য কমিশন ব্যালেন্স') %></div>
           <div class="display-6 fw-bold text-success">৳<%= Number(reseller.balance || 0).toLocaleString('en-IN') %></div>
         </div>
-        <h6 class="fw-bold mb-3">💸 কমিশন লাভ উত্তোলন রিকোয়েস্ট</h6>
+        <h6 class="fw-bold mb-3"><%= L('💸 Request a commission withdrawal', '💸 কমিশন লাভ উত্তোলন রিকোয়েস্ট') %></h6>
         <form action="/reseller/withdrawals/create" method="POST">
           <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
           <div class="mb-2">
-            <label class="form-label small fw-semibold">পেমেন্ট মাধ্যম *</label>
+            <label class="form-label small fw-semibold"><%= L('Payment method *', 'পেমেন্ট মাধ্যম *') %></label>
             <select name="method" class="form-select">
               <option value="bKash Personal">bKash Personal</option>
               <option value="Nagad Personal">Nagad Personal</option>
@@ -124,14 +125,14 @@
             </select>
           </div>
           <div class="mb-2">
-            <label class="form-label small fw-semibold">আপনার বিকাশ / নগদ নম্বর *</label>
+            <label class="form-label small fw-semibold"><%= L('Your bKash / Nagad number *', 'আপনার বিকাশ / নগদ নম্বর *') %></label>
             <input type="text" name="trx_id" value="<%= reseller.phone %>" class="form-control" required />
           </div>
           <div class="mb-3">
-            <label class="form-label small fw-semibold">উত্তোলন পরিমাণ (৳) *</label>
-            <input type="number" name="amount" min="100" max="<%= reseller.balance %>" placeholder="ন্যূনতম ৳১০০" class="form-control" required />
+            <label class="form-label small fw-semibold"><%= L('Withdrawal amount (৳) *', 'উত্তোলন পরিমাণ (৳) *') %></label>
+            <input type="number" name="amount" min="100" max="<%= reseller.balance %>" placeholder="<%= L('Minimum ৳100', 'ন্যূনতম ৳১০০') %>" class="form-control" required />
           </div>
-          <button type="submit" class="btn btn-success w-100 py-2 fw-bold">উইথড্র রিকোয়েস্ট পাঠান →</button>
+          <button type="submit" class="btn btn-success w-100 py-2 fw-bold"><%= L('Send withdrawal request →', 'উইথড্র রিকোয়েস্ট পাঠান →') %></button>
         </form>
       <% } %>
     </div>
@@ -140,24 +141,24 @@
   <div class="col-lg-7">
     <div class="tbl-card">
       <div class="tbl-card-head">
-        <h4><%= mode === 'history' ? 'সকল ওয়ালেট লেনদেন' : mode === 'deposit' ? 'ডিপোজিট লেনদেন সমূহ' : 'উইথড্রয়াল হিস্ট্রি' %> (<%= canonicalWallet ? pagination.total : transactions.length %>)</h4>
+        <h4><%= mode === 'history' ? L('All wallet transactions','সকল ওয়ালেট লেনদেন') : mode === 'deposit' ? L('Deposit transactions','ডিপোজিট লেনদেন সমূহ') : L('Withdrawal history','উইথড্রয়াল হিস্ট্রি') %> (<%= canonicalWallet ? pagination.total : transactions.length %>)</h4>
       </div>
       <div class="tbl-card-body">
-        <% if(canonicalWallet && mode==='history'){ %><form method="get" action="/reseller/transactions" class="d-flex gap-2 mb-3"><input class="form-control" name="type" value="<%= transactionType||'' %>" placeholder="লেনদেনের ধরন (ঐচ্ছিক)"><button class="btn btn-outline-primary">ফিল্টার</button><a href="/reseller/transactions" class="btn btn-link">সব</a></form><% } %>
+        <% if(canonicalWallet && mode==='history'){ %><form method="get" action="/reseller/transactions" class="d-flex gap-2 mb-3"><input class="form-control" name="type" value="<%= transactionType||'' %>" placeholder="<%= L('Transaction type (optional)', 'লেনদেনের ধরন (ঐচ্ছিক)') %>"><button class="btn btn-outline-primary"><%= L('Filter', 'ফিল্টার') %></button><a href="/reseller/transactions" class="btn btn-link"><%= L('All', 'সব') %></a></form><% } %>
         <table class="table clean mb-0">
           <thead>
             <tr>
               <th>#</th>
-              <th><%= canonicalWallet ? (mode==='history'?'ধরন':'মাধ্যম') : 'মাধ্যম' %></th>
-              <th>নম্বর / TrxID</th>
-              <th>পরিমাণ</th>
-              <th>স্ট্যাটাস</th>
-              <th>তারিখ</th>
+              <th><%= canonicalWallet && mode==='history' ? L('Type','ধরন') : L('Method','মাধ্যম') %></th>
+              <th><%= L('Number / TrxID', 'নম্বর / TrxID') %></th>
+              <th><%= L('Amount', 'পরিমাণ') %></th>
+              <th><%= L('Status', 'স্ট্যাটাস') %></th>
+              <th><%= L('Date', 'তারিখ') %></th>
             </tr>
           </thead>
           <tbody>
             <% if (!transactions.length) { %>
-              <tr><td colspan="6" class="text-center py-4 text-muted">কোনো লেনদেন পাওয়া যায়নি।</td></tr>
+              <tr><td colspan="6" class="text-center py-4 text-muted"><%= L('No transactions found.', 'কোনো লেনদেন পাওয়া যায়নি।') %></td></tr>
             <% } %>
             <% transactions.forEach(function(tx) { %>
               <tr>
@@ -165,15 +166,15 @@
                 <td><%= canonicalWallet && mode==='history' ? tx.tx_type : tx.method %></td>
                 <td><code><%= tx.trx_id %></code></td>
                 <td class="fw-bold">৳<%= canonicalWallet ? formatPaisa(tx.amount_paisa) : Number(tx.amount).toLocaleString('en-IN') %></td>
-                <td><span class="sb <%= ['approved','completed'].includes(tx.status) ? 'sb-6' : 'sb-1' %>"><%= ({pending:'অপেক্ষমাণ',approved:'অনুমোদিত',completed:'সম্পন্ন',rejected:'বাতিল'})[tx.status] || tx.status %></span></td>
-                <td class="small text-muted"><%= String(tx.created_at).slice(0, 10) %></td>
+                <td><span class="sb <%= ['approved','completed'].includes(tx.status) ? 'sb-6' : 'sb-1' %>"><%= ({pending:L('Pending','অপেক্ষমাণ'),approved:L('Approved','অনুমোদিত'),completed:L('Completed','সম্পন্ন'),rejected:L('Rejected','বাতিল')})[tx.status] || tx.status %></span></td>
+                <td class="small text-muted"><%= (isNaN(new Date(tx.created_at)) ? '' : new Date(tx.created_at).toLocaleDateString(typeof locale !== 'undefined' && locale === 'en' ? 'en-GB' : 'bn-BD', { timeZone: 'Asia/Dhaka' })) %></td>
               </tr>
             <% }) %>
           </tbody>
         </table>
       </div>
     </div>
-    <% if(canonicalWallet && pagination.totalPages>1){ %><nav class="mt-3"><ul class="pagination"><% if(pagination.page>1){ %><li class="page-item"><a class="page-link" href="?page=<%= pagination.page-1 %>">আগের</a></li><% } %><li class="page-item disabled"><span class="page-link"><%= pagination.page %> / <%= pagination.totalPages %></span></li><% if(pagination.page<pagination.totalPages){ %><li class="page-item"><a class="page-link" href="?page=<%= pagination.page+1 %>">পরের</a></li><% } %></ul></nav><% } %>
+    <% if(canonicalWallet && pagination.totalPages>1){ %><nav class="mt-3"><ul class="pagination"><% if(pagination.page>1){ %><li class="page-item"><a class="page-link" href="?page=<%= pagination.page-1 %>"><%= L('Previous', 'আগের') %></a></li><% } %><li class="page-item disabled"><span class="page-link"><%= pagination.page %> / <%= pagination.totalPages %></span></li><% if(pagination.page<pagination.totalPages){ %><li class="page-item"><a class="page-link" href="?page=<%= pagination.page+1 %>"><%= L('Next', 'পরের') %></a></li><% } %></ul></nav><% } %>
   </div>
 </div>
 

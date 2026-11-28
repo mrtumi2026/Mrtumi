@@ -108,7 +108,7 @@ async function attachGlobals(req, res, next) {
       if (typeof message === 'undefined') {
         return (res.locals.flash && res.locals.flash.type === type) ? [res.locals.flash.message] : [];
       }
-      req.session.flash = { type, message: type === 'error' ? localizeError(message, req.locale) : message };
+      req.session.flash = { type, message: localizeError(message, req.locale) };
     };
 
     // Cart state for storefront

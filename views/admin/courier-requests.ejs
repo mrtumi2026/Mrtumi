@@ -146,7 +146,7 @@
                     <% } %>
                   </td>
                   <td class="small text-muted">
-                    <%= new Date(reqItem.created_at).toLocaleDateString('bn-BD', { hour: '2-digit', minute: '2-digit' }) %>
+                    <%= new Date(reqItem.created_at).toLocaleDateString(typeof locale !== 'undefined' && locale === 'en' ? 'en-GB' : 'bn-BD', { hour: '2-digit', minute: '2-digit' }) %>
                   </td>
                   <td class="text-end">
                     <% if (reqItem.status === 'pending' || reqItem.status === 'failed' || reqItem.status === 'in_review') { %>
