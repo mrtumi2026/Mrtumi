@@ -70,6 +70,9 @@ async function getAdminOrderDetail(orderId, poolOverride = null) {
             (SELECT -COALESCE(SUM(w.amount_paisa),0) FROM customer_wallet_transactions w WHERE w.customer_id=o.customer_id AND w.tx_type='order_spend' AND w.reference_id=CONCAT('order:',o.id)) AS wallet_used_paisa,
             o.coupon_code,o.payment_method,o.payment_status,o.order_status AS status,
             EXISTS(SELECT 1 FROM vendor_sub_orders vso WHERE vso.order_id=o.id) AS has_vendor_part,
+            EXISTS(SELECT 1 FROM order_items oi WHERE oi.order_id=o.id AND NOT EXISTS(SELECT 1 FROM vendor_sub_order_items si WHERE si.order_item_id=oi.id)) AS has_own_part,
+            (SELECT COUNT(*) FROM vendor_sub_orders vso WHERE vso.order_id=o.id AND vso.status<>'cancelled' AND (vso.status<>'delivered'
+              OR NOT EXISTS(SELECT 1 FROM fulfillment_shipments fs JOIN courier_cod_collections c ON c.shipment_id=fs.id AND c.reconciliation_status='reconciled' WHERE fs.vendor_sub_order_id=vso.id))) AS open_vendor_parts,
             COALESCE(os.name,o.order_status) AS status_label,
             COALESCE(os.badge_class,'sb-1') AS badge_class,
             COALESCE(NULLIF(ca.name,''),o.courier_code,'') AS courier_name,

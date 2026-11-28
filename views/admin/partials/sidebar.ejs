@@ -297,6 +297,7 @@
                 <div class="collapse" id="sidebar-users">
                   <ul class="nav-second-level">
                     <% if (hasPermission('staff.manage')) { %><li><a href="/admin/users/manage"><i data-feather="user"></i> <%= t('admin.menu.admins') %></a></li><% } %>
+                    <li><a href="/admin/account/password"><i data-feather="lock"></i> <%= locale === 'bn' ? 'পাসওয়ার্ড পরিবর্তন' : 'Change password' %></a></li>
                     <% if (hasPermission('roles.manage')) { %><li><a href="/admin/roles/manage"><i data-feather="lock"></i> <%= locale === 'bn' ? 'রোলসমূহ (Roles)' : 'Roles' %></a></li>
                     <li><a href="/admin/permissions/manage"><i data-feather="key"></i> <%= locale === 'bn' ? 'পারমিশনসমূহ' : 'Permissions' %></a></li><% } %>
                     <li><a href="/admin/customer"><i data-feather="users"></i> <%= t('admin.menu.customers') %></a></li>

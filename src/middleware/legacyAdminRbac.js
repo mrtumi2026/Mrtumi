@@ -15,6 +15,9 @@ function policyForAdminRoute(method, pathname) {
   const viewOrManage = (view, manage) => write ? manage : view;
   if (path === '/admin' || path === '/admin/login' || path === '/admin/logout' || path==='/logout') return { exempt: true, key: null, audit: false };
 
+  // Every signed-in admin may change only their own password.
+  if (path === '/admin/account/password') return { authenticatedOnly: true, key:null, audit:false };
+
   if (path === '/admin/dashboard') return { key:'dashboard.view', audit:false };
   // Visitor analytics widget polls this JSON endpoint from the dashboard.
   if (has(path,'/admin/api/analytics/visitors')) return { key:'dashboard.view', audit:false };
@@ -95,6 +98,7 @@ function legacyAdminRbac(req, _res, next) {
   const policy = policyForAdminRoute(req.method, req.path);
   req.adminRoutePolicy = policy;
   if (policy.exempt) return next();
+  if (policy.authenticatedOnly) return req.adminUser ? next() : next(new AuthenticationError());
   // Require a fresh, active admin identity before applying per-route grants. Previously
   // anonymous requests skipped this middleware, leaving legacy handlers without their
   // own requireAdmin middleware reachable.

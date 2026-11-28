@@ -427,10 +427,12 @@ router.get("/customer/account/wishlist", requireCustomer, asyncHandler(async (re
       const placeholders = ids.map(() => "?").join(",");
       const rows = await db.queryAll(
         `SELECT p.id, p.sku, p.slug, p.name_bn, p.name_en, p.image_url,
-                p.regular_price_paisa, p.sale_price_paisa, p.stock_on_hand, p.stock_reserved,
+                p.regular_price_paisa, p.sale_price_paisa,
+                IF(p.vendor_id IS NULL, p.stock_on_hand, p.vendor_stock_on_hand) AS stock_on_hand,
+                IF(p.vendor_id IS NULL, p.stock_reserved, p.vendor_stock_reserved) AS stock_reserved,
                 p.status, p.is_archived
          FROM products p
-         WHERE p.id IN (${placeholders}) AND p.status = 'active' AND p.is_archived = 0`,
+         WHERE p.id IN (${placeholders}) AND p.status = 1 AND p.approval_status = 'approved' AND p.is_archived = 0`,
         ids
       );
       wishlistItems = rows.map((p) => {
@@ -464,7 +466,7 @@ router.get("/customer/account/wishlist", requireCustomer, asyncHandler(async (re
     }
   }
   return res.render("customer/wishlist", {
-    title: isEn(req) ? "My Wishlist" : "???? ??????? ??????",
+    title: isEn(req) ? "My Wishlist" : "আমার পছন্দের তালিকা",
     isEn: isEn(req),
     items: wishlistItems,
     csrfToken: req.csrfToken(),
@@ -475,7 +477,7 @@ router.post("/customer/account/wishlist/add", requireCsrf, asyncHandler(async (r
   const productId = parseInt(req.body.product_id, 10);
   if (!productId || isNaN(productId)) {
     if (wantsJson(req)) return res.status(400).json({ success: false, message: "Invalid product ID" });
-    req.flash("error", isEn(req) ? "Invalid product" : "???????? ????");
+    req.flash("error", isEn(req) ? "Invalid product" : "পণ্যটি সঠিক নয়");
     return res.redirect(safeReferrer(req, "/customer/account/wishlist"));
   }
   if (!Array.isArray(req.session.wishlist)) {
@@ -487,7 +489,7 @@ router.post("/customer/account/wishlist/add", requireCsrf, asyncHandler(async (r
   if (wantsJson(req)) {
     return res.json({ success: true, count: req.session.wishlist.length, inWishlist: true });
   }
-  req.flash("success", isEn(req) ? "Added to wishlist" : "??????? ???????? ??? ??? ??????");
+  req.flash("success", isEn(req) ? "Added to wishlist" : "পছন্দের তালিকায় যোগ হয়েছে");
   return res.redirect(safeReferrer(req, "/customer/account/wishlist"));
 }));
 
@@ -499,7 +501,7 @@ router.post("/customer/account/wishlist/remove", requireCsrf, asyncHandler(async
   if (wantsJson(req)) {
     return res.json({ success: true, count: (req.session.wishlist || []).length, inWishlist: false });
   }
-  req.flash("success", isEn(req) ? "Removed from wishlist" : "??????? ?????? ???? ????? ??????");
+  req.flash("success", isEn(req) ? "Removed from wishlist" : "পছন্দের তালিকা থেকে সরানো হয়েছে");
   return res.redirect(safeReferrer(req, "/customer/account/wishlist"));
 }));
 

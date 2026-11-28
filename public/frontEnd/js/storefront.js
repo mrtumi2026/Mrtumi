@@ -653,6 +653,8 @@
       }
 
       prodForm.addEventListener('submit', function (e) {
+        // The wishlist button has its own formaction, so the browser must send it normally.
+        if (e.submitter && e.submitter.id === 'prodWishlistBtn') return;
         e.preventDefault();
         var variantRadios = prodForm.querySelectorAll('input[name="variant_id"]');
         if (variantRadios.length > 0 && !prodForm.querySelector('input[name="variant_id"]:checked')) {

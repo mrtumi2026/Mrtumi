@@ -105,6 +105,10 @@
                   <i data-feather="airplay" style="width:15px;height:15px;" class="me-1"></i>
                   <span><%= t('admin.menu.dashboard') %></span>
                 </a>
+                <a href="/admin/account/password" class="dropdown-item notify-item">
+                  <i data-feather="lock" style="width:15px;height:15px;" class="me-1"></i>
+                  <span><%= locale === 'bn' ? 'পাসওয়ার্ড পরিবর্তন' : 'Change password' %></span>
+                </a>
                 <a href="/admin/settings/manage" class="dropdown-item notify-item">
                   <i data-feather="settings" style="width:15px;height:15px;" class="me-1"></i>
                   <span><%= t('admin.menu.generalSettings') %></span>

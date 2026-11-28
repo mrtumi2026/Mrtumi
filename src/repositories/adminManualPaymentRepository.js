@@ -31,4 +31,14 @@ async function decideManualPayment(paymentIdInput,decisionInput,actor={}, {pool=
   },{pool:pool||mysql.getPool()});
 }
 
-module.exports={decideManualPayment};
+// The order page only knows the order, so find its pending payment and use the same
+// checked approval as Payment Records.
+async function approveOrderManualPayment(orderIdInput,actor={},options={}){
+  const orderId=requirePositiveInt(orderIdInput,'Order ID');
+  const db=mysql.createQueryClient(options.pool||mysql.getPool());
+  const payment=await db.queryOne("SELECT id FROM order_payments WHERE order_id=? AND status='pending_verification' ORDER BY id DESC LIMIT 1",[orderId]);
+  if(!payment)throw new ConflictError('This order has no payment waiting for verification.');
+  return decideManualPayment(payment.id,'approve',actor,options);
+}
+
+module.exports={decideManualPayment,approveOrderManualPayment};

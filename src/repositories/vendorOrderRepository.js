@@ -70,6 +70,10 @@ async function syncParentStatus(tx, orderId, priorStatus, userId) {
   const applicableRows=rows.filter((row)=>row.status!=='cancelled');
   const applicable=applicableRows.length;
   if(!applicable)return priorStatus;
+  // Our own products travel separately, so vendor parcels alone cannot ship or deliver the order.
+  const ownItem=await tx.queryOne(`SELECT oi.id FROM order_items oi WHERE oi.order_id=?
+    AND NOT EXISTS (SELECT 1 FROM vendor_sub_order_items si WHERE si.order_item_id=oi.id) LIMIT 1`,[orderId]);
+  if(ownItem)return priorStatus;
   let target=null;
   if(applicableRows.every((row)=>row.status==='delivered'))target='delivered';
   else if(applicableRows.every((row)=>['in_transit','delivered'].includes(row.status)))target='shipped';

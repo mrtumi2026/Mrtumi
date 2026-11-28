@@ -544,3 +544,16 @@ body {
   .store-hero-main .hero-slide-graphic { min-height:0; height:auto; aspect-ratio:16 / 9; }
   .store-hero-main .hero-slide-graphic .hero-slide-graphic-image { min-height:0; height:100%; max-height:none; }
 }
+
+/* Cart rows stack on phones so the name, price and delete button stay readable. */
+@media (max-width: 575.98px) {
+  table:has(> #cartPageTableBody) thead { display: none; }
+  #cartPageTableBody tr { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid #e5e7eb; }
+  #cartPageTableBody td { display: block; border: 0; padding: 0; min-width: 0; }
+  #cartPageTableBody td:nth-child(1) { grid-column: 1 / -1; }
+  #cartPageTableBody td:nth-child(2) { grid-column: 1 / -1; text-align: left !important; }
+  #cartPageTableBody td:nth-child(3) .input-group { margin-left: 0 !important; }
+}
+
+/* Screen-reader-only labels inside wide tables must not widen the page. */
+.table-responsive { position: relative; }

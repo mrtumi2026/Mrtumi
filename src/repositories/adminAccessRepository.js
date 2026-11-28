@@ -1,5 +1,6 @@
 'use strict';
 
+const bcrypt = require('bcryptjs');
 const { getPool, withTransaction, createQueryClient } = require('../db/mysqlPool');
 const { env } = require('../config/env');
 const { ValidationError, NotFoundError, ConflictError } = require('../utils/errors');
@@ -98,6 +99,24 @@ async function setStaffStatus(id, status, actor, { pool = null } = {}) {
     return { id:userId,status:Number(status) };
   }, { pool });
 }
+async function changeOwnPassword(input, actor, { sessionId = '', pool = null } = {}) {
+  const userId = boundedId(actor.id, 'Admin');
+  const current = String(input.currentPassword || '');
+  const next = String(input.newPassword || '');
+  if (next.length < 12 || Buffer.byteLength(next, 'utf8') > 72) throw new ValidationError('নতুন পাসওয়ার্ড কমপক্ষে ১২ অক্ষরের হতে হবে (সর্বোচ্চ ৭২ বাইট)।');
+  if (next !== String(input.confirmPassword || '')) throw new ValidationError('নতুন পাসওয়ার্ড দুই ঘরে একই হয়নি।');
+  if (next === current) throw new ValidationError('নতুন পাসওয়ার্ড আগেরটার থেকে আলাদা হতে হবে।');
+  const passwordHash = await bcrypt.hash(next, 12);
+  return withTransaction(async (tx) => {
+    const user = await tx.queryOne('SELECT id,password_hash FROM users WHERE id=? AND status=1 FOR UPDATE', [userId]);
+    if (!user || !(await bcrypt.compare(current, user.password_hash))) throw new ValidationError('বর্তমান পাসওয়ার্ড সঠিক নয়।');
+    await tx.execute('UPDATE users SET password_hash=? WHERE id=?', [passwordHash, userId]);
+    // Sign out every other device that was using the old password.
+    await tx.execute("DELETE FROM web_sessions WHERE actor_type='admin' AND actor_id=? AND sid<>?", [userId, String(sessionId)]);
+    await audit(tx, actor, 'admin.password.changed', 'admin_user', userId, null, { changed: true });
+    return { id: userId };
+  }, { pool });
+}
 async function createRole(input, actor, { pool = null } = {}) {
   const name = boundedText(input.name,'Role name',100);
   const slug = boundedText(input.slug,'Role slug',100).toLowerCase();
@@ -156,4 +175,4 @@ async function listAuditLogs({ page = 1, limit = 50, pool = null } = {}) {
   return { rows, page:p, limit:n, total:Number(total.count||0) };
 }
 
-module.exports={listStaff,listRoles,listPermissions,createStaff,updateStaff,setStaffStatus,createRole,setRolePermissions,setRoleStatus,listAuditLogs};
+module.exports={changeOwnPassword,listStaff,listRoles,listPermissions,createStaff,updateStaff,setStaffStatus,createRole,setRolePermissions,setRoleStatus,listAuditLogs};

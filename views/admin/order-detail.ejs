@@ -18,7 +18,7 @@
           <input type="hidden" name="courier_name" value="Pathao Courier" />
           <button type="submit" class="btn btn-outline-danger btn-sm">🛵 Send to Pathao</button>
         </form>
-        <% if (order.status === 'delivered' && order.payment_status === 'unpaid' && order.payment_method === 'cod' && Number(order.has_vendor_part) === 0) { %>
+        <% if (order.status === 'delivered' && order.payment_status === 'unpaid' && order.payment_method === 'cod' && (Number(order.has_vendor_part) === 0 || (Number(order.has_own_part) === 1 && Number(order.open_vendor_parts) === 0))) { %>
           <form action="/admin/order/<%= order.id %>/confirm-cod-payment" method="POST" class="d-inline-flex gap-1">
             <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
             <label class="visually-hidden" for="cod-reference">Payment reference</label>
@@ -26,8 +26,11 @@
             <button type="submit" class="btn btn-success btn-sm text-nowrap" onclick="return confirm('এই অর্ডারের টাকা হাতে পেয়েছেন?');">💵 টাকা পেয়েছি</button>
           </form>
         <% } %>
+        <% if (Number(order.has_vendor_part) === 1) { %>
+          <a href="/admin/reseller-commerce#orders" class="btn btn-outline-primary btn-sm">🏪 ভেন্ডর পার্সেল ও কুরিয়ারের টাকা মেলানো</a>
+        <% } %>
         <a href="/admin/manual-fraud-check?phone=<%= encodeURIComponent(order.phone) %>" class="btn btn-outline-info btn-sm">🛡️ Check Fraud Ratio</a>
-        <% if (order.payment_status !== 'paid' && (order.manual_trx_id || order.trx_id || String(order.payment_method || '').includes('manual'))) { %>
+        <% if (order.payment_status === 'pending_verification') { %>
           <form action="/admin/order/<%= order.id %>/verify-payment" method="POST" class="d-inline">
             <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
             <button type="submit" class="btn btn-success btn-sm" onclick="return confirm('Confirm TrxID verification and mark order paid?');">

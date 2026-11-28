@@ -948,6 +948,8 @@ router.get('/admin/vendor-withdrawals', asyncHandler(async (_req, res) => {
       customActionPrefix: '/admin/vendor-withdrawals/approve',
       customActionLabel: 'Approve / Pay',
       customActionHideWhenPaid: true,
+      rejectActionPrefix: '/admin/vendor-withdrawals/delete',
+      rowLink: { prefix: '/admin/vendor-applications/', suffix: '', idKey: 'vendor_id', label: '👁 পুরো অ্যাকাউন্ট নম্বর' },
       deletePrefix: null,
       columns: [
         { key: 'id', label: '#' },

@@ -174,7 +174,21 @@ async function confirmDeliveredOrderPayment({ orderId, reference = '', actor = {
     if (!order || (resellerOnly && !order.reseller_id)) throw new NotFoundError(resellerOnly ? 'Reseller order not found.' : 'Order not found.');
     if (!order.reseller_id && order.payment_method !== 'cod') throw new ConflictError('Only cash on delivery orders can be confirmed here.');
     const vendorPart = await tx.queryOne('SELECT id FROM vendor_sub_orders WHERE order_id=? LIMIT 1', [id]);
-    if (vendorPart) throw new ConflictError('Vendor product orders are confirmed through COD reconciliation.');
+    if (vendorPart) {
+      // Courier reconciliation covers only the vendor parcels. An order that also holds our own
+      // products still needs the admin to confirm the rest, after every vendor parcel is settled.
+      const ownItem = await tx.queryOne(`SELECT oi.id FROM order_items oi WHERE oi.order_id=?
+        AND NOT EXISTS (SELECT 1 FROM vendor_sub_order_items si WHERE si.order_item_id=oi.id) LIMIT 1`, [id]);
+      if (!ownItem) throw new ConflictError('Vendor product orders are confirmed through COD reconciliation.');
+      const open = await tx.queryOne(`SELECT COUNT(*) AS n FROM vendor_sub_orders so
+        WHERE so.order_id=? AND so.status<>'cancelled' AND (
+          so.status<>'delivered'
+          OR NOT EXISTS (SELECT 1 FROM fulfillment_shipments fs WHERE fs.vendor_sub_order_id=so.id)
+          OR EXISTS (SELECT 1 FROM fulfillment_shipments fs LEFT JOIN courier_cod_collections c
+               ON c.id=(SELECT MAX(c2.id) FROM courier_cod_collections c2 WHERE c2.shipment_id=fs.id)
+             WHERE fs.vendor_sub_order_id=so.id AND COALESCE(c.reconciliation_status,'pending')<>'reconciled'))`, [id]);
+      if (Number(open?.n || 0) > 0) throw new ConflictError('আগে সব ভেন্ডর পার্সেল ডেলিভারি করে কুরিয়ারের টাকা মিলিয়ে নিন, তারপর এই অর্ডারের টাকা নিশ্চিত করুন।');
+    }
     if (order.order_status !== 'delivered') throw new ConflictError('Money can be confirmed only after the order is delivered.');
     if (order.payment_status === 'paid') return { orderId: id, replayed: true };
     await tx.execute("UPDATE orders SET payment_status='paid',paid_paisa=total_paisa,cod_due_paisa=0,verified_by_user_id=?,verified_at=UTC_TIMESTAMP() WHERE id=?", [actor.id || null, id]);

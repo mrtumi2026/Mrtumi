@@ -292,11 +292,15 @@ async function transitionOrderTx(tx, orderIdInput, toStatus, note, actor = {}, r
     const incomplete=await tx.queryOne(`SELECT COUNT(*) AS n FROM order_items oi LEFT JOIN (SELECT ri.order_item_id,SUM(ri.qty) AS inspected_qty FROM customer_return_items ri JOIN customer_return_requests rr ON rr.id=ri.return_request_id WHERE rr.order_id=? AND rr.status='inspected' AND ri.disposition<>'pending_inspection' GROUP BY ri.order_item_id) returned ON returned.order_item_id=oi.id WHERE oi.order_id=? AND COALESCE(returned.inspected_qty,0)<oi.qty`,[id,id]);
     if(!incomplete||Number(incomplete.n)>0)throw new ConflictError('An order can be marked returned only after every ordered unit is approved and inspected with a recorded disposition.');
   }
+  if (target === 'delivered') {
+    const open = await tx.queryOne("SELECT COUNT(*) AS n FROM vendor_sub_orders WHERE order_id=? AND status IN ('order_placed','vendor_accepted','processing','packed','ready_for_pickup','in_transit','failed_delivery')", [id]);
+    if (Number(open?.n || 0) > 0) throw new ConflictError('আগে সব ভেন্ডর পার্সেলের ডেলিভারি নিশ্চিত করুন, তারপর পুরো অর্ডার ডেলিভারড করুন।');
+  }
   if (target === 'confirmed') await reserveOrderInventoryTx(tx, id, actor);
   if (target === 'cancelled' || target === 'failed') {
     await releaseOrderInventoryTx(tx, id, actor, reason);
     // A cancelled order must also disappear from the vendor's to-ship list.
-    await tx.execute("UPDATE vendor_sub_orders SET status='cancelled',cancelled_at=UTC_TIMESTAMP() WHERE order_id=? AND status IN ('order_placed','accepted','processing','packed','ready_for_pickup')", [id]);
+    await tx.execute("UPDATE vendor_sub_orders SET status='cancelled',cancelled_at=UTC_TIMESTAMP() WHERE order_id=? AND status IN ('order_placed','vendor_accepted','processing','packed','ready_for_pickup')", [id]);
   }
   if (target === 'shipped') await consumeOrderInventoryTx(tx, id, actor);
   await tx.execute('UPDATE orders SET order_status=?,is_seen=1 WHERE id=?', [target,id]);

@@ -1,0 +1,29 @@
+<%- include('partials/head', { title: 'রোলের অনুমতি' }) %>
+<%- include('partials/topbar') %>
+<%- include('partials/sidebar') %>
+<div class="content-page">
+  <div class="content">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+      <div>
+        <h4 class="fw-bold mb-0">রোলের অনুমতি: <%= role.name %></h4>
+        <p class="text-muted small mb-0">এই রোলের স্টাফ শুধু টিক দেওয়া কাজগুলো করতে পারবে। লগইনের পর ড্যাশবোর্ড দেখতে <code>dashboard.view</code> টিক দিন।</p>
+      </div>
+      <a href="/admin/roles/manage" class="btn btn-outline-secondary btn-sm">← সব রোল</a>
+    </div>
+    <form method="post" action="/admin/roles/<%= role.id %>/permissions" class="tbl-card p-3">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="row g-2">
+        <% permissions.forEach(function (p) { %>
+          <div class="col-md-6 col-xl-4">
+            <label class="border rounded p-2 d-flex gap-2 align-items-start h-100">
+              <input type="checkbox" class="form-check-input mt-1" name="permissions" value="<%= p.name %>" <%= role.permissions.includes(p.name) ? 'checked' : '' %>>
+              <span><code><%= p.name %></code><small class="d-block text-muted"><%= p.description || p.module %></small></span>
+            </label>
+          </div>
+        <% }) %>
+      </div>
+      <button type="submit" class="btn btn-forest mt-3">অনুমতি সেভ করুন</button>
+    </form>
+  </div>
+</div>
+<%- include('partials/footer') %>

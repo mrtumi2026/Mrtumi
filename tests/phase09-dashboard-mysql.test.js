@@ -1716,7 +1716,8 @@ describe('Phase 09 — full-stack MySQL 8.0 dashboard, admin access, RBAC & audi
   test('all unique non-exempt legacy admin method/path pairs deny a logged-in zero-grant staff account',async(t)=>{
     if(!MYSQL_HOST)return t.skip(SKIP);
     const {cookie:deniedCookie}=await noGrantSession();
-    const routes=collectAdminRoutes().filter(r=>!policyForAdminRoute(r.method,r.path).exempt);
+    const routes=collectAdminRoutes().filter(r=>{const p=policyForAdminRoute(r.method,r.path);return !p.exempt&&!p.authenticatedOnly;});
+    assert.deepEqual([...new Set(collectAdminRoutes().filter(r=>policyForAdminRoute(r.method,r.path).authenticatedOnly).map(r=>r.path))],['/admin/account/password'],'only the own-password page skips per-permission grants');
     assert.ok(routes.length>=240,'inventory covers every unique non-exempt active admin endpoint plus dynamic settings pages');
     const unmapped=routes.filter(r=>policyForAdminRoute(r.method,r.path).unmapped);
     assert.deepEqual(unmapped,[],'every registered legacy route has a named policy');

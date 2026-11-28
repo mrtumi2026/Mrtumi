@@ -7,11 +7,54 @@ const { requirePermission, hasPermission } = require('../middleware/rbac');
 const { requireCsrf } = require('../middleware/csrf');
 const { asyncHandler } = require('../utils/asyncHandler');
 const repo = require('../repositories/adminAccessRepository');
-const { ValidationError } = require('../utils/errors');
+const { ValidationError, AppError } = require('../utils/errors');
+const { createLoginRateLimiters } = require('../middleware/rateLimit');
 
 const router = express.Router();
 router.use('/admin', requireAdmin);
 const actor = (req) => ({ id:req.adminUser?.id, roleId:req.adminUser?.role_id, ip:req.ip, userAgent:req.get('user-agent') || '' });
+
+const passwordLimiters = createLoginRateLimiters({
+  windowMs: 15 * 60 * 1000, maxPerIp: 40, maxPerIpAccount: 8, identifierFields: [],
+  keyPrefix: 'admin-password', message: 'অনেকবার চেষ্টা করা হয়েছে। কিছুক্ষণ পর আবার চেষ্টা করুন।',
+});
+const showError = (req, res, error, back) => {
+  if (!(error instanceof AppError) || error.statusCode >= 500) throw error;
+  req.flash('error', error.message);
+  return res.redirect(back);
+};
+
+router.get('/admin/account/password', (_req, res) => res.render('admin/account-password'));
+router.post('/admin/account/password', ...passwordLimiters, requireCsrf, asyncHandler(async (req, res) => {
+  try {
+    await repo.changeOwnPassword(req.body, actor(req), { sessionId: req.sessionID });
+  } catch (error) { return showError(req, res, error, '/admin/account/password'); }
+  const adminUser = req.session.adminUser;
+  await new Promise((resolve, reject) => req.session.regenerate((err) => (err ? reject(err) : resolve())));
+  req.session.adminUser = adminUser;
+  req.adminDomainAudit = true;
+  req.flash('success', 'পাসওয়ার্ড বদলানো হয়েছে। অন্য সব ডিভাইস থেকে লগআউট করা হয়েছে।');
+  return res.redirect('/admin/account/password');
+}));
+
+router.get('/admin/roles/:id/permissions', requirePermission('roles.manage', 'roles.grants.manage'), asyncHandler(async (req, res) => {
+  const [roles, permissions] = await Promise.all([repo.listRoles(), repo.listPermissions()]);
+  const role = roles.find((r) => Number(r.id) === Number(req.params.id));
+  if (!role || ['super_admin', 'superadmin'].includes(role.slug)) {
+    req.flash('error', 'এই রোলের অনুমতি এখান থেকে বদলানো যায় না।');
+    return res.redirect('/admin/roles/manage');
+  }
+  return res.render('admin/role-permissions', { role, permissions });
+}));
+router.post('/admin/roles/:id/permissions', requirePermission('roles.manage', 'roles.grants.manage'), requireCsrf, asyncHandler(async (req, res) => {
+  const back = `/admin/roles/${Number(req.params.id) || 0}/permissions`;
+  try {
+    await repo.setRolePermissions(req.params.id, [].concat(req.body.permissions || []), actor(req));
+  } catch (error) { return showError(req, res, error, back); }
+  req.adminDomainAudit = true;
+  req.flash('success', 'রোলের অনুমতি সেভ হয়েছে।');
+  return res.redirect(back);
+}));
 
 router.get('/admin/users/manage', requirePermission('staff.manage'), asyncHandler(async (req,res) => {
   const [rows,roles]=await Promise.all([repo.listStaff(),repo.listRoles()]);
@@ -46,7 +89,7 @@ router.patch('/admin/phase09/access/staff/:id', requirePermission('staff.manage'
 }));
 router.get('/admin/roles/manage', requirePermission('roles.manage'), asyncHandler(async (_req,res) => {
   const rows=await repo.listRoles();
-  return res.render('admin/crud-module',{pageTitle:'Admin Roles',subtitle:'Role permission grants are changed only by explicit role-management actions.',createAction:'/admin/roles/create',customActionPrefix:'/admin/roles/toggle',customActionLabel:'Activate / Deactivate',columns:[{key:'id',label:'#'},{key:'name',label:'Role'},{key:'slug',label:'Slug'},{key:'permissions',label:'Granted permissions'},{key:'status',label:'Status',type:'status'}],fields:[{name:'name',label:'Role name',type:'text',required:true},{name:'slug',label:'Stable role slug',type:'text',required:true}],rows:rows.map(r=>({...r,permissions:r.permissions.join(', ')}))});
+  return res.render('admin/crud-module',{pageTitle:'Admin Roles',subtitle:'Role permission grants are changed only by explicit role-management actions.',createAction:'/admin/roles/create',rowLink:{prefix:'/admin/roles/',suffix:'/permissions',label:'🔑 অনুমতি',hideSlugs:['super_admin','superadmin']},customActionPrefix:'/admin/roles/toggle',customActionLabel:'Activate / Deactivate',columns:[{key:'id',label:'#'},{key:'name',label:'Role'},{key:'slug',label:'Slug'},{key:'permissions',label:'Granted permissions'},{key:'status',label:'Status',type:'status'}],fields:[{name:'name',label:'Role name',type:'text',required:true},{name:'slug',label:'Stable role slug',type:'text',required:true}],rows:rows.map(r=>({...r,permissions:r.permissions.join(', ')}))});
 }));
 router.post('/admin/roles/create', requirePermission('roles.manage'), requireCsrf, asyncHandler(async (req,res) => {await repo.createRole(req.body,actor(req));return res.redirect('/admin/roles/manage');}));
 router.post('/admin/roles/toggle/:id', requirePermission('roles.manage'), requireCsrf, asyncHandler(async (req,res) => {const role=(await repo.listRoles()).find(r=>Number(r.id)===Number(req.params.id));if(!role)throw new ValidationError('Role not found.');await repo.setRoleStatus(req.params.id,Number(role.status)?0:1,actor(req));return res.redirect('/admin/roles/manage');}));

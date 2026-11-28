@@ -314,7 +314,7 @@ function generateInvoiceId() {
 }
 function handleOrderMutationError(err, req, res, redirectTo) {
   if (!(err instanceof AppError) || err.statusCode >= 500) return false;
-  if (req.accepts('json')) res.status(err.statusCode).json({ error:err.code, message:err.message });
+  if (req.accepts(['json', 'html']) === 'json') res.status(err.statusCode).json({ error:err.code, message:err.message });
   else { req.flash('error',err.message); res.redirect(redirectTo); }
   return true;
 }
@@ -729,10 +729,10 @@ router.post('/admin/order/:id/status', asyncHandler(async (req,res)=>{
 }));
 
 router.post(['/admin/order/:id/verify-payment', '/admin/orders/:id/verify-payment'], asyncHandler(async (req, res, next) => {
-  const adminPaymentGatewayRepository = require('../repositories/adminPaymentGatewayRepository');
+  const adminManualPaymentRepository = require('../repositories/adminManualPaymentRepository');
   const actor = orderActor(req);
   try {
-    const result = await adminPaymentGatewayRepository.verifyManualOrderPayment(req.params.id, actor);
+    const result = await adminManualPaymentRepository.approveOrderManualPayment(req.params.id, actor);
     if (req.accepts('json') && !req.headers['content-type']?.includes('form')) {
       return res.json({ success: true, message: 'Payment successfully verified.', ...result });
     }

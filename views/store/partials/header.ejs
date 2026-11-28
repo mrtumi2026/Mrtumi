@@ -207,7 +207,7 @@
                 <i class="fas fa-th-large me-1" aria-hidden="true"></i><%= locale === 'bn' ? 'প্যানেল' : 'Portals' %>
               </button>
               <ul class="dropdown-menu dropdown-menu-end shadow-sm border rounded-3">
-                <li><a class="dropdown-item fw-semibold" href="/admin/dashboard"><i class="fas fa-user-shield text-dark me-2"></i>🔐 <%= t('admin.controlPanel') %></a></li>
+                <% if (typeof adminUser !== 'undefined' && adminUser) { %><li><a class="dropdown-item fw-semibold" href="/admin/dashboard"><i class="fas fa-user-shield text-dark me-2"></i>🔐 <%= t('admin.controlPanel') %></a></li><% } %>
                 <li><a class="dropdown-item fw-semibold" href="/vendor/dashboard"><i class="fas fa-store text-success me-2"></i>🏪 <%= t('vendor.portalName') %></a></li>
                 <li><a class="dropdown-item fw-semibold" href="/reseller/dashboard"><i class="fas fa-handshake text-primary me-2"></i>🤝 <%= t('reseller.portalName') %></a></li>
                 <li><hr class="dropdown-divider" /></li>
@@ -287,7 +287,7 @@
         <div class="border-top pt-3 small">
           <div class="fw-bold text-muted mb-2"><%= t('store.footerPortals') %></div>
           <div class="d-grid gap-2">
-            <a href="/admin/dashboard" class="btn btn-outline-dark btn-sm text-start">🔐 <%= t('admin.controlPanel') %></a>
+            <% if (typeof adminUser !== 'undefined' && adminUser) { %><a href="/admin/dashboard" class="btn btn-outline-dark btn-sm text-start">🔐 <%= t('admin.controlPanel') %></a><% } %>
             <a href="/vendor/dashboard" class="btn btn-outline-success btn-sm text-start">🏪 <%= t('vendor.portalName') %></a>
             <a href="/reseller/dashboard" class="btn btn-outline-primary btn-sm text-start">🤝 <%= t('reseller.portalName') %></a>
           </div>

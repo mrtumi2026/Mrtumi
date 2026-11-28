@@ -30,6 +30,13 @@ describe('Phase 09 dashboard repository contract', () => {
     for(const route of routes){
       const policy=policyForAdminRoute(route.method,route.path);
       if(policy.exempt)continue;
+      if(policy.authenticatedOnly){
+        // Self-service only: the single route open to any signed-in admin.
+        assert.equal(route.path,'/admin/account/password');
+        let anonymousError=null; legacyAdminRbac({method:route.method,path:route.path,adminUser:null},{},err=>{anonymousError=err||null;});
+        assert.equal(anonymousError.statusCode,401,'password page requires a signed-in admin');
+        continue;
+      }
       assert.ok(policy.key,`${route.method} ${route.path} has a policy key`);
       assert.notEqual(policy.unmapped,true,`${route.method} ${route.path} must not fall through to unmapped policy`);
       let allowedError=null; legacyAdminRbac({method:route.method,path:route.path,adminUser:{id:1,role_slug:'p09_test',permissions:[policy.key,...(policy.also||[])]}},{},err=>{allowedError=err||null;});

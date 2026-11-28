@@ -71,12 +71,22 @@
                       ↗ Live
                     </a>
                   <% } %>
+                  <% if (typeof rowLink !== 'undefined' && rowLink && !(rowLink.hideSlugs || []).includes(r.slug)) { %>
+                    <a href="<%= rowLink.prefix %><%= r[rowLink.idKey || 'id'] %><%= rowLink.suffix %>" class="btn btn-sm btn-outline-primary py-1 px-2 me-1"><%= rowLink.label %></a>
+                  <% } %>
                   <% if (typeof customActionPrefix !== 'undefined' && customActionPrefix && !((typeof customActionHideWhenInactive !== 'undefined' && customActionHideWhenInactive) && Number(r.status) === 0) && !((typeof customActionHideWhenPaid !== 'undefined' && customActionHideWhenPaid) && ['paid', 'approved', 'rejected', 'completed'].includes(String(r.status || '').toLowerCase()))) { %>
                     <form action="<%= customActionPrefix %>/<%= r.id %>" method="POST" class="d-inline">
                       <input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>" />
                       <button type="submit" class="btn btn-sm <%= (typeof customActionToggleStatus !== 'undefined' && customActionToggleStatus) ? (Number(r.status) ? 'btn-outline-secondary' : 'btn-outline-success') : 'btn-outline-primary' %> py-1 px-2 me-1" title="<%= (typeof customActionToggleStatus !== 'undefined' && customActionToggleStatus) ? (Number(r.status) ? 'Deactivate' : 'Activate') : (customActionLabel || 'Action') %>">
                         <%= (typeof customActionToggleStatus !== 'undefined' && customActionToggleStatus) ? (Number(r.status) ? 'Deactivate' : 'Activate') : (customActionLabel || 'Action') %>
                       </button>
+                    </form>
+                  <% } %>
+                  <% if (typeof rejectActionPrefix !== 'undefined' && rejectActionPrefix && r.status === 'pending') { %>
+                    <form action="<%= rejectActionPrefix %>/<%= r.id %>" method="POST" class="d-inline-flex gap-1">
+                      <input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>" />
+                      <input type="text" name="reason" class="form-control form-control-sm" style="width:150px" minlength="3" maxlength="200" required placeholder="বাতিলের কারণ" aria-label="Reject reason" />
+                      <button type="submit" class="btn btn-sm btn-outline-danger py-1 px-2">বাতিল</button>
                     </form>
                   <% } %>
                   <% if (typeof updatePrefix !== 'undefined' && updatePrefix && fields && fields.length) { %>
