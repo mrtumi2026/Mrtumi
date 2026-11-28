@@ -1,6 +1,7 @@
 const express = require('express');
 const crypto = require('node:crypto');
 const resellerOrderRepository = require('../repositories/resellerOrderRepository');
+const checkoutRepository = require('../repositories/checkoutRepository');
 const { bdtToPaisa } = require('../utils/money');
 const settingsRepository = require('../repositories/settingsRepository');
 const bcrypt = require('bcryptjs');
@@ -418,8 +419,12 @@ router.get('/reseller/transactions', async (req,res,next)=>{
   if(!mysqlActive()) return res.redirect('/reseller/deposits');
   try{const id=req.session.resellerUser.id;const [reseller,result]=await Promise.all([resellerPortal.getProfile(id),resellerPortal.listTransactions(id,req.query.type||'',{page:req.query.page||1})]);return res.render('reseller/wallet',{mode:'history',reseller,transactions:result.transactions,pagination:result,canonicalWallet:true,transactionType:result.type});}catch(error){return next(error);}
 });
+// Only the shop's own configured manual wallets (the same ones customers pay to) accept deposits.
+const depositMethods = async () => (await checkoutRepository.listCheckoutMethods()).filter((method) => method.code !== 'cod');
+const depositLimiter = createRateLimiter({ keyPrefix: 'reseller-deposit', windowMs: 60 * 60 * 1000, max: 10 });
+
 router.get('/reseller/deposits', async (req, res, next) => {
-  if (mysqlActive()) { try { const id=req.session.resellerUser.id; const [reseller,result]=await Promise.all([resellerPortal.getProfile(id),resellerPortal.listTransactions(id,'deposit',{page:req.query.page||1})]); return res.render('reseller/wallet',{mode:'deposit',reseller,transactions:result.transactions,pagination:result,canonicalWallet:true}); } catch(error) { return next(error); } }
+  if (mysqlActive()) { try { const id=req.session.resellerUser.id; const [reseller,result,methods]=await Promise.all([resellerPortal.getProfile(id),resellerPortal.listTransactions(id,'deposit',{page:req.query.page||1}),depositMethods()]); return res.render('reseller/wallet',{mode:'deposit',reseller,transactions:result.transactions,pagination:result,canonicalWallet:true,depositMethods:methods}); } catch(error) { return next(error); } }
   const reseller = db.get('SELECT * FROM resellers WHERE id = ?', req.session.resellerUser.id);
   const transactions = db.all(
     "SELECT * FROM reseller_transactions WHERE reseller_id = ? AND type = 'deposit' ORDER BY id DESC",
@@ -428,8 +433,17 @@ router.get('/reseller/deposits', async (req, res, next) => {
   res.render('reseller/wallet', { mode: 'deposit', reseller, transactions, canonicalWallet: false });
 });
 
-router.post('/reseller/deposits/create', requireCsrf, (req, res) => {
-  if (mysqlActive()) return res.status(409).render('reseller/unsupported-operation',{message:'ডিপোজিট আবেদন বন্ধ। অনুমোদিত wallet reconciliation, review ও audit policy না থাকায় কোনো অর্থ-সম্পর্কিত পরিবর্তন করা হবে না।'});
+router.post('/reseller/deposits/create', requireCsrf, depositLimiter, async (req, res, next) => {
+  if (mysqlActive()) {
+    try {
+      await resellerPortal.createDepositRequest(req.session.resellerUser.id, req.body, { methods: await depositMethods() });
+      req.flash('success', 'ডিপোজিটের তথ্য জমা হয়েছে। অ্যাডমিন টাকা যাচাই করে অনুমোদন করলে ব্যালেন্সে যোগ হবে।');
+    } catch (error) {
+      if (!error.statusCode || error.statusCode >= 500) return next(error);
+      req.flash('error', error.message);
+    }
+    return res.redirect('/reseller/deposits');
+  }
   const resellerId = req.session.resellerUser.id;
   const amount = Number(req.body.amount || 0);
   const method = String(req.body.method || 'bKash').trim();

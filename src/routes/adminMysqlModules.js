@@ -371,7 +371,7 @@ const resellerOptions = () => options('SELECT id,name,phone FROM resellers WHERE
 page('/admin/reseller-deposits', async () => ({
   pageTitle: 'Reseller Deposits', subtitle: 'রিসেলার ডিপোজিট লেনদেন',
   createAction: '/admin/reseller-tx/deposit/create', customActionPrefix: '/admin/reseller-deposits/approve', customActionLabel: 'Approve', customActionHideWhenPaid: true,
-  deletePrefix: '/admin/reseller-tx/delete',
+  deletePrefix: '/admin/reseller-tx/delete', rejectActionPrefix: '/admin/reseller-deposits/reject',
   columns: [col('id', '#'), col('reseller_name', 'Reseller'), col('amount', 'Amount', 'currency'), col('method', 'Method'), col('trx_id', 'TrxID / Account'), col('status', 'Status', 'badge')],
   fields: [select('reseller_id', 'Reseller', await resellerOptions()), field('amount', 'Amount (৳)', 'number', { required: true }),
     field('method', 'Method', 'text', { value: 'bKash' }), field('trx_id', 'Transaction ID / Account No', 'text', { required: true })],
@@ -397,6 +397,13 @@ action('/admin/reseller-deposits/approve/:id', '/admin/reseller-deposits', 'ড�
   if (!row) throw new ConflictError('অপেক্ষমাণ ডিপোজিট পাওয়া যায়নি।');
   await tx.execute("UPDATE reseller_transactions SET status='completed' WHERE id=?", [id]);
   await tx.execute('UPDATE resellers SET deposit_paisa=deposit_paisa+? WHERE id=?', [row.amount_paisa, row.reseller_id]);
+});
+action('/admin/reseller-deposits/reject/:id', '/admin/reseller-deposits', 'ডিপোজিট বাতিল করা হয়েছে।', async (tx, req) => {
+  const id = input.id(req.params.id);
+  const reason = input.required(req.body.reason, 200, 'বাতিলের কারণ');
+  const done = await tx.execute("UPDATE reseller_transactions SET status='rejected' WHERE id=? AND tx_type='deposit' AND status='pending'", [id]);
+  if (done.affectedRows !== 1) throw new ConflictError('অপেক্ষমাণ ডিপোজিট পাওয়া যায়নি।');
+  await tx.execute("INSERT INTO audit_logs(actor_type,actor_id,action,entity_type,entity_id,after_json) VALUES('admin',?,'reseller.deposit.rejected','reseller_transaction',?,?)", [actor(req).id, String(id), JSON.stringify({ reason })]);
 });
 action('/admin/reseller-tx/delete/:id', '/admin/reseller-deposits', 'মুছে ফেলা হয়েছে।', async (tx, req) => {
   const done = await tx.execute("DELETE FROM reseller_transactions WHERE id=? AND status IN ('pending','rejected')", [input.id(req.params.id)]);

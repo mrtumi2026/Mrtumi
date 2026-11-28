@@ -38,7 +38,30 @@
           <div class="small text-muted">বর্তমান সিকিউরিটি ডিপোজিট ব্যালেন্স</div>
           <div class="display-6 fw-bold text-primary">৳<%= Number(reseller.deposit_amount || 0).toLocaleString('en-IN') %></div>
         </div>
-        <div class="alert alert-info mb-0">অনলাইন সিকিউরিটি ডিপোজিট বর্তমানে স্বয়ংক্রিয় গেটওয়ে সংযোগ ছাড়া সরাসরি বন্ধ রয়েছে। যেকোনো সহায়তা বা অ্যাকাউন্ট লিমিট বৃদ্ধির জন্য অ্যাডমিন সাপোর্টের সাথে যোগাযোগ করুন।</div>
+        <% const methods = typeof depositMethods !== 'undefined' ? depositMethods : []; %>
+        <% if (!methods.length) { %>
+          <div class="alert alert-warning mb-0">এখন ডিপোজিট নেওয়া যাচ্ছে না। অ্যাডমিন bKash/Nagad/Rocket নম্বর চালু করলে এখান থেকে জমা দিতে পারবেন।</div>
+        <% } else { %>
+          <h6 class="fw-bold mb-2">💳 নতুন ডিপোজিট</h6>
+          <p class="small text-muted mb-2">আগে নিচের যেকোনো নম্বরে টাকা পাঠান, তারপর Transaction ID জমা দিন। অ্যাডমিন যাচাই করে অনুমোদন করলে ব্যালেন্সে যোগ হবে।</p>
+          <ul class="list-group mb-3">
+            <% methods.forEach(function(method) { %>
+              <li class="list-group-item small"><strong><%= method.name %>: <%= method.account_number %></strong><div class="text-muted"><%= method.instructions_bn || method.instructions %></div></li>
+            <% }) %>
+          </ul>
+          <form action="/reseller/deposits/create" method="POST">
+            <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
+            <div class="mb-2"><label class="form-label small fw-semibold" for="depMethod">মাধ্যম *</label>
+              <select id="depMethod" name="method" class="form-select" required><% methods.forEach(function(method) { %><option value="<%= method.code %>"><%= method.name %></option><% }) %></select></div>
+            <div class="mb-2"><label class="form-label small fw-semibold" for="depAmount">টাকার পরিমাণ (৳) *</label>
+              <input id="depAmount" type="number" name="amount" min="100" max="500000" step="0.01" class="form-control" required></div>
+            <div class="mb-2"><label class="form-label small fw-semibold" for="depSender">যে নম্বর থেকে পাঠিয়েছেন *</label>
+              <input id="depSender" type="tel" name="sender_number" class="form-control" placeholder="01XXXXXXXXX" required></div>
+            <div class="mb-3"><label class="form-label small fw-semibold" for="depTrx">Transaction ID (TrxID) *</label>
+              <input id="depTrx" type="text" name="trx_id" class="form-control" minlength="6" maxlength="40" pattern="[A-Za-z0-9]+" required></div>
+            <button type="submit" class="btn btn-primary w-100 py-2 fw-bold">ডিপোজিট জমা দিন →</button>
+          </form>
+        <% } %>
       <% } else if (canonicalWallet && mode === 'history') { %>
         <div class="p-3 rounded-3 bg-light border mb-3">
           <div class="d-flex justify-content-between align-items-center mb-2">
@@ -142,7 +165,7 @@
                 <td><%= canonicalWallet && mode==='history' ? tx.tx_type : tx.method %></td>
                 <td><code><%= tx.trx_id %></code></td>
                 <td class="fw-bold">৳<%= canonicalWallet ? formatPaisa(tx.amount_paisa) : Number(tx.amount).toLocaleString('en-IN') %></td>
-                <td><span class="sb <%= tx.status === 'approved' ? 'sb-6' : 'sb-1' %>"><%= tx.status %></span></td>
+                <td><span class="sb <%= ['approved','completed'].includes(tx.status) ? 'sb-6' : 'sb-1' %>"><%= ({pending:'অপেক্ষমাণ',approved:'অনুমোদিত',completed:'সম্পন্ন',rejected:'বাতিল'})[tx.status] || tx.status %></span></td>
                 <td class="small text-muted"><%= String(tx.created_at).slice(0, 10) %></td>
               </tr>
             <% }) %>

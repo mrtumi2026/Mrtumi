@@ -230,6 +230,40 @@ async function getOrderDetails(resellerId, orderId, pool) {
   return { order, items };
 }
 
+const DEPOSIT_MIN_PAISA = 10000;
+const DEPOSIT_MAX_PAISA = 50000000;
+const DEPOSIT_MAX_PENDING = 3;
+
+// A manual security-deposit claim: the reseller sends money to the shop's own number and reports the
+// transaction ID. Nothing is credited here; only an admin approval adds it to the deposit balance.
+async function createDepositRequest(resellerId, input = {}, { pool, methods } = {}) {
+  const ownerId = requirePositiveInt(resellerId, 'Reseller ID');
+  const rawAmount = String(input.amount || '').trim();
+  if (!/^\d{1,7}(\.\d{1,2})?$/.test(rawAmount)) throw new ValidationError('সঠিক টাকার পরিমাণ লিখুন।');
+  const amount = Math.round(Number(rawAmount) * 100);
+  if (amount < DEPOSIT_MIN_PAISA || amount > DEPOSIT_MAX_PAISA) throw new ValidationError('ডিপোজিট ৳১০০ থেকে ৳৫,০০,০০০ এর মধ্যে হতে হবে।');
+  const chosen = (methods || []).find((item) => item.code === String(input.method || ''));
+  if (!chosen) throw new ValidationError('চালু থাকা একটি পেমেন্ট মাধ্যম নির্বাচন করুন।');
+  const trxId = String(input.trx_id || '').trim().toUpperCase();
+  if (!/^[A-Z0-9]{6,40}$/.test(trxId)) throw new ValidationError('সঠিক Transaction ID লিখুন (৬-৪০টি ইংরেজি অক্ষর ও সংখ্যা)।');
+  let sender;
+  try { sender = normalizeBdPhone(input.sender_number); } catch (_error) { throw new ValidationError('যে নম্বর থেকে টাকা পাঠিয়েছেন সেটি সঠিকভাবে লিখুন।'); }
+  assertMysql();
+  const work = async (tx) => {
+    const reseller = await tx.queryOne('SELECT id,status FROM resellers WHERE id=? FOR UPDATE', [ownerId]);
+    if (!reseller || Number(reseller.status) !== 1) throw new NotFoundError('Reseller account not found.');
+    const pending = await tx.queryOne("SELECT COUNT(*) AS total FROM reseller_transactions WHERE reseller_id=? AND tx_type='deposit' AND status='pending'", [ownerId]);
+    if (Number(pending?.total || 0) >= DEPOSIT_MAX_PENDING) throw new ConflictError('আপনার ৩টি ডিপোজিট অনুমোদনের অপেক্ষায় আছে। সেগুলো যাচাই হওয়ার পর আবার চেষ্টা করুন।');
+    const used = await tx.queryOne("SELECT id FROM reseller_transactions WHERE tx_type='deposit' AND UPPER(trx_id)=? AND status<>'rejected' LIMIT 1", [trxId]);
+    const usedByOrder = used || await tx.queryOne("SELECT id FROM order_payments WHERE UPPER(provider_trx_id)=? AND status<>'rejected' LIMIT 1", [trxId]);
+    if (usedByOrder) throw new ConflictError('এই Transaction ID আগেই ব্যবহার করা হয়েছে।');
+    const made = await tx.execute("INSERT INTO reseller_transactions(reseller_id,tx_type,amount_paisa,method,trx_id,status) VALUES(?,'deposit',?,?,?,'pending')", [ownerId, amount, `${chosen.name} · ${sender}`.slice(0, 64), trxId]);
+    await tx.execute("INSERT INTO audit_logs(actor_type,actor_id,action,entity_type,entity_id,after_json) VALUES('reseller',?,'reseller.deposit.requested','reseller_transaction',?,?)", [ownerId, String(made.insertId), JSON.stringify({ amount_paisa: amount, method: chosen.code })]);
+    return { id: Number(made.insertId), amountPaisa: amount };
+  };
+  return withTransaction(work, { pool });
+}
+
 async function listTransactions(resellerId, type = '', { page: pageInput = 1, perPage: perPageInput = 20 } = {}, pool) {
   assertMysql();
   const ownerId = requirePositiveInt(resellerId, 'Reseller ID');
@@ -267,6 +301,7 @@ async function listPublicProducts(search = '', pool) {
 }
 
 module.exports = {
+  createDepositRequest,
   authenticate,
   register,
   getProfile,

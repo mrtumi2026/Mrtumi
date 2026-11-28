@@ -163,7 +163,7 @@ describe('Reseller Portal Consolidation Suite', () => {
       balance: 1500
     }), { filename: templatePath });
 
-    assert.ok(depositHtml.includes('অনলাইন সিকিউরিটি ডিপোজিট'), 'Must contain security deposit message');
+    assert.ok(depositHtml.includes('এখন ডিপোজিট নেওয়া যাচ্ছে না'), 'Must contain security deposit message');
   });
 
   test('src/routes/resellerPanel.js declares CSRF-guarded cancel route and active order creation', () => {

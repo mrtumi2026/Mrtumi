@@ -22,6 +22,6 @@ test('reseller mutations stay CSRF protected and MySQL withdrawals use the trans
  const fs=require('node:fs');const source=fs.readFileSync(require.resolve('../src/routes/resellerPanel'),'utf8');
  for(const route of ['/reseller/orders/create','/reseller/deposits/create','/reseller/withdrawals/create','/reseller/profile','/reseller/logout']) assert.match(source,new RegExp(`router\\.post\\(['"]${route.replaceAll('/','\\/')}['"],\\s*requireCsrf`));
  assert.match(source,/partnerWithdrawalRepository\.requestResellerWithdrawal/);
- assert.match(source,/if \(mysqlActive\(\)\) return res\.status\(409\)\.render\('reseller\/unsupported-operation'/);
+ assert.match(source,/resellerPortal\.createDepositRequest\(req\.session\.resellerUser\.id/);
  assert.match(source,/rotateResellerSession\(req, reseller/);assert.match(source,/rotateResellerSession\(req, null/);
 });

@@ -16,6 +16,21 @@
     <ul class="list-group list-group-flush mb-4"><% items.forEach(function(item) { %>
       <li class="list-group-item d-flex justify-content-between px-0"><span><%= item.product_name %> × <%= item.qty %><% if (item.size_label) { %> · <%= item.size_label %><% } %></span><span>৳<%= (Number(item.line_total_paisa) / 100).toLocaleString('en-IN',{minimumFractionDigits:2}) %></span></li>
     <% }) %></ul>
+    <% if (typeof newAccount !== 'undefined' && newAccount) { %>
+    <section class="border border-success rounded-3 p-3 mb-4" id="newAccountBox">
+      <h2 class="h6 fw-bold"><%= isEn ? 'Your account has been created' : 'আপনার জন্য একটি অ্যাকাউন্ট তৈরি হয়েছে' %></h2>
+      <p class="small text-muted mb-2"><%= isEn ? 'Set a password now to see your orders later. You will sign in with the mobile number used in this order.' : 'পরে অর্ডার দেখতে এখনই একটি পাসওয়ার্ড দিন। এই অর্ডারে দেওয়া মোবাইল নম্বর দিয়েই লগইন করবেন।' %></p>
+      <form method="post" action="/order-success/<%= encodeURIComponent(order.invoice_no) %>/account" class="row g-2">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <input type="hidden" name="privacy_policy_version" value="<%= policyVersion %>">
+        <div class="col-md-6"><input class="form-control" type="password" name="password" required minlength="10" maxlength="72" autocomplete="new-password" placeholder="<%= isEn ? 'Password (10+ characters)' : 'পাসওয়ার্ড (কমপক্ষে ১০ অক্ষর)' %>"></div>
+        <div class="col-md-6"><input class="form-control" type="password" name="password_confirmation" required minlength="10" maxlength="72" autocomplete="new-password" placeholder="<%= isEn ? 'Repeat password' : 'পাসওয়ার্ড আবার লিখুন' %>"></div>
+        <div class="col-12"><label class="small"><input type="checkbox" name="privacy_notice_acknowledged" value="yes" required> <%= isEn ? 'I accept the' : 'আমি সম্মতি দিচ্ছি:' %> <a href="/privacy-policy" target="_blank" rel="noopener"><%= isEn ? 'privacy notice' : 'গোপনীয়তা নীতি' %></a></label></div>
+        <div class="col-12"><button class="btn btn-success w-100" type="submit"><%= isEn ? 'Activate my account' : 'অ্যাকাউন্ট চালু করুন' %></button></div>
+        <div class="col-12 small text-muted"><%= isEn ? 'If you skip this, keep your invoice number. You can activate the account later from the registration page.' : 'এখন না করলে ইনভয়েস নম্বরটি রেখে দিন। পরে নিবন্ধন পেজ থেকে এই নম্বর দিয়ে অ্যাকাউন্ট চালু করতে পারবেন।' %></div>
+      </form>
+    </section>
+    <% } %>
     <a class="btn btn-success" href="/all-products"><%= isEn ? 'Continue shopping' : 'কেনাকাটা চালিয়ে যান' %></a>
   </section>
 </main>

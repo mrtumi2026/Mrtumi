@@ -212,6 +212,17 @@ async function createOrder(input,options={}){
     const advance=lifecycle.calculateAdvance(total,policy);
     if(advance>0)throw new ConflictError('An advance is required by the current policy, but no verified payment provider is configured; checkout is paused rather than marking an unconfirmed payment paid.');
     const invoice=`MT-${crypto.randomBytes(12).toString('hex').toUpperCase()}`;
+    // A guest's first order creates their account. It has no password yet, so nobody can sign in to it
+    // until the person who placed this order sets one. An existing account is never linked or changed
+    // here, because the typed phone number is not proof of ownership.
+    let accountCreated=false;
+    if(!customerId){
+      const made=await tx.execute("INSERT IGNORE INTO customers (name,phone,password_hash,address,phone_verified_at) VALUES (?,?,'',?,IF(?=1,UTC_TIMESTAMP(),NULL))",[name,phone,address,isOtpVerified?1:0]);
+      if(Number(made?.affectedRows)===1&&Number(made.insertId)>0){
+        customerId=Number(made.insertId);accountCreated=true;
+        await tx.execute("INSERT INTO audit_logs (actor_type,actor_id,action,entity_type,entity_id,before_json,after_json,ip_address,user_agent) VALUES ('system',NULL,'customer.account.auto_created','customer',?,NULL,?,?, '')",[String(customerId),JSON.stringify({source:'first_order',password_set:false}),String(ip||'').slice(0,64)]);
+      }
+    }
     const zoneLabel=[zone.division,zone.district,zone.upazila].filter(Boolean).join(' / ');
     const orderChannel=campaign?'campaign':'storefront';const trafficSource=campaign?`Campaign:${campaign.slug}`:attributionData.platformSource;const customerNote=note||(campaign?`Campaign: ${campaign.title}`:null);
     const codDue=isManualPayment?0:total;
@@ -297,7 +308,7 @@ async function createOrder(input,options={}){
       await tx.execute("UPDATE orders SET otp_status='verified' WHERE id=?",[order.insertId]);
       await tx.execute("UPDATE order_otps SET order_id=? WHERE phone=? AND order_id IS NULL AND verified_at IS NOT NULL",[order.insertId,phone]);
     }
-    return{id:Number(order.insertId),invoiceNo:invoice,replayed:false,totalPaisa:total,walletUsedPaisa:walletUsed,paidPaisa:0,codDuePaisa:codDue,paymentStatus};
+    return{id:Number(order.insertId),invoiceNo:invoice,replayed:false,newAccountId:accountCreated?customerId:null,totalPaisa:total,walletUsedPaisa:walletUsed,paidPaisa:0,codDuePaisa:codDue,paymentStatus};
   });
   if (result && !result.replayed) {
     try {

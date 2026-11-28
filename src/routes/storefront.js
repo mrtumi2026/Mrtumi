@@ -983,6 +983,7 @@ router.post('/order/quick-submit', publicFormLimiter, requireCsrf, asyncHandler(
       referralCode: req.body.referral_code || req.session?.referralCode || req.cookies?.mrtumi_ref || null,
       affiliateCode: req.body.affiliate_code || req.session?.affiliateCode || req.cookies?.mrtumi_aff || null,
     });
+    rememberOrderForSuccess(req,result);
     const redirect=`/order-success/${encodeURIComponent(result.invoiceNo)}`;
     return res.json({success:true,invoice_id:result.invoiceNo,redirect,message:req.locale==='en'?`Order #${result.invoiceNo} was submitted successfully.`:`অর্ডার #${result.invoiceNo} সফলভাবে গ্রহণ করা হয়েছে!`,replayed:Boolean(result.replayed)});
   }
@@ -1297,7 +1298,7 @@ router.post('/customer/checkout', requireCsrf, asyncHandler(async (req, res) => 
     }, { locale: req.locale, sessionCustomer: req.customerUser || null, ip: req.ip, userAgent: req.get('user-agent'), fbp: req.cookies?._fbp, fbc: req.cookies?._fbc, requestKey: expected, cart: sourceCart, incompleteOrderId, sessionSid: req.sessionID, otpVerified: isOtpSessionVerified, referralCode: req.body.referral_code || req.session.referralCode || req.cookies?.mrtumi_ref || null, affiliateCode: req.body.affiliate_code || req.session?.affiliateCode || req.cookies?.mrtumi_aff || null, analyticsConsent: consentGranted(req.session, env.analyticsAttributionEnabled), attribution: req.session.analyticsAttribution || null });
     delete req.session.orderOtpVerified; delete req.session.orderOtpPhone;
     if (!isReplay) { req.session.checkoutLastCart = JSON.parse(JSON.stringify(sourceCart)); req.session.checkoutLastRequestKey = expected; req.session.checkoutLastRecoveryId = incompleteOrderId; delete req.session.incompleteCheckoutId; req.session.cart = []; delete req.session.appliedCoupon; if (!(storefrontRepo.isMysqlMode() && req.customerUser?.id)) await persistCustomerCart(req); }
-    req.session.checkoutLastInvoice = String(result.invoiceNo);
+    rememberOrderForSuccess(req, result);
     return res.redirect(`/order-success/${encodeURIComponent(result.invoiceNo)}`);
   }
   const {
@@ -1469,12 +1470,56 @@ router.post('/customer/checkout', requireCsrf, asyncHandler(async (req, res) => 
   return res.redirect(`/order-success/${inv}`);
 }));
 
+// Remembers, in this browser session only, which order may be viewed and which new account it created.
+// Only that browser may set the new account's first password, and only for 30 minutes.
+const ACCOUNT_SETUP_MS = 30 * 60 * 1000;
+function rememberOrderForSuccess(req, result) {
+  req.session.checkoutLastInvoice = String(result.invoiceNo);
+  if (result.newAccountId && !req.customerUser?.id) {
+    req.session.accountSetup = { customerId: Number(result.newAccountId), invoiceNo: String(result.invoiceNo), expiresAt: Date.now() + ACCOUNT_SETUP_MS };
+  }
+}
+function pendingAccountSetup(req, invoiceNo) {
+  const setup = req.session.accountSetup;
+  if (!setup || req.customerUser?.id || setup.invoiceNo !== String(invoiceNo || '') || Number(setup.expiresAt) < Date.now()) return null;
+  return setup;
+}
+
+router.post('/order-success/:invoiceId/account', publicFormLimiter, requireCsrf, asyncHandler(async (req, res) => {
+  const setup = storefrontRepo.isMysqlMode() ? pendingAccountSetup(req, req.params.invoiceId) : null;
+  if (!setup) return res.redirect('/customer/register');
+  const back = `/order-success/${encodeURIComponent(setup.invoiceNo)}`;
+  const english = req.locale === 'en';
+  if (req.body.privacy_notice_acknowledged !== 'yes' || !req.body.privacy_policy_version) {
+    req.flash('error', english ? 'Accept the privacy notice to activate your account.' : 'অ্যাকাউন্ট চালু করতে গোপনীয়তা নীতিতে সম্মতি দিন।');
+    return res.redirect(back);
+  }
+  let account;
+  try {
+    account = await customerRepo.setGuestAccountPassword({ customerId: setup.customerId, invoiceNo: setup.invoiceNo, password: req.body.password, confirmation: req.body.password_confirmation, policyVersion: req.body.privacy_policy_version, evidence: { ip: req.ip || '', userAgent: req.get('user-agent') || '' } });
+  } catch (error) {
+    if (!error.statusCode || error.statusCode >= 500) throw error;
+    req.flash('error', !english && /10–72/.test(error.message) ? 'পাসওয়ার্ড ১০ থেকে ৭২ অক্ষরের হতে হবে।' : error.message);
+    return res.redirect(back);
+  }
+  await new Promise((resolve, reject) => req.session.regenerate((err) => (err ? reject(err) : resolve())));
+  req.session.customerUser = account;
+  req.session.analyticsConsent = false;
+  req.session.analyticsConsentChoice = '';
+  req.session.cart = [];
+  req.flash('success', english ? 'Your account is ready.' : 'আপনার অ্যাকাউন্ট চালু হয়েছে। পরের বার মোবাইল নম্বর ও এই পাসওয়ার্ড দিয়ে লগইন করবেন।');
+  return res.redirect('/customer/account');
+}));
+
 router.get('/order-success/:invoiceId', asyncHandler(async (req, res) => {
   if (String(req.session.checkoutLastInvoice || '') !== String(req.params.invoiceId || '')) return res.redirect('/');
   if (storefrontRepo.isMysqlMode()) {
     const result = await checkoutRepo.getOrderForSuccess(req.params.invoiceId);
     if (!result) return res.redirect('/');
-    return res.render('store/order-success-mysql', { order: result.order, items: result.items, isEn: req.locale === 'en' });
+    const setup = pendingAccountSetup(req, req.params.invoiceId);
+    const account = setup ? await customerRepo.canSetGuestAccountPassword(setup.customerId, setup.invoiceNo) : null;
+    const policy = account ? await customerPrivacyRepo.getCurrentPolicy(req.locale) : null;
+    return res.render('store/order-success-mysql', { order: result.order, items: result.items, isEn: req.locale === 'en', newAccount: account, policyVersion: policy?.version || '', csrfToken: req.csrfToken() });
   }
   const order = db.get(
     `SELECT o.*, COALESCE(os.name, o.status) AS status_label
@@ -1589,7 +1634,7 @@ router.post('/campaign/:slug/order', publicFormLimiter, requireCsrf, asyncHandle
     const isCampOtpVerified = Boolean(req.session.orderOtpVerified && req.session.orderOtpPhone === cleanCampPhone);
     const result=await checkoutRepo.createCampaignOrder({customer_name:req.body.customer_name,phone:req.body.phone,address:req.body.address,delivery_location_id:req.body.delivery_location_id,payment_method:'cod'}, {campaignSlug:req.params.slug,qty:req.body.qty,requestKey:`${req.sessionID}:${supplied}`,locale:req.locale,ip:req.ip||'',sessionSid:req.sessionID,userAgent:req.get('user-agent'),fbp:req.cookies?._fbp,fbc:req.cookies?._fbc,otpVerified:isCampOtpVerified});
     delete req.session.orderOtpVerified; delete req.session.orderOtpPhone;
-    req.session.checkoutLastInvoice=String(result.invoiceNo);
+    rememberOrderForSuccess(req,result);
     delete req.session.campaignCheckoutKey;delete req.session.campaignCheckoutSlug;
     return res.redirect(`/order-success/${encodeURIComponent(result.invoiceNo)}`);
   }

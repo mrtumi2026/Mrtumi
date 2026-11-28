@@ -14,6 +14,7 @@
   </div>
   <input class="form-control" name="password" type="password" required minlength="10" maxlength="72" autocomplete="<%= title.toLowerCase().includes('login') || title.includes('লগইন') ? 'current-password' : 'new-password' %>">
 </div>
+<% if (!title.toLowerCase().includes('login') && !title.includes('লগইন')) { %><label><%= isEn ? 'Old order number (optional)' : 'আগের অর্ডার নম্বর (ঐচ্ছিক)' %><input class="form-control" name="orderInvoice" maxlength="40" autocomplete="off" placeholder="MT-XXXXXXXX"><span class="small text-muted"><%= isEn ? 'If you ordered before without a password, enter an invoice number to keep that order history.' : 'আগে পাসওয়ার্ড ছাড়া অর্ডার করে থাকলে, সেই অর্ডার history রাখতে ইনভয়েস নম্বর দিন।' %></span></label><% } %>
 <button class="btn btn-success" type="submit"><%= title %></button></form>
 <p class="mt-3 d-flex justify-content-between flex-wrap gap-2">
   <a href="<%= title.toLowerCase().includes('login') || title.includes('লগইন') ? '/customer/register' : '/customer/login' %>"><%= isEn ? 'Switch between login and registration' : 'লগইন / নিবন্ধন' %></a>

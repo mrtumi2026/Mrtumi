@@ -38,7 +38,7 @@ test('responsive CSS contracts contain admin tables, controls and layouts at nar
  assert.match(design,/\.table-responsive[\s\S]*?overflow-x:\s*auto/);assert.match(design,/max-width:\s*100%/);
  assert.match(d7css,/@media\s*\(max-width:767\.98px\)/);assert.match(d7css,/min-width:0/);assert.match(storefront,/@media\s*\(max-width: 767px\)/);
 });
-test('refund and settlement surfaces keep execution and unsupported reseller entitlements disabled',()=>{
+test('refund and settlement surfaces keep execution disabled and reseller deposits stay admin-verified',()=>{
  const customer=fs.readFileSync(require.resolve('../src/routes/customerAccount'),'utf8');
  const phase08Source=fs.readFileSync(require.resolve('../src/repositories/phase08Repository'),'utf8');
   assert.match(customer,/COD refunds are (?:disabled|unavailable) until a verified/);
@@ -46,5 +46,7 @@ test('refund and settlement surfaces keep execution and unsupported reseller ent
  assert.match(phase08Source,/provider processing is not available here/);
  const reseller=fs.readFileSync(require.resolve('../src/routes/resellerPanel'),'utf8');
  assert.match(reseller,/resellerOrderRepository\.create/);
- assert.match(reseller,/wallet reconciliation, review/);
+ assert.match(reseller,/resellerPortal\.createDepositRequest/);
+ const deposit=fs.readFileSync(require.resolve('../src/repositories/resellerPortalRepository'),'utf8').split('async function createDepositRequest')[1].split('async function listTransactions')[0];
+ assert.match(deposit,/'pending'/);assert.doesNotMatch(deposit,/deposit_paisa\s*=|UPDATE resellers|partner_wallets/);
 });

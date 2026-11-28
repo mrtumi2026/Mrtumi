@@ -22,7 +22,7 @@ function mysqlClient() {
   if (env.db.client !== 'mysql') throw new Error('Customer account functions require the MySQL production adapter.');
   return createQueryClient(getPool());
 }
-async function registerCustomer({ name, phone, password, email = '', policyVersion = '', evidence = {} }) {
+async function registerCustomer({ name, phone, password, email = '', policyVersion = '', orderInvoice = '', evidence = {} }) {
   const cleanName = String(name || '').trim();
   if (cleanName.length < 2 || cleanName.length > 191) throw new ValidationError('Name must contain 2–191 characters.');
   const cleanPhone = normalizeBdPhone(phone);
@@ -31,11 +31,20 @@ async function registerCustomer({ name, phone, password, email = '', policyVersi
   const hash = await bcrypt.hash(validatePassword(password), 12);
   try {
     return await withTransaction(async (tx) => {
-      const result = await tx.execute(
-        'INSERT INTO `customers` (`name`, `phone`, `email`, `password_hash`) VALUES (?, ?, ?, ?)',
-        [cleanName, cleanPhone, cleanEmail || null, hash]
-      );
-      const id = result.insertId;
+      // An account without a password was created automatically (first order or counter sale).
+      const unclaimed = await tx.queryOne("SELECT id,password_hash,status,is_blocked FROM customers WHERE phone=? FOR UPDATE", [cleanPhone]);
+      let id;
+      if (unclaimed && unclaimed.password_hash === '' && Number(unclaimed.status) === 1 && Number(unclaimed.is_blocked) !== 1) {
+        id = Number(unclaimed.id);
+        await claimUnusedAccountTx(tx, id, String(orderInvoice || '').trim().toUpperCase(), evidence);
+        await tx.execute('UPDATE customers SET name=?, email=?, password_hash=? WHERE id=?', [cleanName, cleanEmail || null, hash, id]);
+      } else {
+        const result = await tx.execute(
+          'INSERT INTO `customers` (`name`, `phone`, `email`, `password_hash`) VALUES (?, ?, ?, ?)',
+          [cleanName, cleanPhone, cleanEmail || null, hash]
+        );
+        id = result.insertId;
+      }
       if (policyVersion) {
         const policy = await tx.queryOne("SELECT version FROM privacy_policy_versions WHERE version=? AND status='published' FOR UPDATE", [String(policyVersion)]);
         if (!policy) throw new ConflictError('The privacy notice changed. Reload the registration form and review the current version.');
@@ -49,6 +58,49 @@ async function registerCustomer({ name, phone, password, email = '', policyVersi
     if (err.code === 'DB_DUPLICATE_ENTRY') throw new ConflictError('An account already exists for this phone number.');
     throw err;
   }
+}
+// Old orders stay on the account only when the person proves they hold one of its order numbers.
+// Otherwise they are detached (kept as guest orders), so knowing a phone number never reveals history.
+async function claimUnusedAccountTx(tx, customerId, orderInvoice, evidence = {}) {
+  if (orderInvoice) {
+    const owned = await tx.queryOne('SELECT id FROM orders WHERE customer_id=? AND invoice_no=?', [customerId, orderInvoice]);
+    if (!owned) throw new ValidationError('এই অর্ডার নম্বরটি এই মোবাইল নম্বরের সাথে মেলেনি। নম্বরটি আবার দেখুন, অথবা ঘরটি খালি রাখুন।');
+    return;
+  }
+  const wallet = await tx.queryOne('SELECT balance_paisa,points_balance FROM customer_wallets WHERE customer_id=? FOR UPDATE', [customerId]);
+  if (wallet && (Number(wallet.balance_paisa) > 0 || Number(wallet.points_balance) > 0)) {
+    throw new ValidationError('এই মোবাইল নম্বরে ওয়ালেট ব্যালেন্স আছে। অ্যাকাউন্ট চালু করতে আগের যেকোনো একটি অর্ডার নম্বর দিন।');
+  }
+  const detached = await tx.execute('UPDATE orders SET customer_id=NULL WHERE customer_id=?', [customerId]);
+  await tx.execute("UPDATE customers SET total_orders=0, address=NULL, district='' WHERE id=?", [customerId]);
+  await tx.execute("INSERT INTO audit_logs(actor_type,actor_id,action,entity_type,entity_id,after_json,ip_address,user_agent) VALUES('customer',?,'customer.account.claimed_without_order','customer',?,?,?,?)", [customerId, String(customerId), JSON.stringify({ detached_orders: Number(detached?.affectedRows || 0) }), String(evidence.ip || '').slice(0,64), String(evidence.userAgent || '').slice(0,255)]);
+}
+// True while the account made by this exact order still has no password and holds nothing else.
+async function canSetGuestAccountPassword(customerId, invoiceNo, db = null) {
+  const q = db || mysqlClient();
+  const row = await q.queryOne(
+    "SELECT c.id,c.name,c.phone FROM customers c WHERE c.id=? AND c.password_hash='' AND c.status=1 AND c.is_blocked=0 AND (SELECT COUNT(*) FROM orders o WHERE o.customer_id=c.id)=1 AND EXISTS(SELECT 1 FROM orders o2 WHERE o2.customer_id=c.id AND o2.invoice_no=?)",
+    [requirePositiveInt(customerId, 'customer ID'), String(invoiceNo || '')]
+  );
+  return row ? { id: Number(row.id), name: row.name, phone: row.phone } : null;
+}
+async function setGuestAccountPassword({ customerId, invoiceNo, password, confirmation, policyVersion = '', evidence = {} }) {
+  const clean = validatePassword(password);
+  if (clean !== String(confirmation || '')) throw new ValidationError('দুইবার লেখা পাসওয়ার্ড মেলেনি।');
+  const hash = await bcrypt.hash(clean, 12);
+  return withTransaction(async (tx) => {
+    await tx.queryOne('SELECT id FROM customers WHERE id=? FOR UPDATE', [requirePositiveInt(customerId, 'customer ID')]);
+    const account = await canSetGuestAccountPassword(customerId, invoiceNo, tx);
+    if (!account) throw new ConflictError('এই অ্যাকাউন্টে এখান থেকে আর পাসওয়ার্ড সেট করা যাবে না। নিবন্ধন পেজ ব্যবহার করুন।');
+    await tx.execute("UPDATE customers SET password_hash=? WHERE id=? AND password_hash=''", [hash, account.id]);
+    if (policyVersion) {
+      const policy = await tx.queryOne("SELECT version FROM privacy_policy_versions WHERE version=? AND status='published' FOR UPDATE", [String(policyVersion)]);
+      if (!policy) throw new ConflictError('The privacy notice changed. Reload the page and review the current version.');
+      await tx.execute('INSERT INTO customer_policy_acceptances(customer_id,policy_version,source,evidence_json) VALUES(?,?,?,?)', [account.id, policy.version, 'registration', JSON.stringify({ accepted: true, ip: String(evidence.ip || '').slice(0,64), userAgent: String(evidence.userAgent || '').slice(0,255) })]);
+    }
+    await tx.execute("INSERT INTO audit_logs(actor_type,actor_id,action,entity_type,entity_id,after_json,ip_address,user_agent) VALUES('customer',?,'customer.account.password_set_after_order','customer',?,?,?,?)", [account.id, String(account.id), JSON.stringify({ password_set: true }), String(evidence.ip || '').slice(0,64), String(evidence.userAgent || '').slice(0,255)]);
+    return account;
+  });
 }
 async function issueCustomerRecovery(identifier, channel, deliver, { pool = null } = {}) {
   if (!['email','phone'].includes(channel) || typeof deliver !== 'function') throw new ValidationError('A verified recovery channel and configured delivery provider are required.');
@@ -418,4 +470,6 @@ async function clearCart(customerId) {
     await tx.execute('DELETE FROM `customer_cart_items` WHERE `customer_id`=?', [customerId]);
   });
 }
-module.exports = { normalizeBdPhone, validatePassword, registerCustomer, issueCustomerRecovery, consumeCustomerRecoveryToken, authenticateCustomer, getProfile, updateProfile, changePassword, listAddresses, listOrders, getOrderDetails, getOrderSelfServiceDetails, getReturnEvidence, saveAddress, updateAddress, setDefaultAddress, getAddressForCheckout, deleteAddress, mergeCart, listCart, addCartLine, setCartLine, removeCartLine, reconcileCart, replaceCart, clearCart };
+module.exports = {
+  canSetGuestAccountPassword,
+  setGuestAccountPassword, normalizeBdPhone, validatePassword, registerCustomer, issueCustomerRecovery, consumeCustomerRecoveryToken, authenticateCustomer, getProfile, updateProfile, changePassword, listAddresses, listOrders, getOrderDetails, getOrderSelfServiceDetails, getReturnEvidence, saveAddress, updateAddress, setDefaultAddress, getAddressForCheckout, deleteAddress, mergeCart, listCart, addCartLine, setCartLine, removeCartLine, reconcileCart, replaceCart, clearCart };
