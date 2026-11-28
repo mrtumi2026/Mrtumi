@@ -176,6 +176,8 @@ async function main() {
     await checkoutForm.locator('select[name="delivery_location_id"]').selectOption({ index: 1 });
     await checkoutForm.locator('input[name="payment_method"][value="cod"]').check();
     await checkoutForm.locator('input[name="confirm_order"]').check();
+    // Every order is confirmed with the account password, also when signed in.
+    await checkoutForm.locator('input[name="account_password"]').fill(demoPassword);
     const responsePromise = page.waitForNavigation({ waitUntil: 'domcontentloaded' });
     await checkoutForm.locator('button[type="submit"]').click();
     await responsePromise;
