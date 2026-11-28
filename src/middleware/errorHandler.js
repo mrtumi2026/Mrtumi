@@ -3,6 +3,7 @@
 const logger = require('../utils/logger');
 const { AppError } = require('../utils/errors');
 const { attachRequestId, sendError, wantsJson } = require('../utils/apiResponse');
+const { localizeError } = require('../utils/bnErrors');
 
 const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -72,14 +73,15 @@ function createErrorHandler({ persistErrorLog } = {}) {
       return sendError(res, {
         statusCode,
         code,
-        message: safeMessage,
+        // API clients get the stable English text; the shop's own browser scripts get the shopper's language.
+        message: String(req.originalUrl || '').startsWith('/api/') ? safeMessage : localizeError(safeMessage, req.locale),
         details: isOperational ? logger.redactValue(err.details, 0, true) : null,
         requestId: req.requestId,
       });
     }
 
     if (statusCode >= 500) return res.status(statusCode).send('Internal Server Error');
-    return res.status(statusCode).send(clientErrorPage(req, statusCode, safeMessage));
+    return res.status(statusCode).send(clientErrorPage(req, statusCode, localizeError(safeMessage, req.locale)));
   };
 }
 

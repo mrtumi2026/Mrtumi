@@ -1,4 +1,5 @@
 const express = require('express');
+const { localizeError } = require('../utils/bnErrors');
 const path = require('path');
 const bcrypt = require('bcryptjs');
 const db = require('../db/database');
@@ -118,7 +119,7 @@ router.post('/vendor/register', requireCsrf, async (req, res, next) => {
     try {
       const vendor=await vendorPortal.register({shop_name,owner_name,phone,email,address,password});
       return establishVendorSession(req,vendor,error=>{ if(error)return next(error); req.flash('success','ভেন্ডর অ্যাকাউন্ট তৈরি হয়েছে। পণ্য যোগ করা যাবে; অ্যাডমিন পর্যালোচনা শেষে পণ্য প্রকাশিত হবে।'); return res.redirect('/vendor/products'); });
-    } catch(error) { if(error.code==='DB_DUPLICATE_ENTRY'||error.code==='VALIDATION_ERROR') return res.status(400).render('vendor/auth',{mode:'register',error:error.message}); return next(error); }
+    } catch(error) { if(error.code==='DB_DUPLICATE_ENTRY'||error.code==='VALIDATION_ERROR') return res.status(400).render('vendor/auth',{mode:'register',error:localizeError(error.message,req.locale)}); return next(error); }
   }
   if (!shop_name || !owner_name || !phone || !password) {
     return res.render('vendor/auth', {

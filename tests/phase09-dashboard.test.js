@@ -134,14 +134,16 @@ describe('Phase 09 dashboard repository contract', () => {
     assert.match(operations,/decideManualPayment\(req\.params\.id,'reject'/);
   });
 
-  test('MySQL coupon administration delegates to a transactional repository and blocks destructive deletion',()=>{
+  test('MySQL coupon administration delegates to a transactional repository and never deletes a used coupon',()=>{
     const coupons=require('../src/repositories/adminCouponRepository');
     assert.equal(typeof coupons.listCoupons,'function');assert.equal(typeof coupons.createCoupon,'function');
     const source=fs.readFileSync(path.join(__dirname,'../src/routes/adminCatalog.js'),'utf8');
     assert.match(source,/couponRepo\.listCoupons\(\)/);
     assert.match(source,/couponRepo\.createCoupon\(req\.body,\s*actor\(req\)\)/);
-    assert.match(source,/deletePrefix: mysqlMode\(\) \? null : '\/admin\/coupon\/delete'/);
-    assert.match(source,/Coupon deletion is disabled to preserve coupon and order history/);
+    assert.match(source,/couponRepo\.deleteUnusedCoupon\(req\.params\.id,\s*actor\(req\)\)/);
+    const couponSource=fs.readFileSync(path.join(__dirname,'../src/repositories/adminCouponRepository.js'),'utf8');
+    assert.match(couponSource,/Number\(row\.used_count\) > 0 \|\| used\) throw new ConflictError/);
+    assert.equal(policyForAdminRoute('POST','/admin/coupon/delete/1').key,'catalog.manage');
     assert.equal(policyForAdminRoute('GET','/admin/coupon/manage').key,'catalog.view');
     assert.equal(policyForAdminRoute('POST','/admin/coupon/create').key,'catalog.manage');
     const checkout=fs.readFileSync(path.join(__dirname,'../src/repositories/checkoutRepository.js'),'utf8');

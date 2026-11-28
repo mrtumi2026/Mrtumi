@@ -46,7 +46,7 @@ test('Phase 07 customer registration renders validation failures back into the l
   assert.equal(response.status, 400);
   const errorPage = await response.text();
   assert.match(errorPage, /class="alert alert-danger" role="alert"/);
-  assert.match(errorPage, /Enter a valid Bangladesh mobile number\./);
+  assert.match(errorPage, /সঠিক ১১ সংখ্যার মোবাইল নম্বর দিন।/, 'the default Bangla storefront shows the message in Bangla');
 });
 
 test('Phase 07 customer mutation routes reject requests without CSRF token before persistence', async () => {

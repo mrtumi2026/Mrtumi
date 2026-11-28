@@ -12,6 +12,7 @@ const customerRecoveryService = require('../services/customerRecoveryService');
 const { env } = require('../config/env');
 const { ValidationError, ConflictError } = require('../utils/errors');
 const { formatBdt } = require('../utils/money');
+const { localizeError } = require('../utils/bnErrors');
 const d7 = require('../repositories/d7Repository');
 const upload = require('../middleware/upload');
 const customerReturnEvidence = require('../middleware/customerReturnEvidence');
@@ -22,7 +23,7 @@ const router = express.Router();
 const customerLoginLimiters = createLoginRateLimiters({ keyPrefix: 'customer-login', identifierFields: ['phone'], windowMs: 15 * 60 * 1000, maxPerIp: 2000, maxPerIpAccount: 10 });
 const registerLimiter = createRateLimiter({ keyPrefix: 'customer-register', windowMs: 60 * 60 * 1000, max: 5 });
 const isEn = (req) => req.locale === 'en';
-function formPage(req, res, title, error = '', extras = {}) { return res.status(error ? 400 : 200).render('customer/account-form', { title, error, isEn: isEn(req), customer: req.session.customerUser || null, ...extras }); }
+function formPage(req, res, title, error = '', extras = {}) { return res.status(error ? 400 : 200).render('customer/account-form', { title, error: error ? localizeError(error, req.locale) : '', isEn: isEn(req), customer: req.session.customerUser || null, ...extras }); }
 function statusLabel(value, english) {
   const labels = {
     pending: ['অপেক্ষমাণ', 'Pending'], confirmed: ['নিশ্চিত', 'Confirmed'], processing: ['প্রক্রিয়াধীন', 'Processing'],

@@ -1,6 +1,7 @@
 'use strict';
 
 const { getAllSettings } = require('../repositories/settingsRepository');
+const { localizeError } = require('../utils/bnErrors');
 const { env } = require('../config/env');
 const {
   findActiveAdminById,
@@ -106,7 +107,7 @@ async function attachGlobals(req, res, next) {
       if (typeof message === 'undefined') {
         return (res.locals.flash && res.locals.flash.type === type) ? [res.locals.flash.message] : [];
       }
-      req.session.flash = { type, message };
+      req.session.flash = { type, message: type === 'error' ? localizeError(message, req.locale) : message };
     };
 
     // Cart state for storefront

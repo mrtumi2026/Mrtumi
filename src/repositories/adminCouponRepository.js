@@ -56,7 +56,7 @@ function normalizeCoupon(input = {}) {
 async function listCoupons({ pool = null } = {}) {
   return client(pool).queryAll(`SELECT id,code,
       CASE WHEN discount_type='fixed' THEN 'flat' ELSE discount_type END AS type,
-      CASE WHEN discount_type='fixed' THEN discount_value/100 ELSE discount_value END AS value,
+      CASE WHEN discount_type='fixed' THEN TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM CAST(discount_value/100 AS CHAR))) ELSE CAST(discount_value AS CHAR) END AS value,
       CAST(min_purchase_paisa/100 AS DECIMAL(20,2)) AS min_purchase,
       DATE_FORMAT(expires_at,'%Y-%m-%d') AS expiry_date,
       used_count,status
@@ -86,4 +86,52 @@ async function createCoupon(input = {}, actor = {}, { pool = null } = {}) {
   }
 }
 
-module.exports = { listCoupons, createCoupon, normalizeCoupon };
+function couponId(value) {
+  const id = Number(value);
+  if (!Number.isSafeInteger(id) || id < 1) throw new ValidationError('কুপন সঠিক নয়।');
+  return id;
+}
+
+async function changeCoupon(id, actor, action, work, pool) {
+  return withTransaction(async tx => {
+    const row = await tx.queryOne('SELECT id,code,discount_type,discount_value,min_purchase_paisa,expires_at,used_count,status FROM coupons WHERE id=? FOR UPDATE', [couponId(id)]);
+    if (!row) throw new ConflictError('কুপনটি পাওয়া যায়নি।');
+    const after = await work(tx, row);
+    await recordAuditLog({
+      actorType: 'admin', actorId: actor.id || null, action, entityType: 'coupon', entityId: row.id,
+      beforeState: { code: row.code, discountType: row.discount_type, discountValue: Number(row.discount_value), status: Number(row.status) },
+      afterState: after, ipAddress: actor.ip || '', userAgent: actor.userAgent || '',
+    }, tx);
+    return after;
+  }, { pool: pool || getPool() });
+}
+
+// Past orders keep their own discount amount and coupon code, so editing never rewrites history.
+// The code itself is fixed because orders refer to it.
+async function updateCoupon(id, input = {}, actor = {}, { pool = null } = {}) {
+  return changeCoupon(id, actor, 'coupon.update', async (tx, row) => {
+    const coupon = normalizeCoupon({ ...input, code: row.code });
+    await tx.execute('UPDATE coupons SET discount_type=?,discount_value=?,min_purchase_paisa=?,expires_at=? WHERE id=?',
+      [coupon.discountType, coupon.discountValue, coupon.minPurchasePaisa, coupon.expiresAt, row.id]);
+    return { discountType: coupon.discountType, discountValue: coupon.discountValue, minPurchasePaisa: coupon.minPurchasePaisa, expiresAt: coupon.expiresAt };
+  }, pool);
+}
+
+async function toggleCoupon(id, actor = {}, { pool = null } = {}) {
+  return changeCoupon(id, actor, 'coupon.status', async (tx, row) => {
+    const status = Number(row.status) === 1 ? 0 : 1;
+    await tx.execute('UPDATE coupons SET status=? WHERE id=?', [status, row.id]);
+    return { status };
+  }, pool);
+}
+
+async function deleteUnusedCoupon(id, actor = {}, { pool = null } = {}) {
+  return changeCoupon(id, actor, 'coupon.delete', async (tx, row) => {
+    const used = await tx.queryOne('SELECT id FROM orders WHERE coupon_code=? LIMIT 1', [row.code]);
+    if (Number(row.used_count) > 0 || used) throw new ConflictError('এই কুপন অর্ডারে ব্যবহার হয়েছে, তাই মুছে ফেলা যাবে না। "Deactivate" করে বন্ধ রাখুন।');
+    await tx.execute('DELETE FROM coupons WHERE id=?', [row.id]);
+    return { deleted: true };
+  }, pool);
+}
+
+module.exports = { listCoupons, createCoupon, normalizeCoupon, updateCoupon, toggleCoupon, deleteUnusedCoupon };

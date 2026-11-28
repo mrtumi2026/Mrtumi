@@ -776,7 +776,8 @@ async function renderCoupons(res, openModal = false) {
     pageTitle: 'Discount Coupons',
     subtitle: 'চেকআউট ডিসকাউন্ট কুপন কোড তৈরি ও পরিচালনা করুন',
     createAction: '/admin/coupon/create',
-    deletePrefix: mysqlMode() ? null : '/admin/coupon/delete',
+    deletePrefix: '/admin/coupon/delete',
+    ...(mysqlMode() ? { updatePrefix: '/admin/coupon/update', customActionPrefix: '/admin/coupon/toggle', customActionToggleStatus: true } : {}),
     mysqlMode: mysqlMode(),
     autoOpenModal: openModal,
     columns: [
@@ -830,12 +831,32 @@ router.post('/admin/coupon/create', asyncHandler(async (req, res) => {
   res.redirect('/admin/coupon/manage');
 }));
 
-router.post('/admin/coupon/delete/:id', (req, res, next) => {
-  if (mysqlMode()) return next(new ConflictError('Coupon deletion is disabled to preserve coupon and order history.'));
+async function couponChange(req, res, success, work) {
+  try {
+    await work();
+    req.adminDomainAudit = true;
+    req.flash('success', success);
+  } catch (error) {
+    if (!error.statusCode || error.statusCode >= 500) throw error;
+    req.flash('error', error.message);
+  }
+  res.redirect('/admin/coupon/manage');
+}
+router.post('/admin/coupon/update/:id', asyncHandler(async (req, res, next) => {
+  if (!mysqlMode()) return next();
+  await couponChange(req, res, 'কুপন আপডেট হয়েছে।', () => couponRepo.updateCoupon(req.params.id, req.body, actor(req)));
+}));
+router.post('/admin/coupon/toggle/:id', asyncHandler(async (req, res, next) => {
+  if (!mysqlMode()) return next();
+  await couponChange(req, res, 'কুপনের অবস্থা বদলানো হয়েছে।', () => couponRepo.toggleCoupon(req.params.id, actor(req)));
+}));
+
+router.post('/admin/coupon/delete/:id', asyncHandler(async (req, res) => {
+  if (mysqlMode()) return couponChange(req, res, 'কুপন ডিলিট হয়েছে।', () => couponRepo.deleteUnusedCoupon(req.params.id, actor(req)));
   db.run('DELETE FROM coupons WHERE id = ?', req.params.id);
   req.flash('success', 'কুপন ডিলিট হয়েছে।');
-  res.redirect('/admin/coupon/manage');
-});
+  return res.redirect('/admin/coupon/manage');
+}));
 
 // ─── Reviews ───
 router.get('/admin/reviews', asyncHandler((_req, res) => renderReviews(res, 'all')));

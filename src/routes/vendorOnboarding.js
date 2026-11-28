@@ -1,6 +1,7 @@
 'use strict';
 
 const express=require('express');
+const { localizeError } = require('../utils/bnErrors');
 const {requireCsrf}=require('../middleware/csrf');
 const {requireVendor,requireAdmin}=require('../middleware/auth');
 const {createRateLimiter}=require('../middleware/rateLimit');
@@ -55,7 +56,7 @@ router.post('/vendor/register',vendorRegistrationLimiter,parseApplicationUpload,
     saved=await persistDocumentSet(staged);
     const vendor=await onboarding.register(req.body,saved.result);
     return vendorSession(req,vendor,error=>{if(error)return next(error);req.flash('success','আবেদন জমা হয়েছে। OTP যাচাই সম্পন্ন না হওয়া পর্যন্ত অ্যাকাউন্ট সীমিত থাকবে।');return res.redirect('/vendor/verify-phone');});
-  }catch(error){documents.removeStaged(req.files);await documents.removePrivateDocuments(saved.created);if(error instanceof ConflictError||error instanceof ValidationError)return res.status(400).render('vendor/onboarding-register',{application:null,error:error.message,geoData:geo.getGeoData()});return next(error);}
+  }catch(error){documents.removeStaged(req.files);await documents.removePrivateDocuments(saved.created);if(error instanceof ConflictError||error instanceof ValidationError)return res.status(400).render('vendor/onboarding-register',{application:null,error:localizeError(error.message,req.locale),geoData:geo.getGeoData()});return next(error);}
 }));
 
 router.get('/vendor/onboarding/resubmit',requireVendor,asyncHandler(async(req,res,next)=>{
@@ -72,7 +73,7 @@ router.post('/vendor/onboarding/resubmit',requireVendor,vendorRegistrationLimite
     await onboarding.resubmitApplication(req.session.vendorUser.id,req.body,saved.result,{type:'vendor',id:req.session.vendorUser.id,ip:req.ip,userAgent:req.get('user-agent')});
     const replaced=Object.keys(previous.documents).filter(key=>saved.result[key]!==previous.documents[key]).map(key=>previous.documents[key]);await documents.removePrivateDocuments(replaced);
     req.flash('success','Updated application sent for review.');return res.redirect('/vendor/onboarding');
-  }catch(error){documents.removeStaged(req.files);await documents.removePrivateDocuments(saved.created);if(error instanceof ConflictError||error instanceof ValidationError)return res.status(400).render('vendor/onboarding-register',{application:previous,error:error.message,resubmission:true,geoData:geo.getGeoData()});return next(error);}
+  }catch(error){documents.removeStaged(req.files);await documents.removePrivateDocuments(saved.created);if(error instanceof ConflictError||error instanceof ValidationError)return res.status(400).render('vendor/onboarding-register',{application:previous,error:localizeError(error.message,req.locale),resubmission:true,geoData:geo.getGeoData()});return next(error);}
 }));
 
 router.get('/vendor/verify-phone',requireVendor,asyncHandler(async(req,res,next)=>{
