@@ -261,6 +261,8 @@ describe('Phase 04 — Branding, Design System, Accessibility & Bilingual UI (`b
     assert.match(homeBn.text, /মি\. তুমি গ্রোসারি অ্যান্ড গিফট/);
     assert.match(homeBn.text, /কেনাকাটা শুরু করুন/);
     assert.match(homeBn.text, /data-brand-asset-status="official"/);
+    // Asset URLs carry a content fingerprint so updates are not hidden by browser caches.
+    assert.match(homeBn.text, /href="\/frontEnd\/css\/storefront\.css\?v=[0-9a-f]{10}"/);
     assert.doesNotMatch(homeBn.text, /ফল বাজার/);
 
     // Switch to English (`en`) via `/locale/en` (sessionManager preserves `_sid` query in non-prod)

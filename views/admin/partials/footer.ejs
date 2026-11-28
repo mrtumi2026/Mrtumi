@@ -148,8 +148,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="https://cdn.jsdelivr.net/npm/apexcharts@3.44.0"></script>
-    <script src="/backEnd/js/admin-core.js"></script>
-    <script src="/shared/js/mrtumi-ui.js"></script>
+    <script src="/backEnd/js/admin-core.js?v=<%= locals.assetV || '' %>"></script>
+    <script src="/shared/js/mrtumi-ui.js?v=<%= locals.assetV || '' %>"></script>
 
     <% if (flash && flash.message) { %>
     <script>

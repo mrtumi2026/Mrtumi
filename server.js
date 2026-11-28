@@ -15,6 +15,7 @@ const { attachGlobals } = require('./src/middleware/auth');
 const { legacyAdminRbac, legacyAdminCsrf } = require('./src/middleware/legacyAdminRbac');
 const { legacyAdminAudit } = require('./src/middleware/legacyAdminAudit');
 const { recordErrorLog } = require('./src/repositories/auditLogRepository');
+const { computeAssetVersion } = require('./src/utils/assetVersion');
 
 const isPassenger = typeof PhusionPassenger !== 'undefined' || Boolean(process.env.PASSENGER_APP_ENV) || Boolean(process.env.PHUSION_PASSENGER);
 const isDirectStartup = require.main === module || isPassenger;
@@ -116,6 +117,7 @@ app.use('/uploads/custom', async (req, res, next) => {
     return res.sendStatus(503);
   }
 });
+app.locals.assetV = computeAssetVersion();
 app.use(express.static(path.join(__dirname, 'public')));
 // Keep uploaded admin images reachable when UPLOAD_DIR points outside the disposable app release.
 // The default local path is also under public/, so this is only a fallback there.

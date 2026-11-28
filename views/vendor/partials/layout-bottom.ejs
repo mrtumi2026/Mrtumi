@@ -5,8 +5,8 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/feather-icons/dist/feather.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
-    <script src="/backEnd/js/admin-core.js"></script>
-    <script src="/shared/js/mrtumi-ui.js"></script>
+    <script src="/backEnd/js/admin-core.js?v=<%= locals.assetV || '' %>"></script>
+    <script src="/shared/js/mrtumi-ui.js?v=<%= locals.assetV || '' %>"></script>
     <% if (flash && flash.message) { %>
       <script>
         document.addEventListener('DOMContentLoaded', function() {

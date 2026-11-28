@@ -8,7 +8,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <link rel="shortcut icon" href="<%= siteSettings.favicon || '/uploads/brand/mt-favicon.png' %>" />
-    <script src="/frontEnd/js/pb-session.js"></script>
+    <script src="/frontEnd/js/pb-session.js?v=<%= locals.assetV || '' %>"></script>
 
     <!-- Google Fonts: Hind Siliguri (Bangla) + Inter (UI) -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -25,8 +25,8 @@
     <!-- ApexCharts -->
     <link href="https://cdn.jsdelivr.net/npm/apexcharts@3.44.0/dist/apexcharts.css" rel="stylesheet" />
     <!-- Admin Shell + Mr. Tumi Shared Design System -->
-    <link href="/backEnd/css/ubold-admin.css" rel="stylesheet" type="text/css" />
-    <link href="/shared/css/mrtumi-design-system.css" rel="stylesheet" type="text/css" />
+    <link href="/backEnd/css/ubold-admin.css?v=<%= locals.assetV || '' %>" rel="stylesheet" type="text/css" />
+    <link href="/shared/css/mrtumi-design-system.css?v=<%= locals.assetV || '' %>" rel="stylesheet" type="text/css" />
   </head>
 
   <body
