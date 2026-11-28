@@ -843,7 +843,7 @@ router.get('/admin/incomplete-orders', (_req, res) => {
     pageTitle: 'Incomplete / Abandoned Orders',
     subtitle: 'চেকআউট ফর্ম পূরণ শুরু করে অসম্পূর্ণ রাখা অর্ডারসমূহ (এক ক্লিকে অর্ডারে রূপান্তর করুন)',
     createAction: '/admin/incomplete-orders/create',
-    deletePrefix: '/admin/incomplete-orders/delete',
+    deletePrefix: env.db.client === 'mysql' ? '' : '/admin/incomplete-orders/delete',
     customActionPrefix: '/admin/incomplete-orders/convert',
     customActionLabel: 'Convert to Order',
     columns: [
@@ -1041,7 +1041,7 @@ router.get('/admin/refunds', (req, res) => {
     pageTitle: statusFilter ? `Refunds (${statusFilter.toUpperCase()})` : 'All Refunds',
     subtitle: 'কাস্টমার রিফান্ড রিকোয়েস্ট যাচাই, অ্যাপ্রুভ এবং প্রসেস করুন',
     createAction: '/admin/refunds/create',
-    deletePrefix: '/admin/refunds/delete',
+    deletePrefix: env.db.client === 'mysql' ? '' : '/admin/refunds/delete',
     customActionPrefix: '/admin/refunds/advance',
     customActionLabel: 'Approve / Process',
     columns: [
@@ -1122,7 +1122,7 @@ async function renderAdminOrderList(req,res,statusParam){
   const countRows=db.all('SELECT status,COUNT(*) AS c FROM orders GROUP BY status');
   const total=db.get('SELECT COUNT(*) AS c FROM orders');const statusCounts={all:Number(total?.c||0)};
   for(const row of countRows)statusCounts[row.status]=Number(row.c||0);
-  return res.render('admin/orders',{pageTitle:titleMap[statusParam]||`Orders (${statusParam})`,statusFilter:statusParam,orders,statuses,searchQuery:q,statusCounts});
+  return res.render('admin/orders',{pageTitle:titleMap[statusParam]||`Orders (${statusParam})`,statusFilter:statusParam,orders,statuses,searchQuery:q,statusCounts,allowOrderDelete:true});
 }
 router.get(/^\/admin\/order\/([0-9]+)$/,(req,res)=>res.redirect(`/admin/order/view/${req.params[0]}`));
 router.get('/admin/orders',asyncHandler(async(req,res)=>renderAdminOrderList(req,res,String(req.query.status||'all'))));

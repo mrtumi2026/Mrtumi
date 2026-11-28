@@ -130,12 +130,14 @@
                   <a href="/admin/order/invoice/<%= o.id %>" target="_blank" class="btn btn-sm btn-outline-dark py-1 px-2" aria-label="<%= t('common.print') %> #<%= o.invoice_id %>" title="<%= t('common.print') %>">
                     <i class="fas fa-print"></i>
                   </a>
+                  <% if (typeof allowOrderDelete !== 'undefined' && allowOrderDelete) { %>
                   <form action="/admin/order/delete/<%= o.id %>" method="POST" class="d-inline">
                     <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                     <button type="button" class="btn btn-sm btn-outline-danger py-1 px-2 delete-confirm" aria-label="<%= t('common.delete') %> #<%= o.invoice_id %>" title="<%= t('common.delete') %>">
                       <i class="fas fa-trash"></i>
                     </button>
                   </form>
+                  <% } %>
                 </td>
               </tr>
             <% }) %>

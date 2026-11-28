@@ -114,7 +114,7 @@ router.get('/admin/suppliers/manage', (_req, res) => {
     pageTitle: 'Suppliers / Orchard Partners',
     subtitle: 'বাগান মালিক ও পাইকারি সরবরাহকারীদের তালিকা ও বকেয়া হিসাব',
     createAction: '/admin/suppliers/create',
-    deletePrefix: '/admin/suppliers/delete',
+    deletePrefix: env.db.client === 'mysql' ? '' : '/admin/suppliers/delete',
     columns: [
       { key: 'id', label: '#' },
       { key: 'name', label: 'Supplier Name' },
@@ -180,7 +180,7 @@ router.get('/admin/purchases/manage', (_req, res) => {
     pageTitle: 'Stock Purchases',
     subtitle: 'সাপ্লায়ার থেকে পণ্য ক্রয় এন্ট্রি করুন (স্বয়ংক্রিয়ভাবে প্রোডাক্ট স্টক বৃদ্ধি পাবে)',
     createAction: '/admin/purchases/create',
-    deletePrefix: '/admin/purchases/delete',
+    deletePrefix: env.db.client === 'mysql' ? '' : '/admin/purchases/delete',
     columns: [
       { key: 'id', label: '#' },
       { key: 'reference_no', label: 'Ref No' },
