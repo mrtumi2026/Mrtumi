@@ -68,6 +68,7 @@
       <div class="d-flex align-items-center gap-3">
         <div class="rounded-circle bg-warning text-dark d-flex align-items-center justify-content-center" style="width:48px;height:48px;font-size:22px;">🎁</div>
         <div>
+          <p class="mb-1 fw-bold" id="walletBalance"><%= isEn ? 'Wallet balance' : 'ওয়ালেট ব্যালেন্স' %>: ৳<%= (walletBalancePaisa / 100).toFixed(2) %></p>
           <h2 class="h6 text-white mb-0 fw-bold"><%= isEn ? 'Refer Friends & Earn Cashback into Wallet' : 'বন্ধুদের রেফার করুন এবং ওয়ালেটে ক্যাশব্যাক পান!' %></h2>
           <small class="text-white-50"><%= isEn ? 'Get your personalized link and earn rewards on every completed order.' : 'আপনার পার্সোনাল রেফারেল লিংক দিয়ে ফ্রেন্ডদের ইনভাইট করুন এবং প্রতিটি অর্ডারে আয় করুন।' %></small>
         </div>

@@ -7,6 +7,7 @@ const {requireCsrf}=require('../middleware/csrf');
 const {requirePermission}=require('../middleware/rbac');
 const {asyncHandler}=require('../utils/asyncHandler');
 const repo=require('../repositories/phase08Repository');
+const {ValidationError}=require('../utils/errors');
 const router=express.Router();
 router.use('/admin/phase08',requireAdmin);
 function actor(req){return{id:req.adminUser?.id||req.session?.adminUser?.id||null,permissions:req.adminUser?.permissions||req.session?.adminUser?.permissions||[],roleSlug:req.adminUser?.role_slug||req.session?.adminUser?.role_slug||'',ip:req.ip||'',userAgent:req.get('user-agent')||''};}
@@ -31,12 +32,24 @@ router.post('/admin/phase08/orders/:id/status',requirePermission('orders.manage'
 }));
 router.get('/admin/phase08/refunds',requirePermission('refunds.review'),asyncHandler(async(req,res)=>{
   const [data,history]=await Promise.all([repo.listRefunds({search:req.query.q,status:req.query.status,page:req.query.page,limit:25}),req.query.id?repo.listRefundHistory(req.query.id):Promise.resolve([])]);
-  res.render('admin/phase08-refunds',{...data,history,isEn:isEn(req),query:String(req.query.q||''),status:String(req.query.status||''),csrfToken:req.csrfToken(),rows:data.rows.map(row=>({...row,decisionKey:idempotencyId()}))});
+  const walletDue=(await repo.listWalletRefundDue()).map(row=>({...row,requestKey:idempotencyId()}));
+  res.render('admin/phase08-refunds',{...data,walletDue,history,isEn:isEn(req),query:String(req.query.q||''),status:String(req.query.status||''),csrfToken:req.csrfToken(),rows:data.rows.map(row=>({...row,decisionKey:idempotencyId()}))});
 }));
 router.post('/admin/phase08/refunds/:id/decision',requirePermission('refunds.review'),requireCsrf,asyncHandler(async(req,res)=>{
   const result=await repo.transitionRefund(req.params.id,req.body.status,req.body.reason,actor(req),req.body.request_key||req.get('Idempotency-Key'));
   if(wantsJson(req))return res.json({success:true,...result});
-  req.flash('success',isEn(req)?`Refund request ${result.status}.`:`রিফান্ড অনুরোধ ${result.status} হয়েছে।`);
+  if(result.paidToWallet)req.flash('success',isEn(req)?'Refund approved and added to the customer wallet.':'রিফান্ড অনুমোদন হয়েছে এবং টাকা ক্রেতার ওয়ালেটে যোগ হয়েছে।');
+  else req.flash('success',isEn(req)?`Refund request ${result.status}.`:(result.status==='rejected'?'রিফান্ড অনুরোধ বাতিল হয়েছে।':'রিফান্ড অনুরোধ অনুমোদন হয়েছে।'));
+  return res.redirect('/admin/phase08/refunds');
+}));
+// Returns the received cash of a returned or cancelled order to the buyer's wallet.
+router.post('/admin/phase08/refunds/order/:id/wallet',requirePermission('refunds.review'),requireCsrf,asyncHandler(async(req,res)=>{
+  const taka=String(req.body.amount_taka||'').trim();
+  if(!/^\d{1,9}(\.\d{1,2})?$/.test(taka)||Number(taka)<=0)throw new ValidationError('Enter a valid refund amount in taka.');
+  const key=String(req.body.request_key||'');
+  const request=await repo.requestRefund(req.params.id,Math.round(Number(taka)*100),req.body.reason,key,actor(req));
+  await repo.transitionRefund(request.id,'approved',req.body.reason,actor(req),`${key}-decide`);
+  req.flash('success',isEn(req)?'The money was added to the customer wallet.':'টাকা ক্রেতার ওয়ালেটে যোগ হয়েছে।');
   return res.redirect('/admin/phase08/refunds');
 }));
 router.get('/admin/phase08/incomplete',requirePermission('checkout.recovery.view'),asyncHandler(async(req,res)=>{

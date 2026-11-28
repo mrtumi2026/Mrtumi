@@ -15,6 +15,8 @@ const adminPartnerDirectoryRepository = require('../repositories/adminPartnerDir
 const adminResellerCommerceRepository = require('../repositories/adminResellerCommerceRepository');
 const mysqlPool = require('../db/mysqlPool');
 const smsService = require('../services/smsService');
+const customerWalletService = require('../services/customerWalletService');
+const adminAffiliateRepository = require('../repositories/adminAffiliateRepository');
 const { asyncHandler } = require('../utils/asyncHandler');
 const { requireAdmin } = require('../middleware/auth');
 const { requireCsrf } = require('../middleware/csrf');
@@ -1363,6 +1365,38 @@ router.post('/admin/permissions/delete/:id', (req, res) => {
   db.run('DELETE FROM permissions WHERE id = ?', req.params.id);
   res.redirect('/admin/permissions/manage');
 });
+
+// ─── Offer / bonus / compensation money into a customer wallet ───
+router.get('/admin/wallet-credit', asyncHandler(async (req, res) => {
+  if (env.db.client !== 'mysql') return res.redirect('/admin/dashboard');
+  const [percent, history] = await Promise.all([customerWalletService.getMaxPercent(), customerWalletService.listAdminCredits()]);
+  res.set('Cache-Control', 'no-store');
+  return res.render('admin/wallet-credit', { isEn: req.locale === 'en', percent, history, requestKey: crypto.randomBytes(18).toString('hex') });
+}));
+
+router.post('/admin/wallet-credit', requireCsrf, asyncHandler(async (req, res) => {
+  let result;
+  try {
+    result = await customerWalletService.adminCredit({ phone: req.body.phone, amountTaka: req.body.amount_taka, kind: req.body.kind, reason: req.body.reason, requestKey: req.body.request_key }, actor(req));
+  } catch (error) {
+    if (!error.isOperational || error.statusCode >= 500) throw error;
+    req.flash('error', error.message);
+    return res.redirect('/admin/wallet-credit');
+  }
+  req.adminDomainAudit = true;
+  const name = `${result.account.name} (${result.account.phone})`;
+  req.flash('success', result.replayed
+    ? recoveryText(req, 'This was already added. No money was added twice.', 'এটি আগেই যোগ হয়েছে। দুইবার টাকা যোগ হয়নি।')
+    : recoveryText(req, `৳${(result.amountPaisa / 100).toFixed(2)} added to the wallet of ${name}.`, `${name}-এর ওয়ালেটে ৳${(result.amountPaisa / 100).toFixed(2)} যোগ হয়েছে।`));
+  return res.redirect('/admin/wallet-credit');
+}));
+
+router.post('/admin/wallet-credit/percent', requireCsrf, asyncHandler(async (req, res) => {
+  await adminAffiliateRepository.saveWalletSettings(req.body, actor(req));
+  req.adminDomainAudit = true;
+  req.flash('success', recoveryText(req, 'Wallet limit per order saved.', 'প্রতি অর্ডারে ওয়ালেটের সীমা সংরক্ষণ হয়েছে।'));
+  return res.redirect('/admin/wallet-credit');
+}));
 
 // ─── Support-assisted customer account recovery ───
 async function renderCustomerRecovery(req, res, query, link = null) {

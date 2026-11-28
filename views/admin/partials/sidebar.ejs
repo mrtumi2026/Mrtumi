@@ -247,6 +247,13 @@
                 </a>
               </li>
 
+              <% if (hasPermission('finance.view') || hasPermission('finance.manage')) { %><li>
+                <a href="/admin/wallet-credit">
+                  <i data-feather="credit-card"></i>
+                  <span><%= locale === 'bn' ? 'ক্রেতার ওয়ালেট' : 'Customer wallet' %></span>
+                </a>
+              </li><% } %>
+
               <li>
                 <a href="/admin/affiliates">
                   <i data-feather="share-2"></i>

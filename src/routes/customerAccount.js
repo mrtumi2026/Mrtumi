@@ -127,7 +127,8 @@ router.get('/customer/account', requireCustomer, asyncHandler(async (req, res) =
     welcome = (await require('../repositories/checkoutRepository').getOrderForSuccess(req.session.welcomeInvoice))?.order || null;
     delete req.session.welcomeInvoice;
   }
-  return res.render('customer/account', { profile, addresses, consents, consentHistory, requests, acceptances, consentOptions, needsPassword, welcome, policyVersion: policy?.version || '', isEn: isEn(req) });
+  const walletBalancePaisa = mysqlMode ? await require('../services/customerWalletService').getBalancePaisa(id) : 0;
+  return res.render('customer/account', { walletBalancePaisa, profile, addresses, consents, consentHistory, requests, acceptances, consentOptions, needsPassword, welcome, policyVersion: policy?.version || '', isEn: isEn(req) });
 }));
 
 router.post('/customer/account/set-password', requireCustomer, requireCsrf, asyncHandler(async (req, res) => {
@@ -352,7 +353,8 @@ router.get('/customer/account/orders/:id', requireCustomer, asyncHandler(async (
   const reservedRefundStates = new Set(['requested', 'pending', 'approved', 'processing', 'succeeded', 'completed']);
   const reservedRefundPaisa = details.refunds.filter((refund) => reservedRefundStates.has(String(refund.status))).reduce((sum, refund) => sum + Number(refund.amount_paisa || 0), 0);
   const refundRemainingPaisa = Math.max(0, Number(details.order.paid_paisa || 0) - reservedRefundPaisa);
-  const refundable = ['cancelled', 'delivered', 'returned'].includes(details.order.order_status) && String(details.order.payment_method || '').toLowerCase() !== 'cod' && refundRemainingPaisa > 0;
+  // Only cash actually received (paid_paisa) can be refunded, whatever the payment method.
+  const refundable = phase08.REFUNDABLE_ORDER_STATES.includes(details.order.order_status) && !details.order.reseller_id && refundRemainingPaisa > 0;
   const refundRequestKey = require('node:crypto').randomBytes(24).toString('hex');
   const returns = details.returns.map((item) => ({ ...item, evidenceAvailable: /^return-evidence\/[A-Za-z0-9-]+\.(?:jpg|jpeg|png|webp|gif)$/i.test(String(item.evidence_path || '')), statusLabel: statusLabel(item.status, isEn(req)), dateLabel: evidenceDate(item.created_at, req.locale), history: details.returnEvents.filter((event) => Number(event.return_request_id) === Number(item.id)).map((event) => ({ ...event, fromLabel: statusLabel(event.from_status, isEn(req)), toLabel: statusLabel(event.to_status, isEn(req)), dateLabel: evidenceDate(event.created_at, req.locale) })) }));
   return res.render('customer/order-detail', { order, items, statusHistory: details.statusHistory.map((event) => ({ ...event, statusLabel: statusLabel(event.to_status, isEn(req)), dateLabel: evidenceDate(event.created_at, req.locale) })), tracking, shipments, canCancel, cancellations: details.cancellations.map((item) => ({ ...item, statusLabel: statusLabel(item.status, isEn(req)), dateLabel: evidenceDate(item.created_at, req.locale) })), returns, refunds, refundRemainingPaisa, refundRemainingLabel: moneyLabel(refundRemainingPaisa, req.locale), refundable, refundRequestKey, isEn: isEn(req) });
@@ -435,16 +437,16 @@ router.get('/customer/account/returns', requireCustomer, asyncHandler(async (req
 }));
 router.post('/customer/account/orders/:id/refunds', requireCustomer, requireCsrf, asyncHandler(async (req, res) => {
   const id = Number(req.params.id);
-  const amountRaw = String(req.body.amount_paisa || '');
+  // The form sends taka; API clients may still send paisa.
+  const taka = String(req.body.amount_taka || '').trim();
+  const amountRaw = taka ? (/^\d{1,9}(\.\d{1,2})?$/.test(taka) ? String(Math.round(Number(taka) * 100)) : '') : String(req.body.amount_paisa || '');
   const amount = Number(amountRaw);
   if (!Number.isSafeInteger(id) || id < 1 || !/^[1-9][0-9]*$/.test(amountRaw) || !Number.isSafeInteger(amount)) throw new ValidationError('Order ID or refund amount is invalid.');
   const requestKey = String(req.body.request_key || '');
   if (!/^[A-Za-z0-9_-]{8,128}$/.test(requestKey)) throw new ValidationError('Refresh the page and submit the refund request again.');
-  const order = await customers.getOrderDetails(req.session.customerUser.id, id);
-  const method = String(order.order.payment_method || '').toLowerCase();
-  if (method === 'cod') throw new ConflictError('COD refunds are unavailable until a verified refund destination is configured.');
+  await customers.getOrderDetails(req.session.customerUser.id, id); // 404 for another customer's order
   const result = await phase08.requestRefund(id, amount, req.body.reason, requestKey, { id: null, type: 'customer' });
-  req.flash('success', isEn(req) ? `Refund request #${result.id} ${result.replayed ? 'was already received' : 'was submitted'}. No payment was sent.` : `রিফান্ড অনুরোধ #${result.id} ${result.replayed ? 'আগেই জমা হয়েছে' : 'জমা হয়েছে'}। কোনো অর্থ পাঠানো হয়নি।`);
+  req.flash('success', isEn(req) ? `Refund request #${result.id} ${result.replayed ? 'was already received' : 'was submitted'}. After approval the money is added to your wallet.` : `রিফান্ড অনুরোধ #${result.id} ${result.replayed ? 'আগেই জমা হয়েছে' : 'জমা হয়েছে'}। অনুমোদন হলে টাকা আপনার ওয়ালেটে যোগ হবে।`);
   return res.redirect(`/customer/account/orders/${encodeURIComponent(id)}`);
 }));
 function wantsJson(req) {

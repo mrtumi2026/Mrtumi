@@ -230,8 +230,10 @@
                 <tbody>
                   <% referralStats.transactions.forEach(function(tx) { %>
                     <tr>
-                      <td><%= new Date(tx.created_at).toLocaleDateString('bn-BD') %></td>
-                      <td><%= tx.note || tx.tx_type %></td>
+                      <td><%= new Date(tx.created_at).toLocaleDateString(isEn ? 'en-GB' : 'bn-BD') %></td>
+                      <% const txKinds = { refund_credit: isEn ? 'Refund' : 'রিফান্ড', referral_bonus: isEn ? 'Referral bonus' : 'রেফারেল বোনাস', referral_cashback: isEn ? 'Referral cashback' : 'রেফারেল ক্যাশব্যাক', order_spend: isEn ? 'Used on an order' : 'অর্ডারে ব্যবহার', order_spend_return: isEn ? 'Returned from an order' : 'অর্ডার থেকে ফেরত', admin_offer: isEn ? 'Offer' : 'অফার', admin_bonus: isEn ? 'Bonus' : 'বোনাস', admin_compensation: isEn ? 'Compensation' : 'ক্ষতিপূরণ' };
+                         const invoiceRef = (String(tx.note || '').match(/MT-[A-Z0-9-]+/i) || [])[0] || ''; %>
+                      <td><%= txKinds[tx.tx_type] || tx.tx_type %><% if (String(tx.tx_type).startsWith('admin_')) { %><br><small class="text-muted"><%= tx.note %></small><% } else if (invoiceRef) { %><br><small class="text-muted text-break"><%= invoiceRef %></small><% } %></td>
                       <td>
                         <% if (Number(tx.amount_paisa) >= 0) { %>
                           <span class="text-success fw-bold">+৳<%= Math.round(Number(tx.amount_paisa) / 100) %></span>

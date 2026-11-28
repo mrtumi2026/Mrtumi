@@ -23,6 +23,7 @@ const REFUND_STATES = Object.freeze({
   succeeded: [], failed: [], rejected: [],
 });
 const RESERVED_REFUND_STATES = ['requested', 'pending', 'approved', 'processing', 'succeeded', 'completed'];
+const REFUNDABLE_ORDER_STATES = Object.freeze(['cancelled', 'failed', 'delivered', 'returned']);
 const INCOMPLETE_STATES = Object.freeze({
   abandoned: ['contacted', 'recovery_started', 'recovered', 'withdrawn'],
   contacted: ['recovery_started', 'recovered', 'withdrawn'],
@@ -351,6 +352,40 @@ async function transitionOrder(orderId, toStatus, note, actor = {}, requestKey) 
   }
 }
 
+async function payRefundToWalletTx(tx, order, refund, actor = {}) {
+  const wallet = require('../services/customerWalletService');
+  const customerId = await wallet.ensureOrderCustomerTx(tx, order);
+  await wallet.creditTx(tx, { customerId, type:wallet.REFUND_CREDIT, amountPaisa:refund.amountPaisa, reference:`refund:${refund.id}`, note:`Refund for order ${order.invoice_no}` });
+  await tx.execute("UPDATE refunds SET status='succeeded',method='wallet' WHERE id=?", [refund.id]);
+  await tx.execute("INSERT INTO refund_status_history (refund_id,from_status,to_status,reason,request_key,actor_user_id) VALUES (?,'approved','succeeded','Added to the customer wallet',?,?)", [refund.id, `wallet:${refund.id}`, actor.id||null]);
+  await insertAudit(tx, actor, 'refund.paid_to_wallet', 'refund', refund.id, { status:'approved' }, { status:'succeeded', method:'wallet', amountPaisa:refund.amountPaisa, customerId });
+}
+
+// Cash already received for a cancelled or failed order goes straight to the wallet.
+// Amounts already covered by another refund request are left to that request.
+async function refundCancelledOrderToWalletTx(tx, orderId, actor = {}) {
+  const order = await tx.queryOne('SELECT id,invoice_no,paid_paisa,reseller_id,customer_id,customer_name,customer_phone FROM orders WHERE id=? FOR UPDATE', [orderId]);
+  if (!order || order.reseller_id) return 0;
+  const key = `auto-cancel:${order.id}`;
+  if (await tx.queryOne('SELECT id FROM refunds WHERE request_key=? FOR UPDATE', [key])) return 0;
+  const rows = await tx.queryAll(`SELECT id,amount_paisa FROM refunds WHERE order_id=? AND status IN (${RESERVED_REFUND_STATES.map(()=>'?').join(',')}) ORDER BY id FOR UPDATE`, [order.id, ...RESERVED_REFUND_STATES]);
+  const amount = Number(order.paid_paisa||0) - rows.reduce((sum,row)=>sum+Number(row.amount_paisa),0);
+  if (!Number.isSafeInteger(amount) || amount < 1) return 0;
+  const inserted = await tx.execute("INSERT INTO refunds (order_id,invoice_no,amount_paisa,reason,request_key,method,status,processed_by_user_id) VALUES (?,?,?,'Order cancelled: paid amount returned',?,'wallet','approved',?)", [order.id, order.invoice_no, amount, key, actor.id||null]);
+  await payRefundToWalletTx(tx, order, { id:inserted.insertId, amountPaisa:amount }, actor);
+  return amount;
+}
+
+// Orders whose received cash has not been returned yet, for the one-click wallet refund.
+async function listWalletRefundDue(limit = 50) {
+  assertMysql();
+  const marks = RESERVED_REFUND_STATES.map(()=>'?').join(',');
+  return client().queryAll(`SELECT o.id,o.invoice_no,o.customer_name,o.customer_phone,o.order_status,o.paid_paisa,o.shipping_paisa,
+      o.paid_paisa-COALESCE((SELECT SUM(r.amount_paisa) FROM refunds r WHERE r.order_id=o.id AND r.status IN (${marks})),0) AS due_paisa
+    FROM orders o WHERE o.order_status IN ('returned','cancelled','failed') AND o.reseller_id IS NULL AND o.paid_paisa>0
+    HAVING due_paisa>0 ORDER BY o.id DESC LIMIT ${Math.min(Number(limit)||50,200)}`, [...RESERVED_REFUND_STATES]);
+}
+
 async function requestRefund(orderId, amountPaisa, reason, requestKey, actor = {}) {
   assertMysql();
   const id = requirePositiveInt(orderId, 'order ID');
@@ -377,7 +412,7 @@ async function requestRefund(orderId, amountPaisa, reason, requestKey, actor = {
         if (Number(existing.order_id)!==id || Number(existing.amount_paisa)!==amount) throw new ConflictError('Refund idempotency key was already used with another request.');
         return { id:Number(existing.id), replayed:true, status:existing.status };
       }
-      if (!['cancelled','delivered','returned'].includes(order.order_status)) throw new ConflictError('Refund requests are permitted only for cancelled, delivered or returned orders.');
+      if (!REFUNDABLE_ORDER_STATES.includes(order.order_status)) throw new ConflictError('Refund requests are permitted only for cancelled, delivered or returned orders.');
       const reservedRows=await tx.queryAll(`SELECT id,amount_paisa FROM refunds WHERE order_id=? AND status IN (${RESERVED_REFUND_STATES.map(()=>'?').join(',')}) ORDER BY id FOR UPDATE`,[id,...RESERVED_REFUND_STATES]);
       const paid = Number(order.paid_paisa || 0);
       if (!Number.isSafeInteger(paid) || paid<0 || amount < 1) throw new ValidationError('Recorded paid balance is invalid.');
@@ -412,7 +447,7 @@ async function transitionRefund(refundId, targetStatus, reason, actor = {}, requ
     }
     const candidate=await tx.queryOne('SELECT id,order_id FROM refunds WHERE id=?',[id]);
     if(!candidate)throw new NotFoundError('Refund request not found.');
-    const order=await tx.queryOne('SELECT id,paid_paisa FROM orders WHERE id=? FOR UPDATE',[candidate.order_id]);
+    const order=await tx.queryOne('SELECT id,invoice_no,paid_paisa,reseller_id,customer_id,customer_name,customer_phone FROM orders WHERE id=? FOR UPDATE',[candidate.order_id]);
     const refund = await tx.queryOne('SELECT id,order_id,amount_paisa,status FROM refunds WHERE id=? FOR UPDATE', [id]);
     if (!refund) throw new NotFoundError('Refund request not found.');
     const concurrentReplay=await tx.queryOne('SELECT refund_id,to_status FROM refund_status_history WHERE request_key=? FOR UPDATE',[key]);
@@ -430,6 +465,12 @@ async function transitionRefund(refundId, targetStatus, reason, actor = {}, requ
     await tx.execute('UPDATE refunds SET status=?,processed_by_user_id=? WHERE id=?', [target,actor.id||null,id]);
     await tx.execute('INSERT INTO refund_status_history (refund_id,from_status,to_status,reason,request_key,actor_user_id) VALUES (?,?,?,?,?,?)', [id,refund.status,target,note,key,actor.id||null]);
     await insertAudit(tx, actor, `refund.${target}`, 'refund', id, { status:refund.status }, { status:target, reason:note });
+    // A buyer's refund is paid into the buyer's wallet in the same transaction. Reseller
+    // orders are settled with the reseller outside this wallet, so they stay "approved".
+    if (target === 'approved' && !order.reseller_id) {
+      await payRefundToWalletTx(tx, order, { id, amountPaisa:Number(refund.amount_paisa) }, actor);
+      return { id, status:target, paidToWallet:true, replayed:false };
+    }
     return { id, status:target, replayed:false };
     });
   } catch(err) {
@@ -605,4 +646,4 @@ async function getOrderOtpStatus(orderId){
 }
 async function listOrderHistory(orderId){assertMysql();return client().queryAll('SELECT h.*,u.name AS actor_name FROM order_status_history h LEFT JOIN users u ON u.id=h.changed_by_user_id WHERE h.order_id=? ORDER BY h.id',[requirePositiveInt(orderId,'order ID')]);}
 
-module.exports={ORDER_RESERVATION_DAYS,consumeOrderInventoryTx,TRANSITIONS,REFUND_STATES,INCOMPLETE_STATES,validateOtpPolicy,validateAdvancePolicy,calculateAdvance,computeOrderPayment,otpDigest,makeOtp,normalizeCaptureCart,normalizeOrderLines,orderReservationKey,transitionOrder,transitionOrderTx,requestRefund,transitionRefund,recordIncompleteCheckout,withdrawIncompleteCheckout,listIncompleteCheckouts,transitionIncompleteCheckout,createOrderOtp,verifyOrderOtp,getPhase08Settings,savePhase08Settings,listOrders,listRefunds,listRefundHistory,listOrderHistory,getOrderOtpStatus,reserveOrderInventory:async(orderId,actor={})=>mysql.withTransaction(tx=>reserveOrderInventoryTx(tx,requirePositiveInt(orderId,'order ID'),actor)),reserveOrderInventoryTx,releaseOrderInventory:async(orderId,actor={},reason='Order cancelled')=>mysql.withTransaction(tx=>releaseOrderInventoryTx(tx,requirePositiveInt(orderId,'order ID'),actor,reason)),listExpiredOrderReservationCandidates,expireExpiredOrderReservations};
+module.exports={ORDER_RESERVATION_DAYS,consumeOrderInventoryTx,TRANSITIONS,REFUND_STATES,INCOMPLETE_STATES,validateOtpPolicy,validateAdvancePolicy,calculateAdvance,computeOrderPayment,otpDigest,makeOtp,normalizeCaptureCart,normalizeOrderLines,orderReservationKey,transitionOrder,transitionOrderTx,requestRefund,transitionRefund,refundCancelledOrderToWalletTx,listWalletRefundDue,REFUNDABLE_ORDER_STATES,recordIncompleteCheckout,withdrawIncompleteCheckout,listIncompleteCheckouts,transitionIncompleteCheckout,createOrderOtp,verifyOrderOtp,getPhase08Settings,savePhase08Settings,listOrders,listRefunds,listRefundHistory,listOrderHistory,getOrderOtpStatus,reserveOrderInventory:async(orderId,actor={})=>mysql.withTransaction(tx=>reserveOrderInventoryTx(tx,requirePositiveInt(orderId,'order ID'),actor)),reserveOrderInventoryTx,releaseOrderInventory:async(orderId,actor={},reason='Order cancelled')=>mysql.withTransaction(tx=>releaseOrderInventoryTx(tx,requirePositiveInt(orderId,'order ID'),actor,reason)),listExpiredOrderReservationCandidates,expireExpiredOrderReservations};

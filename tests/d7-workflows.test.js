@@ -38,10 +38,12 @@ test('responsive CSS contracts contain admin tables, controls and layouts at nar
  assert.match(design,/\.table-responsive[\s\S]*?overflow-x:\s*auto/);assert.match(design,/max-width:\s*100%/);
  assert.match(d7css,/@media\s*\(max-width:767\.98px\)/);assert.match(d7css,/min-width:0/);assert.match(storefront,/@media\s*\(max-width: 767px\)/);
 });
-test('refund and settlement surfaces keep execution disabled and reseller deposits stay admin-verified',()=>{
+test('refunds go only to the wallet, settlement execution stays disabled and reseller deposits stay admin-verified',()=>{
  const customer=fs.readFileSync(require.resolve('../src/routes/customerAccount'),'utf8');
  const phase08Source=fs.readFileSync(require.resolve('../src/repositories/phase08Repository'),'utf8');
-  assert.match(customer,/COD refunds are (?:disabled|unavailable) until a verified/);
+ assert.match(customer,/money is added to your wallet/);
+ assert.match(phase08Source,/payRefundToWalletTx\(tx, order/);
+ assert.doesNotMatch(phase08Source,/fetch\(|axios/,'no payment provider is called for refunds');
  assert.match(phase08Source,/refunds\.approve_high/);
  assert.match(phase08Source,/provider processing is not available here/);
  const reseller=fs.readFileSync(require.resolve('../src/routes/resellerPanel'),'utf8');

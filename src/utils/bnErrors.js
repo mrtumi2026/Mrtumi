@@ -76,6 +76,16 @@ const EXACT = new Map(Object.entries({
   'This order is already linked to an account.': 'অর্ডারটি আগে থেকেই একটি অ্যাকাউন্টে যুক্ত।',
   'The order does not have a valid mobile number.': 'অর্ডারে সঠিক মোবাইল নম্বর নেই।',
   'This account is blocked or inactive.': 'অ্যাকাউন্টটি ব্লক করা বা নিষ্ক্রিয়।',
+  'Refund amount exceeds the remaining recorded paid balance.': 'রিফান্ডের পরিমাণ বাকি পরিশোধিত টাকার চেয়ে বেশি।',
+  'Refund requests are permitted only for cancelled, delivered or returned orders.': 'শুধু বাতিল, ডেলিভারি হওয়া বা ফেরত আসা অর্ডারে রিফান্ড চাওয়া যায়।',
+  'Order ID or refund amount is invalid.': 'রিফান্ডের পরিমাণ সঠিক নয়।',
+  'Enter a valid refund amount in taka.': 'রিফান্ডের সঠিক পরিমাণ টাকায় লিখুন।',
+  'The order does not have a valid mobile number for a wallet account.': 'ওয়ালেট অ্যাকাউন্টের জন্য অর্ডারে সঠিক মোবাইল নম্বর নেই।',
+  'Choose offer, bonus or compensation.': 'অফার, বোনাস বা ক্ষতিপূরণ বেছে নিন।',
+  'Enter an amount between 0.01 and 100000 taka.': '০.০১ থেকে ১,০০,০০০ টাকার মধ্যে পরিমাণ দিন।',
+  'Write the reason (3–200 characters).': 'কারণ লিখুন (৩–২০০ অক্ষর)।',
+  'Reload the page and try again.': 'পেজটি রিলোড করে আবার চেষ্টা করুন।',
+  'No customer account uses this mobile number.': 'এই মোবাইল নম্বরে কোনো ক্রেতা অ্যাকাউন্ট নেই।',
 }));
 
 const PATTERNS = [

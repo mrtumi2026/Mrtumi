@@ -141,15 +141,34 @@ describe('Phase 06 — Live MySQL 8.0 schema, product, stock ledger & purchase r
     assert.equal(Number((await db.queryOne('SELECT stock_reserved FROM products WHERE id=?',[productId])).stock_reserved),0);
     assert.equal(Number((await db.queryOne('SELECT stock_on_hand FROM products WHERE id=?',[productId])).stock_on_hand),7);
     assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM order_status_history WHERE order_id=?',[orderId])).n),3);
-    const refundKey=`p08-refund-${orderId}`;
-    const refunds=await Promise.all([phase08.requestRefund(orderId,3000,'Cancelled paid order',refundKey),phase08.requestRefund(orderId,3000,'Cancelled paid order',refundKey)]);
+    // Cash received on a cancelled order goes to the buyer's wallet, once.
+    const auto=await db.queryOne('SELECT id,amount_paisa,status,method FROM refunds WHERE request_key=?',[`auto-cancel:${orderId}`]);
+    assert.deepEqual([Number(auto.amount_paisa),auto.status,auto.method],[5000,'succeeded','wallet']);
+    const owner=Number((await db.queryOne('SELECT customer_id FROM orders WHERE id=?',[orderId])).customer_id);
+    assert.ok(owner,'the guest order is linked to the account of its mobile number');
+    assert.equal(Number((await db.queryOne("SELECT COALESCE(SUM(amount_paisa),0) AS n FROM customer_wallet_transactions WHERE customer_id=? AND reference_id=?",[owner,`refund:${auto.id}`])).n),5000);
+    await assert.rejects(()=>phase08.requestRefund(orderId,1,'Already returned to wallet',`p08-again-${orderId}`),(err)=>err.code==='VALIDATION_ERROR');
+
+    const delivered=await db.execute("INSERT INTO orders (invoice_no,customer_name,customer_phone,shipping_address,total_paisa,paid_paisa,order_status) VALUES (?, 'P08 Refund Customer', '01712345678', 'CI fixture address', 5000, 5000, 'delivered')",[`P08REF-${suffix}`]);
+    const refundKey=`p08-refund-${delivered.insertId}`;
+    const refunds=await Promise.all([phase08.requestRefund(delivered.insertId,3000,'Damaged product',refundKey),phase08.requestRefund(delivered.insertId,3000,'Damaged product',refundKey)]);
     assert.equal(refunds.filter(x=>x.replayed).length,1);
     assert.equal(refunds[0].status,'requested');
-    await assert.rejects(()=>phase08.requestRefund(orderId,3000,'Exceeds recorded payment',`p08-over-${orderId}`),(err)=>err.code==='VALIDATION_ERROR');
-    const decision=await phase08.transitionRefund(refunds[0].id,'approved','Evidence reviewed',{id:null},`p08-approve-${orderId}`);
-    assert.equal(decision.status,'approved');
-    assert.equal((await phase08.transitionRefund(refunds[0].id,'approved','Evidence reviewed',{id:null},`p08-approve-${orderId}`)).replayed,true);
-    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM refund_status_history WHERE refund_id=?',[refunds[0].id])).n),2);
+    await assert.rejects(()=>phase08.requestRefund(delivered.insertId,3000,'Exceeds recorded payment',`p08-over-${delivered.insertId}`),(err)=>err.code==='VALIDATION_ERROR');
+    const walletBefore=Number((await db.queryOne('SELECT balance_paisa FROM customer_wallets WHERE customer_id=?',[owner])).balance_paisa);
+    const decisions=await Promise.all([1,2].map(()=>phase08.transitionRefund(refunds[0].id,'approved','Evidence reviewed',{id:null},`p08-approve-${delivered.insertId}`)));
+    assert.ok(decisions.every(x=>x.status==='approved'));
+    assert.equal(decisions.filter(x=>x.replayed).length,1);
+    assert.equal(Number((await db.queryOne('SELECT balance_paisa FROM customer_wallets WHERE customer_id=?',[owner])).balance_paisa),walletBefore+3000,'two approvals add the money once');
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM refund_status_history WHERE refund_id=?',[refunds[0].id])).n),3);
+
+    // Offer money added by an administrator is also added once per form submission.
+    const walletService=require('../src/services/customerWalletService');
+    const credit={phone:'01712345678',amountTaka:'25.50',kind:'offer',reason:'Eid offer',requestKey:`offer-key-${suffix}`};
+    await walletService.adminCredit(credit,{id:null});
+    assert.equal((await walletService.adminCredit(credit,{id:null})).replayed,true);
+    assert.equal(Number((await db.queryOne('SELECT balance_paisa FROM customer_wallets WHERE customer_id=?',[owner])).balance_paisa),walletBefore+3000+2550);
+    await assert.rejects(()=>walletService.adminCredit({...credit,amountTaka:'-5',requestKey:`offer-neg-${suffix}`}),(err)=>err.code==='VALIDATION_ERROR');
 
     const capped=await db.execute("INSERT INTO orders (invoice_no,customer_name,customer_phone,shipping_address,total_paisa,paid_paisa,order_status) VALUES (?, 'P08 Cap Customer', '01712345678', 'CI fixture address', 5000, 5000, 'cancelled')", [`P08CAP-${suffix}`]);
     const attempts=await Promise.allSettled([phase08.requestRefund(capped.insertId,3000,'Parallel request A',`p08-cap-a-${capped.insertId}`),phase08.requestRefund(capped.insertId,3000,'Parallel request B',`p08-cap-b-${capped.insertId}`)]);

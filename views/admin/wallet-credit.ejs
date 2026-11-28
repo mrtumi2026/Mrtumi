@@ -1,0 +1,34 @@
+<%- include('partials/head', { title: isEn ? 'Customer wallet' : 'ক্রেতার ওয়ালেট' }) %><%- include('partials/topbar') %><%- include('partials/sidebar') %>
+<div class="content-page"><div class="content container-fluid py-3">
+  <h1 class="h3"><%= isEn ? 'Customer wallet' : 'ক্রেতার ওয়ালেট' %></h1>
+  <p class="text-muted"><%= isEn ? 'Refunds, referral bonuses and offer money go to the customer wallet. The customer uses it on later orders, up to the limit below. This is only for customer accounts, not vendors or resellers.' : 'রিফান্ড, রেফারেল বোনাস ও অফারের টাকা ক্রেতার ওয়ালেটে যায়। ক্রেতা পরের অর্ডারে নিচের সীমা পর্যন্ত ব্যবহার করতে পারেন। এটি শুধু ক্রেতা অ্যাকাউন্টের জন্য, ভেন্ডর বা রিসেলারের জন্য নয়।' %></p>
+
+  <section class="card card-body mb-3">
+    <h2 class="h5"><%= isEn ? 'How much of one order can be paid from the wallet' : 'এক অর্ডারে ওয়ালেট থেকে সর্বোচ্চ কত দেওয়া যাবে' %></h2>
+    <p class="small text-muted"><%= isEn ? 'Percent of the product price (delivery charge not included). For example 10, 20 or 30. 0 turns wallet payment off.' : 'পণ্যের দামের শতকরা হার (ডেলিভারি চার্জ বাদে)। যেমন ১০, ২০ বা ৩০। ০ দিলে ওয়ালেটে পেমেন্ট বন্ধ থাকবে।' %></p>
+    <form method="post" action="/admin/wallet-credit/percent" class="row g-2 align-items-center">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="col-auto"><div class="input-group"><input class="form-control" style="max-width:110px" type="number" name="wallet_max_percent" min="0" max="99" step="1" value="<%= percent %>" required aria-label="<%= isEn ? 'Wallet limit percent' : 'ওয়ালেট সীমা (%)' %>"><span class="input-group-text">%</span></div></div>
+      <div class="col-auto"><button class="btn btn-primary"><%= isEn ? 'Save limit' : 'সীমা সংরক্ষণ' %></button></div>
+    </form>
+  </section>
+
+  <section class="card card-body mb-3">
+    <h2 class="h5"><%= isEn ? 'Add offer, bonus or compensation money' : 'অফার, বোনাস বা ক্ষতিপূরণের টাকা যোগ করুন' %></h2>
+    <p class="small text-muted"><%= isEn ? 'For order returns and cancellations, use Refunds instead, so the same money is not added twice.' : 'অর্ডার রিটার্ন বা বাতিলের টাকার জন্য "রিফান্ড" পেজ ব্যবহার করুন, যাতে একই টাকা দুইবার যোগ না হয়।' %> <a href="/admin/phase08/refunds"><%= isEn ? 'Open Refunds' : 'রিফান্ড পেজ' %></a></p>
+    <form method="post" action="/admin/wallet-credit" class="row g-3" onsubmit="return confirm(<%= JSON.stringify(isEn ? 'Add this money to the wallet? It cannot be removed from this page.' : 'ওয়ালেটে এই টাকা যোগ করবেন? এই পেজ থেকে পরে বাদ দেওয়া যাবে না।') %>)">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>"><input type="hidden" name="request_key" value="<%= requestKey %>">
+      <div class="col-md-3"><label class="form-label" for="walletPhone"><%= isEn ? 'Customer mobile' : 'ক্রেতার মোবাইল' %></label><input class="form-control" id="walletPhone" name="phone" required placeholder="01XXXXXXXXX"></div>
+      <div class="col-md-2"><label class="form-label" for="walletKind"><%= isEn ? 'Type' : 'ধরন' %></label><select class="form-select" id="walletKind" name="kind"><option value="offer"><%= isEn ? 'Offer' : 'অফার' %></option><option value="bonus"><%= isEn ? 'Bonus' : 'বোনাস' %></option><option value="compensation"><%= isEn ? 'Compensation' : 'ক্ষতিপূরণ' %></option></select></div>
+      <div class="col-md-2"><label class="form-label" for="walletAmount"><%= isEn ? 'Amount (taka)' : 'পরিমাণ (টাকা)' %></label><input class="form-control" id="walletAmount" name="amount_taka" type="number" min="0.01" max="100000" step="0.01" required></div>
+      <div class="col-md-5"><label class="form-label" for="walletReason"><%= isEn ? 'Reason (the customer can see this)' : 'কারণ (ক্রেতা দেখতে পাবেন)' %></label><input class="form-control" id="walletReason" name="reason" required minlength="3" maxlength="200"></div>
+      <div class="col-12"><button class="btn btn-success"><%= isEn ? 'Add to wallet' : 'ওয়ালেটে যোগ করুন' %></button></div>
+    </form>
+  </section>
+
+  <section class="card"><div class="card-header"><%= isEn ? 'Recently added by admin' : 'অ্যাডমিন থেকে সাম্প্রতিক যোগ' %></div><div class="table-responsive"><table class="table mb-0"><thead><tr><th><%= isEn ? 'Date' : 'তারিখ' %></th><th><%= isEn ? 'Customer' : 'ক্রেতা' %></th><th><%= isEn ? 'Type' : 'ধরন' %></th><th><%= isEn ? 'Amount' : 'পরিমাণ' %></th><th><%= isEn ? 'Reason' : 'কারণ' %></th></tr></thead><tbody>
+    <% const kindText = { admin_offer: isEn ? 'Offer' : 'অফার', admin_bonus: isEn ? 'Bonus' : 'বোনাস', admin_compensation: isEn ? 'Compensation' : 'ক্ষতিপূরণ' }; %>
+    <% history.forEach((h) => { %><tr><td><%= new Date(h.created_at).toLocaleDateString(isEn ? 'en-GB' : 'bn-BD') %></td><td><%= h.name %><br><small><%= h.phone %></small></td><td><%= kindText[h.tx_type] || h.tx_type %></td><td>৳<%= (Number(h.amount_paisa) / 100).toFixed(2) %></td><td><%= h.note %></td></tr><% }) %>
+    <% if (!history.length) { %><tr><td colspan="5" class="text-center text-muted"><%= isEn ? 'Nothing added yet.' : 'এখনও কিছু যোগ করা হয়নি।' %></td></tr><% } %>
+  </tbody></table></div></section>
+</div></div><%- include('partials/footer') %>

@@ -108,7 +108,8 @@ describe('Phase 08 — authenticated MySQL admin HTTP, RBAC, CSRF, replay and au
     const cancelled=await request(`/admin/phase08/orders/${orderId}/status`,{method:'POST',cookie:orderStaff,csrf:orderToken,body:{status:'cancelled',reason:'release CI stock before refund review',request_key:`p08-http-cancel-${orderId}`}});
     assert.equal(cancelled.status,200);assert.equal(Number((await db.queryOne('SELECT stock_reserved FROM products WHERE id=?',[productId])).stock_reserved),0,'admin cancellation releases inventory');
 
-    const refund=await phase08.requestRefund(orderId,3000,'HTTP review fixture',`p08-http-refund-${orderId}`);
+    const deliveredFixture=await db.execute("INSERT INTO orders (invoice_no,customer_name,customer_phone,shipping_address,total_paisa,paid_paisa,order_status) VALUES (?, 'HTTP Refund Customer', '01712345679', 'CI fixture address', 5000, 5000, 'delivered')",[`P08HTTPREF-${Date.now()}`]);
+    const refund=await phase08.requestRefund(deliveredFixture.insertId,3000,'HTTP review fixture',`p08-http-refund-${deliveredFixture.insertId}`);
     assert.equal((await request('/admin/phase08/refunds',{cookie:refundStaff})).status,200);
     assert.equal((await request(`/admin/phase08/refunds/${refund.id}/decision`,{method:'POST',cookie:refundStaff,body:{status:'approved',reason:'missing csrf',request_key:'p08-http-refund-nocsrf'}})).status,403);
     const invalidRefund=await request(`/admin/phase08/refunds/${refund.id}/decision`,{method:'POST',cookie:refundStaff,csrf:refundToken,body:{status:'succeeded',reason:'cannot settle',request_key:'p08-http-refund-invalid'}});
@@ -117,7 +118,8 @@ describe('Phase 08 — authenticated MySQL admin HTTP, RBAC, CSRF, replay and au
     const approved=await request(`/admin/phase08/refunds/${refund.id}/decision`,{method:'POST',cookie:refundStaff,csrf:refundToken,body:{status:'approved',reason:'manual evidence review',request_key:decisionKey}});
     assert.equal(approved.status,200);assert.equal(approved.json.status,'approved');
     assert.equal((await request(`/admin/phase08/refunds/${refund.id}/decision`,{method:'POST',cookie:refundStaff,csrf:refundToken,body:{status:'approved',reason:'manual evidence review',request_key:decisionKey}})).json.replayed,true);
-    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM order_payments WHERE order_id=?',[orderId])).n),0,'admin approval records a decision only; no external refund/payment settlement occurs');
+    assert.equal(Number((await db.queryOne('SELECT COUNT(*) AS n FROM order_payments WHERE order_id=?',[orderId])).n),0,'no external payment is recorded');
+    assert.equal(Number((await db.queryOne("SELECT COALESCE(SUM(amount_paisa),0) AS n FROM customer_wallet_transactions WHERE reference_id=?",[`refund:${refund.id}`])).n),3000,'approval adds the refund to the customer wallet once');
 
     const capture=await phase08.recordIncompleteCheckout({consent:true,notificationConsent:false,sessionSid:`admin-http-session-${Date.now()}-abcdefghijkl`,phone:'01812345678',name:'Recovery HTTP Customer',cart:[{product_id:productId,qty:2,price:1}]});
     assert.equal(capture.recorded,true);

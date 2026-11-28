@@ -1,7 +1,7 @@
 'use strict';
 
-// Settles pending referral and affiliate rewards, and returns spent wallet money, when an
-// order reaches a final state.
+// Settles pending referral and affiliate rewards, returns spent wallet money, and moves cash
+// received on a cancelled order to the buyer's wallet when an order reaches a final state.
 // Always runs inside the caller's transaction so money and status commit together.
 async function applyOrderOutcomeTx(tx, orderId, status) {
   const referralService = require('./referralService');
@@ -15,6 +15,9 @@ async function applyOrderOutcomeTx(tx, orderId, status) {
   }
   if (['cancelled', 'failed', 'returned'].includes(status)) {
     await require('./customerWalletService').returnOrderSpendTx(tx, orderId);
+  }
+  if (status === 'cancelled' || status === 'failed') {
+    await require('../repositories/phase08Repository').refundCancelledOrderToWalletTx(tx, orderId);
   }
 }
 
