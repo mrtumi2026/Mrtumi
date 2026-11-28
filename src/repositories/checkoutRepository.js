@@ -223,6 +223,12 @@ async function createOrder(input,options={}){
         await tx.execute("INSERT INTO audit_logs (actor_type,actor_id,action,entity_type,entity_id,before_json,after_json,ip_address,user_agent) VALUES ('system',NULL,'customer.account.auto_created','customer',?,NULL,?,?, '')",[String(customerId),JSON.stringify({source:'first_order',password_set:false}),String(ip||'').slice(0,64)]);
       }
     }
+    if(isManualPayment){
+      // The database key is per gateway; one Send Money must not pay twice through another method or a reseller deposit.
+      const usedTrx=await tx.queryOne("SELECT id FROM order_payments WHERE UPPER(provider_trx_id)=? AND status<>'rejected' LIMIT 1",[trxId.toUpperCase()])
+        ||await tx.queryOne("SELECT id FROM reseller_transactions WHERE tx_type='deposit' AND UPPER(trx_id)=? AND status<>'rejected' LIMIT 1",[trxId.toUpperCase()]);
+      if(usedTrx)throw new ValidationError('এই Transaction ID আগেই ব্যবহার করা হয়েছে। সঠিক TrxID দিন।');
+    }
     const zoneLabel=[zone.division,zone.district,zone.upazila].filter(Boolean).join(' / ');
     const orderChannel=campaign?'campaign':'storefront';const trafficSource=campaign?`Campaign:${campaign.slug}`:attributionData.platformSource;const customerNote=note||(campaign?`Campaign: ${campaign.title}`:null);
     const codDue=isManualPayment?0:total;

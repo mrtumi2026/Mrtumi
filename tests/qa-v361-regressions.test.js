@@ -96,6 +96,21 @@ describe('QA v3.6.1 — live MySQL regressions', { skip: !MYSQL_HOST && SKIP }, 
     await assert.rejects(() => manualPayments.approveOrderManualPayment(orderId, { id: null }), { code: 'CONFLICT' });
   });
 
+  test('one transaction ID cannot be approved twice through different payment methods', async () => {
+    const trx = `DUP${Date.now()}`;
+    const ids = [];
+    for (const [suffix, gateway, value] of [['dup-a', 'bkash_manual', trx], ['dup-b', 'rocket_manual', trx.toLowerCase()]]) {
+      const orderId = await makeOrder(suffix, { paymentMethod: gateway, paymentStatus: 'pending_verification' });
+      await insert("INSERT INTO order_payments(order_id,gateway_code,provider_trx_id,sender_number,amount_paisa,status) VALUES(?,?,?,'01700000000',100000,'pending_verification')", [orderId, gateway, value]);
+      ids.push(orderId);
+    }
+    await manualPayments.approveOrderManualPayment(ids[0], { id: null });
+    await assert.rejects(() => manualPayments.approveOrderManualPayment(ids[1], { id: null }), { code: 'CONFLICT' });
+    const second = await db.queryOne('SELECT payment_status,paid_paisa FROM orders WHERE id=?', [ids[1]]);
+    assert.equal(second.payment_status, 'pending_verification');
+    assert.equal(Number(second.paid_paisa), 0);
+  });
+
   test('a mixed order waits for every vendor parcel, then the admin can confirm the money', async () => {
     const category = await insert("INSERT INTO categories(name_bn,name_en,slug,status) VALUES('QA','QA',?,1)", [unique]);
     const product = await insert('INSERT INTO products(sku,name_bn,name_en,slug,category_id,status) VALUES(?,?,?,?,?,1)', [unique, 'QA', 'QA', unique, category]);

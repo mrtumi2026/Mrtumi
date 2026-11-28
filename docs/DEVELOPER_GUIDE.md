@@ -69,4 +69,5 @@ Third-party keys (SMTP, SMS, courier) are entered in the admin panel or server e
 - A new MySQL/MariaDB database has no admin account. After `migrate up`, run `node scripts/create-first-admin.js` in a terminal. The password is typed at a hidden prompt.
 - To rehearse on the server, use a separate clone (`~/mrtumi-rehearsal`) that is not a cPanel application. Run `node scripts/ops/fresh-rehearsal.js --init-env`, type the rehearsal database password into that clone's `.env`, then run `node scripts/ops/fresh-rehearsal.js --reset`. It works only with the rehearsal database and login, and stops if that login can read production.
 - Known limit: `deploy.sh` in release v3.5.0 cannot finish its backup step (the database name was read from a missing setting). The fix is in later releases, so the first update from v3.5.0 cannot go through the old `deploy.sh`.
+- Releases up to v3.6.0 also cannot finish the restore rehearsal. Upgrade v3.6.0 to v3.6.1 with `UPGRADE_V3_6_0_TO_V3_6_1.md`.
 

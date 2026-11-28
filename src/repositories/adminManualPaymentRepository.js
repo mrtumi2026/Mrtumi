@@ -19,6 +19,12 @@ async function decideManualPayment(paymentIdInput,decisionInput,actor={}, {pool=
     if(payment.payment_status!=='pending_verification'||['cancelled','failed'].includes(payment.order_status))throw new ConflictError('This order is no longer awaiting manual payment verification.');
     if(decision==='approve'){
       if(Number(payment.amount_paisa)!==Number(payment.total_paisa))throw new ConflictError('The submitted manual payment does not cover the full order total.');
+      const trx=String(payment.provider_trx_id||'').trim().toUpperCase();
+      if(trx){
+        const usedElsewhere=await tx.queryOne("SELECT id FROM order_payments WHERE UPPER(provider_trx_id)=? AND status='verified' AND id<>? LIMIT 1",[trx,paymentId])
+          ||await tx.queryOne("SELECT id FROM reseller_transactions WHERE tx_type='deposit' AND UPPER(trx_id)=? AND status='completed' LIMIT 1",[trx]);
+        if(usedElsewhere)throw new ConflictError('এই Transaction ID দিয়ে আগেই একটি পেমেন্ট অনুমোদন করা হয়েছে। টাকা যাচাই করে এটি বাতিল করুন।');
+      }
       await tx.execute("UPDATE order_payments SET status='verified',verified_at=UTC_TIMESTAMP(),verified_by_user_id=? WHERE id=? AND status='pending_verification'",[actor.id||null,paymentId]);
       await tx.execute("UPDATE orders SET payment_status='paid',paid_paisa=?,cod_due_paisa=0 WHERE id=? AND payment_status='pending_verification'",[payment.amount_paisa,payment.order_id]);
     }else{
