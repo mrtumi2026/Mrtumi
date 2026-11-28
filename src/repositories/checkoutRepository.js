@@ -150,7 +150,8 @@ async function createOrder(input,options={}){
   if(useWallet)payload.useWallet=true;
   const payloadHash=crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex');
   try {
-  return await mysql.withTransaction(async tx=>{
+  // Keep the result: the notifications below must run after the order has committed.
+  const result=await mysql.withTransaction(async tx=>{
     const replay=await tx.queryOne('SELECT id,invoice_no,checkout_request_hash FROM orders WHERE idempotency_key=?',[key]);
     if(replay){if(replay.checkout_request_hash!==payloadHash)throw new ConflictError('This checkout request key was already used with different order details.');return{id:Number(replay.id),invoiceNo:replay.invoice_no,replayed:true};}
     const blocked=await tx.queryOne('SELECT id FROM ip_blocks WHERE status=1 AND ip_or_phone IN (?,?) LIMIT 1 FOR UPDATE',[phone,String(ip||'').slice(0,64)]);
@@ -364,6 +365,7 @@ async function createOrder(input,options={}){
       // Non-blocking CAPI trigger
     }
   }
+  return result;
   } catch(err) {
     if(err.code==='DB_DUPLICATE_ENTRY'||err.mysqlCode==='ER_LOCK_DEADLOCK'){
       const replay=await client().queryOne('SELECT id,invoice_no,checkout_request_hash FROM orders WHERE idempotency_key=?',[key]);
