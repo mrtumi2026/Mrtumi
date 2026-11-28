@@ -45,6 +45,12 @@ Then check the following, in Bangla and in English:
 3. Admin: open the customer wallet page and confirm the per-order wallet percentage.
 4. Admin: open Courier API and confirm that no saved key is present in the page source.
 
+5. Cart: tick only some products. Checkout and the order must contain only those; the others stay in the cart.
+6. Admin: SMS Gateway page. Enter the key, save, then send a test SMS. Turn order OTP and vendor OTP on only after it arrives.
+7. Admin: Courier API. Add the courier in Live mode and use "Test connection" (this does not create a parcel). Book a real parcel only for a real order.
+
+These integrations were tested only against simulated providers, not real accounts.
+
 Delete buttons now remove records permanently. Do not try them on real records.
 
 ## Rollback
