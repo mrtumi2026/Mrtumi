@@ -34,6 +34,12 @@
             </form>
           </div>
 
+          <p class="small text-muted mb-2" id="cartSelectHelp"><%= locale === 'en' ? 'Tick the products you want to order now. Un-ticked products stay in your cart for later.' : 'এখন যে পণ্যগুলো অর্ডার করবেন সেগুলোতে টিক রাখুন। টিক না থাকা পণ্য পরে অর্ডারের জন্য কার্টেই থাকবে।' %></p>
+          <label class="form-check d-inline-flex align-items-center gap-2 mb-2">
+            <input type="checkbox" class="form-check-input mt-0" id="cartSelectAll" <%= cart.every(function(i){ return i.selected !== false; }) ? 'checked' : '' %> />
+            <span class="form-check-label small fw-semibold"><%= locale === 'en' ? 'Select all' : 'সব বেছে নিন' %></span>
+          </label>
+
           <div class="table-responsive">
             <table class="table align-middle mb-0">
               <thead class="table-light small">
@@ -50,6 +56,7 @@
                   <tr>
                     <td>
                       <div class="d-flex align-items-center gap-3">
+                        <input type="checkbox" class="form-check-input mt-0 flex-shrink-0 js-cart-select" data-key="<%= it.key %>" aria-label="<%= locale === 'en' ? 'Order now' : 'এখন অর্ডার করব' %>: <%= it.name %>" <%= it.selected !== false ? 'checked' : '' %> />
                         <img src="<%= it.image %>" style="width:60px;height:60px;border-radius:10px;object-fit:cover;" alt="" />
                         <div>
                           <a href="/product/<%= (it.slug && !String(it.slug).includes('?') && /^[a-zA-Z0-9_-]+$/.test(String(it.slug))) ? it.slug : it.product_id %>" class="fw-bold text-dark text-decoration-none"><%= it.name %></a>
@@ -82,44 +89,50 @@
       <div class="col-lg-4">
         <div class="bg-white rounded-4 border p-4 shadow-sm">
           <h2 class="h5 fw-bold border-bottom pb-2 mb-3">🧾 <%= t('store.orderSummary') %></h2>
+          <div class="d-flex justify-content-between py-1 small">
+            <span><%= locale === 'en' ? 'Selected products' : 'বেছে নেওয়া পণ্য' %>:</span>
+            <strong id="cartSelectedCount"><%= selectedCount %></strong>
+          </div>
           <div class="d-flex justify-content-between py-2">
             <span><%= t('common.subtotal') %>:</span>
-            <strong class="fs-5 text-success">৳<span class="js-cart-subtotal"><%= Number(cartSubtotal).toLocaleString('en-IN') %></span></strong>
+            <strong class="fs-5 text-success">৳<span id="cartSelectedSubtotal"><%= Number(selectedSubtotal).toLocaleString('en-IN') %></span></strong>
           </div>
           <p class="small text-muted mb-3"><%= t('store.shippingCalcNote') %></p>
-          <a href="/customer/checkout" class="mt-btn mt-btn-primary w-100 py-3 rounded-3">
-            <%= t('store.proceedToCheckout') %> →
-          </a>
+          <% if (selectedCount > 0) { %>
+            <a href="/customer/checkout" class="mt-btn mt-btn-primary w-100 py-3 rounded-3">
+              <%= t('store.proceedToCheckout') %> →
+            </a>
+          <% } else { %>
+            <div class="alert alert-warning small mb-0" role="status"><%= locale === 'en' ? 'Tick at least one product to order.' : 'অর্ডার করতে অন্তত একটি পণ্যে টিক দিন।' %></div>
+          <% } %>
           <a href="/all-products" class="btn btn-outline-secondary w-100 mt-2 rounded-3">← <%= t('common.continueShopping') %></a>
         </div>
       </div>
     </div>
 
     <script>
-      window.onCartStateUpdated = function(state) {
-        if (!state.cart || !state.cart.length) {
-          window.location.reload();
-          return;
+      (function () {
+        // The page is rendered by the server; reload it whenever the cart lines or quantities change.
+        var shown = <%- JSON.stringify(cart.map(function(i){ return i.key + ':' + i.qty; }).join('|')).replace(/</g, '\\u003c') %>;
+        window.onCartStateUpdated = function (state) {
+          var now = (state.cart || []).map(function (i) { return i.key + ':' + i.qty; }).join('|');
+          if (now !== shown) window.location.reload();
+        };
+        function select(body) {
+          var meta = document.querySelector('meta[name="csrf-token"]');
+          body._csrf = meta ? meta.content : '';
+          fetch('/cart/select', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-Token': body._csrf },
+            body: JSON.stringify(body)
+          }).finally(function () { window.location.reload(); });
         }
-        var tbody = document.getElementById('cartPageTableBody');
-        if (!tbody) return;
-        tbody.innerHTML = state.cart.map(function(it) {
-          return '<tr>' +
-            '<td><div class="d-flex align-items-center gap-3">' +
-              '<img src="' + it.image + '" style="width:60px;height:60px;border-radius:10px;object-fit:cover;" alt="" />' +
-              '<div><div class="fw-bold text-dark">' + it.name + '</div><div class="small text-muted">' + it.size + (it.color ? ' • ' + it.color : '') + '</div></div>' +
-            '</div></td>' +
-            '<td class="text-center fw-semibold">৳' + Number(it.price).toLocaleString('en-IN') + '</td>' +
-            '<td class="text-center"><div class="input-group input-group-sm mx-auto" style="width:115px;">' +
-              '<button type="button" class="btn btn-outline-secondary" aria-label="Decrease" onclick="window.updateCartItemQty(\'' + it.key + '\',' + (Number(it.qty) - 1) + ')">−</button>' +
-              '<input type="text" readonly class="form-control text-center fw-bold" value="' + it.qty + '" />' +
-              '<button type="button" class="btn btn-outline-secondary" aria-label="Increase" onclick="window.updateCartItemQty(\'' + it.key + '\',' + (Number(it.qty) + 1) + ')">+</button>' +
-            '</div></td>' +
-            '<td class="text-end fw-bold text-success">৳' + Number(it.price * it.qty).toLocaleString('en-IN') + '</td>' +
-            '<td class="text-end"><button type="button" class="btn btn-sm btn-outline-danger" aria-label="Remove" onclick="window.removeCartItem(\'' + it.key + '\')"><i class="fas fa-trash-alt"></i></button></td>' +
-          '</tr>';
-        }).join('');
-      };
+        document.querySelectorAll('.js-cart-select').forEach(function (box) {
+          box.addEventListener('change', function () { select({ key: box.dataset.key, selected: box.checked ? '1' : '0' }); });
+        });
+        var all = document.getElementById('cartSelectAll');
+        if (all) all.addEventListener('change', function () { select({ all: '1', selected: all.checked ? '1' : '0' }); });
+      })();
     </script>
   <% } %>
 </main>

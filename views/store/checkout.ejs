@@ -157,6 +157,9 @@
           <div class="checkout-order-summary bg-white rounded-4 border p-4 shadow-sm sticky-top" style="top: 90px;">
             <h5 class="fw-bold border-bottom pb-2 mb-3"><%= L('🧾 Order summary (', '🧾 অর্ডার সামারি (') %><span class="js-cart-count"><%= cartCount %></span> <%= L(' items)', 'টি পণ্য)') %></h5>
 
+            <% if (typeof savedLineCount !== 'undefined' && savedLineCount > 0) { %>
+              <p class="small text-muted"><%= L(savedLineCount + ' other product(s) stay in your cart for later.', 'আরও ' + savedLineCount + 'টি পণ্য পরের জন্য কার্টে থাকবে।') %> <a href="/cart"><%= L('Change selection', 'বাছাই বদলান') %></a></p>
+            <% } %>
             <div id="checkoutCartItemsList" class="mb-3" style="max-height: 280px; overflow-y: auto;">
               <% cart.forEach(function(it) { %>
                 <div class="d-flex align-items-center justify-content-between border-bottom py-2 gap-2">
@@ -302,7 +305,11 @@
 
   // Live callback when user changes quantity or removes an item right on Checkout!
   window.onCartStateUpdated = function(state) {
-    if (!state.cart || !state.cart.length) {
+    // Only the lines ticked on the cart page belong to this order.
+    var lines = (state.cart || []).filter(function(i) { return i.selected !== false; });
+    state = { cart: lines, discount: state.discount, cartCount: lines.reduce(function(s, i) { return s + Number(i.qty || 1); }, 0), cartSubtotal: lines.reduce(function(s, i) { return s + Number(i.price || 0) * Number(i.qty || 1); }, 0) };
+    document.querySelectorAll('.js-cart-count').forEach(function(el) { el.textContent = state.cartCount; });
+    if (!state.cart.length) {
       window.location.href = window.__withPbSid ? window.__withPbSid('/cart') : '/cart';
       return;
     }

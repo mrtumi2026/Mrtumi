@@ -130,10 +130,12 @@ async function bookOwnOrder({ orderId: orderIdInput, courierId, areaId, areaName
   const { parcel, row } = prepared;
   const { order } = parcel;
   const adapter = CourierProviderFactory.createAdapter(row);
-  const addressText = [order.shipping_address, order.upazila, order.district]
-    .map((value) => String(value || '').trim()).filter(Boolean)
-    .filter((value, index, all) => index === 0 || !all[0].toLowerCase().includes(value.toLowerCase()))
-    .join(', ');
+  // Delivery zones may use "All" as a catch-all placeholder; it is not part of a real address.
+  const district = String(order.district || '').trim().toLowerCase() === 'all' ? '' : String(order.district || '').trim();
+  const typed = String(order.shipping_address || '').trim();
+  // The customer types a full address; zone names are added only when it is too short for the courier.
+  const addressText = (typed.length >= 15 ? [typed] : [typed, order.upazila, district])
+    .filter(Boolean).join(', ');
   // Mixed orders book more than one parcel, so the shop's parcel gets its own reference.
   const reference = parcel.vendorItems ? `${order.invoice_no}-S` : String(order.invoice_no);
 
@@ -144,7 +146,7 @@ async function bookOwnOrder({ orderId: orderIdInput, courierId, areaId, areaName
       invoiceNo: reference,
       recipient: {
         name: order.customer_name, phone: order.customer_phone, address: addressText,
-        district: order.district || order.shipping_zone || 'Dhaka',
+        district: district || order.shipping_zone || 'Dhaka',
         note: String(note || '').trim().slice(0, 200) || `Order #${order.invoice_no}`
       },
       parcel: { weightGrams: 1000, deliveryAreaId: Number(areaId) || 0, deliveryAreaName: String(areaName || '').trim().slice(0, 120), valuePaisa: parcel.ownValuePaisa },

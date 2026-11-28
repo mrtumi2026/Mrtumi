@@ -50,6 +50,7 @@ router.post('/customer/register', registerLimiter, requireCsrf, asyncHandler(asy
     return formPage(req, res, isEn(req) ? 'Create account' : 'অ্যাকাউন্ট তৈরি করুন', isEn(req) ? 'Review and acknowledge the privacy notice to continue.' : 'চালিয়ে যেতে গোপনীয়তা নীতিটি পড়ে সম্মতি নিশ্চিত করুন।', { policyVersion: policy.version });
   }
   const guestCart = Array.isArray(req.session.cart) ? req.session.cart : [];
+  const cartUnselected = req.session.cartUnselected || [];
   const title = isEn(req) ? 'Create account' : 'অ্যাকাউন্ট তৈরি করুন';
   let account;
   try {
@@ -60,6 +61,7 @@ router.post('/customer/register', registerLimiter, requireCsrf, asyncHandler(asy
   }
   await new Promise((resolve, reject) => req.session.regenerate((err) => err ? reject(err) : resolve()));
   req.session.customerUser = account;
+  req.session.cartUnselected = cartUnselected;
   req.session.analyticsConsent = false;
   req.session.analyticsConsentChoice = '';
   await customers.mergeCart(account.id, guestCart);
@@ -72,8 +74,10 @@ router.post('/customer/login', ...customerLoginLimiters, requireCsrf, asyncHandl
   try { customer = await customers.authenticateCustomer(req.body.phone, req.body.password); } catch (err) { if (err.code !== 'VALIDATION_ERROR') throw err; }
   if (!customer) return formPage(req, res, isEn(req) ? 'Customer login' : 'কাস্টমার লগইন', isEn(req) ? 'Phone or password is incorrect.' : 'ফোন নম্বর অথবা পাসওয়ার্ড সঠিক নয়।');
   const guestCart = Array.isArray(req.session.cart) ? req.session.cart : [];
+  const cartUnselected = req.session.cartUnselected || [];
   await new Promise((resolve, reject) => req.session.regenerate((err) => err ? reject(err) : resolve()));
   req.session.customerUser = customer;
+  req.session.cartUnselected = cartUnselected;
   const consentState = env.db.client === 'mysql' ? await privacy.listConsents(customer.id) : [];
   const analyticsConsent = consentState.find((item) => item.consent_key === 'analytics');
   req.session.analyticsConsent = Number(analyticsConsent?.granted) === 1;
@@ -147,8 +151,9 @@ router.post('/customer/account/set-password', requireCustomer, requireCsrf, asyn
   }
   const locale = req.session.locale;
   const cart = req.session.cart;
+  const cartUnselected = req.session.cartUnselected || [];
   await new Promise((resolve, reject) => req.session.regenerate((err) => (err ? reject(err) : resolve())));
-  Object.assign(req.session, { customerUser: account, locale, cart: cart || [] });
+  Object.assign(req.session, { customerUser: account, locale, cart: cart || [], cartUnselected });
   req.flash('success', english ? 'Password saved. Next time, sign in with your mobile number and this password.' : 'পাসওয়ার্ড সংরক্ষণ হয়েছে। পরের বার মোবাইল নম্বর ও এই পাসওয়ার্ড দিয়ে লগইন করবেন।');
   return res.redirect('/customer/account');
 }));
@@ -453,61 +458,8 @@ function wantsJson(req) {
   return req.xhr || (req.headers.accept && req.headers.accept.includes("application/json")) || req.is("application/json");
 }
 
-router.get("/customer/account/wishlist", requireCustomer, asyncHandler(async (req, res) => {
-  const ids = Array.isArray(req.session.wishlist) ? req.session.wishlist.map(Number).filter((n) => Number.isSafeInteger(n) && n > 0) : [];
-  let wishlistItems = [];
-  if (ids.length) {
-    if (env.db.client === "mysql") {
-      const mysql = require("../db/mysqlPool");
-      const db = mysql.createQueryClient(mysql.getPool());
-      const placeholders = ids.map(() => "?").join(",");
-      const rows = await db.queryAll(
-        `SELECT p.id, p.sku, p.slug, p.name_bn, p.name_en, p.image_url,
-                p.regular_price_paisa, p.sale_price_paisa,
-                IF(p.vendor_id IS NULL, p.stock_on_hand, p.vendor_stock_on_hand) AS stock_on_hand,
-                IF(p.vendor_id IS NULL, p.stock_reserved, p.vendor_stock_reserved) AS stock_reserved,
-                p.status, p.is_archived
-         FROM products p
-         WHERE p.id IN (${placeholders}) AND p.status = 1 AND p.approval_status = 'approved' AND p.is_archived = 0`,
-        ids
-      );
-      wishlistItems = rows.map((p) => {
-        const price = (Number(p.sale_price_paisa) > 0 ? Number(p.sale_price_paisa) : Number(p.regular_price_paisa)) / 100;
-        const available = Math.max(0, Number(p.stock_on_hand || 0) - Number(p.stock_reserved || 0));
-        return {
-          id: p.id,
-          sku: p.sku,
-          slug: p.slug,
-          name: isEn(req) ? (p.name_en || p.name_bn) : (p.name_bn || p.name_en),
-          image: p.image_url || "/uploads/brand/mrtumi-placeholder-logo.svg",
-          price,
-          inStock: available > 0,
-          stockQty: available,
-        };
-      });
-    } else {
-      const sqlite = require("../db/sqlite");
-      const placeholders = ids.map(() => "?").join(",");
-      const rows = sqlite.prepare(`SELECT * FROM products WHERE id IN (${placeholders}) AND status = 'active'`).all(...ids);
-      wishlistItems = rows.map((p) => ({
-        id: p.id,
-        sku: p.sku || "",
-        slug: p.slug || p.id,
-        name: p.name || p.name_bn || "",
-        image: p.image || "/uploads/brand/mrtumi-placeholder-logo.svg",
-        price: Number(p.new_price || p.price || 0),
-        inStock: Number(p.stock || 0) > 0,
-        stockQty: Number(p.stock || 0),
-      }));
-    }
-  }
-  return res.render("customer/wishlist", {
-    title: isEn(req) ? "My Wishlist" : "আমার পছন্দের তালিকা",
-    isEn: isEn(req),
-    items: wishlistItems,
-    csrfToken: req.csrfToken(),
-  });
-}));
+// There is no separate wishlist: items are kept in the cart and ticked when ordering.
+router.get("/customer/account/wishlist", (req, res) => res.redirect("/cart"));
 
 router.post("/customer/account/wishlist/add", requireCsrf, asyncHandler(async (req, res) => {
   const productId = parseInt(req.body.product_id, 10);

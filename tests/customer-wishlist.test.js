@@ -34,19 +34,14 @@ test('Customer wishlist view renders empty state cleanly with localized copy', (
   assert.match(template, /action="\/cart\/add"/);
 });
 
-test('Storefront header and product page include wishlist navigation and buttons', () => {
-  const headerPath = path.join(__dirname, '..', 'views', 'store', 'partials', 'header.ejs');
-  const headerContent = fs.readFileSync(headerPath, 'utf8');
-  assert.match(headerContent, /\/customer\/account\/wishlist/, 'Header must link to wishlist');
-
-  const productPath = path.join(__dirname, '..', 'views', 'store', 'product.ejs');
-  const productContent = fs.readFileSync(productPath, 'utf8');
-  assert.match(productContent, /prodWishlistBtn/, 'Product page must include wishlist button');
-  assert.match(productContent, /\/customer\/account\/wishlist\/add/, 'Product wishlist button must target add route');
-
-  const accountPath = path.join(__dirname, '..', 'views', 'customer', 'account.ejs');
-  const accountContent = fs.readFileSync(accountPath, 'utf8');
-  assert.match(accountContent, /\/customer\/account\/wishlist/, 'Account page must link to wishlist');
+// Owner decision (Nov 2026): no separate wishlist yet. Items are kept in the cart and ticked when ordering.
+test('Storefront does not offer a separate wishlist, and wishlist addresses open the cart', () => {
+  for (const file of ['store/partials/header.ejs', 'store/product.ejs', 'customer/account.ejs']) {
+    const content = fs.readFileSync(path.join(__dirname, '..', 'views', file), 'utf8');
+    assert.doesNotMatch(content, /\/customer\/account\/wishlist/, `${file} must not link to the wishlist`);
+  }
+  const account = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'customerAccount.js'), 'utf8');
+  assert.match(account, /router\.get\("\/customer\/account\/wishlist", \(req, res\) => res\.redirect\("\/cart"\)\)/);
 });
 
 test('Storefront router includes /wishlist alias redirect', () => {

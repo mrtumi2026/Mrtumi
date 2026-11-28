@@ -180,7 +180,7 @@ test('HTTP integration: open redirect prevention across contact, newsletter, rev
 
     // 6. POST /customer/account/wishlist/add without CSRF (or invalid product) with malicious Referer
     // First obtain session and CSRF
-    const sessionRes = await fetch(`${baseUrl}/customer/account/wishlist`, {
+    const sessionRes = await fetch(`${baseUrl}/customer/login`, {
       headers: { 'Host': host }
     });
     const setCookie = sessionRes.headers.get('set-cookie');

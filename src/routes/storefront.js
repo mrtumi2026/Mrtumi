@@ -221,6 +221,8 @@ function wantsJson(req) {
   );
 }
 
+const cartSelection = require('../utils/cartSelection');
+
 async function refreshCustomerCart(req) {
   if (!storefrontRepo.isMysqlMode() || !req.customerUser?.id) return { availabilityAdjusted:false };
   const savedCart = await customerRepo.listCart(req.customerUser.id, req.locale);
@@ -280,10 +282,15 @@ function computeCartTotals(req) {
     }
   }
 
+  const lines = cart.map((item) => ({ ...item, selected: cartSelection.isSelected(req.session, item) }));
+  const chosen = lines.filter((item) => item.selected);
+
   return {
-    cart,
+    cart: lines,
     cartCount,
     cartSubtotal,
+    selectedCount: chosen.reduce((s, i) => s + (Number(i.qty) || 1), 0),
+    selectedSubtotal: chosen.reduce((s, i) => s + (Number(i.price) || 0) * (Number(i.qty) || 1), 0),
     discount,
     appliedCoupon: req.session.appliedCoupon || null,
   };
@@ -733,6 +740,7 @@ router.post(
     }
 
     if (!(storefrontRepo.isMysqlMode() && req.customerUser?.id)) await persistCustomerCart(req);
+    cartSelection.setSelected(req.session, [{ product_id: prod.id, variant_id: matchedVariant ? matchedVariant.id : null }], true);
     const state = computeCartTotals(req);
     const isBuyNow = String(buy_now || '') === '1' || buy_now === true;
     const addedMsg = t('store.addedToCartMsg', { name: prod.name });
@@ -822,6 +830,7 @@ router.post('/cart/remove', requireCsrf, asyncHandler(async (req, res) => {
   const { key } = req.body;
   const removedItem = Array.isArray(req.session.cart) ? req.session.cart.find((item) => item.key === key) : null;
   if (Array.isArray(req.session.cart)) req.session.cart = req.session.cart.filter((item) => item.key !== key);
+  if (removedItem) cartSelection.setSelected(req.session, [removedItem], true);
   if (storefrontRepo.isMysqlMode() && req.customerUser?.id) {
     if (removedItem) await customerRepo.removeCartLine(req.customerUser.id, removedItem);
     req.session.cart = await customerRepo.listCart(req.customerUser.id, req.locale);
@@ -844,6 +853,7 @@ router.post('/cart/clear', requireCsrf, asyncHandler(async (req, res) => {
   await refreshCustomerCart(req);
   const t = res.locals.t;
   req.session.cart = [];
+  delete req.session.cartUnselected;
   delete req.session.appliedCoupon;
   if (storefrontRepo.isMysqlMode() && req.customerUser?.id) await customerRepo.clearCart(req.customerUser.id);
   if (wantsJson(req)) {
@@ -857,6 +867,16 @@ router.post('/cart/clear', requireCsrf, asyncHandler(async (req, res) => {
     });
   }
   req.flash('success', t('store.clearedCartMsg'));
+  return res.redirect('/cart');
+}));
+
+// Tick or un-tick cart lines. Only ticked lines go to checkout; the rest stay in the cart.
+router.post('/cart/select', requireCsrf, asyncHandler(async (req, res) => {
+  await refreshCustomerCart(req);
+  const cart = Array.isArray(req.session.cart) ? req.session.cart : [];
+  const targets = String(req.body.all || '') === '1' ? cart : cart.filter((item) => item.key === String(req.body.key || ''));
+  cartSelection.setSelected(req.session, targets, String(req.body.selected) === '1');
+  if (wantsJson(req)) return res.json({ success: true, ...computeCartTotals(req) });
   return res.redirect('/cart');
 }));
 
@@ -1138,12 +1158,12 @@ router.post('/order/quick-submit', publicFormLimiter, requireCsrf, asyncHandler(
 // ─── Coupon Validation ───
 router.post('/checkout/apply-coupon', requireCsrf, asyncHandler(async (req, res) => {
   if (storefrontRepo.isMysqlMode()) {
-    const result = await checkoutRepo.validateCoupon(req.body.code, req.session.cart || [], { locale: req.locale });
+    const result = await checkoutRepo.validateCoupon(req.body.code, cartSelection.selectedLines(req.session), { locale: req.locale });
     req.session.appliedCoupon = { code: result.code };
     return res.json({ success: true, code: result.code, discount: result.amount / 100, message: `Coupon applied: ৳${result.amount / 100}` });
   }
   const code = String(req.body.code || '').trim().toUpperCase();
-  const subtotal = (req.session.cart || []).reduce((s, i) => s + Number(i.price) * Number(i.qty), 0);
+  const subtotal = cartSelection.selectedLines(req.session).reduce((s, i) => s + Number(i.price) * Number(i.qty), 0);
 
   const coupon = db.get('SELECT * FROM coupons WHERE UPPER(code) = ? AND status = 1', code);
   if (!coupon) {
@@ -1177,7 +1197,7 @@ router.post('/checkout/save-incomplete', requireCsrf, asyncHandler(async (req, r
     if (req.body.consent !== 'true' || req.body.notification_consent === 'true') return res.json({ ok: false, reason: 'explicit_consent_required' });
     const result = await phase08Repo.recordIncompleteCheckout({
       consent: true, notificationConsent: false, phone, name, sessionSid: req.sessionID,
-      cart: (req.session.cart || []).map((item) => ({ product_id: item.product_id ?? item.productId ?? item.id, variant_id: item.variant_id ?? item.variantId ?? null, qty: item.qty ?? item.quantity })),
+      cart: cartSelection.selectedLines(req.session).map((item) => ({ product_id: item.product_id ?? item.productId ?? item.id, variant_id: item.variant_id ?? item.variantId ?? null, qty: item.qty ?? item.quantity })),
     });
     if (result.recorded) req.session.incompleteCheckoutId = result.id;
     return res.json({ ok: Boolean(result.recorded), id: result.id || null, reason: result.reason || null });
@@ -1224,11 +1244,16 @@ router.post('/checkout/withdraw-recovery-consent', requireCsrf, asyncHandler(asy
 router.get('/customer/checkout', asyncHandler(async (req, res) => {
   if (storefrontRepo.isMysqlMode()) {
     await refreshCustomerCart(req);
-    const source = Array.isArray(req.session.cart) ? req.session.cart : [];
+    const source = cartSelection.selectedLines(req.session);
+    const saved = cartSelection.savedLines(req.session);
+    if (!source.length && saved.length) {
+      req.flash('error', req.locale === 'en' ? 'Tick at least one product in your cart to order.' : 'অর্ডার করতে কার্ট থেকে অন্তত একটি পণ্যে টিক দিন।');
+      return res.redirect('/cart');
+    }
     const quote = source.length ? await checkoutRepo.quoteCart(source, { locale: req.locale }) : { items: [], subtotalPaisa: 0, count: 0 };
     const sourceKeys = new Map(source.map((item) => [`${Number(item.product_id ?? item.productId ?? item.id)}:${Number(item.variant_id ?? item.variantId ?? 0)}:${String(item.size||'')}:${String(item.color||'')}`, item.key]));
     const cart = quote.items.map((item) => ({ ...item, key: sourceKeys.get(`${Number(item.product_id)}:${Number(item.variant_id||0)}:${String(item.size||'')}:${String(item.color||'')}`) || `${item.product_id}:${item.variant_id || 0}`, price: item.price_paisa / 100 }));
-    req.session.cart = cart.map((item) => ({ key: item.key, product_id: item.product_id, variant_id: item.variant_id, qty: item.qty, name: item.name, image: item.image, price: item.price, size: item.size, color: item.color }));
+    req.session.cart = [...cart.map((item) => ({ key: item.key, product_id: item.product_id, variant_id: item.variant_id, qty: item.qty, name: item.name, image: item.image, price: item.price, size: item.size, color: item.color })), ...saved];
     let discount = 0;
     if (req.session.appliedCoupon?.code && cart.length) {
       try { discount = (await checkoutRepo.validateCoupon(req.session.appliedCoupon.code, cart, { locale: req.locale })).amount / 100; }
@@ -1248,6 +1273,7 @@ router.get('/customer/checkout', asyncHandler(async (req, res) => {
     }
     return res.render('store/checkout', {
       checkoutWallet,
+      savedLineCount: saved.length,
       cart, cartCount: quote.count, cartSubtotal: quote.subtotalPaisa / 100, discount,
       appliedCoupon: req.session.appliedCoupon || null, gateways: methods,
       deliveryLocations: locations, savedAddresses, checkoutCustomer: req.customerUser || null,
@@ -1270,7 +1296,7 @@ router.post('/customer/checkout', requireCsrf, asyncHandler(async (req, res) => 
     if (!expected) throw new (require('../utils/errors').ConflictError)('Checkout session expired. Reload checkout and try again.');
     if (req.body.confirm_order !== 'yes') throw new (require('../utils/errors').ValidationError)('Confirm the order details before submitting.');
     const isReplay = matches(replayKey);
-    const sourceCart = isReplay ? (req.session.checkoutLastCart || []) : (req.session.cart || []);
+    const sourceCart = isReplay ? (req.session.checkoutLastCart || []) : cartSelection.selectedLines(req.session);
     const incompleteOrderId = isReplay ? (req.session.checkoutLastRecoveryId || null) : (req.session.incompleteCheckoutId || null);
     if (!Array.isArray(sourceCart) || !sourceCart.length) throw new (require('../utils/errors').ValidationError)('Your server-side cart is empty.');
     const checkoutInput = { ...req.body };
@@ -1298,7 +1324,9 @@ router.post('/customer/checkout', requireCsrf, asyncHandler(async (req, res) => 
       note: req.body.note, coupon_code: matches(replayKey) ? String(req.body.coupon_code || '') : (req.session.appliedCoupon?.code || ''),
     }, { locale: req.locale, sessionCustomer: req.customerUser || null, ip: req.ip, userAgent: req.get('user-agent'), fbp: req.cookies?._fbp, fbc: req.cookies?._fbc, requestKey: expected, cart: sourceCart, incompleteOrderId, sessionSid: req.sessionID, otpVerified: isOtpSessionVerified, referralCode: req.body.referral_code || req.session.referralCode || req.cookies?.mrtumi_ref || null, affiliateCode: req.body.affiliate_code || req.session?.affiliateCode || req.cookies?.mrtumi_aff || null, analyticsConsent: consentGranted(req.session, env.analyticsAttributionEnabled), attribution: req.session.analyticsAttribution || null });
     delete req.session.orderOtpVerified; delete req.session.orderOtpPhone;
-    if (!isReplay) { req.session.checkoutLastCart = JSON.parse(JSON.stringify(sourceCart)); req.session.checkoutLastRequestKey = expected; req.session.checkoutLastRecoveryId = incompleteOrderId; delete req.session.incompleteCheckoutId; req.session.cart = []; delete req.session.appliedCoupon; if (!(storefrontRepo.isMysqlMode() && req.customerUser?.id)) await persistCustomerCart(req); }
+    if (!isReplay) { req.session.checkoutLastCart = JSON.parse(JSON.stringify(sourceCart)); req.session.checkoutLastRequestKey = expected; req.session.checkoutLastRecoveryId = incompleteOrderId; delete req.session.incompleteCheckoutId; req.session.cart = cartSelection.savedLines(req.session); delete req.session.appliedCoupon; }
+    // The order transaction empties the saved cart, so write back the lines the customer did not order.
+    if (!isReplay && req.customerUser?.id && req.session.cart.length) await persistCustomerCart(req).catch((err) => console.error('[cart] could not keep un-ordered lines:', err.message));
     rememberOrderForSuccess(req, result);
     return res.redirect(`/order-success/${encodeURIComponent(result.invoiceNo)}`);
   }
@@ -1495,6 +1523,7 @@ async function signInNewAccount(req, invoiceNo) {
   delete carried.flash;
   await new Promise((resolve, reject) => req.session.regenerate((err) => (err ? reject(err) : resolve())));
   Object.assign(req.session, carried, { customerUser: account, customerNeedsPassword: true, welcomeInvoice: pending.invoiceNo });
+  if (Array.isArray(carried.cart) && carried.cart.length) await customerRepo.mergeCart(account.id, carried.cart).catch((err) => console.error('[cart] could not keep un-ordered lines:', err.message));
   return true;
 }
 
@@ -2033,7 +2062,7 @@ ${urls.map((u) => `  <url><loc>${escapeXml(u)}</loc></url>`).join('\n')}
   })
 );
 
-router.get('/wishlist', (req, res) => res.redirect('/customer/account/wishlist'));
+router.get('/wishlist', (req, res) => res.redirect('/cart'));
 
 // ─── Canonical Root-Level Vendor Storefront (/:slug) ───
 router.get(
