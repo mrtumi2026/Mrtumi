@@ -245,7 +245,11 @@
             </div>
 
             <!-- Embedded Direct Quick Order -->
-            <div class="border rounded-3 p-3 bg-light">
+            <% const quickOrderNeedsOtp = siteSettings.otp_mode === 'on'; %>
+            <% if (quickOrderNeedsOtp) { %>
+              <p class="small text-muted mb-0" id="qoOtpNote"><%= locale === 'en' ? 'Mobile verification (OTP) is required. Press Checkout to complete your order.' : 'অর্ডারে মোবাইল যাচাই (OTP) লাগবে। অর্ডার শেষ করতে চেকআউট বাটন চাপুন।' %></p>
+            <% } %>
+            <div class="border rounded-3 p-3 bg-light" id="qoDirectOrderBox" <%= quickOrderNeedsOtp ? 'hidden' : '' %>>
               <div class="fw-bold small text-success mb-2">🚀 <%= t('store.confirmOrderNow') %>:</div>
               <form id="qoDirectOrderForm">
                 <input type="hidden" name="quick_order_request_key" id="qoRequestKey" value="">

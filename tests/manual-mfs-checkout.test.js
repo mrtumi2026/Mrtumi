@@ -56,5 +56,5 @@ test('pending action center has CSRF-protected review actions and counts linked 
   const dashboard = read('views/admin/dashboard.ejs');
   for (const route of ['/admin/vendor-applications?status=pending', '/admin/products/pending', '/admin/order/pending']) assert.ok(dashboard.includes(route));
   assert.match(dashboard, /Approve Payment/);
-  assert.match(dashboard, />Reject</);
+  assert.match(dashboard, /L\('Reject', 'বাতিল করুন'\)/);
 });

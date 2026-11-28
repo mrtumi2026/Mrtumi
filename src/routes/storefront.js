@@ -1278,7 +1278,7 @@ router.get('/customer/checkout', asyncHandler(async (req, res) => {
       appliedCoupon: req.session.appliedCoupon || null, gateways: methods,
       deliveryLocations: locations, savedAddresses, checkoutCustomer: req.customerUser || null,
       checkoutAvailable: Boolean(locations.length && methods.length), canonicalMysqlCheckout: true, checkoutRequestKey: req.session.checkoutRequestKey,
-      csrfToken: req.csrfToken(), siteSettings: { free_shipping_min: 0 }, isEn: req.locale === 'en',
+      csrfToken: req.csrfToken(), siteSettings: { ...res.locals.siteSettings, free_shipping_min: 0 }, isEn: req.locale === 'en',
     });
   }
   const state = computeCartTotals(req);
