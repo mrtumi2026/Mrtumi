@@ -173,3 +173,8 @@ test('Admin Credential Exposure: secrets and unknown fields never appear in rend
   assert.equal(parsedOpts.store_id, 5, 'Allowlisted store_id must be preserved for editing');
   assert.equal(parsedOpts.city_id, 1, 'Allowlisted city_id must be preserved for editing');
 });
+
+test('Admin Credential Exposure: the courier admin route really applies the sanitizer', () => {
+  const source = require('node:fs').readFileSync(path.join(__dirname, '..', 'src', 'routes', 'adminSettings.js'), 'utf8');
+  assert.match(source, /rows:rows\.map\(sanitizeAdminCourierRecord\)/);
+});

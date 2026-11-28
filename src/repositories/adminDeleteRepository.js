@@ -136,4 +136,19 @@ const deleteReview = simpleDelete('reviews', 'catalog.review.delete', 'review', 
 // Removing a block is how a wrongly blocked customer is allowed to order again.
 const deleteIpBlock = simpleDelete('ip_blocks', 'customer.ip_block.removed', 'ip_block', 'Block entry not found.', 'id,target_type,ip_or_phone,reason');
 
-module.exports = { deleteComplaint, deleteContactMessage, deleteReview, deleteIpBlock, deleteSupplier, deletePurchase, deleteIncompleteCheckout, deleteRefundRequest, deleteOrder };
+// A courier that is still carrying parcels is needed for tracking. The audit row keeps no key or secret.
+async function deleteCourierApi(idInput, actor = {}) {
+  const id = positive(idInput);
+  return mysql.withTransaction(async (tx) => {
+    const row = await tx.queryOne('SELECT id,name,code,status FROM courier_apis WHERE id=? FOR UPDATE', [id]);
+    if (!row) throw new NotFoundError('Courier setting not found.');
+    const open = await count(tx, 'SELECT COUNT(*) AS n FROM courier_shipments WHERE LOWER(courier_code)=LOWER(?) AND is_active=1', [row.code]);
+    const queued = await count(tx, "SELECT COUNT(*) AS n FROM vendor_courier_booking_requests WHERE LOWER(courier_code)=LOWER(?) AND active_sub_order_id IS NOT NULL", [row.code]);
+    if (open || queued) throw new ConflictError('This courier still has open parcels or booking requests. Turn it off with Toggle Active instead, and delete it after they are finished.');
+    await tx.execute('DELETE FROM courier_apis WHERE id=?', [id]);
+    await audit(tx, actor, 'courier.api.delete', 'courier_api', id, row);
+    return { deleted: true };
+  });
+}
+
+module.exports = { deleteCourierApi, deleteComplaint, deleteContactMessage, deleteReview, deleteIpBlock, deleteSupplier, deletePurchase, deleteIncompleteCheckout, deleteRefundRequest, deleteOrder };

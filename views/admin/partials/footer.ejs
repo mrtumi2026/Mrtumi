@@ -291,12 +291,14 @@
                 d.orders.forEach(function(o) {
                   var card = document.createElement('div');
                   card.className = 'aot-toast';
+                  // Name and phone come from the public checkout form, so they are escaped before display.
+                  var esc = function(v) { var d = document.createElement('div'); d.textContent = String(v == null ? '' : v); return d.innerHTML; };
                   card.innerHTML =
                     '<div class="d-flex justify-content-between align-items-center mb-1">' +
-                    '<span class="badge bg-success-subtle text-success">#' + o.invoice_id + '</span>' +
-                    '<strong class="text-success">৳' + o.amount + '</strong></div>' +
-                    '<div class="fw-semibold text-dark">' + o.customer_name + '</div>' +
-                    '<div class="text-muted small">' + o.phone + '</div>';
+                    '<span class="badge bg-success-subtle text-success">#' + esc(o.invoice_id) + '</span>' +
+                    '<strong class="text-success">৳' + Number(o.amount || 0).toFixed(2) + '</strong></div>' +
+                    '<div class="fw-semibold text-dark">' + esc(o.customer_name) + '</div>' +
+                    '<div class="text-muted small">' + esc(o.phone) + '</div>';
                   card.onclick = function() { window.location.href = o.process_url; };
                   stack.appendChild(card);
                   setTimeout(function() { if (card.parentNode) card.remove(); }, 10000);

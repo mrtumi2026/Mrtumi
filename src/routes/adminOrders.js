@@ -765,12 +765,13 @@ router.post('/admin/order/status-quick', asyncHandler(async (req, res) => {
   res.redirect(req.get('Referrer') || '/admin/order/all');
 }));
 
+// One message only: the session keeps a single flash at a time.
 function flashBulkDelete(req, result) {
   const bn = req.locale === 'bn';
-  if (result.deleted.length) req.flash('success', bn ? `${result.deleted.length}টি অর্ডার মুছে ফেলা হয়েছে।` : `${result.deleted.length} order(s) deleted.`);
-  if (!result.skipped.length) return;
+  const done = bn ? `${result.deleted.length}টি অর্ডার মুছে ফেলা হয়েছে।` : `${result.deleted.length} order(s) deleted.`;
+  if (!result.skipped.length) return req.flash('success', done);
   const lines = result.skipped.slice(0, 10).map((row) => `ID ${row.id}: ${localizeError(row.reason, req.locale)}`).join(' | ');
-  req.flash('error', bn ? `${result.skipped.length}টি অর্ডার মোছা হয়নি — ${lines}` : `${result.skipped.length} order(s) were not deleted — ${lines}`);
+  return req.flash('error', `${done} ${bn ? `${result.skipped.length}টি মোছা হয়নি` : `${result.skipped.length} not deleted`} — ${lines}`);
 }
 
 router.post('/admin/order/bulk-action', asyncHandler(async (req, res) => {

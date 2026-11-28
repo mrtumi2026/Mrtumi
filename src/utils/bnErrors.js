@@ -3,6 +3,8 @@
 // Bangla wording for the messages that customers, vendors, resellers and shop staff meet in normal use.
 // A message with no entry is shown unchanged, so nothing is ever hidden or replaced by a guess.
 const EXACT = new Map(Object.entries({
+  'Courier setting not found.': 'কুরিয়ার সেটিংটি পাওয়া যায়নি।',
+  'This courier still has open parcels or booking requests. Turn it off with Toggle Active instead, and delete it after they are finished.': 'এই কুরিয়ারে এখনও চলমান পার্সেল বা বুকিং অনুরোধ আছে। আপাতত Toggle Active দিয়ে বন্ধ রাখুন, শেষ হলে মুছুন।',
   'Complaint not found.': 'অভিযোগটি পাওয়া যায়নি।',
   'Message not found.': 'বার্তাটি পাওয়া যায়নি।',
   'Review not found.': 'রিভিউটি পাওয়া যায়নি।',
