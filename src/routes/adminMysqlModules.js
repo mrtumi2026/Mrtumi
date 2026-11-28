@@ -238,18 +238,47 @@ action('/admin/features/create', '/admin/features/manage', 'ফিচার য�
 });
 action('/admin/features/delete/:id', '/admin/features/manage', 'মুছে ফেলা হয়েছে।', removeById('features'));
 
-page('/admin/page/manage', async () => ({
-  pageTitle: 'Custom Pages (CMS)', subtitle: 'প্রাইভেসি পলিসি, রিটার্ন পলিসি ও আমাদের সম্পর্কে পেজ তৈরি করুন',
-  createAction: '/admin/page/create', deletePrefix: '/admin/page/delete', publicLinkPrefix: '/page', publicLinkKey: 'slug',
-  columns: [col('id', '#'), col('title', 'Page Title'), col('slug', 'URL Slug'), col('status', 'Active', 'status')],
-  fields: [field('title', 'Page Title', 'text', { required: true }), field('slug', 'URL Slug (e.g. refund-policy)', 'text', { required: true }), field('content', 'Page Content', 'textarea', { required: true })],
-  rows: await mysql.queryAll('SELECT id,title_bn AS title,slug,status FROM cms_pages ORDER BY id'),
-}));
-action('/admin/page/create', '/admin/page/manage', 'পেজ তৈরি হয়েছে।', async (tx, req) => {
-  await tx.execute('INSERT INTO cms_pages(title_bn,slug,content_bn,status) VALUES(?,?,?,1)',
-    [input.required(req.body.title, 255, 'Title'), input.slug(req.body.slug || req.body.title), input.required(req.body.content, 100000, 'Content')]);
+// The two policy pages every shop needs. They start as empty drafts (hidden from the public) so the
+// owner only has to paste the text and publish.
+const STANDARD_PAGES = Object.freeze({
+  'terms-and-conditions': ['শর্তাবলী', 'Terms and Conditions'],
+  'return-refund-policy': ['রিটার্ন ও রিফান্ড নীতি', 'Return and Refund Policy'],
 });
-action('/admin/page/delete/:id', '/admin/page/manage', 'মুছে ফেলা হয়েছে।', removeById('cms_pages'));
+const pageStatus = (value) => (String(value) === '0' ? 0 : 1);
+const pageContent = (body, status) => (status ? input.required(body.content, 100000, 'Content') : input.optional(body.content, 100000));
+page('/admin/page/manage', async () => {
+  for (const [slug, [titleBn, titleEn]] of Object.entries(STANDARD_PAGES)) {
+    await mysql.execute("INSERT IGNORE INTO cms_pages(title_bn,title_en,slug,content_bn,status) VALUES(?,?,?,'',0)", [titleBn, titleEn, slug]);
+  }
+  return {
+    pageTitle: 'Custom Pages (CMS)', subtitle: 'Terms ও Return Policy পেজে "Edit" চেপে লেখা বসান, তারপর Status "প্রকাশিত" করে Save করুন',
+    createAction: '/admin/page/create', updatePrefix: '/admin/page/update', deletePrefix: '/admin/page/delete', publicLinkPrefix: '/page', publicLinkKey: 'slug',
+    columns: [col('id', '#'), col('title', 'Page Title'), col('slug', 'URL Slug'), col('status', 'Published', 'status')],
+    fields: [field('title', 'Page Title', 'text', { required: true }), field('slug', 'URL Slug (e.g. refund-policy)', 'text', { required: true }),
+      field('content', 'Page Content', 'textarea', { rows: 14 }),
+      select('status', 'Status', [{ value: 1, label: 'প্রকাশিত (সবাই দেখবে)' }, { value: 0, label: 'খসড়া (লুকানো)' }])],
+    rows: await mysql.queryAll('SELECT id,title_bn AS title,slug,content_bn AS content,status FROM cms_pages ORDER BY id'),
+  };
+});
+action('/admin/page/create', '/admin/page/manage', 'পেজ তৈরি হয়েছে।', async (tx, req) => {
+  const status = pageStatus(req.body.status);
+  await tx.execute('INSERT INTO cms_pages(title_bn,slug,content_bn,status) VALUES(?,?,?,?)',
+    [input.required(req.body.title, 255, 'Title'), input.slug(req.body.slug || req.body.title), pageContent(req.body, status), status]);
+});
+action('/admin/page/update/:id', '/admin/page/manage', 'পেজ সংরক্ষণ হয়েছে।', async (tx, req) => {
+  const id = input.id(req.params.id);
+  const row = await tx.queryOne('SELECT slug FROM cms_pages WHERE id=? FOR UPDATE', [id]);
+  if (!row) throw new NotFoundError('পেজটি পাওয়া যায়নি।');
+  const status = pageStatus(req.body.status);
+  const slug = Object.hasOwn(STANDARD_PAGES, row.slug) ? row.slug : input.slug(req.body.slug || row.slug);
+  await tx.execute('UPDATE cms_pages SET title_bn=?,slug=?,content_bn=?,status=? WHERE id=?',
+    [input.required(req.body.title, 255, 'Title'), slug, pageContent(req.body, status), status, id]);
+});
+action('/admin/page/delete/:id', '/admin/page/manage', 'মুছে ফেলা হয়েছে।', async (tx, req) => {
+  const row = await tx.queryOne('SELECT slug FROM cms_pages WHERE id=?', [input.id(req.params.id)]);
+  if (row && Object.hasOwn(STANDARD_PAGES, row.slug)) throw new ConflictError('এই পেজটি মুছে ফেলা যাবে না। লুকাতে চাইলে Edit করে "খসড়া" করুন।');
+  await removeById('cms_pages')(tx, req);
+});
 
 // ─── Landing page campaigns ───
 const campaignPage = (openModal) => async () => ({
