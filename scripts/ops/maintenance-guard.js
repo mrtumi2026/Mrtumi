@@ -20,11 +20,32 @@ function sha256Buffer(buf) {
   return crypto.createHash('sha256').update(buf).digest('hex');
 }
 
+/**
+ * The 503 rules only work in the .htaccess that the web server actually reads.
+ * On cPanel that is the domain document root, not <app>/public. The document root
+ * is used only when explicitly configured, or when its .htaccess names this exact
+ * application root (so a rehearsal clone can never put the live site into 503).
+ */
+function resolveDocumentRoot(rootDir, homeDir) {
+  const explicit = String(process.env.DEPLOY_DOCUMENT_ROOT || '').trim();
+  if (explicit) return path.resolve(explicit);
+
+  const cpanelRoot = path.join(homeDir, 'public_html');
+  const cpanelHtaccess = path.join(cpanelRoot, '.htaccess');
+  if (fs.existsSync(cpanelHtaccess)) {
+    const rules = fs.readFileSync(cpanelHtaccess, 'utf8');
+    const servesThisApp = [...rules.matchAll(/^\s*PassengerAppRoot\s+"?([^"\r\n]+?)"?\s*$/gm)]
+      .some((match) => path.resolve(match[1]) === rootDir);
+    if (servesThisApp) return cpanelRoot;
+  }
+  return path.join(rootDir, 'public');
+}
+
 function getPaths(customRootDir) {
   const rootDir = customRootDir || path.resolve(__dirname, '..', '..');
   const homeDir = process.env.HOME || process.env.USERPROFILE || rootDir;
   const lockPath = path.join(homeDir, '.mrtumi_maintenance.lock');
-  const publicDir = path.join(rootDir, 'public');
+  const publicDir = resolveDocumentRoot(rootDir, homeDir);
   const htaccessPath = path.join(publicDir, '.htaccess');
   const htaccessBakPath = path.join(publicDir, '.htaccess.pre_maint_backup');
   const backupDir = path.join(homeDir, 'db_backups');
@@ -203,6 +224,7 @@ function engageMaintenance(reason = 'Production Deployment or Recovery in Progre
     state: 'ACTIVE_MAINTENANCE',
     node_version: process.version,
     htaccess: {
+      path: htaccessPath,
       existed: htaccessExisted,
       original_sha: originalHtaccessSha,
       original_mode: originalHtaccessMode
@@ -225,7 +247,8 @@ function engageMaintenance(reason = 'Production Deployment or Recovery in Progre
  * Restores original crontab with exact byte verification.
  */
 function disengageMaintenance(customRootDir) {
-  const { lockPath, htaccessPath, htaccessBakPath, crontabBakPath } = getPaths(customRootDir);
+  const paths = getPaths(customRootDir);
+  const { lockPath, crontabBakPath } = paths;
 
   let lockInfo = {};
   if (fs.existsSync(lockPath)) {
@@ -234,8 +257,10 @@ function disengageMaintenance(customRootDir) {
     } catch (_) {}
   }
 
-  // 1. Reversible .htaccess restoration
+  // 1. Reversible .htaccess restoration (restore the same file that was changed)
   const htaccessInfo = lockInfo.htaccess || {};
+  const htaccessPath = htaccessInfo.path || paths.htaccessPath;
+  const htaccessBakPath = `${htaccessPath}.pre_maint_backup`;
   if (htaccessInfo.existed === false) {
     // .htaccess did not exist before; clean up
     if (fs.existsSync(htaccessPath)) {

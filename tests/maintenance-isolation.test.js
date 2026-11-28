@@ -215,3 +215,46 @@ describe('Workstream D — Maintenance & Worker Isolation Suite (v3.1 Hardened)'
     }
   });
 });
+
+describe('Maintenance document root on cPanel', () => {
+  const home = fs.mkdtempSync(path.join(require('os').tmpdir(), 'mrtumi-docroot-'));
+  const appRoot = path.join(home, 'mrtumi');
+  const docRoot = path.join(home, 'public_html');
+  const original = `PassengerAppRoot "${appRoot}"\nPassengerAppType node\n`;
+  const saved = { HOME: process.env.HOME, PATH: process.env.PATH, DOC: process.env.DEPLOY_DOCUMENT_ROOT };
+
+  before(() => {
+    fs.mkdirSync(path.join(appRoot, 'public'), { recursive: true });
+    fs.mkdirSync(docRoot, { recursive: true });
+    fs.writeFileSync(path.join(docRoot, '.htaccess'), original);
+    process.env.HOME = home;
+    process.env.PATH = home; // keeps the real crontab out of this test
+    delete process.env.DEPLOY_DOCUMENT_ROOT;
+  });
+
+  after(() => {
+    process.env.HOME = saved.HOME;
+    process.env.PATH = saved.PATH;
+    if (saved.DOC !== undefined) process.env.DEPLOY_DOCUMENT_ROOT = saved.DOC;
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  test('uses the public_html .htaccess that serves this app and restores it byte for byte', () => {
+    const result = engageMaintenance('docroot test', appRoot);
+    assert.equal(result.htaccessPath, path.join(docRoot, '.htaccess'));
+    assert.match(fs.readFileSync(result.htaccessPath, 'utf8'), /R=503/);
+    disengageMaintenance(appRoot);
+    assert.equal(fs.readFileSync(result.htaccessPath, 'utf8'), original);
+  });
+
+  test('a second code copy never touches the live document root', () => {
+    const rehearsal = path.join(home, 'mrtumi-rehearsal');
+    assert.equal(getPaths(rehearsal).htaccessPath, path.join(rehearsal, 'public', '.htaccess'));
+  });
+
+  test('deploy.sh lifts maintenance before the health check and can re-engage it', () => {
+    const script = fs.readFileSync(path.join(__dirname, '..', 'deploy.sh'), 'utf8');
+    assert.ok(script.indexOf('mg.disengageMaintenance()') < script.indexOf('if node scripts/health-check.js'));
+    assert.match(script, /engageMaintenance\("Post-deployment health check failed"\)/);
+  });
+});

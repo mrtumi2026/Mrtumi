@@ -164,7 +164,7 @@ echo "🔒 [3/8] Engaging maintenance mode & isolating worker processes..."
 node -e '
 const mg = require("./scripts/ops/maintenance-guard");
 const res = mg.engageMaintenance("Production Deployment to " + "'"${TARGET_COMMIT_SHA}"'");
-console.log(`✔ Maintenance mode active: 503 rules deployed (original .htaccess preserved) & lock active.`);
+console.log(`✔ Maintenance mode active: 503 rules written to ${res.htaccessPath} (original preserved) & lock active.`);
 '
 
 DEPLOYMENT_STAGE="PRE_MIGRATION"
@@ -418,11 +418,19 @@ echo "✔ Repository cleanly aligned to commit: $CURRENT_COMMIT"
 # STEP 6: Install Production Dependencies (Clean & Non-Destructive)
 # ------------------------------------------------------------------------------
 echo ""
-echo "📦 [6/8] Installing production dependencies via npm ci..."
+echo "📦 [6/8] Checking production dependencies..."
 
-npm ci --only=production
-
-echo "✔ Production dependencies installed."
+# cPanel (CloudLinux) keeps node_modules as a symlink into the Node virtualenv.
+# `npm ci` removes node_modules first, which would replace that symlink.
+if [ -e node_modules ] && git diff --quiet "$PRE_DEPLOY_BASELINE_SHA" "$TARGET_COMMIT_SHA" -- package.json package-lock.json; then
+  echo "✔ Dependencies unchanged in this release; install skipped."
+elif [ -L node_modules ]; then
+  npm install --omit=dev --no-audit --no-fund --no-save
+  echo "✔ Production dependencies installed into the cPanel Node environment."
+else
+  npm ci --omit=dev
+  echo "✔ Production dependencies installed."
+fi
 
 # ------------------------------------------------------------------------------
 # STEP 6.5: Mandatory Pre-Migration Backup Manifest & Dump Verification Gate
@@ -579,17 +587,33 @@ mkdir -p tmp
 touch tmp/restart.txt
 chmod 666 tmp/restart.txt 2>/dev/null || true
 
-# 8c. Run read-only health check
-echo "  Running read-only application health check..."
-node scripts/health-check.js
-
-# 8d. Disengage maintenance mode cleanly (restoring original .htaccess byte-for-byte)
+# 8c. Lift maintenance first: while the 503 rules are active every health request fails.
 echo "  Disengaging maintenance mode & resuming worker traffic..."
 node -e '
 const mg = require("./scripts/ops/maintenance-guard");
 mg.disengageMaintenance();
-console.log("✔ Maintenance mode lifted successfully (original .htaccess restored).");
+console.log("✔ Maintenance mode lifted (original .htaccess restored).");
 '
+
+# 8d. Read-only health check, with retries while Passenger starts the new workers.
+echo "  Running read-only application health check..."
+HEALTH_OK=false
+for attempt in 1 2 3; do
+  sleep "${DEPLOY_HEALTH_WAIT_SECONDS:-10}"
+  if node scripts/health-check.js; then
+    HEALTH_OK=true
+    break
+  fi
+  echo "  Health check attempt $attempt failed."
+done
+
+if [ "$HEALTH_OK" != "true" ]; then
+  echo "❌ Health check failed after release. Returning the site to maintenance mode..." >&2
+  node -e '
+  require("./scripts/ops/maintenance-guard").engageMaintenance("Post-deployment health check failed");
+  '
+  false
+fi
 
 trap - ERR
 
