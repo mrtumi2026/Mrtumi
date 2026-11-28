@@ -176,5 +176,6 @@ test('Admin Credential Exposure: secrets and unknown fields never appear in rend
 
 test('Admin Credential Exposure: the courier admin route really applies the sanitizer', () => {
   const source = require('node:fs').readFileSync(path.join(__dirname, '..', 'src', 'routes', 'adminSettings.js'), 'utf8');
-  assert.match(source, /rows:rows\.map\(sanitizeAdminCourierRecord\)/);
+  assert.match(source, /safeRows=rows\.map\([\s\S]*?\.\.\.sanitizeAdminCourierRecord\(row\)/);
+  assert.match(source, /rows:safeRows\}\)/);
 });

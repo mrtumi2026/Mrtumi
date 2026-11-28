@@ -214,7 +214,11 @@ router.post('/admin/settings/save', upload.single('logo_file'), requireCsrfAndCl
     changes.logo_light = uploadedPath;
   }
   // A blank password field keeps the stored SMTP password.
-  if (Object.prototype.hasOwnProperty.call(changes, 'smtp_pass') && !String(changes.smtp_pass).trim()) delete changes.smtp_pass;
+  for (const secretKey of ['smtp_pass', 'bulksms_api_key', 'bdcourier_api_key']) {
+    if (Object.prototype.hasOwnProperty.call(changes, secretKey) && !String(changes[secretKey]).trim()) delete changes[secretKey];
+  }
+  // The balance field is read-only information from the provider.
+  delete changes.bulksms_balance;
   const deliveryChargeUpdates = env.db.client === 'mysql' ? getDeliveryLocationChargeUpdates(changes) : [];
   if (Object.keys(changes).length && env.db.client === 'mysql') {
     await settingsRepository.saveSettings(changes, {
@@ -228,6 +232,19 @@ router.post('/admin/settings/save', upload.single('logo_file'), requireCsrfAndCl
   }
   req.flash('success', 'সেটিংস সফলভাবে সংরক্ষণ করা হয়েছে!');
   res.redirect(redirectTo);
+}));
+
+router.post('/admin/smsgeteway/test', requireCsrf, asyncHandler(async (req, res) => {
+  const bn = req.locale === 'bn';
+  const phone = String(req.body.test_phone || '').replace(/\D/g, '');
+  if (!/^(?:88)?01[3-9]\d{8}$/.test(phone)) {
+    req.flash('error', bn ? 'সঠিক ১১ সংখ্যার মোবাইল নম্বর দিন।' : 'Enter a valid 11-digit mobile number.');
+  } else {
+    const result = await smsService.sendSms({ phone, message: 'Mr. Tumi SMS test. SMS settings are working.', templateKey: 'admin_test' });
+    if (result.success) req.flash('success', bn ? 'টেস্ট SMS BulkSMSBD গ্রহণ করেছে। মোবাইলে দেখুন।' : 'BulkSMSBD accepted the test SMS. Check the phone.');
+    else req.flash('error', `${bn ? 'SMS যায়নি' : 'SMS was not sent'}: ${String(result.error || '').slice(0, 200)}`);
+  }
+  res.redirect('/admin/smsgeteway/manage');
 }));
 
 router.post('/admin/email-setting/test', requireCsrf, asyncHandler(async (req, res) => {
@@ -570,20 +587,50 @@ router.post('/admin/paymentgeteway/toggle/:id',asyncHandler(async(req,res)=>{
 router.post('/admin/paymentgeteway/delete/:id',asyncHandler(async(req,res)=>{if(integrationsMysql())await integrationsClient().execute('DELETE FROM payment_gateways WHERE id=?',[req.params.id]);else db.run('DELETE FROM payment_gateways WHERE id=?',req.params.id);res.redirect(req.get('Referrer')||'/admin/paymentgeteway/manage');}));
 
 // Courier API Manage
-router.get('/admin/courierapi/manage', requirePermission('settings.manage'), asyncHandler(async(_req,res)=>{
- const rows=integrationsMysql()?await integrationsClient().queryAll('SELECT id,name,code,api_key,secret_key,client_id,base_url,status,sandbox,updated_at FROM courier_apis ORDER BY id ASC'):db.all('SELECT * FROM courier_apis ORDER BY id ASC');
+router.get('/admin/courierapi/manage', requirePermission('settings.manage'), asyncHandler(async(req,res)=>{
+ const L=(en,bn)=>req.locale==='bn'?bn:en;
+ const courierAdmin=require('../repositories/courierApiAdminRepository');
+ const rows=integrationsMysql()?await courierAdmin.listForAdmin():db.all('SELECT * FROM courier_apis ORDER BY id ASC');
  // Saved keys never go back to the browser; the edit form leaves them blank and blank keeps the saved value.
- res.render('admin/crud-module',{pageTitle:'Courier API Integration (Steadfast / Pathao / RedX)',subtitle:'কুরিয়ার API কী ও ব্যালেন্স কনফিগারেশন',createAction:'/admin/courierapi/create',updatePrefix:'/admin/courierapi/update',customActionPrefix:'/admin/courierapi/toggle',customActionLabel:'Toggle Active',deletePrefix:'/admin/courierapi/delete',columns:[{key:'id',label:'#'},{key:'name',label:'Courier Service'},{key:'code',label:'Code'},{key:'api_key',label:'API Key'},{key:'base_url',label:'Endpoint URL'},{key:'status',label:'Active',type:'status'}],fields:[{name:'name',label:'Courier Name',type:'text',required:true},{name:'code',label:'Code',type:'text',required:true},{name:'api_key',label:'API Key / Token',type:'password',required:true},{name:'secret_key',label:'Secret Key',type:'password'},{name:'client_id',label:'Client ID',type:'text'},{name:'base_url',label:'Base API URL',type:'text'},{name:'sandbox',label:'Sandbox (1/0)',type:'number',value:'1'}],rows:rows.map(sanitizeAdminCourierRecord)});
+ const safeRows=rows.map((row)=>{const options=courierAdmin.parseOptions(row.service_options_json);return {...sanitizeAdminCourierRecord(row),provider_type:String(row.provider_type||'custom'),mode_label:Number(row.sandbox)?L('TEST','টেস্ট'):L('Live','লাইভ'),store_id:options.store_id||'',pathao_username:String(options.username||'')};});
+ const keep=L('Saved values are never shown. Leave blank to keep them.','সেভ করা মান দেখানো হয় না। ফাঁকা রাখলে আগেরটাই থাকবে।');
+ res.render('admin/crud-module',{pageTitle:'Courier API Integration (Pathao / Steadfast / RedX)',
+  subtitle:L('1) Add the courier. 2) Press "Test connection". 3) Press "Toggle Active". Automatic booking works with Pathao, Steadfast and RedX; any other courier can be saved for typing tracking IDs by hand.','১) কুরিয়ার যোগ করুন। ২) "সংযোগ পরীক্ষা" চাপুন। ৩) "Toggle Active" চাপুন। স্বয়ংক্রিয় বুকিং হয় Pathao, Steadfast ও RedX-এ; অন্য কুরিয়ার রাখলে ট্র্যাকিং আইডি হাতে লিখতে হবে।'),
+  createAction:'/admin/courierapi/create',updatePrefix:'/admin/courierapi/update',customActionPrefix:'/admin/courierapi/toggle',customActionLabel:'Toggle Active',deletePrefix:'/admin/courierapi/delete',
+  extraActionPrefix:'/admin/courierapi/test',extraActionLabel:L('Test connection','সংযোগ পরীক্ষা'),
+  columns:[{key:'id',label:'#'},{key:'name',label:'Courier Service'},{key:'provider_type',label:L('Provider','প্রোভাইডার')},{key:'code',label:'Code'},{key:'mode_label',label:L('Mode','মোড')},{key:'api_key',label:'API Key'},{key:'status',label:'Active',type:'status'}],
+  fields:[
+   {name:'name',label:L('Courier name','কুরিয়ারের নাম'),type:'text',required:true},
+   {name:'provider_type',label:L('Provider','প্রোভাইডার'),type:'select',options:[{value:'pathao',label:'Pathao'},{value:'steadfast',label:'Steadfast'},{value:'redx',label:'RedX'},{value:'custom',label:L('Other (manual tracking only)','অন্যান্য (শুধু হাতে ট্র্যাকিং)')}]},
+   {name:'code',label:L('Short code (a-z, no spaces)','ছোট কোড (a-z, ফাঁকা ছাড়া)'),type:'text',required:true},
+   {name:'sandbox',label:L('Mode','মোড'),type:'select',options:[{value:'0',label:L('Live (real parcels)','লাইভ (আসল পার্সেল)')},{value:'1',label:L('Test (no real parcel)','টেস্ট (আসল পার্সেল হয় না)')}]},
+   {name:'api_key',label:L('API Key / Access Token','API Key / Access Token'),type:'password',help:L('Steadfast: API Key. RedX: API access token. Pathao: leave blank. ','Steadfast: API Key। RedX: API access token। Pathao: ফাঁকা রাখুন। ')+keep},
+   {name:'secret_key',label:L('Secret Key / Client Secret','Secret Key / Client Secret'),type:'password',help:L('Steadfast: Secret Key. Pathao: Client Secret. ','Steadfast: Secret Key। Pathao: Client Secret। ')+keep},
+   {name:'client_id',label:L('Client ID (Pathao)','Client ID (Pathao)'),type:'text'},
+   {name:'pathao_username',label:L('Pathao merchant e-mail','Pathao মার্চেন্ট ই-মেইল'),type:'text'},
+   {name:'pathao_password',label:L('Pathao merchant password','Pathao মার্চেন্ট পাসওয়ার্ড'),type:'password',help:keep},
+   {name:'store_id',label:L('Pathao Store ID','Pathao Store ID'),type:'number',help:L('If you do not know it, save without it and press "Test connection": your stores are listed.','জানা না থাকলে ফাঁকা রেখে সেভ করে "সংযোগ পরীক্ষা" চাপুন: আপনার স্টোরের তালিকা দেখাবে।')},
+   {name:'base_url',label:L('API address (normally leave blank)','API ঠিকানা (সাধারণত ফাঁকা রাখুন)'),type:'text'}
+  ],rows:safeRows});
 }));
-router.post('/admin/courierapi/create', requirePermission('settings.manage'), requireCsrf, asyncHandler(async(req,res)=>{const b=req.body;if(b.base_url)await validateCourierBaseUrl(b.base_url);if(integrationsMysql())await integrationsClient().execute('INSERT INTO courier_apis (name,code,base_url,api_key,secret_key,client_id,status,sandbox) VALUES (?,?,?,?,?,?,0,?)',[b.name,b.code,b.base_url||'',b.api_key||null,b.secret_key||null,b.client_id||'',b.sandbox==='0'?0:1]);if(integrationsMysql())req.flash('success',req.locale==='bn'?'কুরিয়ার সেটিং যোগ হয়েছে। চালু করতে Toggle Active চাপুন।':'Courier setting added. Press Toggle Active to switch it on.');else db.run('INSERT INTO courier_apis (name,code,api_key,secret_key,base_url,client_id) VALUES (?,?,?,?,?,?)',b.name,b.code,b.api_key,b.secret_key||'',b.base_url||'',b.client_id||'');res.redirect('/admin/courierapi/manage');}));
+router.post('/admin/courierapi/create', requirePermission('settings.manage'), requireCsrf, asyncHandler(async(req,res)=>{
+ const b=req.body;
+ if(!integrationsMysql()){if(b.base_url)await validateCourierBaseUrl(b.base_url);db.run('INSERT INTO courier_apis (name,code,api_key,secret_key,base_url,client_id) VALUES (?,?,?,?,?,?)',b.name,b.code,b.api_key||'',b.secret_key||'',b.base_url||'',b.client_id||'');return res.redirect('/admin/courierapi/manage');}
+ try{await require('../repositories/courierApiAdminRepository').create(b);req.flash('success',req.locale==='bn'?'কুরিয়ার সেটিং যোগ হয়েছে। "সংযোগ পরীক্ষা" করে "Toggle Active" চাপুন।':'Courier setting added. Press "Test connection", then "Toggle Active".');}
+ catch(err){if(!err.statusCode||err.statusCode>=500)throw err;req.flash('error',err.message);}
+ return res.redirect('/admin/courierapi/manage');
+}));
 router.post('/admin/courierapi/update/:id', requirePermission('settings.manage'), requireCsrf, asyncHandler(async(req,res)=>{
- const b=req.body,name=cleanBannerText(b.name,100),code=cleanBannerText(b.code,48),baseUrl=String(b.base_url||'').trim().slice(0,255),apiKey=String(b.api_key||''),secretKey=String(b.secret_key||''),clientId=cleanBannerText(b.client_id,191),sandbox=b.sandbox==='0'?0:1;
- if(!name||!/^[a-zA-Z0-9_-]{1,48}$/.test(code)) throw new ValidationError('Courier name and a valid unique code are required.');
- if(baseUrl) await validateCourierBaseUrl(baseUrl);
- if(integrationsMysql()) await integrationsClient().execute("UPDATE courier_apis SET name=?,code=?,base_url=?,api_key=CASE WHEN ?<>'' THEN ? ELSE api_key END,secret_key=CASE WHEN ?<>'' THEN ? ELSE secret_key END,client_id=?,sandbox=? WHERE id=?",[name,code,baseUrl,apiKey,apiKey,secretKey,secretKey,clientId,sandbox,req.params.id]);
- else db.run("UPDATE courier_apis SET name=?,code=?,base_url=?,api_key=CASE WHEN ?<>'' THEN ? ELSE api_key END,secret_key=CASE WHEN ?<>'' THEN ? ELSE secret_key END,client_id=?,sandbox=? WHERE id=?",name,code,baseUrl,apiKey,apiKey,secretKey,secretKey,clientId,sandbox,req.params.id);
- req.flash('success','কুরিয়ার API সফলভাবে আপডেট হয়েছে।');
- res.redirect('/admin/courierapi/manage');
+ const b=req.body;
+ if(!integrationsMysql()){if(b.base_url)await validateCourierBaseUrl(b.base_url);db.run("UPDATE courier_apis SET name=?,code=?,base_url=?,api_key=CASE WHEN ?<>'' THEN ? ELSE api_key END,secret_key=CASE WHEN ?<>'' THEN ? ELSE secret_key END,client_id=?,sandbox=? WHERE id=?",b.name,b.code,b.base_url||'',b.api_key||'',b.api_key||'',b.secret_key||'',b.secret_key||'',b.client_id||'',b.sandbox==='1'?1:0,req.params.id);return res.redirect('/admin/courierapi/manage');}
+ try{await require('../repositories/courierApiAdminRepository').update(req.params.id,b);req.flash('success',req.locale==='bn'?'কুরিয়ার API সফলভাবে আপডেট হয়েছে।':'The courier setting was updated.');}
+ catch(err){if(!err.statusCode||err.statusCode>=500)throw err;req.flash('error',err.message);}
+ return res.redirect('/admin/courierapi/manage');
+}));
+router.post('/admin/courierapi/test/:id', requirePermission('settings.manage'), requireCsrf, asyncHandler(async(req,res)=>{
+ try{const result=await require('../repositories/courierApiAdminRepository').testConnection(req.params.id);req.flash(result.ok?'success':'error',`${result.name}: ${result.message}`);}
+ catch(err){if(!err.statusCode||err.statusCode>=500)throw err;req.flash('error',err.message);}
+ return res.redirect('/admin/courierapi/manage');
 }));
 router.post('/admin/courierapi/toggle/:id', requirePermission('settings.manage'), requireCsrf, asyncHandler(async(req,res)=>{if(integrationsMysql())await integrationsClient().execute('UPDATE courier_apis SET status=1-status WHERE id=?',[req.params.id]);else{const c=db.get('SELECT id,status FROM courier_apis WHERE id=?',req.params.id);if(c)db.run('UPDATE courier_apis SET status=? WHERE id=?',c.status?0:1,c.id);}req.flash('success',req.locale==='bn'?'কুরিয়ারের চালু/বন্ধ অবস্থা বদলানো হয়েছে।':'Courier on/off state changed.');res.redirect('/admin/courierapi/manage');}));
 router.post('/admin/courierapi/delete/:id', requirePermission('settings.manage'), requireCsrf, asyncHandler(async(req,res)=>{

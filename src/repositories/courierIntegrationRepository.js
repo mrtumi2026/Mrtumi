@@ -50,6 +50,13 @@ function assertActorAccess(subOrder, actor) {
   }
 }
 
+/** Test mode returns invented tracking numbers, so the live site must never book with it. */
+function assertLiveAdapter(adapter, label) {
+  if (env.isProduction && adapter.isSandbox) {
+    throw new ValidationError(`${label} is in test mode, which does not create a real parcel. Set its mode to Live in Admin → Courier API first.`);
+  }
+}
+
 /**
  * Retrieve active courier providers from courier_apis.
  */
@@ -270,6 +277,7 @@ async function executeOneClickBooking({ subOrderId, courierCode, actor, idempote
     }
 
     const adapter = CourierProviderFactory.createAdapter(providerConfig);
+    assertLiveAdapter(adapter, providerConfig.name || providerConfig.code);
 
     // Collect recipient and parcel data
     const isCod = String(subOrder.payment_method || '').toLowerCase().includes('cod') ||
@@ -609,6 +617,10 @@ async function syncShipmentTracking({ subOrderId, actor }) {
 
     const adapter = CourierProviderFactory.createAdapter(providerConfig || { code: subOrder.courier_code });
     const trackingData = await adapter.trackShipment(subOrder.tracking_id);
+    // A failed or empty provider answer must never move the order forward.
+    if (['error', 'unconfigured', 'unknown'].includes(String(trackingData.rawStatus || '').toLowerCase())) {
+      throw new ValidationError('The courier did not return a status for this parcel. Nothing was changed; check the courier settings and try again.');
+    }
 
     const actorType = actor.vendorId ? 'vendor' : 'admin';
 

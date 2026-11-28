@@ -1,0 +1,84 @@
+<% const L = (en, bn) => (typeof locale !== 'undefined' && locale === 'en' ? en : bn); %>
+<div class="tbl-card mb-3" id="courier-booking">
+  <div class="tbl-card-head"><h4><%= L('Courier booking', 'কুরিয়ার বুকিং') %></h4></div>
+  <div class="tbl-card-body p-3">
+    <% if (courierPanel.trackingId) { %>
+      <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+        <span><%= courierPanel.courierCode %> · <strong><%= courierPanel.trackingId %></strong></span>
+        <form method="post" action="/admin/order/<%= order.id %>/courier-status" class="d-inline">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <button type="submit" class="btn btn-sm btn-outline-primary"><%= L('Check courier status', 'কুরিয়ারের অবস্থা দেখুন') %></button>
+        </form>
+      </div>
+    <% } %>
+    <% if (courierPanel.blocked) { %>
+      <div class="small text-muted"><%= L(courierPanel.blocked[0], courierPanel.blocked[1]) %></div>
+    <% } else if (!courierPanel.couriers.length) { %>
+      <div class="small"><%= L('No courier is switched on. Add Pathao, Steadfast or RedX and press "Toggle Active".', 'কোনো কুরিয়ার চালু নেই। Pathao, Steadfast বা RedX যোগ করে "চালু/বন্ধ" চাপুন।') %>
+        <a href="/admin/courierapi/manage"><%= L('Open Courier API', 'কুরিয়ার API খুলুন') %></a></div>
+    <% } else { %>
+      <form method="post" action="/admin/order/<%= order.id %>/book-courier" id="bookCourierForm">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <div class="small mb-2"><%= L('Cash to collect for this parcel:', 'এই পার্সেলে যত টাকা তুলতে হবে (COD):') %> <strong>৳<%= courierPanel.codTaka %></strong>
+          <% if (courierPanel.hasVendorItems) { %><br><span class="text-muted"><%= L('Only your own products are in this parcel. Vendor parcels are booked separately.', 'এই পার্সেলে শুধু আপনার নিজের পণ্য। ভেন্ডরের পার্সেল আলাদা বুক হয়।') %></span><% } %></div>
+        <label class="form-label small fw-semibold mb-1" for="bookCourierSelect"><%= L('Courier', 'কুরিয়ার') %></label>
+        <select name="courier_id" id="bookCourierSelect" class="form-select form-select-sm mb-2" required>
+          <% courierPanel.couriers.forEach(function(courier) { %>
+            <option value="<%= courier.id %>" data-area="<%= courier.needsArea ? '1' : '0' %>"><%= courier.name %><%= courier.testMode ? L(' (TEST mode)', ' (টেস্ট মোড)') : '' %></option>
+          <% }) %>
+        </select>
+        <div id="redxAreaBox" class="d-none mb-2">
+          <div class="input-group input-group-sm mb-1">
+            <input type="text" id="redxDistrict" class="form-control" maxlength="80" placeholder="<%= L('District name in English, e.g. Dhaka', 'জেলার নাম ইংরেজিতে, যেমন Dhaka') %>" aria-label="<%= L('District', 'জেলা') %>">
+            <button type="button" class="btn btn-outline-secondary" id="redxFindAreas"><%= L('Find areas', 'এলাকা খুঁজুন') %></button>
+          </div>
+          <select id="redxAreaSelect" class="form-select form-select-sm" aria-label="<%= L('RedX delivery area', 'RedX ডেলিভারি এলাকা') %>"><option value=""><%= L('Choose the delivery area', 'ডেলিভারি এলাকা বেছে নিন') %></option></select>
+          <input type="hidden" name="area_id" id="redxAreaId">
+          <input type="hidden" name="area_name" id="redxAreaName">
+          <div class="small text-danger" id="redxAreaMessage"></div>
+        </div>
+        <input type="text" name="note" class="form-control form-control-sm mb-2" maxlength="200" placeholder="<%= L('Note for the courier (optional)', 'কুরিয়ারের জন্য নোট (ঐচ্ছিক)') %>" aria-label="<%= L('Courier note', 'কুরিয়ার নোট') %>">
+        <% if (courierPanel.needsConfirm) { %>
+          <div class="alert alert-warning small py-2">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="confirm_no_parcel" value="1" id="confirmNoParcel">
+              <label class="form-check-label" for="confirmNoParcel"><%= L('The last booking had no clear result. I checked the courier panel: there is no parcel for this invoice.', 'আগের বুকিংয়ের পরিষ্কার ফল আসেনি। আমি কুরিয়ার প্যানেল দেখেছি: এই ইনভয়েসের কোনো পার্সেল নেই।') %></label>
+            </div>
+          </div>
+        <% } %>
+        <button type="submit" class="btn btn-sm btn-forest"><%= L('Book parcel', 'পার্সেল বুক করুন') %></button>
+        <div class="small text-muted mt-1"><%= L('Booking does not change the order status. Change it when the courier takes the parcel.', 'বুকিং করলে অর্ডারের অবস্থা বদলায় না। কুরিয়ার পার্সেল নিলে অবস্থা বদলান।') %></div>
+      </form>
+      <script>
+        (function () {
+          var form = document.getElementById('bookCourierForm'), select = document.getElementById('bookCourierSelect');
+          var box = document.getElementById('redxAreaBox'), areas = document.getElementById('redxAreaSelect'), message = document.getElementById('redxAreaMessage');
+          function needsArea() { var option = select.options[select.selectedIndex]; return Boolean(option && option.dataset.area === '1'); }
+          function sync() { box.classList.toggle('d-none', !needsArea()); }
+          select.addEventListener('change', sync); sync();
+          areas.addEventListener('change', function () {
+            var option = areas.options[areas.selectedIndex];
+            document.getElementById('redxAreaId').value = areas.value;
+            document.getElementById('redxAreaName').value = areas.value ? option.textContent : '';
+          });
+          document.getElementById('redxFindAreas').addEventListener('click', function () {
+            message.textContent = '';
+            fetch('/admin/courier/redx-areas?courier=' + encodeURIComponent(select.value) + '&district=' + encodeURIComponent(document.getElementById('redxDistrict').value.trim()), { headers: { Accept: 'application/json' } })
+              .then(function (response) { return response.json(); })
+              .then(function (data) {
+                while (areas.options.length > 1) areas.remove(1);
+                (data.areas || []).forEach(function (area) { var option = document.createElement('option'); option.value = area.id; option.textContent = area.name; areas.appendChild(option); });
+                if (!data.ok || !(data.areas || []).length) message.textContent = data.message || <%- JSON.stringify(L('No area found.', 'কোনো এলাকা পাওয়া যায়নি।')) %>;
+              })
+              .catch(function () { message.textContent = <%- JSON.stringify(L('Could not load the areas.', 'এলাকার তালিকা আনা যায়নি।')) %>; });
+          });
+          form.addEventListener('submit', function (event) {
+            if (needsArea() && !document.getElementById('redxAreaId').value) { event.preventDefault(); message.textContent = <%- JSON.stringify(L('Choose the RedX delivery area first.', 'আগে RedX ডেলিভারি এলাকা বেছে নিন।')) %>; return; }
+            if (!window.confirm(<%- JSON.stringify(L('Create this parcel with the courier now?', 'এখনই কুরিয়ারে এই পার্সেল তৈরি করবেন?')) %>)) { event.preventDefault(); return; }
+            var button = form.querySelector('button[type="submit"]'); setTimeout(function () { button.disabled = true; }, 0);
+          });
+        })();
+      </script>
+    <% } %>
+  </div>
+</div>

@@ -151,14 +151,18 @@ async function requestCheckoutOtp({ phone, sessionSid = '', customerId = null })
     templateKey: 'order_otp'
   });
 
+  // The code leaves the server only by SMS. Only the automated test suite may read it back.
+  const isTestRun = process.env.NODE_ENV === 'test';
+  const delivered = Boolean(smsResult.success);
   return {
-    success: true,
-    message: 'আপনার মোবাইলে ওটিপি কোড পাঠানো হয়েছে।',
+    success: delivered || isTestRun,
+    message: delivered || isTestRun
+      ? 'আপনার মোবাইলে ওটিপি কোড পাঠানো হয়েছে।'
+      : 'এখন ওটিপি SMS পাঠানো যাচ্ছে না। কিছুক্ষণ পরে চেষ্টা করুন বা আমাদের হটলাইনে কল করুন।',
     phone: normalizedPhone,
     expiresIn: expirySec,
-    smsDelivered: Boolean(smsResult.success),
-    // In local dev/test or when SMS gateway is not configured, supply code for seamless verification testing
-    devCode: (!smsResult.success || process.env.NODE_ENV === 'test') ? code : undefined
+    smsDelivered: delivered,
+    devCode: isTestRun ? code : undefined
   };
 }
 

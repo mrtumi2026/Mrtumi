@@ -11,8 +11,8 @@ class PathaoAdapter extends CourierBaseAdapter {
   constructor(config = {}) {
     super(config);
     this.config = config;
-    this.baseUrl = this.baseUrl || 'https://courier-api.pathao.com';
-    this.storeId = this.serviceOptions.store_id || 1;
+    this.baseUrl = (this.baseUrl || 'https://api-hermes.pathao.com').replace(/\/+$/, '');
+    this.storeId = Number(this.serviceOptions.store_id) || null;
 
     // Decrypt credentials if stored as application-level encrypted tokens
     this.apiKey = decryptProviderToken(this.apiKey);
@@ -24,10 +24,63 @@ class PathaoAdapter extends CourierBaseAdapter {
     this.clientId = this.serviceOptions.client_id || config.client_id || this.clientId || null;
     this.clientSecret = this.serviceOptions.client_secret || config.client_secret || this.secretKey || null;
     this.username = this.serviceOptions.username || config.username || null;
-    this.password = this.serviceOptions.password || config.password || null;
+    this.password = this.serviceOptions.password_enc
+      ? decryptProviderToken(this.serviceOptions.password_enc)
+      : (this.serviceOptions.password || config.password || null);
 
     // Concurrency control: in-flight promise deduplication to prevent simultaneous double rotations
     this._refreshLockPromise = null;
+  }
+
+  /**
+   * The admin page only asks for Client ID, Client Secret, merchant e-mail and password.
+   * The first call exchanges them for an access token, which is then stored encrypted.
+   */
+  async ensureAccessToken() {
+    if (this.apiKey || this.isSandbox) return { success: true };
+    if (!this.clientId || !this.clientSecret || !this.username || !this.password) {
+      return { success: false, error: 'Pathao Client ID, Client Secret, merchant e-mail and password are required (or an access token).' };
+    }
+    try {
+      const response = await this.safeFetch(`${this.baseUrl}/aladdin/api/v1/issue-token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({
+          client_id: this.clientId,
+          client_secret: this.clientSecret,
+          grant_type: 'password',
+          username: this.username,
+          password: this.password
+        })
+      }, 8000);
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data || !data.access_token) {
+        return { success: false, error: String(data?.message || data?.error_description || `Pathao login failed (HTTP ${response.status})`).slice(0, 200) };
+      }
+      await this.persistTokenRotation(data.access_token, data.refresh_token || null);
+      this.apiKey = data.access_token;
+      this.refreshToken = data.refresh_token || null;
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: `Pathao login failed: ${err.message}`.slice(0, 200) };
+    }
+  }
+
+  /** Read-only credential check used by the admin "Test connection" button. */
+  async testConnection() {
+    const token = await this.ensureAccessToken();
+    if (!token.success) return { ok: false, message: token.error };
+    try {
+      const response = await this.authenticatedFetch(`${this.baseUrl}/aladdin/api/v1/stores`, { method: 'GET' }, 8000);
+      const data = await response.json().catch(() => null);
+      if (!response.ok) return { ok: false, message: String(data?.message || `Pathao answered HTTP ${response.status}`).slice(0, 200) };
+      const stores = Array.isArray(data?.data?.data) ? data.data.data : [];
+      const list = stores.slice(0, 10).map((store) => `${store.store_id}: ${store.store_name}`).join(', ');
+      if (!this.storeId) return { ok: false, message: `Login works, but Store ID is empty. Your stores — ${list || 'none found'}` };
+      return { ok: true, message: `Connected. Your stores — ${list || 'none returned'}` };
+    } catch (err) {
+      return { ok: false, message: String(err.message).slice(0, 200) };
+    }
   }
 
   /**
@@ -568,8 +621,8 @@ class PathaoAdapter extends CourierBaseAdapter {
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            store_id: this.storeId,
-            item_type: 1, // Parcel
+            store_id: this.storeId || undefined,
+            item_type: 2, // Parcel
             delivery_type: 48, // Standard 48h
             item_weight: weightKg,
             recipient_city: isInsideDhaka ? 1 : 2,
@@ -649,6 +702,7 @@ class PathaoAdapter extends CourierBaseAdapter {
    * Lookup miss is strictly treated as unknown_error (never assumed absent).
    */
   async reconcileBooking({ consignmentId, invoiceNo, trackingId }) {
+    await this.ensureAccessToken();
     if (!this.apiKey) {
       return {
         outcome: 'unknown_error',
@@ -772,13 +826,14 @@ class PathaoAdapter extends CourierBaseAdapter {
   }
 
   async bookShipment({ shipmentId, subOrderId, invoiceNo, recipient, parcel, codAmountPaisa, idempotencyKey }) {
-    if (!this.apiKey && !this.isSandbox) {
+    const login = await this.ensureAccessToken();
+    if (!this.isSandbox && !this.apiKey) {
       return {
         success: false,
         trackingId: null,
         consignmentId: null,
         rawResponse: { error: 'CREDENTIALS_MISSING' },
-        error: 'Pathao API Bearer Token is not configured.'
+        error: login.error && (this.clientId || this.username) ? login.error : 'Pathao API Bearer Token is not configured.'
       };
     }
 
@@ -838,15 +893,14 @@ class PathaoAdapter extends CourierBaseAdapter {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          store_id: this.storeId,
+          store_id: this.storeId || undefined,
           merchant_order_id: String(invoiceNo || subOrderId),
           recipient_name: String(recipient?.name || '').trim(),
           recipient_phone: cleanPhone,
           recipient_address: cleanAddress,
-          recipient_city: 1,
-          recipient_zone: 1,
+          // City/zone/area are optional; Pathao detects them from the address.
           delivery_type: 48,
-          item_type: 1,
+          item_type: 2, // Parcel (1 is Document)
           special_instruction: String(recipient?.note || '').slice(0, 255),
           item_quantity: 1,
           item_weight: weightKg,
@@ -900,6 +954,7 @@ class PathaoAdapter extends CourierBaseAdapter {
     }
 
     try {
+      await this.ensureAccessToken();
       const response = await this.authenticatedFetch(`${this.baseUrl}/aladdin/api/v1/orders/${encodeURIComponent(trackingReference)}/info`, {
         method: 'GET'
       }, 8000);

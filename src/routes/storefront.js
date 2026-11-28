@@ -892,14 +892,15 @@ router.post('/api/device/register-token', asyncHandler(async (req, res) => {
   const result = await pushService.registerDeviceToken({
     token: req.body.token,
     appType: req.body.app_type || 'customer',
-    userId: req.customerUser?.id || req.body.user_id || null,
+    userId: req.customerUser?.id || null,
     platform: req.body.platform || 'android',
     topic: req.body.topic || 'general',
   });
   return res.json({ success: Boolean(result), data: result });
 }));
 
-router.post('/api/push/broadcast-offer', asyncHandler(async (req, res) => {
+router.post('/api/push/broadcast-offer', requireCsrf, asyncHandler(async (req, res) => {
+  if (!req.session?.adminUser) return res.status(404).json({ success: false });
   const pushService = require('../services/pushNotificationService');
   const result = await pushService.broadcastOfferNotification({
     title: req.body.title,

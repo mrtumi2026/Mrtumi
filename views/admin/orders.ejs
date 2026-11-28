@@ -36,14 +36,11 @@
           <input type="hidden" name="reason" value="Admin bulk status update" />
           <label for="bulkActionSelect" class="visually-hidden">Bulk Action</label>
           <select id="bulkActionSelect" name="bulk_action" class="form-select form-select-sm" style="width: 220px;">
-            <option value="">-- Bulk Action / Courier --</option>
+            <option value="">-- Bulk Action --</option>
             <option value="processing">Mark Processing</option>
             <option value="on-the-way">Mark On The Way</option>
             <option value="completed">Mark Completed (Delivered)</option>
             <option value="cancelled">Mark Cancelled</option>
-            <option value="courier:Steadfast Courier">🚚 Send to Steadfast Courier</option>
-            <option value="courier:Pathao Courier">🛵 Send to Pathao Courier</option>
-            <option value="courier:RedX Courier">📦 Send to RedX Courier</option>
             <option value="delete">🗑️ Delete Selected</option>
           </select>
           <button type="submit" class="btn btn-sm btn-forest">Apply</button>

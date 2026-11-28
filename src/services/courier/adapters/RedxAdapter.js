@@ -9,7 +9,7 @@ const CourierBaseAdapter = require('../CourierBaseAdapter');
 class RedxAdapter extends CourierBaseAdapter {
   constructor(config = {}) {
     super(config);
-    this.baseUrl = this.baseUrl || 'https://openapi.redx.com.bd';
+    this.baseUrl = (this.baseUrl || 'https://openapi.redx.com.bd').replace(/\/+$/, '').replace(/\/v1\.0\.0-beta$/, '');
   }
 
   async getQuote({ origin, destination, weightGrams = 1000, codAmountPaisa = 0 }) {
@@ -68,6 +68,36 @@ class RedxAdapter extends CourierBaseAdapter {
     };
   }
 
+  /** Read-only credential check used by the admin "Test connection" button. */
+  async testConnection() {
+    if (!this.apiKey) return { ok: false, message: 'API access token is required.' };
+    try {
+      const response = await this.safeFetch(`${this.baseUrl}/v1.0.0-beta/pickup/stores`, {
+        method: 'GET',
+        headers: { 'API-ACCESS-TOKEN': `Bearer ${this.apiKey}`, 'Accept': 'application/json' }
+      }, 8000);
+      const data = await response.json().catch(() => null);
+      if (response.ok) return { ok: true, message: 'Connected. RedX accepted the access token.' };
+      return { ok: false, message: String(data?.message || `RedX answered HTTP ${response.status}`).slice(0, 200) };
+    } catch (err) {
+      return { ok: false, message: String(err.message).slice(0, 200) };
+    }
+  }
+
+  /** Delivery areas of one district; RedX needs the area ID when a parcel is booked. */
+  async listAreas(district) {
+    if (!this.apiKey) return { ok: false, message: 'API access token is required.', areas: [] };
+    const response = await this.safeFetch(`${this.baseUrl}/v1.0.0-beta/areas?district_name=${encodeURIComponent(district)}`, {
+      method: 'GET',
+      headers: { 'API-ACCESS-TOKEN': `Bearer ${this.apiKey}`, 'Accept': 'application/json' }
+    }, 8000);
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !Array.isArray(data?.areas)) {
+      return { ok: false, message: String(data?.message || `RedX answered HTTP ${response.status}`).slice(0, 200), areas: [] };
+    }
+    return { ok: true, areas: data.areas.slice(0, 500).map((area) => ({ id: Number(area.id), name: String(area.name || '') })) };
+  }
+
   async checkServiceability({ origin, destination }) {
     return { serviceable: true, reason: null };
   }
@@ -96,6 +126,7 @@ class RedxAdapter extends CourierBaseAdapter {
       };
     }
 
+    const areaId = Number(parcel?.deliveryAreaId || 0);
     const codBdt = Math.round(Number(codAmountPaisa || 0) / 100);
     const weightGrams = Math.max(500, Number(parcel?.weightGrams || 1000));
 
@@ -115,7 +146,7 @@ class RedxAdapter extends CourierBaseAdapter {
     }
 
     try {
-      const response = await this.safeFetch(`${this.baseUrl}/v1.0.0-beta/parcels`, {
+      const response = await this.safeFetch(`${this.baseUrl}/v1.0.0-beta/parcel`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -124,7 +155,10 @@ class RedxAdapter extends CourierBaseAdapter {
         body: JSON.stringify({
           customer_name: String(recipient?.name || '').trim().slice(0, 100),
           customer_phone: cleanPhone,
-          delivery_area: String(recipient?.district || recipient?.city || 'Dhaka').trim(),
+          delivery_area: String(parcel?.deliveryAreaName || recipient?.district || recipient?.city || 'Dhaka').trim(),
+          // RedX needs the area ID; the admin booking form always sends it.
+          delivery_area_id: areaId || undefined,
+          value: Math.max(codBdt, Math.round(Number(parcel?.valuePaisa || 0) / 100)),
           customer_address: String(recipient?.address || '').trim().slice(0, 255),
           merchant_invoice_id: String(invoiceNo || subOrderId),
           cash_collection_amount: codBdt,
@@ -194,7 +228,7 @@ class RedxAdapter extends CourierBaseAdapter {
     }
 
     try {
-      const response = await this.safeFetch(`${this.baseUrl}/v1.0.0-beta/parcels/tracking/${encodeURIComponent(ref)}`, {
+      const response = await this.safeFetch(`${this.baseUrl}/v1.0.0-beta/parcel/track/${encodeURIComponent(ref)}`, {
         method: 'GET',
         headers: {
           'API-ACCESS-TOKEN': `Bearer ${this.apiKey}`
@@ -254,7 +288,7 @@ class RedxAdapter extends CourierBaseAdapter {
     }
 
     try {
-      const response = await this.safeFetch(`${this.baseUrl}/v1.0.0-beta/parcels/tracking/${encodeURIComponent(trackingReference)}`, {
+      const response = await this.safeFetch(`${this.baseUrl}/v1.0.0-beta/parcel/track/${encodeURIComponent(trackingReference)}`, {
         method: 'GET',
         headers: {
           'API-ACCESS-TOKEN': `Bearer ${this.apiKey}`
@@ -262,7 +296,8 @@ class RedxAdapter extends CourierBaseAdapter {
       }, 8000);
 
       const data = await response.json();
-      const rawStatus = data.tracking?.status || 'unknown';
+      const latest = Array.isArray(data.tracking) ? data.tracking[data.tracking.length - 1] : data.tracking;
+      const rawStatus = latest?.status || latest?.message_en || 'unknown';
       return {
         trackingId: trackingReference,
         normalizedStatus: this.normalizeStatus(rawStatus),

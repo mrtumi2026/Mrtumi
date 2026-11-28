@@ -488,9 +488,6 @@
           document.getElementById('orderOtpInput').focus();
           document.getElementById('otpErrorMessage').style.display = 'none';
           startOtpCountdown(60);
-          if (data.devCode) {
-            console.log('DEV / TEST OTP CODE:', data.devCode);
-          }
         } else {
           if (typeof toastr !== 'undefined') toastr.error(data.message || <%- JSON.stringify(L('Could not send the OTP.', 'ওটিপি পাঠানো যায়নি।')).replace(/</g, '\\u003c') %>);
         }

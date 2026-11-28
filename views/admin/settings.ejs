@@ -171,7 +171,7 @@
           <% } else if (section === 'sms_gateway') { %>
             <div class="col-md-5">
               <label class="form-label small fw-semibold">BulkSMSBD API Key *</label>
-              <input type="password" name="bulksms_api_key" value="<%= siteSettings.bulksms_api_key || '' %>" class="form-control" placeholder="<%= L('Enter the API key...', 'API Key বসান...') %>" />
+              <input type="password" name="bulksms_api_key" value="" autocomplete="new-password" class="form-control" placeholder="<%= siteSettings.bulksms_api_key ? L('Saved (type a new one only to change it)', 'সেভ করা আছে (বদলাতে চাইলে নতুনটি লিখুন)') : L('Enter the API key...', 'API Key বসান...') %>" />
               <div class="form-text"><%= L('API key from your BulkSMSBD dashboard.', 'BulkSMSBD ড্যাশবোর্ড থেকে প্রাপ্ত API Key।') %></div>
             </div>
             <div class="col-md-4">
@@ -191,6 +191,16 @@
                 <span class="input-group-text">৳</span>
                 <input type="text" name="bulksms_balance" value="<%= siteSettings.bulksms_balance || '0.00' %>" class="form-control" readonly />
               </div>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold" for="vendorOtpSms"><%= L('Vendor mobile verification by SMS', 'ভেন্ডরের মোবাইল যাচাই SMS-এ') %></label>
+              <select name="vendor_otp_sms_enabled" id="vendorOtpSms" class="form-select">
+                <option value="0" <%= siteSettings.vendor_otp_sms_enabled === '1' ? '' : 'selected' %>><%= L('Off', 'বন্ধ') %></option>
+                <option value="1" <%= siteSettings.vendor_otp_sms_enabled === '1' ? 'selected' : '' %>><%= L('On (turn on after a test SMS arrives)', 'চালু (টেস্ট SMS পৌঁছানোর পর চালু করুন)') %></option>
+              </select>
+            </div>
+            <div class="col-12">
+              <div class="form-text"><%= L('Customer order OTP is switched on in', 'ক্রেতার অর্ডার OTP চালু করার জায়গা:') %> <a href="/admin/phase08/settings"><%= L('Order settings → OTP policy', 'অর্ডার সেটিংস → OTP নীতি') %></a></div>
             </div>
             <div class="col-md-4">
               <label class="form-label small fw-semibold"><%= L('Automatic SMS to the customer on a new order', 'অর্ডার হলে কাস্টমারকে অটো SMS') %></label>
@@ -231,7 +241,7 @@
           <% } else if (section === 'fraud_api' || section === 'order_restriction') { %>
             <div class="col-md-6">
               <label class="form-label small fw-semibold">BD Courier API Key *</label>
-              <input type="password" name="bdcourier_api_key" value="<%= siteSettings.bdcourier_api_key || '' %>" class="form-control" placeholder="<%= L('Enter the BD Courier API key...', 'BD Courier API Key বসান...') %>" />
+              <input type="password" name="bdcourier_api_key" value="" autocomplete="new-password" class="form-control" placeholder="<%= siteSettings.bdcourier_api_key ? L('Saved (type a new one only to change it)', 'সেভ করা আছে (বদলাতে চাইলে নতুনটি লিখুন)') : L('Enter the BD Courier API key...', 'BD Courier API Key বসান...') %>" />
               <div class="form-text"><%= L('API key from your BD Courier (bdcourier.com) account.', 'BD Courier (bdcourier.com) অ্যাকাউন্ট থেকে প্রাপ্ত API Key।') %></div>
             </div>
             <div class="col-md-3">
@@ -450,6 +460,13 @@
           <button type="submit" class="btn btn-forest px-4">💾 Save Settings</button>
         </div>
       </form>
+      <% if (section === 'sms_gateway') { %>
+      <form action="/admin/smsgeteway/test" method="POST" class="tbl-card p-4 mt-3">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+        <label class="form-label small fw-semibold" for="testSmsPhone"><%= L('Send a test SMS (save the settings above first)', 'টেস্ট SMS পাঠান (আগে উপরের সেটিংস সেভ করুন)') %></label>
+        <div class="input-group"><input type="tel" name="test_phone" id="testSmsPhone" class="form-control" placeholder="01XXXXXXXXX" required /><button type="submit" class="btn btn-outline-primary"><%= L('Send test SMS', 'টেস্ট SMS পাঠান') %></button></div>
+      </form>
+      <% } %>
       <% if (section === 'email') { %>
       <form action="/admin/email-setting/test" method="POST" class="tbl-card p-4 mt-3">
         <input type="hidden" name="_csrf" value="<%= csrfToken %>" />

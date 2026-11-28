@@ -11,14 +11,6 @@
         <p class="text-muted small mb-0">Placed on <%= order.created_at %> &bull; Source: <%= order.traffic_source || 'Direct' %> &bull; Type: <%= order.order_type || 'website' %></p>
       </div>
       <div class="d-flex flex-wrap gap-2">
-        <form action="/admin/order/<%= order.id %>/send-courier" method="POST" class="d-inline">
-          <input type="hidden" name="courier_name" value="Steadfast Courier" />
-          <button type="submit" class="btn btn-success btn-sm">🚚 Send to Steadfast</button>
-        </form>
-        <form action="/admin/order/<%= order.id %>/send-courier" method="POST" class="d-inline">
-          <input type="hidden" name="courier_name" value="Pathao Courier" />
-          <button type="submit" class="btn btn-outline-danger btn-sm">🛵 Send to Pathao</button>
-        </form>
         <% if (order.status === 'delivered' && order.payment_status === 'unpaid' && order.payment_method === 'cod' && (Number(order.has_vendor_part) === 0 || (Number(order.has_own_part) === 1 && Number(order.open_vendor_parts) === 0))) { %>
           <form action="/admin/order/<%= order.id %>/confirm-cod-payment" method="POST" class="d-inline-flex gap-1">
             <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
@@ -140,6 +132,7 @@
       </div>
 
       <div class="col-lg-5">
+        <% if (typeof courierPanel !== 'undefined' && courierPanel) { %><%- include('partials/own-order-courier') %><% } %>
         <form id="order-detail-fields" action="/admin/order/update/<%= order.id %>" method="POST" class="tbl-card p-3">
           <input type="hidden" name="request_key" value="<%= mutationKeys?.orderUpdate || '' %>" />
           <h6 class="fw-bold border-bottom pb-2 mb-3">Process &amp; Update Order</h6>

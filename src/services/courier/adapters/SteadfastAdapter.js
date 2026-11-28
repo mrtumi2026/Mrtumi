@@ -9,7 +9,7 @@ const CourierBaseAdapter = require('../CourierBaseAdapter');
 class SteadfastAdapter extends CourierBaseAdapter {
   constructor(config = {}) {
     super(config);
-    this.baseUrl = this.baseUrl || 'https://portal.steadfast.com.bd/api/v1';
+    this.baseUrl = (this.baseUrl || 'https://portal.packzy.com/api/v1').replace(/\/+$/, '');
   }
 
   /**
@@ -75,6 +75,24 @@ class SteadfastAdapter extends CourierBaseAdapter {
       reasonUnavailable: null,
       notes: 'Standard contract tariff schedule (Steadfast does not support dynamic quote API)'
     };
+  }
+
+  /** Read-only credential check used by the admin "Test connection" button. */
+  async testConnection() {
+    if (!this.apiKey || !this.secretKey) return { ok: false, message: 'API Key and Secret Key are both required.' };
+    try {
+      const response = await this.safeFetch(`${this.baseUrl}/get_balance`, {
+        method: 'GET',
+        headers: { 'Api-Key': this.apiKey, 'Secret-Key': this.secretKey, 'Accept': 'application/json' }
+      }, 8000);
+      const data = await response.json().catch(() => null);
+      if (response.ok && data && data.current_balance !== undefined) {
+        return { ok: true, message: `Connected. Steadfast balance: ${data.current_balance}` };
+      }
+      return { ok: false, message: String(data?.message || `Steadfast answered HTTP ${response.status}`).slice(0, 200) };
+    } catch (err) {
+      return { ok: false, message: String(err.message).slice(0, 200) };
+    }
   }
 
   async checkServiceability({ origin, destination }) {

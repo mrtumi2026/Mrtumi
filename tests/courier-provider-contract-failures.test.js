@@ -301,7 +301,7 @@ test('RedX Contract: verifies payload format, 200 response parsing, 401 auth fai
     if (options.headers['API-ACCESS-TOKEN'] === 'Bearer invalid_redx_token') {
       return mockHttpResponse({ status: 401, json: { message: 'Unauthorized access token.' } });
     }
-    if (url.includes('/parcels') && options.method === 'POST') {
+    if (url.endsWith('/parcel') && options.method === 'POST') {
       return mockHttpResponse({
         status: 200,
         json: {
@@ -310,7 +310,7 @@ test('RedX Contract: verifies payload format, 200 response parsing, 401 auth fai
         }
       });
     }
-    if (url.includes('/tracking/')) {
+    if (url.includes('/parcel/track/')) {
       return mockHttpResponse({
         status: 200,
         json: {
@@ -337,15 +337,17 @@ test('RedX Contract: verifies payload format, 200 response parsing, 401 auth fai
     subOrderId: 3,
     invoiceNo: 'INV-3003',
     recipient: { name: 'Salma Khatun', phone: '01912345678', address: 'Chawkbazar, Chittagong', district: 'Chittagong' },
-    parcel: { weightGrams: 1500 },
+    parcel: { weightGrams: 1500, deliveryAreaId: 12, deliveryAreaName: 'Chawkbazar' },
     codAmountPaisa: 80000 // ৳800
   });
 
   assert.equal(booking.success, true);
   assert.equal(booking.trackingId, 'RDX-998877');
   assert.equal(booking.consignmentId, 'RDX-998877');
-  assert.equal(capturedRequest.url, 'https://openapi.redx.com.bd/v1.0.0-beta/parcels');
+  assert.equal(capturedRequest.url, 'https://openapi.redx.com.bd/v1.0.0-beta/parcel');
   const sentBody = JSON.parse(capturedRequest.options.body);
+  assert.equal(sentBody.delivery_area_id, 12);
+  assert.equal(sentBody.value, 800);
   assert.equal(sentBody.merchant_invoice_id, 'INV-3003');
   assert.equal(sentBody.customer_name, 'Salma Khatun');
   assert.equal(sentBody.customer_phone, '01912345678');

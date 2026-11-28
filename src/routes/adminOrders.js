@@ -12,6 +12,7 @@ const adminOrderStatusRepository = require('../repositories/adminOrderStatusRepo
 const adminPosRepository = require('../repositories/adminPosRepository');
 const adminOrderMutationRepository = require('../repositories/adminOrderMutationRepository');
 const adminDelete = require('../repositories/adminDeleteRepository');
+const ownOrderCourier = require('../services/ownOrderCourierService');
 const { localizeError } = require('../utils/bnErrors');
 const adminCustomerRepository = require('../repositories/adminCustomerRepository');
 const logger = require('../utils/logger');
@@ -472,7 +473,8 @@ router.get('/admin/order/view/:id', asyncHandler(async (req, res) => {
     }
     const mutationKeys={orderUpdate:crypto.randomUUID(),statusTransition:crypto.randomUUID(),itemAdd:crypto.randomUUID(),itemQty:{},itemRemove:{}};
     for(const item of detail.items){mutationKeys.itemQty[item.id]=crypto.randomUUID();mutationKeys.itemRemove[item.id]=crypto.randomUUID();}
-    return res.render('admin/order-detail', { ...detail, mutationKeys, csrfToken:req.csrfToken() });
+    const courierPanel = await ownOrderCourier.getBookingPanel(detail.order.id);
+    return res.render('admin/order-detail', { ...detail, courierPanel, mutationKeys, csrfToken:req.csrfToken() });
   }
   const order = db.get(
     `SELECT o.*, COALESCE(os.name, o.status) AS status_label, COALESCE(os.badge_class, 'sb-1') AS badge_class
@@ -585,6 +587,50 @@ router.post('/admin/order/:id/item-update/:itemId', asyncHandler(async (req, res
     req.flash('success', 'অর্ডারের পণ্যের পরিমাণ আপডেট হয়েছে।');
   }
   res.redirect(`/admin/order/view/${orderId}`);
+}));
+
+// ─── Courier booking for the shop's own parcel ───
+router.post('/admin/order/:id/book-courier', requirePermission('orders.manage'), requireCsrf, asyncHandler(async (req, res) => {
+  const back = `/admin/order/view/${Number(req.params.id) || 0}`;
+  try {
+    const result = await ownOrderCourier.bookOwnOrder({
+      orderId: req.params.id, courierId: req.body.courier_id, areaId: req.body.area_id, areaName: req.body.area_name,
+      note: req.body.note, confirmedNoParcel: req.body.confirm_no_parcel === '1', actor: orderActor(req), locale: req.locale
+    });
+    req.adminDomainAudit = true;
+    req.flash('success', req.locale === 'bn'
+      ? `${result.courierName}-এ বুকিং হয়েছে। ট্র্যাকিং আইডি: ${result.trackingId} (COD ৳${result.codTaka})`
+      : `Booked with ${result.courierName}. Tracking ID: ${result.trackingId} (COD ৳${result.codTaka})`);
+  } catch (err) {
+    if (!(err instanceof AppError) || err.statusCode >= 500) throw err;
+    req.flash('error', err.message);
+  }
+  return res.redirect(back);
+}));
+
+router.post('/admin/order/:id/courier-status', requirePermission('orders.manage'), requireCsrf, asyncHandler(async (req, res) => {
+  const back = `/admin/order/view/${Number(req.params.id) || 0}`;
+  try {
+    const result = await ownOrderCourier.checkOwnOrderStatus(req.params.id, req.locale);
+    req.flash('success', `${result.courierName} · ${result.trackingId}: ${result.rawStatus}`);
+  } catch (err) {
+    if (!(err instanceof AppError) || err.statusCode >= 500) throw err;
+    req.flash('error', err.message);
+  }
+  return res.redirect(back);
+}));
+
+router.get('/admin/courier/redx-areas', requirePermission('orders.manage'), asyncHandler(async (req, res) => {
+  const client = require('../db/mysqlPool');
+  const row = await client.queryOne('SELECT * FROM courier_apis WHERE id=? AND status=1', [Number(req.query.courier) || 0]);
+  const adapter = row ? require('../services/courier/CourierProviderFactory').createAdapter(row) : null;
+  const district = String(req.query.district || '').trim().slice(0, 80);
+  if (!adapter || typeof adapter.listAreas !== 'function' || !district) return res.json({ ok: false, message: 'Choose RedX and type a district name.', areas: [] });
+  try {
+    return res.json(await adapter.listAreas(district));
+  } catch (err) {
+    return res.json({ ok: false, message: String(err.message).slice(0, 200), areas: [] });
+  }
 }));
 
 router.post('/admin/order/:id/send-courier', (_req, res) => {

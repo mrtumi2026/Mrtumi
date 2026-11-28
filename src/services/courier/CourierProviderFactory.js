@@ -4,6 +4,7 @@ const SteadfastAdapter = require('./adapters/SteadfastAdapter');
 const PathaoAdapter = require('./adapters/PathaoAdapter');
 const RedxAdapter = require('./adapters/RedxAdapter');
 const MockCourierAdapter = require('./adapters/MockCourierAdapter');
+const ManualCourierAdapter = require('./adapters/ManualCourierAdapter');
 
 /**
  * Factory for creating courier provider adapters from database records.
@@ -32,8 +33,8 @@ class CourierProviderFactory {
       return new MockCourierAdapter(config);
     }
 
-    // General fallback
-    return new SteadfastAdapter(config);
+    // Any other courier has no API integration.
+    return new ManualCourierAdapter(config);
   }
 }
 

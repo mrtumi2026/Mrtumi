@@ -35,7 +35,8 @@ test('priority settings routes use asynchronous MySQL operations and retain SQLi
   assert.match(source, /router\.post\('\/admin\/paymentgeteway\/update\/:id'/);
   assert.match(source, /router\.post\('\/admin\/courierapi\/update\/:id'/);
   assert.match(source, /WHERE gateway_type=\?/);
-  assert.match(source, /INSERT INTO courier_apis \(name,code,base_url,api_key,secret_key,client_id,status,sandbox\)/);
+  const courierAdmin = fs.readFileSync(path.join(root, 'src/repositories/courierApiAdminRepository.js'), 'utf8');
+  assert.match(courierAdmin, /INSERT INTO courier_apis \(name,code,provider_type,base_url,api_key,secret_key,client_id,status,sandbox,service_options_json\)/);
   assert.match(source, /db\.all\('SELECT \* FROM banners/);
   const checkout = fs.readFileSync(path.join(root, 'src/repositories/checkoutRepository.js'), 'utf8');
   // Manual MFS channels are read from payment_gateways and filtered by the shared

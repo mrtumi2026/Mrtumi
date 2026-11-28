@@ -201,7 +201,8 @@ async function sendOrderPlacedSms({ invoiceNo, customerName, phone, totalAmount,
       const invoice = String(invoiceNo || '');
       const custName = String(customerName || 'গ্রাহক').trim();
       const siteName = String(settings.site_name || 'Mr. Tumi').trim();
-      const trackingUrl = `https://mrtumi.com/track-order?invoice=${encodeURIComponent(invoice)}`;
+      const siteOrigin = String(env.isProduction ? env.appUrl : 'https://mrtumi.com').replace(/\/+$/, '');
+      const trackingUrl = `${siteOrigin}/track-order?q=${encodeURIComponent(invoice)}`;
 
       // 1. Customer Order Confirmation SMS
       const customerSmsEnabled = settings.sms_order_customer_enabled !== '0';

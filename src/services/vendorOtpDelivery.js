@@ -8,9 +8,12 @@ const ENDPOINT='https://bulksmsbd.net/api/smsapi';
 const REQUEST_TIMEOUT_MS=8000;
 
 function configuredBalance(value){const raw=String(value??'').trim();if(!raw)return null;const parsed=Number(raw);return Number.isFinite(parsed)?parsed:null;}
-async function deliverVendorOtp({phone,code,settings,fetchImpl=globalThis.fetch,timeoutMs=REQUEST_TIMEOUT_MS,enabled=env.vendorOtpSmsEnabled}={}){
-  if(enabled!==true)throw new ConflictError('SMS delivery is disabled until the gateway is verified by an administrator. Please contact support for manual phone-call verification.');
+async function deliverVendorOtp({phone,code,settings,fetchImpl=globalThis.fetch,timeoutMs=REQUEST_TIMEOUT_MS,enabled}={}){
+  const disabled=()=>new ConflictError('SMS delivery is disabled until the gateway is verified by an administrator. Please contact support for manual phone-call verification.');
+  if(enabled===false)throw disabled();
   const config=settings||await settingsRepository.getAllSettings();
+  const switchedOn=enabled===true||env.vendorOtpSmsEnabled===true||String(config.vendor_otp_sms_enabled||'')==='1';
+  if(!switchedOn||String(config.bulksms_enabled??'')==='0')throw disabled();
   const apiKey=String(config.bulksms_api_key||'').trim(),senderId=String(config.bulksms_sender_id||'').trim();
   if(!apiKey||!senderId)throw new ConflictError('SMS delivery is not configured. Please contact support to request a manual phone-call verification.');
   const balance=configuredBalance(config.bulksms_balance);
