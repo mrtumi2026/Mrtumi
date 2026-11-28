@@ -1,3 +1,4 @@
+<% const L = (en, bn) => (typeof locale !== 'undefined' && locale === 'en' ? en : bn); %>
 <%- include('partials/head', { title: 'Gemini Assistant' }) %>
 <%- include('partials/topbar') %>
 <%- include('partials/sidebar') %>
@@ -7,7 +8,7 @@
     <div class="d-flex justify-content-between align-items-center mb-3">
       <div>
         <h4 class="fw-bold mb-0">🤖 Gemini AI Store Assistant</h4>
-        <p class="text-muted small mb-0">লাইভ ডাটাবেস থেকে অর্ডার, স্টক, রেভিনিউ এবং স্টোর ম্যানেজমেন্ট সহায়তা নিন</p>
+        <p class="text-muted small mb-0"><%= L('Get help with orders, stock, revenue and store management from the live database', 'লাইভ ডাটাবেস থেকে অর্ডার, স্টক, রেভিনিউ এবং স্টোর ম্যানেজমেন্ট সহায়তা নিন') %></p>
       </div>
       <button type="button" id="fullClearBtn" class="btn btn-outline-danger btn-sm">🗑️ Clear Conversation</button>
     </div>
@@ -18,12 +19,12 @@
           <div class="text-center py-5" id="fullChatEmpty">
             <div style="font-size: 48px;">🤖</div>
             <h5 class="fw-bold mt-2"><%= siteSettings.site_name %> — <%= t('admin.menu.geminiAi') %></h5>
-            <p class="text-muted small">যেকোনো প্রশ্ন বাংলা বা ইংরেজিতে লিখুন অথবা নিচের কুইক প্রম্পটে ক্লিক করুন:</p>
+            <p class="text-muted small"><%= L('Type any question in Bangla or English, or click a quick prompt below:', 'যেকোনো প্রশ্ন বাংলা বা ইংরেজিতে লিখুন অথবা নিচের কুইক প্রম্পটে ক্লিক করুন:') %></p>
             <div class="d-flex flex-wrap gap-2 justify-content-center mt-3">
-              <button type="button" class="btn btn-outline-dark btn-sm rounded-pill quick-p" data-q="আজ কতটি অর্ডার হয়েছে?">📊 আজকের অর্ডার রিপোর্ট</button>
-              <button type="button" class="btn btn-outline-dark btn-sm rounded-pill quick-p" data-q="স্টক ও প্রোডাক্ট রিপোর্ট দাও">📦 প্রোডাক্ট ও স্টক স্ট্যাটাস</button>
-              <button type="button" class="btn btn-outline-dark btn-sm rounded-pill quick-p" data-q="ফান্ড ও খরচের হিসাব দেখাও">💰 ফান্ড ও খরচের হিসাব</button>
-              <button type="button" class="btn btn-outline-dark btn-sm rounded-pill quick-p" data-q="Fraud check কিভাবে করব?">🛡️ ফ্রড চেক গাইড</button>
+              <button type="button" class="btn btn-outline-dark btn-sm rounded-pill quick-p" data-q="আজ কতটি অর্ডার হয়েছে?"><%= L('📊 Today\'s order report', '📊 আজকের অর্ডার রিপোর্ট') %></button>
+              <button type="button" class="btn btn-outline-dark btn-sm rounded-pill quick-p" data-q="স্টক ও প্রোডাক্ট রিপোর্ট দাও"><%= L('📦 Product and stock status', '📦 প্রোডাক্ট ও স্টক স্ট্যাটাস') %></button>
+              <button type="button" class="btn btn-outline-dark btn-sm rounded-pill quick-p" data-q="ফান্ড ও খরচের হিসাব দেখাও"><%= L('💰 Fund and expense summary', '💰 ফান্ড ও খরচের হিসাব') %></button>
+              <button type="button" class="btn btn-outline-dark btn-sm rounded-pill quick-p" data-q="Fraud check কিভাবে করব?"><%= L('🛡️ Fraud check guide', '🛡️ ফ্রড চেক গাইড') %></button>
             </div>
           </div>
         <% } else { %>
@@ -36,8 +37,8 @@
       </div>
 
       <form id="fullChatForm" class="p-3 border-top bg-white d-flex gap-2">
-        <input type="text" id="fullChatInput" class="form-control" placeholder="আপনার প্রশ্ন লিখুন (যেমন: আজকের অর্ডার ও রেভিনিউ কত?)..." required />
-        <button type="submit" class="btn btn-forest px-4">পাঠান ➤</button>
+        <input type="text" id="fullChatInput" class="form-control" placeholder="<%= L('Type your question (e.g. what are today\'s orders and revenue?)...', 'আপনার প্রশ্ন লিখুন (যেমন: আজকের অর্ডার ও রেভিনিউ কত?)...') %>" required />
+        <button type="submit" class="btn btn-forest px-4"><%= L('Send ➤', 'পাঠান ➤') %></button>
       </form>
     </div>
   </div>

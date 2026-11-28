@@ -1,3 +1,4 @@
+<% const L = (en, bn) => (typeof locale !== 'undefined' && locale === 'en' ? en : bn); %>
 <%- include('partials/head', { title: t('admin.menu.dashboard') }) %>
 <%- include('partials/topbar') %>
 <%- include('partials/sidebar') %>
@@ -603,7 +604,7 @@
       .then(function(d) {
         if (d.success && d.data) {
           main.textContent = d.data.plan_name;
-          det.textContent = 'API কল (ব্যবহার): ' + d.data.api_calls + '\nনেক্সট ডিউ ডেট: ' + d.data.next_due_display;
+          det.textContent = <%- JSON.stringify(L('API calls (used): ', 'API কল (ব্যবহার): ')).replace(/</g, '\\u003c') %> + d.data.api_calls + <%- JSON.stringify(L('\nNext due date: ', '\nনেক্সট ডিউ ডেট: ')).replace(/</g, '\\u003c') %> + d.data.next_due_display;
         } else {
           main.textContent = '<%= locale === "bn" ? "অনুপলব্ধ" : "Unavailable" %>';
           det.textContent = d.message || '<%= locale === "bn" ? "লাইভ ডেটা পাওয়া যায়নি" : "Live data unavailable" %>';

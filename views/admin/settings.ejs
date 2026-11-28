@@ -1,3 +1,4 @@
+<% const L = (en, bn) => (typeof locale !== 'undefined' && locale === 'en' ? en : bn); %>
 <%- include('partials/head', { title: pageTitle }) %>
 <%- include('partials/topbar') %>
 <%- include('partials/sidebar') %>
@@ -6,7 +7,7 @@
   <div class="content">
     <div class="db-heading">
       <h1>⚙️ <%= pageTitle %></h1>
-      <p>সকল পরিবর্তন তাৎক্ষণিক ডাটাবেসে সংরক্ষিত হবে এবং কাস্টমার সাইটে কার্যকর হবে</p>
+      <p><%= L('All changes are saved to the database immediately and take effect on the customer site', 'সকল পরিবর্তন তাৎক্ষণিক ডাটাবেসে সংরক্ষিত হবে এবং কাস্টমার সাইটে কার্যকর হবে') %></p>
     </div>
 
     <% if (section === 'custom_sms') { %>
@@ -18,11 +19,11 @@
             <div class="mb-3">
               <label class="form-label small fw-semibold">Recipient Phone Numbers (comma separated) *</label>
               <input type="text" name="recipient" id="smsRecipients" class="form-control" placeholder="01711..., 01815..." required />
-              <div class="form-text">নিচের কাস্টমার তালিকা থেকে ক্লিক করে যোগ করতে পারেন।</div>
+              <div class="form-text"><%= L('You can add them by clicking from the customer list below.', 'নিচের কাস্টমার তালিকা থেকে ক্লিক করে যোগ করতে পারেন।') %></div>
             </div>
             <div class="mb-3">
               <label class="form-label small fw-semibold">SMS Message *</label>
-              <textarea name="message" rows="4" class="form-control" required placeholder="প্রিয় গ্রাহক, মি. তুমি গ্রোসারি অ্যান্ড গিফট-এ চলছে বিশেষ অফার!"></textarea>
+              <textarea name="message" rows="4" class="form-control" required placeholder="<%= L('Dear customer, a special offer is running at Mr. Tumi Grocery and Gift!', 'প্রিয় গ্রাহক, মি. তুমি গ্রোসারি অ্যান্ড গিফট-এ চলছে বিশেষ অফার!') %>"></textarea>
             </div>
             <button type="submit" class="btn btn-forest w-100">📨 Send SMS Now</button>
 
@@ -45,7 +46,7 @@
               <table class="table clean mb-0">
                 <thead><tr><th>Recipient</th><th>Message</th><th>Status</th><th>Date</th></tr></thead>
                 <tbody>
-                  <% if (!logs.length) { %><tr><td colspan="4" class="text-center py-4 text-muted">কোনো SMS পাঠানো হয়নি।</td></tr><% } %>
+                  <% if (!logs.length) { %><tr><td colspan="4" class="text-center py-4 text-muted"><%= L('No SMS has been sent.', 'কোনো SMS পাঠানো হয়নি।') %></td></tr><% } %>
                   <% logs.forEach(function(l) { %>
                     <tr>
                       <td class="fw-semibold"><%= l.recipient %></td>
@@ -64,7 +65,7 @@
     <% } else if (section === 'sitemap') { %>
       <div class="tbl-card p-4">
         <h6 class="fw-bold mb-2">Live XML Sitemap</h6>
-        <p class="small text-muted">আপনার স্টোরের সকল ক্যাটাগরি ও প্রোডাক্ট নিয়ে স্বয়ংক্রিয়ভাবে Sitemap তৈরি হচ্ছে:</p>
+        <p class="small text-muted"><%= L('A sitemap is generated automatically with all your store\'s categories and products:', 'আপনার স্টোরের সকল ক্যাটাগরি ও প্রোডাক্ট নিয়ে স্বয়ংক্রিয়ভাবে Sitemap তৈরি হচ্ছে:') %></p>
         <div class="d-flex gap-2 align-items-center">
           <code class="p-2 bg-light border rounded">/sitemap.xml</code>
           <a href="/sitemap.xml" target="_blank" class="btn btn-forest btn-sm">↗ View Live Sitemap.xml</a>
@@ -89,7 +90,7 @@
         <span class="badge bg-success mb-2">Mr. Tumi Grocery &amp; Gift Platform</span>
         <h5 class="fw-bold"><%= siteSettings.site_name %> — Node.js + Express + MySQL Ready</h5>
         <p class="text-muted small mb-2">
-          সকল মডিউল, অর্ডার, ইনভেন্টরি ও সেটিংস পূর্ণ নিয়ন্ত্রণে রয়েছে।
+          <%= L('Full control of all modules, orders, inventory and settings.', 'সকল মডিউল, অর্ডার, ইনভেন্টরি ও সেটিংস পূর্ণ নিয়ন্ত্রণে রয়েছে।') %>
         </p>
         <% if (typeof brand !== 'undefined' && brand && brand.isPlaceholderLogo) { %>
           <div class="mt-copy-review-banner mt-3">
@@ -107,7 +108,7 @@
         <div class="row g-3">
           <% if (section === 'general' || section === 'contact') { %>
             <div class="col-md-6">
-              <label class="form-label small fw-semibold">Store Name (বাংলা / English)</label>
+              <label class="form-label small fw-semibold"><%= L('Store Name (Bangla / English)', 'Store Name (বাংলা / English)') %></label>
               <input type="text" name="site_name" value="<%= siteSettings.site_name || '' %>" class="form-control" />
             </div>
             <div class="col-md-6">
@@ -139,7 +140,7 @@
               <input type="number" name="outside_dhaka_charge" value="<%= siteSettings.outside_dhaka_charge || '120' %>" class="form-control" />
             </div>
             <div class="col-12">
-              <label class="form-label small fw-semibold">Top Notice Bar Text (হোমপেজ স্ক্রলিং নোটিশ)</label>
+              <label class="form-label small fw-semibold"><%= L('Top Notice Bar Text (home page scrolling notice)', 'Top Notice Bar Text (হোমপেজ স্ক্রলিং নোটিশ)') %></label>
               <textarea name="special_notice" rows="2" class="form-control"><%= siteSettings.special_notice || '' %></textarea>
             </div>
             <div class="col-md-6">
@@ -170,18 +171,18 @@
           <% } else if (section === 'sms_gateway') { %>
             <div class="col-md-5">
               <label class="form-label small fw-semibold">BulkSMSBD API Key *</label>
-              <input type="password" name="bulksms_api_key" value="<%= siteSettings.bulksms_api_key || '' %>" class="form-control" placeholder="API Key বসান..." />
-              <div class="form-text">BulkSMSBD ড্যাশবোর্ড থেকে প্রাপ্ত API Key।</div>
+              <input type="password" name="bulksms_api_key" value="<%= siteSettings.bulksms_api_key || '' %>" class="form-control" placeholder="<%= L('Enter the API key...', 'API Key বসান...') %>" />
+              <div class="form-text"><%= L('API key from your BulkSMSBD dashboard.', 'BulkSMSBD ড্যাশবোর্ড থেকে প্রাপ্ত API Key।') %></div>
             </div>
             <div class="col-md-4">
               <label class="form-label small fw-semibold">Approved Sender ID *</label>
-              <input type="text" name="bulksms_sender_id" value="<%= siteSettings.bulksms_sender_id || '' %>" class="form-control" placeholder="যেমন: 8809612... বা Non-masking ID" />
+              <input type="text" name="bulksms_sender_id" value="<%= siteSettings.bulksms_sender_id || '' %>" class="form-control" placeholder="<%= L('e.g. 8809612... or a non-masking ID', 'যেমন: 8809612... বা Non-masking ID') %>" />
             </div>
             <div class="col-md-3">
               <label class="form-label small fw-semibold">SMS Gateway Status</label>
               <select name="bulksms_enabled" class="form-select">
-                <option value="1" <%= siteSettings.bulksms_enabled !== '0' ? 'selected' : '' %>>সক্রিয় (Active)</option>
-                <option value="0" <%= siteSettings.bulksms_enabled === '0' ? 'selected' : '' %>>নিষ্ক্রিয় (Disabled)</option>
+                <option value="1" <%= siteSettings.bulksms_enabled !== '0' ? 'selected' : '' %>><%= L('Active', 'সক্রিয় (Active)') %></option>
+                <option value="0" <%= siteSettings.bulksms_enabled === '0' ? 'selected' : '' %>><%= L('Disabled', 'নিষ্ক্রিয় (Disabled)') %></option>
               </select>
             </div>
             <div class="col-md-4">
@@ -192,52 +193,52 @@
               </div>
             </div>
             <div class="col-md-4">
-              <label class="form-label small fw-semibold">অর্ডার হলে কাস্টমারকে অটো SMS</label>
+              <label class="form-label small fw-semibold"><%= L('Automatic SMS to the customer on a new order', 'অর্ডার হলে কাস্টমারকে অটো SMS') %></label>
               <select name="sms_order_customer_enabled" class="form-select">
-                <option value="1" <%= siteSettings.sms_order_customer_enabled !== '0' ? 'selected' : '' %>>চালু (Send on New Order)</option>
-                <option value="0" <%= siteSettings.sms_order_customer_enabled === '0' ? 'selected' : '' %>>বন্ধ (Disabled)</option>
+                <option value="1" <%= siteSettings.sms_order_customer_enabled !== '0' ? 'selected' : '' %>><%= L('On (send on new order)', 'চালু (Send on New Order)') %></option>
+                <option value="0" <%= siteSettings.sms_order_customer_enabled === '0' ? 'selected' : '' %>><%= L('Off (disabled)', 'বন্ধ (Disabled)') %></option>
               </select>
             </div>
             <div class="col-md-4">
-              <label class="form-label small fw-semibold">অর্ডার হলে এডমিনকে অটো SMS</label>
+              <label class="form-label small fw-semibold"><%= L('Automatic SMS to the admin on a new order', 'অর্ডার হলে এডমিনকে অটো SMS') %></label>
               <select name="sms_order_admin_enabled" class="form-select">
-                <option value="1" <%= siteSettings.sms_order_admin_enabled !== '0' ? 'selected' : '' %>>চালু (Alert Admin)</option>
-                <option value="0" <%= siteSettings.sms_order_admin_enabled === '0' ? 'selected' : '' %>>বন্ধ (Disabled)</option>
+                <option value="1" <%= siteSettings.sms_order_admin_enabled !== '0' ? 'selected' : '' %>><%= L('On (alert admin)', 'চালু (Alert Admin)') %></option>
+                <option value="0" <%= siteSettings.sms_order_admin_enabled === '0' ? 'selected' : '' %>><%= L('Off (disabled)', 'বন্ধ (Disabled)') %></option>
               </select>
             </div>
             <div class="col-md-6">
-              <label class="form-label small fw-semibold">এডমিন নোটিফিকেশন মোবাইল নম্বর</label>
-              <input type="text" name="sms_admin_phone" value="<%= siteSettings.sms_admin_phone || siteSettings.site_phone || '' %>" class="form-control" placeholder="যেমন: 01711223344" />
-              <div class="form-text">এই নম্বরে নতুন অর্ডার আসলে তাৎক্ষণিক SMS যাবে।</div>
+              <label class="form-label small fw-semibold"><%= L('Admin notification mobile number', 'এডমিন নোটিফিকেশন মোবাইল নম্বর') %></label>
+              <input type="text" name="sms_admin_phone" value="<%= siteSettings.sms_admin_phone || siteSettings.site_phone || '' %>" class="form-control" placeholder="<%= L('e.g. 01711223344', 'যেমন: 01711223344') %>" />
+              <div class="form-text"><%= L('An SMS is sent to this number as soon as a new order arrives.', 'এই নম্বরে নতুন অর্ডার আসলে তাৎক্ষণিক SMS যাবে।') %></div>
             </div>
             <div class="col-md-6">
-              <label class="form-label small fw-semibold">কুইক অ্যাকশন</label>
+              <label class="form-label small fw-semibold"><%= L('Quick action', 'কুইক অ্যাকশন') %></label>
               <div class="pt-1">
-                <a href="/admin/sms/custom-send" class="btn btn-outline-secondary btn-sm">📨 ম্যানুয়াল SMS পাঠান</a>
+                <a href="/admin/sms/custom-send" class="btn btn-outline-secondary btn-sm"><%= L('📨 Send SMS manually', '📨 ম্যানুয়াল SMS পাঠান') %></a>
               </div>
             </div>
             <div class="col-12">
-              <label class="form-label small fw-semibold">কাস্টমার অর্ডার নিশ্চিতকরণ SMS টেমপ্লেট</label>
+              <label class="form-label small fw-semibold"><%= L('Customer order confirmation SMS template', 'কাস্টমার অর্ডার নিশ্চিতকরণ SMS টেমপ্লেট') %></label>
               <textarea name="sms_customer_template" rows="2" class="form-control"><%= siteSettings.sms_customer_template || 'প্রিয় {customer_name}, {site_name}-এ আপনার অর্ডার #{invoice_no} সফলভাবে গৃহীত হয়েছে। সর্বমোট: ৳{total_amount}। অর্ডার ট্র্যাক করুন: {tracking_url}' %></textarea>
-              <div class="form-text">উপলব্ধ ট্যাগ: {customer_name}, {invoice_no}, {total_amount}, {site_name}, {tracking_url}</div>
+              <div class="form-text"><%= L('Available tags: {customer_name}, {invoice_no}, {total_amount}, {site_name}, {tracking_url}', 'উপলব্ধ ট্যাগ: {customer_name}, {invoice_no}, {total_amount}, {site_name}, {tracking_url}') %></div>
             </div>
             <div class="col-12">
-              <label class="form-label small fw-semibold">এডমিন নোটিফিকেশন SMS টেমপ্লেট</label>
+              <label class="form-label small fw-semibold"><%= L('Admin notification SMS template', 'এডমিন নোটিফিকেশন SMS টেমপ্লেট') %></label>
               <textarea name="sms_admin_template" rows="2" class="form-control"><%= siteSettings.sms_admin_template || 'নতুন অর্ডার! #{invoice_no}, গ্রাহক: {customer_name} ({phone}), মোট: ৳{total_amount}। এরিয়া: {delivery_area} - {site_name}' %></textarea>
-              <div class="form-text">উপলব্ধ ট্যাগ: {customer_name}, {phone}, {invoice_no}, {total_amount}, {delivery_area}, {site_name}</div>
+              <div class="form-text"><%= L('Available tags: {customer_name}, {phone}, {invoice_no}, {total_amount}, {delivery_area}, {site_name}', 'উপলব্ধ ট্যাগ: {customer_name}, {phone}, {invoice_no}, {total_amount}, {delivery_area}, {site_name}') %></div>
             </div>
 
           <% } else if (section === 'fraud_api' || section === 'order_restriction') { %>
             <div class="col-md-6">
               <label class="form-label small fw-semibold">BD Courier API Key *</label>
-              <input type="password" name="bdcourier_api_key" value="<%= siteSettings.bdcourier_api_key || '' %>" class="form-control" placeholder="BD Courier API Key বসান..." />
-              <div class="form-text">BD Courier (bdcourier.com) অ্যাকাউন্ট থেকে প্রাপ্ত API Key।</div>
+              <input type="password" name="bdcourier_api_key" value="<%= siteSettings.bdcourier_api_key || '' %>" class="form-control" placeholder="<%= L('Enter the BD Courier API key...', 'BD Courier API Key বসান...') %>" />
+              <div class="form-text"><%= L('API key from your BD Courier (bdcourier.com) account.', 'BD Courier (bdcourier.com) অ্যাকাউন্ট থেকে প্রাপ্ত API Key।') %></div>
             </div>
             <div class="col-md-3">
               <label class="form-label small fw-semibold">Courier Fraud Checker</label>
               <select name="bdcourier_enabled" class="form-select">
-                <option value="1" <%= siteSettings.bdcourier_enabled !== '0' ? 'selected' : '' %>>সক্রিয় (Active)</option>
-                <option value="0" <%= siteSettings.bdcourier_enabled === '0' ? 'selected' : '' %>>নিষ্ক্রিয় (Disabled)</option>
+                <option value="1" <%= siteSettings.bdcourier_enabled !== '0' ? 'selected' : '' %>><%= L('Active', 'সক্রিয় (Active)') %></option>
+                <option value="0" <%= siteSettings.bdcourier_enabled === '0' ? 'selected' : '' %>><%= L('Disabled', 'নিষ্ক্রিয় (Disabled)') %></option>
               </select>
             </div>
             <div class="col-md-3">
@@ -245,22 +246,22 @@
               <input type="text" name="bdcourier_plan" value="<%= siteSettings.bdcourier_plan || 'Enterprise / Standard' %>" class="form-control" />
             </div>
             <div class="col-md-4">
-              <label class="form-label small fw-semibold">অটো অর্ডার সীমা নিয়ন্ত্রণ (Anti-Spam)</label>
+              <label class="form-label small fw-semibold"><%= L('Automatic order limits (anti-spam)', 'অটো অর্ডার সীমা নিয়ন্ত্রণ (Anti-Spam)') %></label>
               <select name="order_restriction_enabled" class="form-select">
-                <option value="1" <%= siteSettings.order_restriction_enabled !== '0' ? 'selected' : '' %>>সক্রিয় (Active)</option>
-                <option value="0" <%= siteSettings.order_restriction_enabled === '0' ? 'selected' : '' %>>নিষ্ক্রিয় (Disabled)</option>
+                <option value="1" <%= siteSettings.order_restriction_enabled !== '0' ? 'selected' : '' %>><%= L('Active', 'সক্রিয় (Active)') %></option>
+                <option value="0" <%= siteSettings.order_restriction_enabled === '0' ? 'selected' : '' %>><%= L('Disabled', 'নিষ্ক্রিয় (Disabled)') %></option>
               </select>
             </div>
             <div class="col-md-4">
-              <label class="form-label small fw-semibold">Max Orders Per Hour (প্রতি ফোন/আইপি)</label>
+              <label class="form-label small fw-semibold"><%= L('Max orders per hour (per phone/IP)', 'Max Orders Per Hour (প্রতি ফোন/আইপি)') %></label>
               <input type="number" name="max_orders_per_hour" value="<%= siteSettings.max_orders_per_hour || '5' %>" class="form-control" />
             </div>
             <div class="col-md-4">
-              <label class="form-label small fw-semibold">ডুপ্লিকেট অর্ডার ব্লক সময় (মিনিট)</label>
+              <label class="form-label small fw-semibold"><%= L('Duplicate order block time (minutes)', 'ডুপ্লিকেট অর্ডার ব্লক সময় (মিনিট)') %></label>
               <input type="number" name="duplicate_order_block_minutes" value="<%= siteSettings.duplicate_order_block_minutes || '10' %>" class="form-control" />
             </div>
             <div class="col-12 mt-2">
-              <a href="/admin/manual-fraud-check" class="btn btn-forest btn-sm">🛡️ ম্যানুয়াল কুরিয়ার ফ্রড চেক পেজে যান</a>
+              <a href="/admin/manual-fraud-check" class="btn btn-forest btn-sm"><%= L('🛡️ Go to the manual courier fraud check page', '🛡️ ম্যানুয়াল কুরিয়ার ফ্রড চেক পেজে যান') %></a>
             </div>
 
           <% } else if (section === 'email') { %>
@@ -278,7 +279,7 @@
             </div>
             <div class="col-md-4">
               <label class="form-label small fw-semibold">SMTP Password / Key</label>
-              <input type="password" name="smtp_pass" value="" autocomplete="new-password" class="form-control" placeholder="<%= siteSettings.smtp_pass ? 'সেভ করা আছে (বদলাতে চাইলে নতুনটি লিখুন)' : '' %>" />
+              <input type="password" name="smtp_pass" value="" autocomplete="new-password" class="form-control" placeholder="<%= siteSettings.smtp_pass ? L('Saved (type a new one only to change it)', 'সেভ করা আছে (বদলাতে চাইলে নতুনটি লিখুন)') : '' %>" />
             </div>
             <div class="col-md-4">
               <label class="form-label small fw-semibold">Sender Email (verified)</label>
@@ -314,22 +315,22 @@
             <div class="col-md-6">
               <label class="form-label small fw-semibold">Gemini API Key</label>
               <input type="password" name="gemini_api_key" value="<%= siteSettings.gemini_api_key || '' %>" class="form-control" placeholder="AIzaSy..." />
-              <div class="form-text">Google AI Studio থেকে প্রাপ্ত API কী।</div>
+              <div class="form-text"><%= L('API key from Google AI Studio.', 'Google AI Studio থেকে প্রাপ্ত API কী।') %></div>
             </div>
             <div class="col-md-6">
               <label class="form-label small fw-semibold">Gemini Model</label>
               <input type="text" name="gemini_model" value="<%= siteSettings.gemini_model || 'gemini-2.5-flash' %>" class="form-control" />
-              <div class="form-text">ডিফল্ট: gemini-2.5-flash বা gemini-1.5-pro</div>
+              <div class="form-text"><%= L('Default: gemini-2.5-flash or gemini-1.5-pro', 'ডিফল্ট: gemini-2.5-flash বা gemini-1.5-pro') %></div>
             </div>
             <div class="col-12">
-              <label class="form-label small fw-semibold">Assistant System Instructions (প্রম্পট)</label>
-              <textarea name="gemini_prompt" rows="3" class="form-control" placeholder="আপনি Mr. Tumi ই-কমার্স প্ল্যাটফর্মের একজন বিনয়ী ও সহায়ক সহকারী..."><%= siteSettings.gemini_prompt || '' %></textarea>
+              <label class="form-label small fw-semibold"><%= L('Assistant system instructions (prompt)', 'Assistant System Instructions (প্রম্পট)') %></label>
+              <textarea name="gemini_prompt" rows="3" class="form-control" placeholder="<%= L('You are a polite and helpful assistant of the Mr. Tumi e-commerce platform...', 'আপনি Mr. Tumi ই-কমার্স প্ল্যাটফর্মের একজন বিনয়ী ও সহায়ক সহকারী...') %>"><%= siteSettings.gemini_prompt || '' %></textarea>
             </div>
             <div class="col-md-6">
               <label class="form-label small fw-semibold">AI Assistant Status</label>
               <select name="gemini_enabled" class="form-select">
-                <option value="1" <%= siteSettings.gemini_enabled !== '0' ? 'selected' : '' %>>সক্রিয় (Active)</option>
-                <option value="0" <%= siteSettings.gemini_enabled === '0' ? 'selected' : '' %>>নিষ্ক্রিয় (Disabled)</option>
+                <option value="1" <%= siteSettings.gemini_enabled !== '0' ? 'selected' : '' %>><%= L('Active', 'সক্রিয় (Active)') %></option>
+                <option value="0" <%= siteSettings.gemini_enabled === '0' ? 'selected' : '' %>><%= L('Disabled', 'নিষ্ক্রিয় (Disabled)') %></option>
               </select>
             </div>
 
@@ -345,8 +346,8 @@
             <div class="col-md-6">
               <label class="form-label small fw-semibold">Auto-Post on New Product</label>
               <select name="fb_page_auto_post" class="form-select">
-                <option value="1" <%= siteSettings.fb_page_auto_post === '1' ? 'selected' : '' %>>Enabled (নতুন পণ্য যুক্ত হলে অটো পোস্ট হবে)</option>
-                <option value="0" <%= siteSettings.fb_page_auto_post !== '1' ? 'selected' : '' %>>Disabled (অটো পোস্ট বন্ধ)</option>
+                <option value="1" <%= siteSettings.fb_page_auto_post === '1' ? 'selected' : '' %>><%= L('Enabled (auto post when a new product is added)', 'Enabled (নতুন পণ্য যুক্ত হলে অটো পোস্ট হবে)') %></option>
+                <option value="0" <%= siteSettings.fb_page_auto_post !== '1' ? 'selected' : '' %>><%= L('Disabled (auto post off)', 'Disabled (অটো পোস্ট বন্ধ)') %></option>
               </select>
             </div>
 
@@ -376,7 +377,7 @@
             <div class="col-md-6">
               <label class="form-label small fw-semibold">GTM Status</label>
               <select name="gtm_enabled" class="form-select">
-                <option value="1" <%= siteSettings.gtm_enabled !== '0' ? 'selected' : '' %>>Active (হেডারে ট্যাগ চালু)</option>
+                <option value="1" <%= siteSettings.gtm_enabled !== '0' ? 'selected' : '' %>><%= L('Active (tag enabled in the header)', 'Active (হেডারে ট্যাগ চালু)') %></option>
                 <option value="0" <%= siteSettings.gtm_enabled === '0' ? 'selected' : '' %>>Disabled</option>
               </select>
             </div>
@@ -452,7 +453,7 @@
       <% if (section === 'email') { %>
       <form action="/admin/email-setting/test" method="POST" class="tbl-card p-4 mt-3">
         <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-        <label class="form-label small fw-semibold">টেস্ট ইমেইল (আগে সেটিংস সেভ করুন)</label>
+        <label class="form-label small fw-semibold"><%= L('Test email (save the settings first)', 'টেস্ট ইমেইল (আগে সেটিংস সেভ করুন)') %></label>
         <div class="d-flex gap-2"><input type="email" name="test_email" class="form-control" required /><button class="btn btn-outline-primary">Send test</button></div>
       </form>
       <% } %>

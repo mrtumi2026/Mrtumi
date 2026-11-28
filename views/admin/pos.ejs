@@ -1,3 +1,4 @@
+<% const L = (en, bn) => (typeof locale !== 'undefined' && locale === 'en' ? en : bn); %>
 <%- include('partials/head', { title: 'POS System' }) %>
 <%- include('partials/topbar') %>
 <%- include('partials/sidebar') %>
@@ -7,7 +8,7 @@
     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
       <div>
         <h4 class="fw-bold mb-0">POS System (Point of Sale)</h4>
-        <p class="text-muted small mb-0">দ্রুত ফোন অর্ডার বা শোরুম সেলস ইনভয়েস তৈরি করুন</p>
+        <p class="text-muted small mb-0"><%= L('Create quick phone orders or showroom sales invoices', 'দ্রুত ফোন অর্ডার বা শোরুম সেলস ইনভয়েস তৈরি করুন') %></p>
       </div>
       <a href="/admin/order/all" class="btn btn-outline-secondary btn-sm">← All Orders</a>
     </div>
@@ -18,11 +19,11 @@
         <div class="tbl-card p-3">
           <div class="row g-2 mb-3">
             <div class="col-sm-7">
-              <input type="text" id="posSearch" class="form-control" placeholder="প্রোডাক্টের নাম বা কোড লিখুন..." />
+              <input type="text" id="posSearch" class="form-control" placeholder="<%= L('Type a product name or code...', 'প্রোডাক্টের নাম বা কোড লিখুন...') %>" />
             </div>
             <div class="col-sm-5">
               <select id="posCategory" class="form-select">
-                <option value="">সকল ক্যাটাগরি</option>
+                <option value=""><%= L('All categories', 'সকল ক্যাটাগরি') %></option>
                 <% categories.forEach(function(c) { %>
                   <option value="<%= c.name %>"><%= c.name %></option>
                 <% }) %>
@@ -59,13 +60,13 @@
 
           <h6 class="fw-bold border-bottom pb-2 mb-3">🛒 POS Cart Items</h6>
           <div id="posCartBody" class="mb-3" style="min-height: 120px; max-height: 260px; overflow-y: auto;">
-            <div class="text-center text-muted py-4 small">বাম পাশ থেকে প্রোডাক্টে ক্লিক করে কার্টে যোগ করুন</div>
+            <div class="text-center text-muted py-4 small"><%= L('Click a product on the left to add it to the cart', 'বাম পাশ থেকে প্রোডাক্টে ক্লিক করে কার্টে যোগ করুন') %></div>
           </div>
 
           <h6 class="fw-bold border-bottom pb-2 mb-3">👤 Customer &amp; Delivery Details</h6>
           <div class="mb-2">
             <select id="existingCustSelect" class="form-select form-select-sm mb-2">
-              <option value="">-- পূর্ববর্তী কাস্টমার সিলেক্ট করুন (ঐচ্ছিক) --</option>
+              <option value=""><%= L('-- Select a previous customer (optional) --', '-- পূর্ববর্তী কাস্টমার সিলেক্ট করুন (ঐচ্ছিক) --') %></option>
               <% customers.forEach(function(c) { %>
                 <option value="<%= c.id %>" data-name="<%= c.name %>" data-phone="<%= c.phone %>" data-addr="<%= c.address %>">
                   <%= c.name %> (<%= c.phone %>)
@@ -75,27 +76,27 @@
           </div>
           <div class="row g-2">
             <div class="col-sm-6">
-              <label class="form-label small mb-1">গ্রাহকের নাম *</label>
+              <label class="form-label small mb-1"><%= L('Customer name *', 'গ্রাহকের নাম *') %></label>
               <input type="text" name="customer_name" id="posCustName" class="form-control form-control-sm" required />
             </div>
             <div class="col-sm-6">
-              <label class="form-label small mb-1">মোবাইল নম্বর *</label>
+              <label class="form-label small mb-1"><%= L('Mobile number *', 'মোবাইল নম্বর *') %></label>
               <input type="text" name="phone" id="posCustPhone" class="form-control form-control-sm" required />
             </div>
             <div class="col-12">
-              <label class="form-label small mb-1">ডেলিভারি ঠিকানা</label>
-              <input type="text" name="address" id="posCustAddr" class="form-control form-control-sm" placeholder="বাসা, রোড, থানা, জেলা" />
+              <label class="form-label small mb-1"><%= L('Delivery address', 'ডেলিভারি ঠিকানা') %></label>
+              <input type="text" name="address" id="posCustAddr" class="form-control form-control-sm" placeholder="<%= L('House, road, thana, district', 'বাসা, রোড, থানা, জেলা') %>" />
             </div>
             <div class="col-sm-6">
-              <label class="form-label small mb-1">শিপিং চার্জ (৳)</label>
+              <label class="form-label small mb-1"><%= L('Shipping charge (৳)', 'শিপিং চার্জ (৳)') %></label>
               <input type="number" name="shipping_charge" id="posShip" class="form-control form-control-sm" value="60" oninput="renderPosCart()" />
             </div>
             <div class="col-sm-6">
-              <label class="form-label small mb-1">ডিসকাউন্ট (৳)</label>
+              <label class="form-label small mb-1"><%= L('Discount (৳)', 'ডিসকাউন্ট (৳)') %></label>
               <input type="number" name="discount" id="posDisc" class="form-control form-control-sm" value="0" oninput="renderPosCart()" />
             </div>
             <div class="col-sm-6">
-              <label class="form-label small mb-1">পেমেন্ট মাধ্যম</label>
+              <label class="form-label small mb-1"><%= L('Payment method', 'পেমেন্ট মাধ্যম') %></label>
               <select name="payment_method" class="form-select form-select-sm">
                 <option value="Cash On Delivery">Cash On Delivery</option>
                 <option value="Cash">Direct Cash (Paid)</option>
@@ -104,16 +105,16 @@
               </select>
             </div>
             <div class="col-sm-6">
-              <label class="form-label small mb-1">কুরিয়ার (ঐচ্ছিক)</label>
+              <label class="form-label small mb-1"><%= L('Courier (optional)', 'কুরিয়ার (ঐচ্ছিক)') %></label>
               <select name="courier_name" class="form-select form-select-sm">
-                <option value="">-- সিলেক্ট করুন --</option>
+                <option value=""><%= L('-- Select --', '-- সিলেক্ট করুন --') %></option>
                 <% couriers.forEach(function(cr) { %>
                   <option value="<%= cr.name %>"><%= cr.name %></option>
                 <% }) %>
               </select>
             </div>
             <div class="col-12">
-              <input type="text" name="note" class="form-control form-control-sm" placeholder="অর্ডার নোট (ঐচ্ছিক)" />
+              <input type="text" name="note" class="form-control form-control-sm" placeholder="<%= L('Order note (optional)', 'অর্ডার নোট (ঐচ্ছিক)') %>" />
             </div>
           </div>
 
@@ -126,7 +127,7 @@
             </div>
           </div>
 
-          <button type="submit" class="btn btn-forest w-100 mt-3 py-2">✓ অর্ডার কনফার্ম ও ইনভয়েস তৈরি করুন</button>
+          <button type="submit" class="btn btn-forest w-100 mt-3 py-2"><%= L('✓ Confirm order and create invoice', '✓ অর্ডার কনফার্ম ও ইনভয়েস তৈরি করুন') %></button>
         </form>
       </div>
     </div>
@@ -155,7 +156,7 @@
     jsonInput.value = JSON.stringify(posCart);
 
     if (!posCart.length) {
-      container.innerHTML = '<div class="text-center text-muted py-4 small">বাম পাশ থেকে প্রোডাক্টে ক্লিক করে কার্টে যোগ করুন</div>';
+      container.innerHTML = <%- JSON.stringify(L('<div class="text-center text-muted py-4 small">Click a product on the left to add it to the cart</div>', '<div class="text-center text-muted py-4 small">বাম পাশ থেকে প্রোডাক্টে ক্লিক করে কার্টে যোগ করুন</div>')).replace(/</g, '\\u003c') %>;
     } else {
       container.innerHTML = posCart.map(function(it, idx) {
         return '<div class="d-flex align-items-center justify-content-between border-bottom py-2 gap-2">' +

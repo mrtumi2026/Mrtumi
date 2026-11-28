@@ -1,3 +1,4 @@
+<% const L = (en, bn) => (typeof locale !== 'undefined' && locale === 'en' ? en : bn); %>
 <%- include('partials/head', { title: 'Payment Gateways — Dynamic MFS & COD' }) %>
 <%- include('partials/topbar') %>
 <%- include('partials/sidebar') %>
@@ -66,7 +67,7 @@
 
                   <div class="mb-3">
                     <label class="form-label fw-semibold" for="gateway-instructions-bn-<%= gateway.id %>">
-                      Bengali Customer Instructions (চেকআউট নির্দেশনা)
+                      <%= L('Bangla customer instructions (checkout)', 'Bengali Customer Instructions (চেকআউট নির্দেশনা)') %>
                     </label>
                     <textarea id="gateway-instructions-bn-<%= gateway.id %>" name="instructions_bn"
                               class="form-control" rows="2" maxlength="4000"

@@ -1,3 +1,4 @@
+<% const L = (en, bn) => (typeof locale !== 'undefined' && locale === 'en' ? en : bn); %>
 <%- include('partials/head', { title: pageTitle }) %>
 <%- include('partials/topbar') %>
 <%- include('partials/sidebar') %>
@@ -120,26 +121,26 @@
                   </td>
                   <td>
                     <% if (reqItem.status === 'pending') { %>
-                      <span class="badge bg-warning text-dark"><i class="fas fa-clock me-1"></i>অপেক্ষমাণ</span>
+                      <span class="badge bg-warning text-dark"><i class="fas fa-clock me-1"></i><%= L('Pending', 'অপেক্ষমাণ') %></span>
                     <% } else if (reqItem.status === 'booking') { %>
-                      <span class="badge bg-info"><i class="fas fa-spinner fa-spin me-1"></i>বুকিং চলছে</span>
+                      <span class="badge bg-info"><i class="fas fa-spinner fa-spin me-1"></i><%= L('Booking', 'বুকিং চলছে') %></span>
                     <% } else if (reqItem.status === 'booked') { %>
-                      <span class="badge bg-success"><i class="fas fa-check-circle me-1"></i>বুকড</span>
+                      <span class="badge bg-success"><i class="fas fa-check-circle me-1"></i><%= L('Booked', 'বুকড') %></span>
                       <% if (reqItem.tracking_id) { %>
                         <div class="small fw-bold text-success mt-1"><i class="fas fa-barcode me-1"></i><%= reqItem.tracking_id %></div>
                       <% } %>
                     <% } else if (reqItem.status === 'failed') { %>
-                      <span class="badge bg-danger"><i class="fas fa-exclamation-triangle me-1"></i>ব্যর্থ</span>
+                      <span class="badge bg-danger"><i class="fas fa-exclamation-triangle me-1"></i><%= L('Failed', 'ব্যর্থ') %></span>
                       <% if (reqItem.failure_reason) { %>
                         <div class="small text-danger mt-1 text-truncate" style="max-width:180px;" title="<%= reqItem.failure_reason %>"><%= reqItem.failure_reason %></div>
                       <% } %>
                     <% } else if (reqItem.status === 'in_review') { %>
-                      <span class="badge bg-warning text-dark"><i class="fas fa-search me-1"></i>পর্যালোচনাধীন</span>
+                      <span class="badge bg-warning text-dark"><i class="fas fa-search me-1"></i><%= L('Under review', 'পর্যালোচনাধীন') %></span>
                       <% if (reqItem.failure_reason) { %>
                         <div class="small text-warning-emphasis mt-1 text-truncate" style="max-width:180px;" title="<%= reqItem.failure_reason %>"><%= reqItem.failure_reason %></div>
                       <% } %>
                     <% } else if (reqItem.status === 'rejected') { %>
-                      <span class="badge bg-secondary"><i class="fas fa-ban me-1"></i>প্রত্যাখ্যাত</span>
+                      <span class="badge bg-secondary"><i class="fas fa-ban me-1"></i><%= L('Rejected', 'প্রত্যাখ্যাত') %></span>
                       <% if (reqItem.rejection_reason) { %>
                         <div class="small text-muted mt-1 text-truncate" style="max-width:180px;" title="<%= reqItem.rejection_reason %>"><%= reqItem.rejection_reason %></div>
                       <% } %>
@@ -165,7 +166,7 @@
                         </button>
                       </div>
                     <% } else if (reqItem.status === 'booked') { %>
-                      <span class="text-success small fw-semibold"><i class="fas fa-check-double me-1"></i>সম্পন্ন</span>
+                      <span class="text-success small fw-semibold"><i class="fas fa-check-double me-1"></i><%= L('Completed', 'সম্পন্ন') %></span>
                     <% } else { %>
                       <span class="text-muted small">—</span>
                     <% } %>
@@ -215,7 +216,7 @@
 <script>
 function openRejectModal(requestId, invoiceNo) {
   document.getElementById('rejectRequestForm').action = '/admin/courier/requests/' + encodeURIComponent(requestId) + '/reject';
-  document.getElementById('rejectModalInvoiceText').innerText = 'অর্ডার: #' + invoiceNo + ' (অনুরোধ #' + requestId + ')';
+  document.getElementById('rejectModalInvoiceText').innerText = <%- JSON.stringify(L('Order: #', 'অর্ডার: #')).replace(/</g, '\\u003c') %> + invoiceNo + <%- JSON.stringify(L(' (Request #', ' (অনুরোধ #')).replace(/</g, '\\u003c') %> + requestId + ')';
   document.getElementById('rejectionReason').value = '';
   const modal = new bootstrap.Modal(document.getElementById('rejectRequestModal'));
   modal.show();

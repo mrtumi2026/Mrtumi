@@ -1,3 +1,4 @@
+<% const L = (en, bn) => (typeof locale !== 'undefined' && locale === 'en' ? en : bn); %>
 <%- include('partials/head', { title: pageTitle }) %>
 <%- include('partials/topbar') %>
 <%- include('partials/sidebar') %>
@@ -7,7 +8,7 @@
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
       <div>
         <h4 class="fw-bold mb-0"><%= pageTitle %> (<%= products.length %>)</h4>
-        <p class="text-muted small mb-0">স্টোরের সকল পণ্যের মূল্য, স্টক, ফ্ল্যাশ সেল ও স্ট্যাটাস পরিচালনা করুন</p>
+        <p class="text-muted small mb-0"><%= L('Manage price, stock, flash sale and status of all store products', 'স্টোরের সকল পণ্যের মূল্য, স্টক, ফ্ল্যাশ সেল ও স্ট্যাটাস পরিচালনা করুন') %></p>
       </div>
       <a href="/admin/products/create" class="btn btn-forest btn-sm">+ Add New Product</a>
     </div>
@@ -43,7 +44,7 @@
           </thead>
           <tbody>
             <% if (!products.length) { %>
-              <tr><td colspan="9" class="text-center py-4 text-muted">কোনো প্রোডাক্ট পাওয়া যায়নি।</td></tr>
+              <tr><td colspan="9" class="text-center py-4 text-muted"><%= L('No products found.', 'কোনো প্রোডাক্ট পাওয়া যায়নি।') %></td></tr>
             <% } %>
             <% products.forEach(function(p) { %>
               <tr>

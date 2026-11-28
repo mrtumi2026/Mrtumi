@@ -1,3 +1,4 @@
+<% const L = (en, bn) => (typeof locale !== 'undefined' && locale === 'en' ? en : bn); %>
 <%- include('partials/head', { title: 'Manual Fraud Check' }) %>
 <%- include('partials/topbar') %>
 <%- include('partials/sidebar') %>
@@ -6,14 +7,14 @@
   <div class="content">
     <div class="db-heading">
       <h1>🛡️ Manual Courier Fraud Check</h1>
-      <p>গ্রাহকের মোবাইল নম্বর দিয়ে Steadfast, Pathao ও RedX কুরিয়ারের ডেলিভারি সাকসেস রেশিও যাচাই করুন</p>
+      <p><%= L('Check Steadfast, Pathao and RedX delivery success ratios by the customer\'s mobile number', 'গ্রাহকের মোবাইল নম্বর দিয়ে Steadfast, Pathao ও RedX কুরিয়ারের ডেলিভারি সাকসেস রেশিও যাচাই করুন') %></p>
     </div>
 
     <div class="tbl-card p-4 mb-4">
       <form action="/admin/manual-fraud-check" method="GET" class="row g-2 align-items-end">
         <div class="col-md-8">
-          <label class="form-label fw-semibold small">কাস্টমারের ১১ সংখ্যার মোবাইল নম্বর লিখুন</label>
-          <input type="text" name="phone" value="<%= phone %>" class="form-control" placeholder="যেমন: 01711223301" required />
+          <label class="form-label fw-semibold small"><%= L('Enter the customer\'s 11-digit mobile number', 'কাস্টমারের ১১ সংখ্যার মোবাইল নম্বর লিখুন') %></label>
+          <input type="text" name="phone" value="<%= phone %>" class="form-control" placeholder="<%= L('e.g. 01711223301', 'যেমন: 01711223301') %>" required />
         </div>
         <div class="col-md-4">
           <button type="submit" class="btn btn-forest w-100 py-2">🔍 Check Courier History</button>
@@ -28,12 +29,12 @@
         <% if (result.isLiveApi) { %>
           <div class="alert alert-success d-flex align-items-center mb-3 py-2 px-3 small">
             <span class="me-2 fs-5">🟢</span>
-            <div><strong>BD Courier Live API কানেক্টেড:</strong> এই ফলাফলটি সরাসরি BD Courier API (Steadfast, Pathao, RedX ও Paperfly সার্ভার) থেকে প্রাপ্ত লাইভ ডাটা।</div>
+            <div><strong><%= L('BD Courier live API connected:', 'BD Courier Live API কানেক্টেড:') %></strong> <%= L('This result is live data from the BD Courier API (Steadfast, Pathao, RedX and Paperfly servers).', 'এই ফলাফলটি সরাসরি BD Courier API (Steadfast, Pathao, RedX ও Paperfly সার্ভার) থেকে প্রাপ্ত লাইভ ডাটা।') %></div>
           </div>
         <% } else { %>
           <div class="alert alert-info d-flex align-items-center mb-3 py-2 px-3 small">
             <span class="me-2 fs-5">ℹ️</span>
-            <div><strong>স্টোর ইন্টারনাল ডাটা:</strong> <%= result.notice || 'BD Courier API Key কনফিগার না থাকায় আপনার নিজস্ব স্টোর ডাটাবেজ থেকে এই কাস্টমারের অতীত হিস্ট্রি দেখানো হচ্ছে (কোনো র‍্যান্ডম ডাটা নয়)।' %> <a href="/admin/settings/manage" class="alert-link ms-1 fw-bold">API Key বসান</a></div>
+            <div><strong><%= L('Store internal data:', 'স্টোর ইন্টারনাল ডাটা:') %></strong> <%= result.notice || L('The BD Courier API key is not configured, so this customer\'s past history from your own store database is shown (no random data).', 'BD Courier API Key কনফিগার না থাকায় আপনার নিজস্ব স্টোর ডাটাবেজ থেকে এই কাস্টমারের অতীত হিস্ট্রি দেখানো হচ্ছে (কোনো র‍্যান্ডম ডাটা নয়)।') %> <a href="/admin/settings/manage" class="alert-link ms-1 fw-bold"><%= L('Add the API key', 'API Key বসান') %></a></div>
           </div>
         <% } %>
       <div class="row g-3 mb-4">
@@ -57,7 +58,7 @@
                 <button type="submit" class="btn btn-outline-danger btn-sm w-100">🚫 Block This Phone Number</button>
               </form>
             <% } else { %>
-              <div class="alert alert-danger py-1 px-2 mt-3 mb-0 small">এই নম্বরটি ইতিমধ্যে ব্লক তালিকায় রয়েছে</div>
+              <div class="alert alert-danger py-1 px-2 mt-3 mb-0 small"><%= L('This number is already on the block list', 'এই নম্বরটি ইতিমধ্যে ব্লক তালিকায় রয়েছে') %></div>
             <% } %>
           </div>
         </div>
@@ -108,7 +109,7 @@
             </thead>
             <tbody>
               <% if (!result.storeOrders.length) { %>
-                <tr><td colspan="5" class="text-center py-3 text-muted">আমাদের স্টোরে এই নম্বরে পূর্বে কোনো অর্ডার পাওয়া যায়নি।</td></tr>
+                <tr><td colspan="5" class="text-center py-3 text-muted"><%= L('No earlier order with this number was found in our store.', 'আমাদের স্টোরে এই নম্বরে পূর্বে কোনো অর্ডার পাওয়া যায়নি।') %></td></tr>
               <% } %>
               <% result.storeOrders.forEach(function(so) { %>
                 <tr>

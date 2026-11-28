@@ -1,3 +1,4 @@
+<% const L = (en, bn) => (typeof locale !== 'undefined' && locale === 'en' ? en : bn); %>
 <%- include('partials/head', { title: pageTitle }) %>
 <%- include('partials/topbar') %>
 <%- include('partials/sidebar') %>
@@ -7,7 +8,7 @@
     <div class="d-flex justify-content-between align-items-center mb-3">
       <div>
         <h4 class="fw-bold mb-0"><%= pageTitle %></h4>
-        <p class="text-muted small mb-0">নতুন পণ্য যোগ অথবা বিদ্যমান পণ্যের তথ্য আপডেট করুন</p>
+        <p class="text-muted small mb-0"><%= L('Add a new product or update an existing one', 'নতুন পণ্য যোগ অথবা বিদ্যমান পণ্যের তথ্য আপডেট করুন') %></p>
       </div>
       <a href="/admin/inhouse-products/manage" class="btn btn-outline-secondary btn-sm">← Back to Products</a>
     </div>
@@ -20,8 +21,8 @@
     >
       <div class="row g-3">
         <div class="col-md-6">
-          <label class="form-label fw-semibold small">Product Name (বাংলা / English) *</label>
-          <input type="text" name="name" value="<%= product ? product.name : '' %>" class="form-control" required placeholder="যেমন: দিনাজপুরের গাছপাকা বোম্বাই লিচু" />
+          <label class="form-label fw-semibold small"><%= L('Product Name (Bangla / English) *', 'Product Name (বাংলা / English) *') %></label>
+          <input type="text" name="name" value="<%= product ? product.name : '' %>" class="form-control" required placeholder="<%= L('e.g. Tree-ripened Bombai lychee from Dinajpur', 'যেমন: দিনাজপুরের গাছপাকা বোম্বাই লিচু') %>" />
         </div>
         <div class="col-md-3">
           <label class="form-label fw-semibold small">SKU / Product Code</label>
@@ -80,7 +81,7 @@
         </div>
 
         <div class="col-md-3">
-          <label class="form-label fw-semibold small">Unit / একক *</label>
+          <label class="form-label fw-semibold small"><%= L('Unit *', 'Unit / একক *') %></label>
           <input type="text" name="unit" list="admin-unit-list" value="<%= (product && (product.unit || product.unit_label)) ? (product.unit || product.unit_label) : '1 pc' %>" class="form-control" placeholder="1 pc, 1 kg, 1 dozen..." required />
           <datalist id="admin-unit-list">
             <option value="1 pc">১ পিস / 1 Piece</option>
@@ -103,11 +104,11 @@
 
         <div class="col-md-5">
           <label class="form-label fw-semibold small">Sizes / Options (optional text tags)</label>
-          <input type="text" name="sizes" value="<%= product ? (product.sizes || '') : '' %>" class="form-control" placeholder="যেমন: ছোট, মাঝারি, বড়" />
+          <input type="text" name="sizes" value="<%= product ? (product.sizes || '') : '' %>" class="form-control" placeholder="<%= L('e.g. Small, medium, large', 'যেমন: ছোট, মাঝারি, বড়') %>" />
         </div>
         <div class="col-md-4">
           <label class="form-label fw-semibold small">Colors / Grade Options (comma separated)</label>
-          <input type="text" name="colors" value="<%= product ? (product.colors || '') : '' %>" class="form-control" placeholder="যেমন: লাল, সবুজ" />
+          <input type="text" name="colors" value="<%= product ? (product.colors || '') : '' %>" class="form-control" placeholder="<%= L('e.g. Red, green', 'যেমন: লাল, সবুজ') %>" />
         </div>
 
         <div class="col-md-6">

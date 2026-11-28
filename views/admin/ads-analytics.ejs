@@ -1,3 +1,4 @@
+<% const L = (en, bn) => (typeof locale !== 'undefined' && locale === 'en' ? en : bn); %>
 <%- include('partials/head', { title: 'Live Ads Result' }) %>
 <%- include('partials/topbar') %>
 <%- include('partials/sidebar') %>
@@ -7,7 +8,7 @@
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
       <div>
         <h4 class="fw-bold mb-0">📣 Live Ads Result &amp; Attribution (<%= channel.toUpperCase() %>)</h4>
-        <p class="text-muted small mb-0">Facebook CAPI, Google Ads ও TikTok Pixel থেকে অর্জিত অর্ডার ও ROAS অ্যানালিটিক্স</p>
+        <p class="text-muted small mb-0"><%= L('Orders and ROAS analytics from Facebook CAPI, Google Ads and TikTok Pixel', 'Facebook CAPI, Google Ads ও TikTok Pixel থেকে অর্জিত অর্ডার ও ROAS অ্যানালিটিক্স') %></p>
       </div>
       <div class="d-flex gap-2">
         <a href="/admin/ads-analytics" class="btn btn-sm <%= channel === 'overview' ? 'btn-dark' : 'btn-outline-secondary' %>">Overview</a>
