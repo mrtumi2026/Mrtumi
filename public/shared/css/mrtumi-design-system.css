@@ -561,6 +561,8 @@ textarea,
 
 .table-responsive,
 .tbl-card-body {
+  /* Hidden labels inside a table are absolutely positioned; without this they widen the whole page. */
+  position: relative;
   max-width: 100%;
   overflow-x: auto;
   overscroll-behavior-inline: contain;

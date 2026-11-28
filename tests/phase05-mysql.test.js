@@ -803,8 +803,14 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
     const form = new URLSearchParams({
       _csrf: csrf[1], checkout_request_key: requestKey[1], customer_name: customer.name, phone,
       address: 'House 9, Cart Lifecycle Road', delivery_location_id: String(deliveryLocationId),
-      payment_method: 'cod', coupon_code: '', confirm_order: 'yes',
+      payment_method: 'cod', coupon_code: '', confirm_order: 'yes', account_password: 'SecureCartPassword!2026',
     }).toString();
+    const withoutPassword = new URLSearchParams(form); withoutPassword.delete('account_password');
+    for (const body of [withoutPassword.toString(), form.replace('SecureCartPassword', 'WrongCartPassword')]) {
+      const refused = await httpRequest(baseUrl, '/customer/checkout', { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+      assert.equal(refused.statusCode, 409, 'a signed-in buyer cannot confirm an order without the account password');
+    }
+    assert.equal(Number((await client.queryOne('SELECT COUNT(*) AS n FROM orders WHERE customer_id=?', [customer.id])).n), 0);
     const submitted = await httpRequest(baseUrl, '/customer/checkout', { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' }, body: form });
     assert.equal(submitted.statusCode, 302, `authenticated checkout failed: ${submitted.body.slice(0, 300)}`);
     const invoice = decodeURIComponent(submitted.headers.location.split('/').pop());
@@ -840,7 +846,7 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
     const checkoutCsrf = checkout.body.match(/name="_csrf" value="([^"]+)"/);
     const requestKey = checkout.body.match(/name="checkout_request_key" value="([^"]+)"/);
     assert.ok(checkoutCsrf && requestKey);
-    const form = new URLSearchParams({ _csrf: checkoutCsrf[1], checkout_request_key: requestKey[1], customer_name: customer.name, phone, address: 'House 10, Atomic Cart Road', delivery_location_id: String(deliveryLocationId), payment_method: 'cod', coupon_code: '', confirm_order: 'yes' }).toString();
+    const form = new URLSearchParams({ _csrf: checkoutCsrf[1], checkout_request_key: requestKey[1], customer_name: customer.name, phone, address: 'House 10, Atomic Cart Road', delivery_location_id: String(deliveryLocationId), payment_method: 'cod', coupon_code: '', confirm_order: 'yes', account_password: 'SecureCartPassword!2026' }).toString();
     const trigger = `phase07_fail_cart_delete_${String(customer.id)}`;
     await client.execute(`CREATE TRIGGER ${trigger} BEFORE DELETE ON customer_cart_items FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='intentional checkout cart-clear failure'`);
     try {
@@ -929,10 +935,10 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
     const checkoutCsrf = checkout.body.match(/name="_csrf" value="([^"]+)"/);
     const requestKey = checkout.body.match(/name="checkout_request_key" value="([^"]+)"/);
     assert.ok(checkoutCsrf && requestKey);
-    const foreignUse = await httpRequest(baseUrl, '/customer/checkout', { method: 'POST', headers: { Cookie: one.cookie, 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ _csrf: checkoutCsrf[1], checkout_request_key: requestKey[1], customer_name: first.name, phone: firstPhone, address_id: String(secondAddress.insertId), delivery_location_id: String(deliveryLocationId), payment_method: 'cod', confirm_order: 'yes' }).toString() });
+    const foreignUse = await httpRequest(baseUrl, '/customer/checkout', { method: 'POST', headers: { Cookie: one.cookie, 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ _csrf: checkoutCsrf[1], checkout_request_key: requestKey[1], customer_name: first.name, phone: firstPhone, address_id: String(secondAddress.insertId), delivery_location_id: String(deliveryLocationId), payment_method: 'cod', confirm_order: 'yes', account_password: password }).toString() });
     assert.equal(foreignUse.statusCode, 404, 'a saved-address ID alone cannot supply another customer\'s shipping address and ownership is concealed');
     assert.equal(Number((await client.queryOne('SELECT COUNT(*) AS n FROM orders WHERE customer_id=?', [first.id])).n), 0, 'foreign ID did not create an order');
-    const savedAddressCheckout = await httpRequest(baseUrl, '/customer/checkout', { method: 'POST', headers: { Cookie: one.cookie, 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ _csrf: checkoutCsrf[1], checkout_request_key: requestKey[1], customer_name: 'Forged client name', phone: firstPhone, address: 'Forged client address', address_id: String(firstAddress.insertId), delivery_location_id: String(deliveryLocationId), payment_method: 'cod', confirm_order: 'yes' }).toString() });
+    const savedAddressCheckout = await httpRequest(baseUrl, '/customer/checkout', { method: 'POST', headers: { Cookie: one.cookie, 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ _csrf: checkoutCsrf[1], checkout_request_key: requestKey[1], customer_name: 'Forged client name', phone: firstPhone, address: 'Forged client address', address_id: String(firstAddress.insertId), delivery_location_id: String(deliveryLocationId), payment_method: 'cod', confirm_order: 'yes', account_password: password }).toString() });
     assert.equal(savedAddressCheckout.statusCode, 302, 'owner can submit checkout using their selected saved address');
     const checkedOutOrder = await client.queryOne('SELECT customer_name,customer_phone,shipping_address FROM orders WHERE customer_id=? ORDER BY id DESC LIMIT 1', [first.id]);
     assert.equal(checkedOutOrder.customer_name, 'Owner One Updated', 'checkout uses the saved recipient, not client-supplied name');
@@ -1062,7 +1068,7 @@ describe('Phase 05 — Real MySQL 8.0 Storefront Repository, Variants, Stock Poo
     assert.equal(inactiveVariantQuote.statusCode,409,'products whose variants are all inactive cannot fall back to unvarianted stock');
     const quickOrderPath='/order/quick-submit';
     const requestKey=`quick-order-${Date.now()}-${Math.random().toString(36).slice(2,12)}`;
-    const payload={product_id:inhouseProdId,qty:1,size:'5 kg',color:'Family Pack',customer_name:customer.name,phone,address:'House 12, Quick Order Road',delivery_location_id:String(deliveryLocationId),quick_order_request_key:requestKey,price:1,shipping_charge:0,amount:1};
+    const payload={product_id:inhouseProdId,qty:1,size:'5 kg',color:'Family Pack',customer_name:customer.name,phone,address:'House 12, Quick Order Road',delivery_location_id:String(deliveryLocationId),quick_order_request_key:requestKey,price:1,shipping_charge:0,amount:1,account_password:'SecureQuickOrderPassword!2026'};
     const before=await client.queryOne('SELECT stock_reserved FROM product_variants WHERE id=?',[variant5KgId]);
     const missingCsrf=await httpRequest(baseUrl,quickOrderPath,{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(payload)});
     assert.equal(missingCsrf.statusCode,403,'quick order rejects a missing CSRF token before persistence');

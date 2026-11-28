@@ -9,6 +9,11 @@
     <style>
       body { font-family: 'Hind Siliguri', sans-serif; background: #f8fafc; padding: 24px; }
       .inv-box { max-width: 780px; margin: 0 auto; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 32px; }
+      @media screen and (max-width: 575px) {
+        .inv-box { padding: 14px; overflow-x: auto; font-size: 13px; }
+        .inv-box > .d-flex { flex-wrap: wrap; gap: 12px; }
+        .inv-box h4 { font-size: 17px; overflow-wrap: anywhere; }
+      }
       @media print {
         body { background: #fff; padding: 0; }
         .inv-box { border: none; padding: 0; }

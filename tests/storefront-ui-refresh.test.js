@@ -38,7 +38,9 @@ test('storefront refresh keeps localized customer navigation, category search an
   assert.match(header, /js-cart-subtotal/);
   assert.match(footer, /store-mobile-bottom-nav/);
   assert.match(footer, /data-bs-target="#miniCartDrawer"/);
-  assert.match(footer, /data-bs-target="#mobileStoreNavDrawer"/);
+  // The bottom bar opens the category sheet; the menu drawer opens from the header button.
+  assert.match(footer, /data-bs-target="#categorySheet"/);
+  assert.match(header, /data-bs-target="#mobileStoreNavDrawer"/);
   assert.match(js, /querySelectorAll\('\.js-cart-count'\)/);
   assert.match(js, /querySelectorAll\('\.js-cart-subtotal'\)/);
   assert.match(js, /initProductSearchSuggestions/);
@@ -80,7 +82,12 @@ test('homepage and product card provide the accessible hero, trust, discount, st
   assert.match(home, /hero-category-link/);
   assert.doesNotMatch(home, /categoriesTitle|categoriesSub|Shop by Category Grid/);
   assert.match(header, /id="mobileStoreNavDrawer"/);
-  assert.match(header, /store-all-categories-button/);
+  // The strip has no "All categories" button; Home is highlighted and categories open in their own sheet.
+  assert.doesNotMatch(header, /store-all-categories/);
+  assert.match(header, /store-nav-home/);
+  assert.match(header, /include\('category-sheet'\)/);
+  assert.match(read('views/store/partials/category-sheet.ejs'), /id="categorySheet"/);
+  assert.match(read('views/store/partials/footer.ejs'), /data-bs-target="#categorySheet"/);
   assert.match(storefrontRoutes, /res\.render\('store\/home',\s*\{\s*\.\.\.homeData/);
   assert.match(home, /store-hero-promos/);
   assert.match(home, /store-trust-row/);

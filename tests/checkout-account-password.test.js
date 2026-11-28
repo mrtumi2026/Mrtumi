@@ -27,6 +27,21 @@ test('an existing password account asks for it and only the right password prove
   await assert.rejects(() => service.resolveCheckoutAccount({ phone: '01711000009', password: 'wrong' }, deps), { code: 'ACCOUNT_PASSWORD_REQUIRED' });
 });
 
+test('a signed-in buyer must also type their own password to confirm an order', async () => {
+  const keys = [];
+  const deps = { db: db(owner), consume: async ({ bucketKey }) => { keys.push(bucketKey); return { allowed: true }; } };
+  const session = { id: 7, phone: '01711000009' };
+  const asked = await service.checkAccount({ phone: '', sessionCustomer: session }, deps);
+  assert.equal(asked.passwordRequired, true);
+  assert.equal(asked.signedIn, true);
+  await assert.rejects(() => service.resolveCheckoutAccount({ phone: '01899999999', password: '', sessionCustomer: session }, deps), { code: 'ACCOUNT_PASSWORD_REQUIRED', message: service.SIGNED_IN_MESSAGE });
+  await assert.rejects(() => service.resolveCheckoutAccount({ phone: '01711000009', password: 'wrong', sessionCustomer: session }, deps), { code: 'ACCOUNT_PASSWORD_REQUIRED', message: service.WRONG_MESSAGE });
+  assert.equal(await service.resolveCheckoutAccount({ phone: '01899999999', password: 'Right-Password-1', sessionCustomer: session }, deps), 7);
+  assert.ok(keys.length >= 2, 'typed passwords are rate limited');
+  // An account that never set a password has nothing to ask for.
+  assert.equal(await service.resolveCheckoutAccount({ phone: '01711000009', password: '', sessionCustomer: session }, { db: db(null), consume: allow }), null);
+});
+
 test('password tries are rate limited before the password is compared', async () => {
   const deny = async () => ({ allowed: false, retryAfterSec: 900 });
   await assert.rejects(() => service.checkAccount({ phone: '01711000009', password: 'Right-Password-1' }, { db: db(owner), consume: deny }), { code: 'RATE_LIMITED' });

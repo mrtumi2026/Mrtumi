@@ -244,7 +244,7 @@ module.exports = {
     couponPlaceholder: 'Enter coupon code',
     placeOrderBtn: 'Confirm Order',
     trackHeading: 'Live Order Tracking',
-    trackSub: 'Enter your invoice ID or mobile number to check real-time order progress',
+    trackSub: 'See the latest status of your orders in your account',
     trackInputPlaceholder: 'Enter Invoice ID or Mobile Number...',
     trackNotFound: 'No matching orders were found. Please check your Invoice ID or mobile number and try again.',
     blogHeading: 'Mr. Tumi Kitchen, Wellness & Gifting Guides',

@@ -7,10 +7,14 @@
       <p class="text-muted small"><%= t('store.trackSub') %></p>
     </div>
 
-    <div class="alert alert-info mb-4 mx-auto" style="max-width: 620px;">
-      <%= locale === 'en' ? 'For your privacy, order details are available only after signing in to the customer account that placed the order.' : 'আপনার গোপনীয়তার জন্য, অর্ডারকারী কাস্টমার অ্যাকাউন্টে সাইন ইন করার পরেই অর্ডারের তথ্য দেখা যাবে।' %>
-    </div>
-    <div class="text-center"><a class="mt-btn mt-btn-primary" href="/customer/login"><%= locale === 'en' ? 'Sign in to your account' : 'আপনার অ্যাকাউন্টে সাইন ইন করুন' %></a></div>
+    <% if (typeof customerUser !== 'undefined' && customerUser) { %>
+      <div class="text-center"><a class="mt-btn mt-btn-primary" href="/customer/account"><%= locale === 'en' ? 'View my orders' : 'আমার অর্ডার দেখুন' %></a></div>
+    <% } else { %>
+      <div class="alert alert-info mb-4 mx-auto" style="max-width: 620px;">
+        <%= locale === 'en' ? 'For your privacy, order details are available only after signing in to the customer account that placed the order.' : 'আপনার গোপনীয়তার জন্য, অর্ডারকারী কাস্টমার অ্যাকাউন্টে সাইন ইন করার পরেই অর্ডারের তথ্য দেখা যাবে।' %>
+      </div>
+      <div class="text-center"><a class="mt-btn mt-btn-primary" href="/customer/login"><%= locale === 'en' ? 'Sign in to your account' : 'আপনার অ্যাকাউন্টে সাইন ইন করুন' %></a></div>
+    <% } %>
 
     <% if (query && (!orders || !orders.length)) { %>
       <%- include('../partials/alert-banner', { type: 'warning', message: t('store.trackNotFound') }) %>

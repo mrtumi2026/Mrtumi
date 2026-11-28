@@ -781,4 +781,39 @@
       }, 4500);
     }
   });
+
+  // Category sheet: filter as you type; a category with sub-categories opens them in place.
+  var catSheet = document.getElementById('categorySheet');
+  if (catSheet) {
+    var catSearch = document.getElementById('categorySheetSearch');
+    var closeSubs = function (except) {
+      catSheet.querySelectorAll('[data-cat-expand]').forEach(function (tile) {
+        if (tile === except) return;
+        tile.setAttribute('aria-expanded', 'false');
+        document.getElementById(tile.getAttribute('data-cat-expand')).hidden = true;
+      });
+    };
+    catSheet.addEventListener('click', function (event) {
+      var tile = event.target.closest('[data-cat-expand]');
+      if (!tile) return;
+      event.preventDefault();
+      var panel = document.getElementById(tile.getAttribute('data-cat-expand'));
+      var open = panel.hidden;
+      closeSubs(tile);
+      panel.hidden = !open;
+      tile.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (open) panel.scrollIntoView({ block: 'nearest' });
+    });
+    catSearch.addEventListener('input', function () {
+      var term = catSearch.value.trim().toLowerCase();
+      var shown = 0;
+      closeSubs();
+      catSheet.querySelectorAll('.store-cat-item').forEach(function (item) {
+        var match = !term || item.getAttribute('data-search').indexOf(term) !== -1;
+        item.hidden = !match;
+        if (match) shown += 1;
+      });
+      catSheet.querySelector('.store-cat-empty').hidden = shown > 0;
+    });
+  }
 })();

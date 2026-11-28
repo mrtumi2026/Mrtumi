@@ -1,0 +1,43 @@
+<%# Category browser: a bottom sheet with a searchable grid. Separate from the menu drawer. %>
+<% const catEnglish = locale === 'en'; %>
+<div class="offcanvas offcanvas-bottom store-cat-sheet" tabindex="-1" id="categorySheet" aria-labelledby="categorySheetLabel">
+  <div class="store-cat-sheet-handle" aria-hidden="true"></div>
+  <div class="offcanvas-header py-2">
+    <div>
+      <h2 class="offcanvas-title h5 fw-bold mb-0" id="categorySheetLabel"><%= t('store.categoriesTitle') %></h2>
+      <div class="small text-muted"><%= catEnglish ? 'What are you looking for today?' : 'আজ কী খুঁজছেন?' %></div>
+    </div>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="<%= t('a11y.closeModal') %>"></button>
+  </div>
+  <div class="store-cat-sheet-search">
+    <i class="fas fa-search" aria-hidden="true"></i>
+    <input type="search" id="categorySheetSearch" autocomplete="off" placeholder="<%= catEnglish ? 'Find a category' : 'ক্যাটাগরি খুঁজুন' %>" aria-label="<%= catEnglish ? 'Find a category' : 'ক্যাটাগরি খুঁজুন' %>">
+  </div>
+  <div class="offcanvas-body pt-2">
+    <ul class="store-cat-grid">
+      <% (navCategories || []).forEach(function(cat) {
+           const subs = cat.subcategories || [];
+           const names = [cat.name, cat.name_bn, cat.name_en].concat(subs.map((s) => [s.name, s.name_bn, s.name_en].join(' '))).join(' ').toLowerCase();
+           const isCurrent = currentPath === '/category/' + cat.slug;
+      %>
+        <li class="store-cat-item" data-search="<%= names %>">
+          <a class="store-cat-tile <%= isCurrent ? 'is-current' : '' %>" href="/category/<%= cat.slug %>" <%- isCurrent ? 'aria-current="page"' : '' %> <% if (subs.length) { %>data-cat-expand="catSubs<%= cat.id %>" aria-expanded="false" aria-controls="catSubs<%= cat.id %>"<% } %>>
+            <span class="store-cat-art" aria-hidden="true"><% if (cat.image) { %><img src="<%= cat.image %>" alt="" loading="lazy"><% } else { %><%= cat.icon || '🛒' %><% } %></span>
+            <span class="store-cat-name"><%= cat.name %></span>
+            <% if (subs.length) { %><i class="fas fa-chevron-down store-cat-caret" aria-hidden="true"></i><% } %>
+          </a>
+        </li>
+        <% if (subs.length) { %>
+          <li class="store-cat-subs" id="catSubs<%= cat.id %>" hidden>
+            <a class="store-cat-chip store-cat-chip-all" href="/category/<%= cat.slug %>"><%= catEnglish ? 'See all' : 'সব দেখুন' %> →</a>
+            <% subs.forEach(function(sc) { %><a class="store-cat-chip" href="/subcategory/<%= sc.slug %>"><%= sc.name %></a><% }) %>
+          </li>
+        <% } %>
+      <% }) %>
+    </ul>
+    <p class="store-cat-empty text-center text-muted py-4" hidden><%= catEnglish ? 'No category found.' : 'কোনো ক্যাটাগরি পাওয়া যায়নি।' %></p>
+  </div>
+  <div class="store-cat-sheet-footer">
+    <a class="btn btn-success w-100 rounded-pill fw-bold" href="/all-products"><%= t('common.allProducts') %> →</a>
+  </div>
+</div>

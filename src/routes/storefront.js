@@ -986,7 +986,8 @@ router.post('/api/checkout/account-check', accountCheckLimiter, requireCsrf, asy
   const english = req.locale === 'en';
   let message = '';
   if (result.passwordRequired && !result.passwordOk) {
-    const source = req.body.password ? checkoutAccount.WRONG_MESSAGE : checkoutAccount.REQUIRED_MESSAGE;
+    const source = req.body.password ? checkoutAccount.WRONG_MESSAGE
+      : (result.signedIn ? checkoutAccount.SIGNED_IN_MESSAGE : checkoutAccount.REQUIRED_MESSAGE);
     message = english ? source : localizeError(source, 'bn');
   }
   return res.json({ success: true, passwordRequired: result.passwordRequired, passwordOk: result.passwordOk, message });

@@ -1,4 +1,4 @@
-/* Asks for the account password only when the mobile number already has one. The server checks again. */
+/* Asks for the account password to confirm an order (signed in, or the number has an account). The server checks again. */
 (function () {
   'use strict';
   function setUp(form) {

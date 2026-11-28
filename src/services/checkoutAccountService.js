@@ -1,9 +1,11 @@
 'use strict';
 
 /*
- * Orders need no OTP. When the delivery mobile number already has an account with a password,
- * a buyer who is not signed in types that password; a match places the order on that account.
- * New numbers, and accounts that never set a password, need nothing extra.
+ * Orders need no OTP. Confirming an order takes the account password, signed in or not:
+ *  - a signed-in buyer types their own account's password;
+ *  - a guest whose delivery mobile number already has an account types that account's password,
+ *    and a match places the order on it.
+ * New numbers, and accounts that never set a password, have no password to ask for.
  */
 const crypto = require('node:crypto');
 const bcrypt = require('bcryptjs');
@@ -17,6 +19,7 @@ const WINDOW_MS = 15 * 60 * 1000;
 const MAX_PER_IP_PHONE = 12;
 const MAX_PER_IP = 300;
 const REQUIRED_MESSAGE = 'This mobile number already has an account. Enter its password to place the order.';
+const SIGNED_IN_MESSAGE = 'Enter your account password to confirm this order.';
 const WRONG_MESSAGE = 'The account password does not match. Try again, or use Forgot password.';
 
 const hash = (value) => crypto.createHash('sha256').update(String(value || '')).digest('hex');
@@ -27,9 +30,10 @@ async function findPasswordAccount(phone, db = null) {
   return row || null;
 }
 
-function signedInAs(sessionCustomer, phone) {
-  if (!sessionCustomer?.id) return false;
-  try { return normalizeBdPhone(sessionCustomer.phone) === normalizeBdPhone(phone); } catch (_error) { return false; }
+async function findSessionAccount(id, db = null) {
+  const q = db || createQueryClient(getPool());
+  const row = await q.queryOne("SELECT id,name,phone,password_hash FROM customers WHERE id=? AND password_hash<>'' AND status=1 AND is_blocked=0 LIMIT 1", [Number(id)]);
+  return row || null;
 }
 
 async function limitGuesses(ip, phone, consume) {
@@ -41,25 +45,28 @@ async function limitGuesses(ip, phone, consume) {
 
 /** Tells the checkout form whether a password is needed and whether the typed one matches. */
 async function checkAccount({ phone, password = '', sessionCustomer = null, ip = '' }, { db = null, consume = consumeLoginBucket } = {}) {
-  if (env.db.client !== 'mysql' && !db) return { passwordRequired: false, passwordOk: false, accountId: null };
-  const clean = normalizeBdPhone(phone);
-  // A signed-in buyer ordering to their own number has already proved the password.
-  if (signedInAs(sessionCustomer, clean) || sessionCustomer?.id) return { passwordRequired: false, passwordOk: false, accountId: null };
-  const account = await findPasswordAccount(clean, db);
-  if (!account) return { passwordRequired: false, passwordOk: false, accountId: null };
+  const none = { passwordRequired: false, passwordOk: false, accountId: null };
+  if (env.db.client !== 'mysql' && !db) return none;
+  const signedIn = Boolean(sessionCustomer?.id);
+  const clean = signedIn ? '' : normalizeBdPhone(phone);
+  const account = signedIn ? await findSessionAccount(sessionCustomer.id, db) : await findPasswordAccount(clean, db);
+  if (!account) return none;
+  const needed = { passwordRequired: true, passwordOk: false, accountId: null, signedIn };
   const typed = String(password || '');
-  if (!typed) return { passwordRequired: true, passwordOk: false, accountId: null };
-  await limitGuesses(ip, clean, consume);
+  if (!typed) return needed;
+  await limitGuesses(ip, signedIn ? `id:${account.id}` : clean, consume);
   const ok = typed.length <= 72 && await bcrypt.compare(typed, account.password_hash);
-  return { passwordRequired: true, passwordOk: ok, accountId: ok ? Number(account.id) : null };
+  return ok ? { ...needed, passwordOk: true, accountId: Number(account.id) } : needed;
 }
 
 /** Used by every order route before the order is written. Returns the proven account ID, or null. */
 async function resolveCheckoutAccount(input, deps) {
-  if (!String(input.password || '')) return null;
+  const typed = String(input.password || '');
+  // A guest who typed nothing is stopped by the order transaction if the number has an account.
+  if (!typed && !input.sessionCustomer?.id) return null;
   const result = await checkAccount(input, deps);
-  if (result.passwordRequired && !result.passwordOk) throw new AccountPasswordError(WRONG_MESSAGE);
+  if (result.passwordRequired && !result.passwordOk) throw new AccountPasswordError(typed ? WRONG_MESSAGE : SIGNED_IN_MESSAGE);
   return result.accountId;
 }
 
-module.exports = { findPasswordAccount, checkAccount, resolveCheckoutAccount, REQUIRED_MESSAGE, WRONG_MESSAGE };
+module.exports = { findPasswordAccount, checkAccount, resolveCheckoutAccount, REQUIRED_MESSAGE, SIGNED_IN_MESSAGE, WRONG_MESSAGE };
