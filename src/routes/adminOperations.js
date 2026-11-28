@@ -8,6 +8,7 @@ const hrmEmployeeRepository = require('../repositories/hrmEmployeeRepository');
 const adminComplaintRepository = require('../repositories/adminComplaintRepository');
 const adminFinanceReadRepository = require('../repositories/adminFinanceReadRepository');
 const adminManualPaymentRepository = require('../repositories/adminManualPaymentRepository');
+const adminDelete = require('../repositories/adminDeleteRepository');
 const adminCustomerRepository = require('../repositories/adminCustomerRepository');
 const adminCustomerRecoveryRepository = require('../repositories/adminCustomerRecoveryRepository');
 const phase06Repository = require('../repositories/phase06Repository');
@@ -549,7 +550,7 @@ router.get('/admin/complaints', asyncHandler(async (_req, res) => {
     pageTitle: 'Customer Complaints',
     subtitle: 'ওয়েবসাইটের লাইভ সাপোর্ট উইজেট থেকে জমা পড়া অভিযোগসমূহ',
     createAction: '/admin/complaints/create',
-    deletePrefix: env.db.client === 'mysql' ? '' : '/admin/complaints/delete',
+    deletePrefix: '/admin/complaints/delete',
     customActionPrefix: '/admin/complaints/resolve',
     customActionLabel: 'Mark Resolved',
     columns: [
@@ -600,10 +601,22 @@ router.post('/admin/complaints/resolve/:id', asyncHandler(async (req, res) => {
   res.redirect('/admin/complaints');
 }));
 
-router.post('/admin/complaints/delete/:id', (req, res, next) => {
-  if (env.db.client === 'mysql') {
-    return next(new ConflictError('Complaint deletion is disabled pending an approved data-retention policy.'));
-  }
+// Shared handler for a real delete button: do it, or say clearly why not.
+function realDelete(permissionedFn, back, bn, en) {
+  return asyncHandler(async (req, res, next) => {
+    if (env.db.client !== 'mysql') return next();
+    try {
+      await permissionedFn(req.params.id, { id: req.adminUser?.id || null, ip: req.ip || '', userAgent: req.get('user-agent') || '' });
+      req.adminDomainAudit = true;
+      req.flash('success', req.locale === 'bn' ? bn : en);
+    } catch (err) {
+      if (!err.statusCode || err.statusCode >= 500) throw err;
+      req.flash('error', err.message);
+    }
+    return res.redirect(back);
+  });
+}
+router.post('/admin/complaints/delete/:id', realDelete(adminDelete.deleteComplaint, '/admin/complaints', 'অভিযোগটি মুছে ফেলা হয়েছে।', 'The complaint was deleted.'), (req, res) => {
   db.run('DELETE FROM complaints WHERE id = ?', req.params.id);
   res.redirect('/admin/complaints');
 });
@@ -615,7 +628,7 @@ router.get('/admin/contact-messages', asyncHandler(async (_req, res) => {
   res.render('admin/crud-module', {
     pageTitle: 'Contact Messages',
     subtitle: 'কাস্টমারদের পাঠানো যোগাযোগ বার্তাসমূহ',
-    deletePrefix: env.db.client === 'mysql' ? '' : '/admin/contact-messages/delete',
+    deletePrefix: '/admin/contact-messages/delete',
     columns: [
       { key: 'id', label: '#' },
       { key: 'name', label: 'Name' },
@@ -630,10 +643,7 @@ router.get('/admin/contact-messages', asyncHandler(async (_req, res) => {
   });
 }));
 
-router.post('/admin/contact-messages/delete/:id', (req, res, next) => {
-  if (env.db.client === 'mysql') {
-    return next(new ConflictError('Contact-message deletion is disabled pending an approved data-retention policy.'));
-  }
+router.post('/admin/contact-messages/delete/:id', realDelete(adminDelete.deleteContactMessage, '/admin/contact-messages', 'বার্তাটি মুছে ফেলা হয়েছে।', 'The message was deleted.'), (req, res) => {
   db.run('DELETE FROM contact_messages WHERE id = ?', req.params.id);
   res.redirect('/admin/contact-messages');
 });

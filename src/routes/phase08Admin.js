@@ -8,6 +8,7 @@ const {requirePermission}=require('../middleware/rbac');
 const {asyncHandler}=require('../utils/asyncHandler');
 const repo=require('../repositories/phase08Repository');
 const {ValidationError}=require('../utils/errors');
+const adminDelete=require('../repositories/adminDeleteRepository');
 const router=express.Router();
 router.use('/admin/phase08',requireAdmin);
 function actor(req){return{id:req.adminUser?.id||req.session?.adminUser?.id||null,permissions:req.adminUser?.permissions||req.session?.adminUser?.permissions||[],roleSlug:req.adminUser?.role_slug||req.session?.adminUser?.role_slug||'',ip:req.ip||'',userAgent:req.get('user-agent')||''};}
@@ -52,6 +53,15 @@ router.post('/admin/phase08/refunds/order/:id/wallet',requirePermission('refunds
   req.flash('success',isEn(req)?'The money was added to the customer wallet.':'টাকা ক্রেতার ওয়ালেটে যোগ হয়েছে।');
   return res.redirect('/admin/phase08/refunds');
 }));
+// Delete buttons: remove the record, or explain why it has to stay.
+const deleteRoute=(remove,back,bn,en)=>asyncHandler(async(req,res)=>{
+  try{await remove(req.params.id,{id:req.adminUser?.id||null,ip:req.ip||'',userAgent:req.get('user-agent')||''});req.adminDomainAudit=true;req.flash('success',isEn(req)?en:bn);}
+  catch(err){if(!err.statusCode||err.statusCode>=500)throw err;req.flash('error',err.message);}
+  return res.redirect(back);
+});
+router.post('/admin/phase08/refunds/:id/delete',requirePermission('refunds.review'),requireCsrf,deleteRoute(adminDelete.deleteRefundRequest,'/admin/phase08/refunds','রিফান্ড অনুরোধটি মুছে ফেলা হয়েছে।','The refund request was deleted.'));
+router.post('/admin/phase08/incomplete/:id/delete',requirePermission('checkout.recovery.manage'),requireCsrf,deleteRoute(adminDelete.deleteIncompleteCheckout,'/admin/phase08/incomplete','অসম্পূর্ণ চেকআউট রেকর্ডটি মুছে ফেলা হয়েছে।','The incomplete checkout record was deleted.'));
+
 router.get('/admin/phase08/incomplete',requirePermission('checkout.recovery.view'),asyncHandler(async(req,res)=>{
   const data=await repo.listIncompleteCheckouts({search:req.query.q,status:req.query.status,page:req.query.page,limit:25});
   res.render('admin/phase08-incomplete',{...data,transitions:repo.INCOMPLETE_STATES,isEn:isEn(req),query:String(req.query.q||''),status:String(req.query.status||''),csrfToken:req.csrfToken(),rows:data.rows.map(row=>({...row,cartCount:(()=>{try{return JSON.parse(row.cart_json||'[]').length;}catch{return 0;}})()}))});

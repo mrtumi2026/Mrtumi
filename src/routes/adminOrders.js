@@ -11,6 +11,8 @@ const adminOrderReadRepository = require('../repositories/adminOrderReadReposito
 const adminOrderStatusRepository = require('../repositories/adminOrderStatusRepository');
 const adminPosRepository = require('../repositories/adminPosRepository');
 const adminOrderMutationRepository = require('../repositories/adminOrderMutationRepository');
+const adminDelete = require('../repositories/adminDeleteRepository');
+const { localizeError } = require('../utils/bnErrors');
 const adminCustomerRepository = require('../repositories/adminCustomerRepository');
 const logger = require('../utils/logger');
 
@@ -763,12 +765,21 @@ router.post('/admin/order/status-quick', asyncHandler(async (req, res) => {
   res.redirect(req.get('Referrer') || '/admin/order/all');
 }));
 
+function flashBulkDelete(req, result) {
+  const bn = req.locale === 'bn';
+  if (result.deleted.length) req.flash('success', bn ? `${result.deleted.length}টি অর্ডার মুছে ফেলা হয়েছে।` : `${result.deleted.length} order(s) deleted.`);
+  if (!result.skipped.length) return;
+  const lines = result.skipped.slice(0, 10).map((row) => `ID ${row.id}: ${localizeError(row.reason, req.locale)}`).join(' | ');
+  req.flash('error', bn ? `${result.skipped.length}টি অর্ডার মোছা হয়নি — ${lines}` : `${result.skipped.length} order(s) were not deleted — ${lines}`);
+}
+
 router.post('/admin/order/bulk-action', asyncHandler(async (req, res) => {
   if(env.db.client==='mysql'){
     try{
       const result=await adminOrderMutationRepository.bulkOrderAction(req.body,orderActor(req));
       req.adminDomainAudit=true;
-      req.flash('success',`${result.ids.length} order(s) updated to ${result.target}.`);
+      if(result.target==='delete')flashBulkDelete(req,result);
+      else req.flash('success',req.locale==='bn'?`${result.ids.length}টি অর্ডারের স্ট্যাটাস আপডেট হয়েছে।`:`${result.ids.length} order(s) updated to ${result.target}.`);
       return res.redirect(req.get('Referrer')||'/admin/order/all');
     }catch(err){if(handleOrderMutationError(err,req,res,req.get('Referrer')||'/admin/order/all'))return;throw err;}
   }
@@ -803,19 +814,27 @@ router.post('/admin/order/bulk-action', asyncHandler(async (req, res) => {
   res.redirect(req.get('Referrer') || '/admin/order/all');
 }));
 
-router.post('/admin/order/delete/:id', (req, res) => {
-  if(env.db.client==='mysql')return res.status(409).json({error:'ORDER_RETENTION_POLICY_REQUIRED',message:'Order deletion is disabled pending an approved data-retention policy.'});
+router.post('/admin/order/delete/:id', requirePermission('orders.manage'), requireCsrf, asyncHandler(async (req, res) => {
+  if(env.db.client==='mysql'){
+    const back=/\/admin\/order\/view\//.test(req.get('Referrer')||'')?'/admin/order/all':(req.get('Referrer')||'/admin/order/all');
+    try{
+      const result=await adminDelete.deleteOrder(req.params.id,orderActor(req));
+      req.adminDomainAudit=true;
+      req.flash('success',req.locale==='bn'?`অর্ডার #${result.invoiceNo} মুছে ফেলা হয়েছে।`:`Order #${result.invoiceNo} was deleted.`);
+      return res.redirect(back);
+    }catch(err){if(handleOrderMutationError(err,req,res,req.get('Referrer')||'/admin/order/all'))return;throw err;}
+  }
   db.run('DELETE FROM order_items WHERE order_id = ?', req.params.id);
   db.run('DELETE FROM orders WHERE id = ?', req.params.id);
   req.flash('success', 'অর্ডার সফলভাবে মুছে ফেলা হয়েছে।');
   res.redirect(req.get('Referrer') || '/admin/order/all');
-});
+}));
 
 // ─── Reseller Orders ───
 router.get('/admin/reseller-orders', asyncHandler(async (req, res) => {
   if (env.db.client === 'mysql') {
     const data = await adminOrderReadRepository.listAdminResellerOrders();
-    return res.render('admin/orders', { pageTitle:'Reseller Orders', statusFilter:'reseller', searchQuery:'', bulkRequestKey:crypto.randomUUID(), ...data });
+    return res.render('admin/orders', { allowOrderDelete:true, pageTitle:'Reseller Orders', statusFilter:'reseller', searchQuery:'', bulkRequestKey:crypto.randomUUID(), ...data });
   }
   const orders = db.all(
     `SELECT o.*, COALESCE(os.name, o.status) AS status_label, COALESCE(os.badge_class, 'sb-1') AS badge_class
@@ -992,6 +1011,7 @@ router.get('/admin/customer/ip-block', asyncHandler(async (_req, res) => {
     pageTitle: 'IP & Phone Block List',
     subtitle: 'ফেইক অর্ডার প্রতিরোধে সন্দেহজনক IP অ্যাড্রেস অথবা মোবাইল নম্বর ব্লক করুন',
     createAction: '/admin/customer/ip-block/create',
+    deletePrefix: '/admin/customer/ip-block/delete',
     columns: [
       { key: 'id', label: '#' },
       { key: 'ip_or_phone', label: 'Blocked IP / Phone' },
@@ -1025,8 +1045,17 @@ router.post('/admin/customer/ip-block/create', asyncHandler(async (req, res) => 
   res.redirect('/admin/customer/ip-block');
 }));
 
-router.post('/admin/customer/ip-block/delete/:id', asyncHandler(async (_req, _res) => {
-  throw new ConflictError('IP/phone block deletion is disabled pending an owner-approved retention policy.');
+router.post('/admin/customer/ip-block/delete/:id', requireCsrf, asyncHandler(async (req, res) => {
+  if (env.db.client !== 'mysql') {
+    db.run('DELETE FROM ip_blocks WHERE id = ?', req.params.id);
+    return res.redirect('/admin/customer/ip-block');
+  }
+  try {
+    await adminDelete.deleteIpBlock(req.params.id, orderActor(req));
+    req.adminDomainAudit = true;
+    req.flash('success', req.locale === 'bn' ? 'ব্লক তুলে নেওয়া হয়েছে।' : 'The block was removed.');
+  } catch (err) { if (!(err instanceof AppError) || err.statusCode >= 500) throw err; req.flash('error', err.message); }
+  return res.redirect('/admin/customer/ip-block');
 }));
 
 // ─── Refunds ───
@@ -1109,7 +1138,7 @@ async function renderAdminOrderList(req,res,statusParam){
   if(env.db.client==='mysql'){
     const data=await adminOrderReadRepository.listAdminOrders({statusParam,searchQuery:q,page:req.query.page||1,perPage:25});
     data.orders=data.orders.map(order=>({...order,status_request_key:crypto.randomUUID()}));
-    return res.render('admin/orders',{pageTitle:titleMap[statusParam]||`Orders (${statusParam})`,statusFilter:statusParam,searchQuery:q,bulkRequestKey:crypto.randomUUID(),paginationPath:req.path==='/admin/orders'?'/admin/orders':`/admin/order/${encodeURIComponent(statusParam)}`,...data});
+    return res.render('admin/orders',{allowOrderDelete:true,pageTitle:titleMap[statusParam]||`Orders (${statusParam})`,statusFilter:statusParam,searchQuery:q,bulkRequestKey:crypto.randomUUID(),paginationPath:req.path==='/admin/orders'?'/admin/orders':`/admin/order/${encodeURIComponent(statusParam)}`,...data});
   }
   let where='WHERE 1=1';const params=[];
   if(statusParam&&statusParam!=='all'){

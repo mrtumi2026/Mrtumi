@@ -216,7 +216,7 @@ describe('Phase 09 dashboard repository contract', () => {
     assert.match(source,/Customer deletion is disabled pending an approved data-retention policy/);
     const orders=fs.readFileSync(path.join(__dirname,'../src/routes/adminOrders.js'),'utf8');
     assert.match(orders,/adminCustomerRepository\.listIpBlocks/);assert.match(orders,/adminCustomerRepository\.createIpBlock/);
-    assert.match(orders,/IP\/phone block deletion is disabled/);
+    assert.match(orders,/adminDelete\.deleteIpBlock/);
     const policy=policyForAdminRoute('POST','/admin/customer/create');assert.equal(policy.key,'customers.manage');
     assert.equal(policyForAdminRoute('POST','/admin/customer/ip-block/create').key,'security.manage');
     assert.match(source,/req\.adminDomainAudit\s*=\s*true/);
@@ -230,10 +230,9 @@ describe('Phase 09 dashboard repository contract', () => {
     assert.match(source, /env\.db\.client === 'mysql'[\s\S]{0,120}adminComplaintRepository\.listComplaints\(\)/);
     assert.match(source, /adminComplaintRepository\.createComplaint\(req\.body/);
     assert.match(source, /adminComplaintRepository\.resolveComplaint\(req\.params\.id/);
-    assert.match(source, /router\.post\('\/admin\/complaints\/delete\/:id', \(req, res, next\)/,'complaint deletion is retained only as an explicit guarded route');
-    assert.match(source, /Complaint deletion is disabled pending an approved data-retention policy/);
+    assert.match(source, /realDelete\(adminDelete\.deleteComplaint/,'complaint deletion goes through the audited repository');
     assert.match(source, /adminComplaintRepository\.listContactMessages\(\)/);
-    assert.match(source, /Contact-message deletion is disabled pending an approved data-retention policy/);
+    assert.match(source, /realDelete\(adminDelete\.deleteContactMessage/);
   });
 
   test('HR employee repository validates calendar dates and MySQL admin routes delegate reads and writes', () => {

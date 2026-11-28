@@ -9,6 +9,7 @@ const upload = require('../middleware/upload');
 const csvRepo = require('../repositories/phase06ProductCsvRepository');
 const { recordAuditLog } = require('../repositories/auditLogRepository');
 const { ConflictError, ValidationError } = require('../utils/errors');
+const adminDelete = require('../repositories/adminDeleteRepository');
 const router = express.Router();
 router.use('/admin/phase06', requireAdmin);
 
@@ -259,6 +260,24 @@ router.post('/admin/phase06/purchases', requireCsrf, asyncRoute(async (req,res) 
   req.flash('success', req.locale === 'en' ? `Purchase order ${purchase.referenceNo} created as Draft; no stock received.` : `পারচেজ অর্ডার ${purchase.referenceNo} Draft হিসেবে তৈরি হয়েছে; স্টকে যোগ হয়নি।`);
   return res.redirect('/admin/phase06#purchases');
 }));
+
+// Delete buttons: remove the record, or explain why it has to stay.
+const phase06Delete = (remove, anchor, message) => asyncRoute(async (req,res) => {
+  const back=`/admin/phase06#${anchor}`;
+  try {
+    const result=await remove(req.params.id,actor(req));
+    if(wantsJson(req))return res.json({success:true,result});
+    req.flash('success',message(result,req.locale==='en'));
+  } catch (err) {
+    if(wantsJson(req)||!err.statusCode||err.statusCode>=500)throw err;
+    req.flash('error',err.message);
+  }
+  return res.redirect(back);
+});
+router.post('/admin/phase06/suppliers/:id/delete', requireCsrf, phase06Delete(adminDelete.deleteSupplier,'suppliers',(result,en)=>result.deleted
+  ?(en?'The supplier was deleted.':'সরবরাহকারী মুছে ফেলা হয়েছে।')
+  :(en?'This supplier has purchase history, so it was made inactive instead of deleted.':'এই সরবরাহকারীর ক্রয় ইতিহাস আছে, তাই মোছার বদলে নিষ্ক্রিয় করা হয়েছে।')));
+router.post('/admin/phase06/purchases/:id/delete', requireCsrf, phase06Delete(adminDelete.deletePurchase,'purchases',(_result,en)=>en?'The purchase order was deleted.':'পারচেজ অর্ডার মুছে ফেলা হয়েছে।'));
 
 router.post('/admin/phase06/purchases/:id/receive', requireCsrf, asyncRoute(async (req,res) => {
   const receipt = await repo.receivePurchase(req.params.id, req.body, actor(req));

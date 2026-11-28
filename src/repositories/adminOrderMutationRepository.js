@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const mysql = require('../db/mysqlPool');
 const { env } = require('../config/env');
 const { executeIdempotent } = require('./idempotencyRepository');
+const adminDelete=require('./adminDeleteRepository');
 const phase08 = require('./phase08Repository');
 const { normalizeBdPhone, requirePaisaFromBdt, requirePositiveInt, requireString } = require('../utils/validator');
 const { AppError, ConflictError, NotFoundError, ValidationError } = require('../utils/errors');
@@ -293,7 +294,15 @@ async function bulkOrderAction(input={},actor={}) {
   const ids=normalizeOrderIds(values.order_ids);
   const action=String(values.bulk_action||'').trim();
   const key=requestKey(values.request_key);
-  if(action==='delete')throw new ConflictError('Order deletion is disabled pending an approved data-retention policy.');
+  if(action==='delete'){
+    // Each order is checked and deleted on its own, so one protected order does not stop the others.
+    const deleted=[];const skipped=[];
+    for(const id of ids){
+      try{deleted.push((await adminDelete.deleteOrder(id,actorFields(actor))).invoiceNo);}
+      catch(err){if(!err.statusCode||err.statusCode>=500)throw err;skipped.push({id,reason:err.message});}
+    }
+    return {ids,target:'delete',deleted,skipped};
+  }
   if(action.startsWith('courier:'))throw new ConflictError('Courier booking is not performed by this admin action. Use an approved provider workflow.');
   const target=safeTargetStatus(action);
   const reason=requireString(values.reason||'Admin bulk status update','transition reason',{min:3,max:255});

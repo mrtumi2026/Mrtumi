@@ -876,7 +876,7 @@ async function renderReviews(res, filter) {
     pageTitle: filter === 'pending' ? 'Pending Product Reviews' : 'All Product Reviews',
     subtitle: 'গ্রাহকের রিভিউ অ্যাপ্রুভ, ডিলিট অথবা নতুন রিভিউ যুক্ত করুন',
     createAction: '/admin/reviews/create',
-    deletePrefix: mysqlMode() ? null : '/admin/reviews/delete',
+    deletePrefix: '/admin/reviews/delete',
     customActionPrefix: '/admin/reviews/approve',
     customActionLabel: 'Approve',
     columns: [
@@ -928,11 +928,17 @@ router.post('/admin/reviews/approve/:id', asyncHandler(async (req, res) => {
   res.redirect(req.get('Referrer') || '/admin/reviews');
 }));
 
-router.post('/admin/reviews/delete/:id', (req, res, next) => {
-  if(mysqlMode())return next(new ConflictError('Review deletion is disabled to preserve customer feedback history.'));
+router.post('/admin/reviews/delete/:id', asyncHandler(async (req, res) => {
+  if(mysqlMode()){
+    try{
+      await require('../repositories/adminDeleteRepository').deleteReview(req.params.id,actor(req));req.adminDomainAudit=true;
+      req.flash('success',req.locale==='bn'?'রিভিউ মুছে ফেলা হয়েছে।':'The review was deleted.');
+    }catch(err){if(!err.statusCode||err.statusCode>=500)throw err;req.flash('error',err.message);}
+    return res.redirect(req.get('Referrer') || '/admin/reviews');
+  }
   db.run('DELETE FROM reviews WHERE id = ?', req.params.id);
   req.flash('success', 'রিভিউ ডিলিট হয়েছে।');
   res.redirect(req.get('Referrer') || '/admin/reviews');
-});
+}));
 
 module.exports = router;
