@@ -95,7 +95,7 @@ test('Admin & Vendor Platform Consolidation Suite', async (t) => {
       fmt: { bdt: (v) => `৳${v}`, number: (v) => String(v) },
       locale: 'en',
       siteSettings: { site_name: 'Mr. Tumi', favicon: '/favicon.ico' },
-      brand: { isPlaceholderLogo: false },
+      brand: { isDefaultLogo: false },
       adminUser: { name: 'Admin', role: 'superadmin' },
       hasPermission: () => true,
       pendingOrdersCount: 0,

@@ -137,12 +137,12 @@
             </li>
           </ul>
 
-          <!-- LOGO (Explicitly Marked Temporary Placeholder Until Official Owner Assets Arrive) -->
+          <!-- LOGO -->
           <div class="logo-box">
             <a
               href="/admin/dashboard"
               class="logo logo-dark text-center"
-              data-brand-asset-status="<%= (typeof brand !== 'undefined' && brand && brand.isPlaceholderLogo) ? 'temporary-placeholder' : 'custom' %>"
+              data-brand-asset-status="<%= (typeof brand !== 'undefined' && brand && brand.isDefaultLogo) ? 'official' : 'custom' %>"
             >
               <span class="logo-lg">
                 <img src="<%= siteSettings.logo_dark %>" alt="<%= siteSettings.site_name %>" height="42" />
@@ -151,7 +151,7 @@
             <a
               href="/admin/dashboard"
               class="logo logo-light text-center"
-              data-brand-asset-status="<%= (typeof brand !== 'undefined' && brand && brand.isPlaceholderLogo) ? 'temporary-placeholder' : 'custom' %>"
+              data-brand-asset-status="<%= (typeof brand !== 'undefined' && brand && brand.isDefaultLogo) ? 'official' : 'custom' %>"
             >
               <span class="logo-lg">
                 <img src="<%= siteSettings.logo_light %>" alt="<%= siteSettings.site_name %>" height="42" />

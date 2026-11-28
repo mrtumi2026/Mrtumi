@@ -25,7 +25,10 @@
     <div class="inv-box">
       <div class="d-flex justify-content-between align-items-start border-bottom pb-3 mb-4">
         <div>
-          <img src="<%= siteSettings.logo_dark || '/uploads/settings/logo.svg' %>" height="48" alt="Logo" />
+          <img src="<%= siteSettings.logo_dark || '/uploads/brand/mt-logo.png' %>" height="64" alt="Logo" />
+          <% if (typeof brand !== 'undefined' && brand && brand.isDefaultLogo) { %>
+            <div class="fw-bold mt-1"><%= siteSettings.site_name %></div>
+          <% } %>
           <div class="small text-muted mt-1"><%= siteSettings.site_address %></div>
           <div class="small text-muted"><%= L('Hotline:', 'হটলাইন:') %> <%= siteSettings.site_phone %></div>
         </div>

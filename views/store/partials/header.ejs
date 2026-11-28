@@ -32,14 +32,14 @@
     <% if (metaObj.ogImage) { %>
       <meta property="og:image" content="<%= metaObj.ogImage %>" />
     <% } %>
-    <link rel="shortcut icon" href="<%= siteSettings.favicon || '/uploads/brand/mrtumi-favicon.png' %>" />
+    <link rel="shortcut icon" href="<%= siteSettings.favicon || '/uploads/brand/mt-favicon.png' %>" />
     <!-- PWA & Mobile Web App Meta -->
     <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#dc2626" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Mr. Tumi" />
-    <link rel="apple-touch-icon" href="/uploads/brand/mrtumi-app-icon-192.png" />
+    <link rel="apple-touch-icon" href="/uploads/brand/mt-icon-192.png" />
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -152,9 +152,13 @@
             <a
               href="/"
               class="mt-brand-lockup"
-              data-brand-asset-status="<%= (typeof brand !== 'undefined' && brand && brand.isPlaceholderLogo) ? 'temporary-placeholder' : 'custom' %>"
+              aria-label="<%= siteSettings.site_name %>"
+              data-brand-asset-status="<%= (typeof brand !== 'undefined' && brand && brand.isDefaultLogo) ? 'official' : 'custom' %>"
             >
-              <img src="<%= siteSettings.logo_dark %>" alt="<%= siteSettings.site_name %>" height="44" />
+              <img src="<%= siteSettings.logo_dark %>" alt="<%= siteSettings.site_name %>" height="52" />
+              <% if (typeof brand !== 'undefined' && brand && brand.isDefaultLogo) { %>
+                <span class="mt-brand-name" aria-hidden="true"><%= siteSettings.site_name %></span>
+              <% } %>
             </a>
           </div>
 

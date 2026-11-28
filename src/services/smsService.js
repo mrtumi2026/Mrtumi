@@ -94,8 +94,8 @@ async function checkBalance() {
     if (!res || !res.ok) throw new Error(`HTTP ${res ? res.status : 'error'}`);
     const data = await res.json();
 
-    if (data && (data.response_code === 202 || data.response_code === '202' || data.balance !== undefined)) {
-      const bal = String(data.balance || '0.00');
+    if (data && data.balance !== undefined && data.balance !== null && Number.isFinite(Number(data.balance))) {
+      const bal = String(data.balance);
       // Save balance to settings
       if (isMysql()) {
         await settingsRepository.setSetting('bulksms_balance', bal);
@@ -104,9 +104,11 @@ async function checkBalance() {
       }
       return { success: true, configured: true, balance: bal };
     }
-    return { success: false, configured: true, balance: settings.bulksms_balance || '0.00', message: data.error_message || 'Invalid API key or balance request failed' };
-  } catch (err) {
-    return { success: false, configured: true, balance: settings.bulksms_balance || '0.00', message: err.message };
+    // The key travels in the URL, so never pass it (or a raw transport error) back to a page.
+    const providerMessage = String(data?.error_message || '').split(apiKey).join('***').slice(0, 160);
+    return { success: false, configured: true, balance: settings.bulksms_balance || '0.00', message: providerMessage || 'Invalid API key or balance request failed' };
+  } catch (_err) {
+    return { success: false, configured: true, balance: settings.bulksms_balance || '0.00', message: 'Could not reach BulkSMSBD' };
   } finally {
     clearTimeout(timer);
   }

@@ -283,14 +283,17 @@ const settingsPageMap = {
 };
 
 for (const [routePath, cfg] of Object.entries(settingsPageMap)) {
-  router.get(routePath, (_req, res) => {
-    res.render('admin/settings', {
-      pageTitle: cfg.title,
-      section: cfg.section,
-      logs: [],
-      customers: [],
-    });
-  });
+  router.get(routePath, asyncHandler(async (_req, res) => {
+    const locals = { pageTitle: cfg.title, section: cfg.section, logs: [], customers: [], smsBalance: null };
+    if (cfg.section === 'sms_gateway') {
+      // The balance is read-only: ask BulkSMSBD for it each time the page opens.
+      locals.smsBalance = await smsService.checkBalance();
+      if (locals.smsBalance.success) {
+        locals.siteSettings = { ...res.locals.siteSettings, bulksms_balance: locals.smsBalance.balance };
+      }
+    }
+    res.render('admin/settings', locals);
+  }));
 }
 
 // ─── Social Media, Feature Bar, CMS Pages, Banners, Payment Gateways, Couriers ───

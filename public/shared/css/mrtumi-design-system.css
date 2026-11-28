@@ -661,7 +661,7 @@ code,
   .pb-header .mt-brand-lockup img {
     width: auto;
     max-width: 112px;
-    max-height: 38px;
+    max-height: 44px;
     object-fit: contain;
   }
 
@@ -724,7 +724,7 @@ code,
   .navbar-custom .logo-box img {
     width: 82px;
     height: auto;
-    max-height: 28px;
+    max-height: 36px;
     object-fit: contain;
   }
 
@@ -763,7 +763,7 @@ code,
 
   .pb-header .mt-brand-lockup img {
     max-width: 96px;
-    max-height: 34px;
+    max-height: 42px;
   }
 
   .pb-header .container {

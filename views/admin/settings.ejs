@@ -92,12 +92,6 @@
         <p class="text-muted small mb-2">
           <%= L('Full control of all modules, orders, inventory and settings.', 'সকল মডিউল, অর্ডার, ইনভেন্টরি ও সেটিংস পূর্ণ নিয়ন্ত্রণে রয়েছে।') %>
         </p>
-        <% if (typeof brand !== 'undefined' && brand && brand.isPlaceholderLogo) { %>
-          <div class="mt-copy-review-banner mt-3">
-            <span class="mt-copy-review-banner__badge"><%= brand.placeholderBadge %></span>
-            <div class="small"><%= brand.placeholderNotice %></div>
-          </div>
-        <% } %>
       </div>
 
     <% } else { %>
@@ -186,11 +180,18 @@
               </select>
             </div>
             <div class="col-md-4">
-              <label class="form-label small fw-semibold">Current Account Balance</label>
+              <label class="form-label small fw-semibold" for="smsBalanceField"><%= L('Current account balance', 'অ্যাকাউন্টের বর্তমান ব্যালেন্স') %></label>
               <div class="input-group">
                 <span class="input-group-text">৳</span>
-                <input type="text" name="bulksms_balance" value="<%= siteSettings.bulksms_balance || '0.00' %>" class="form-control" readonly />
+                <input type="text" id="smsBalanceField" value="<%= typeof smsBalance !== 'undefined' && smsBalance && smsBalance.success ? smsBalance.balance : '—' %>" class="form-control" readonly />
               </div>
+              <% if (typeof smsBalance !== 'undefined' && smsBalance && smsBalance.success) { %>
+                <div class="form-text text-success"><%= L('Fetched from BulkSMSBD just now. Nothing to type here.', 'এইমাত্র BulkSMSBD থেকে আনা হয়েছে। এখানে কিছু লিখতে হয় না।') %></div>
+              <% } else if (typeof smsBalance !== 'undefined' && smsBalance && smsBalance.configured) { %>
+                <div class="form-text text-danger"><%= L('Could not get the balance. BulkSMSBD says:', 'ব্যালেন্স আনা যায়নি। BulkSMSBD-এর উত্তর:') %> <%= smsBalance.message %></div>
+              <% } else { %>
+                <div class="form-text"><%= L('Shown automatically after you save the API key. Nothing to type here.', 'API Key সেভ করলে আপনাআপনি দেখাবে। এখানে কিছু লিখতে হয় না।') %></div>
+              <% } %>
             </div>
             <div class="col-md-4">
               <label class="form-label small fw-semibold" for="vendorOtpSms"><%= L('Vendor mobile verification by SMS', 'ভেন্ডরের মোবাইল যাচাই SMS-এ') %></label>

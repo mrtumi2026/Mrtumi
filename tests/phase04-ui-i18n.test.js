@@ -211,7 +211,24 @@ describe('Phase 04 — Branding, Design System, Accessibility & Bilingual UI (`b
     );
     assert.equal(legacyBn.siteSettings.site_name, 'মি. তুমি গ্রোসারি অ্যান্ড গিফট');
     assert.equal(legacyBn.siteSettings.site_email, 'support@mrtumi.com');
-    assert.equal(legacyBn.brand.isPlaceholderLogo, true);
+    assert.equal(legacyBn.brand.isDefaultLogo, true);
+    assert.equal(legacyBn.siteSettings.logo_dark, '/uploads/brand/mt-logo.png');
+    assert.equal(legacyBn.siteSettings.logo_light, '/uploads/brand/mt-logo-on-dark.png');
+    assert.equal(legacyBn.siteSettings.favicon, '/uploads/brand/mt-favicon.png');
+
+    // A saved temporary placeholder is replaced by the owner's logo.
+    const savedPlaceholder = resolveBrandContext({
+      logo_dark: '/uploads/brand/mrtumi-placeholder-logo.svg',
+      logo_light: '/uploads/brand/mrtumi-placeholder-logo-light.svg',
+      favicon: '/uploads/brand/mrtumi-placeholder-favicon.svg',
+      site_whatsapp: '০১৯৭৩-৪৩৭৩৯৫',
+    }, 'bn');
+    assert.equal(savedPlaceholder.siteSettings.logo_dark, '/uploads/brand/mt-logo.png');
+    assert.equal(savedPlaceholder.siteSettings.favicon, '/uploads/brand/mt-favicon.png');
+    assert.equal(savedPlaceholder.brand.whatsappUrl, 'https://wa.me/8801973437395');
+    assert.equal(resolveBrandContext({ site_whatsapp: '+880 1973-437395' }, 'en').brand.whatsappUrl, 'https://wa.me/8801973437395');
+    assert.equal(resolveBrandContext({ site_whatsapp: '' }, 'en').brand.whatsappUrl, '');
+    assert.equal(resolveBrandContext({ site_whatsapp: 'javascript:alert(1)' }, 'en').brand.whatsappUrl, '');
     assert.equal(hasLegacyReferenceBrand(legacyBn.siteSettings.site_name), false);
 
     const legacyEn = resolveBrandContext({ site_name: 'ফল বাজার' }, 'en');
@@ -225,7 +242,8 @@ describe('Phase 04 — Branding, Design System, Accessibility & Bilingual UI (`b
       },
       'en'
     );
-    assert.equal(customOwnerLogo.brand.isPlaceholderLogo, false);
+    assert.equal(customOwnerLogo.brand.isDefaultLogo, false);
+    assert.equal(customOwnerLogo.siteSettings.logo_dark, '/uploads/custom/owner-approved-logo.svg');
 
     // Open-redirect protection on locale switcher returnTo
     assert.equal(sanitizeReturnTo('/all-products?sort=price_asc'), '/all-products?sort=price_asc');
@@ -242,7 +260,7 @@ describe('Phase 04 — Branding, Design System, Accessibility & Bilingual UI (`b
     assert.match(homeBn.text, /<html lang="bn">/);
     assert.match(homeBn.text, /মি\. তুমি গ্রোসারি অ্যান্ড গিফট/);
     assert.match(homeBn.text, /কেনাকাটা শুরু করুন/);
-    assert.match(homeBn.text, /data-brand-asset-status="temporary-placeholder"/);
+    assert.match(homeBn.text, /data-brand-asset-status="official"/);
     assert.doesNotMatch(homeBn.text, /ফল বাজার/);
 
     // Switch to English (`en`) via `/locale/en` (sessionManager preserves `_sid` query in non-prod)

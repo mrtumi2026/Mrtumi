@@ -136,7 +136,7 @@ describe('Reseller Portal Consolidation Suite', () => {
       fmt: { bdt: (v) => `৳${v}`, number: (v) => String(v) },
       locale: 'bn',
       siteSettings: { site_name: 'Mr. Tumi', favicon: '/favicon.ico' },
-      brand: { isPlaceholderLogo: false },
+      brand: { isDefaultLogo: false },
       resellerUser: reseller,
       flash: null,
       allowOrderCreation: true,

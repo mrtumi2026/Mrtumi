@@ -53,3 +53,39 @@ test('bdCourierFraudService checkPlan returns unconfigured when API key is missi
   assert.equal(plan.configured, false);
   assert.equal(plan.status, 'unconfigured');
 });
+
+test('smsService reads the BulkSMSBD balance and never echoes the API key in an error', async () => {
+  const sqliteDb = require('../src/db/database');
+  const settingsRepository = require('../src/repositories/settingsRepository');
+  const saved = { fetch: globalThis.fetch, getAll: settingsRepository.getAllSettings, set: settingsRepository.setSetting, sget: sqliteDb.getSettings, sset: sqliteDb.setSetting };
+  const stored = [];
+  const settings = async () => ({ bulksms_api_key: 'qa-secret-key-123' });
+  settingsRepository.getAllSettings = settings;
+  settingsRepository.setSetting = async (k, v) => stored.push([k, v]);
+  sqliteDb.getSettings = () => ({ bulksms_api_key: 'qa-secret-key-123' });
+  sqliteDb.setSetting = (k, v) => stored.push([k, v]);
+  const reply = (body) => async () => ({ ok: true, json: async () => body });
+  try {
+    globalThis.fetch = reply({ response_code: 202, balance: 41.5 });
+    assert.deepEqual(await smsService.checkBalance(), { success: true, configured: true, balance: '41.5' });
+    assert.deepEqual(stored, [['bulksms_balance', '41.5']]);
+
+    // A reply without a balance must not overwrite the stored figure with zero.
+    globalThis.fetch = reply({ response_code: 1032, error_message: 'IP not whitelisted for qa-secret-key-123' });
+    const rejected = await smsService.checkBalance();
+    assert.equal(rejected.success, false);
+    assert.doesNotMatch(rejected.message, /qa-secret-key-123/);
+
+    globalThis.fetch = async (url) => { throw new Error(`request to ${url} failed`); };
+    const offline = await smsService.checkBalance();
+    assert.equal(offline.success, false);
+    assert.doesNotMatch(offline.message, /qa-secret-key-123/);
+    assert.equal(stored.length, 1);
+  } finally {
+    globalThis.fetch = saved.fetch;
+    settingsRepository.getAllSettings = saved.getAll;
+    settingsRepository.setSetting = saved.set;
+    sqliteDb.getSettings = saved.sget;
+    sqliteDb.setSetting = saved.sset;
+  }
+});

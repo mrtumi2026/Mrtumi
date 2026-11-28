@@ -878,7 +878,7 @@ function seedIfEmpty() {
     run('INSERT INTO permissions (name, module) VALUES (?, ?)', name, mod);
   }
 
-  // Default Settings (Mr. Tumi Grocery & Gift — Temporary Logo Placeholders active)
+  // Default Settings (Mr. Tumi Grocery & Gift)
   const defaultSettings = {
     site_name: 'মি. তুমি গ্রোসারি অ্যান্ড গিফট',
     site_tagline: 'নিত্যপ্রয়োজনীয় গ্রোসারি ও প্রিয়জনের উপহার — বিশ্বস্ত ডেলিভারিতে ঘরে বসেই',
@@ -894,9 +894,9 @@ function seedIfEmpty() {
       '🛒 মি. তুমি গ্রোসারি অ্যান্ড গিফট-এ স্বাগতম! তাজা গ্রোসারি, উপহার সামগ্রী ও কম্বো প্যাকে দ্রুত হোম ডেলিভারি সারা বাংলাদেশে।',
     flash_sale_end: '2027-06-30T23:59:59',
     hot_deal_end: '2027-07-15T23:59:59',
-    logo_dark: '/uploads/brand/mrtumi-placeholder-logo.svg',
-    logo_light: '/uploads/brand/mrtumi-placeholder-logo-light.svg',
-    favicon: '/uploads/brand/mrtumi-placeholder-favicon.svg',
+    logo_dark: '/uploads/brand/mt-logo.png',
+    logo_light: '/uploads/brand/mt-logo-on-dark.png',
+    favicon: '/uploads/brand/mt-favicon.png',
     bulksms_api_key: '',
     bulksms_sender_id: '',
     bulksms_balance: '0.00',

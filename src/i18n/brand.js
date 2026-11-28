@@ -1,18 +1,20 @@
 'use strict';
 
 /**
- * PHASE 04: Brand Identity & Temporary Placeholder Asset Resolver
+ * Brand identity and logo asset resolver
  *
  * Ensures zero reference-website identity ("ফল বাজার" / "pholbazar") leaks into
  * Customer Storefront, Admin, Vendor, or Reseller UI, without destructively
  * modifying untouched local SQLite prototype files (`data/pholbazar.db*`).
  *
- * Explicitly flags placeholder logos until official owner logo files are supplied.
+ * The owner's logo is an icon without the shop name, so views print the name
+ * beside it while `brand.isDefaultLogo` is true.
  */
 
-const PLACEHOLDER_LOGO_DARK = '/uploads/brand/mrtumi-placeholder-logo.svg';
-const PLACEHOLDER_LOGO_LIGHT = '/uploads/brand/mrtumi-placeholder-logo-light.svg';
-const PLACEHOLDER_FAVICON = '/uploads/brand/mrtumi-placeholder-favicon.svg';
+// `dark` is for light backgrounds; `light` (a white tile) is for dark ones.
+const LOGO_DARK = '/uploads/brand/mt-logo.png';
+const LOGO_LIGHT = '/uploads/brand/mt-logo-on-dark.png';
+const FAVICON = '/uploads/brand/mt-favicon.png';
 
 const LEGACY_REFERENCE_NAMES = new Set([
   'ফল বাজার',
@@ -25,9 +27,35 @@ const LEGACY_LOGO_PATHS = new Set([
   '',
   '/uploads/settings/logo.svg',
   '/uploads/settings/logo-light.svg',
-  PLACEHOLDER_LOGO_DARK,
-  PLACEHOLDER_LOGO_LIGHT,
+  // Earlier temporary assets that may still be saved in the settings table.
+  '/uploads/brand/mrtumi-placeholder-logo.svg',
+  '/uploads/brand/mrtumi-placeholder-logo-light.svg',
+  LOGO_DARK,
+  LOGO_LIGHT,
 ]);
+
+const LEGACY_FAVICON_PATHS = new Set([
+  '',
+  '/uploads/brand/mrtumi-placeholder-favicon.svg',
+  '/uploads/brand/mrtumi-favicon.png',
+]);
+
+const BANGLA_DIGITS = '০১২৩৪৫৬৭৮৯';
+
+/**
+ * Build a direct wa.me chat link from the admin's WhatsApp number setting.
+ * Returns '' when the value is not a usable phone number.
+ * @param {unknown} value
+ * @returns {string}
+ */
+function whatsappChatUrl(value) {
+  let digits = String(value || '')
+    .replace(/[০-৯]/g, (d) => String(BANGLA_DIGITS.indexOf(d)))
+    .replace(/\D/g, '')
+    .replace(/^00/, '');
+  if (/^01\d{9}$/.test(digits)) digits = `88${digits}`;
+  return /^[1-9]\d{9,14}$/.test(digits) ? `https://wa.me/${digits}` : '';
+}
 
 const BRAND_COPY = {
   bn: {
@@ -37,8 +65,6 @@ const BRAND_COPY = {
     marquee: '🛒 মি. তুমি গ্রোসারি অ্যান্ড গিফট-এ স্বাগতম! তাজা গ্রোসারি, উপহার সামগ্রী ও কম্বো প্যাকে দ্রুত হোম ডেলিভারি সারা বাংলাদেশে।',
     address: '85/9 Eid gha mathe, kajla noton rasta, Jatrabari, Dhaka-1362',
     defaultProductBrand: 'মি. তুমি সিলেক্ট',
-    placeholderBadge: 'অস্থায়ী লোগো প্লেসহোল্ডার',
-    placeholderNotice: 'অফিসিয়াল লোগো ফাইল সংযুক্ত না হওয়া পর্যন্ত অস্থায়ী ব্র্যান্ড প্লেসহোল্ডার ব্যবহৃত হচ্ছে।',
   },
   en: {
     siteName: 'Mr. Tumi Grocery & Gift',
@@ -47,8 +73,6 @@ const BRAND_COPY = {
     marquee: '🛒 Welcome to Mr. Tumi Grocery & Gift! Fresh groceries, curated gift hampers & combo packs delivered across Bangladesh.',
     address: '85/9 Eid gha mathe, kajla noton rasta, Jatrabari, Dhaka-1362',
     defaultProductBrand: 'Mr. Tumi Select',
-    placeholderBadge: 'Temporary Logo Placeholder',
-    placeholderNotice: 'Temporary brand placeholder active until official owner logo files are uploaded.',
   },
 };
 
@@ -125,19 +149,21 @@ function resolveBrandContext(rawSettings = {}, locale = 'bn') {
   const rawLogoDark = String(settings.logo_dark || '').trim();
   const rawLogoLight = String(settings.logo_light || '').trim();
 
-  const isPlaceholderDark = !rawLogoDark || LEGACY_LOGO_PATHS.has(rawLogoDark);
-  const isPlaceholderLight = !rawLogoLight || LEGACY_LOGO_PATHS.has(rawLogoLight);
+  const useDefaultDark = LEGACY_LOGO_PATHS.has(rawLogoDark);
+  const useDefaultLight = LEGACY_LOGO_PATHS.has(rawLogoLight);
 
-  if (isPlaceholderDark) {
-    settings.logo_dark = PLACEHOLDER_LOGO_DARK;
+  if (useDefaultDark) {
+    settings.logo_dark = LOGO_DARK;
   }
-  if (isPlaceholderLight) {
-    settings.logo_light = PLACEHOLDER_LOGO_LIGHT;
+  if (useDefaultLight) {
+    settings.logo_light = LOGO_LIGHT;
   }
 
-  settings.favicon = settings.favicon || PLACEHOLDER_FAVICON;
+  if (LEGACY_FAVICON_PATHS.has(String(settings.favicon || '').trim())) {
+    settings.favicon = FAVICON;
+  }
 
-  const isPlaceholderLogo = isPlaceholderDark || isPlaceholderLight;
+  const isDefaultLogo = useDefaultDark && useDefaultLight;
 
   return {
     siteSettings: settings,
@@ -151,9 +177,8 @@ function resolveBrandContext(rawSettings = {}, locale = 'bn') {
       logoDark: settings.logo_dark,
       logoLight: settings.logo_light,
       favicon: settings.favicon,
-      isPlaceholderLogo,
-      placeholderBadge: defaults.placeholderBadge,
-      placeholderNotice: defaults.placeholderNotice,
+      isDefaultLogo,
+      whatsappUrl: whatsappChatUrl(settings.site_whatsapp),
     },
   };
 }
@@ -188,9 +213,10 @@ function replaceLegacyBrandTokens(text, locale = 'bn') {
 }
 
 module.exports = {
-  PLACEHOLDER_LOGO_DARK,
-  PLACEHOLDER_LOGO_LIGHT,
-  PLACEHOLDER_FAVICON,
+  whatsappChatUrl,
+  LOGO_DARK,
+  LOGO_LIGHT,
+  FAVICON,
   BRAND_COPY,
   POLICY_SLUGS_REQUIRING_OWNER_REVIEW,
   hasLegacyReferenceBrand,

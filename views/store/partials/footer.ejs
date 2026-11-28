@@ -74,16 +74,12 @@
             <img
               src="<%= siteSettings.logo_light %>"
               alt="<%= siteSettings.site_name %>"
-              height="44"
-              class="mb-2"
-              data-brand-asset-status="<%= (typeof brand !== 'undefined' && brand && brand.isPlaceholderLogo) ? 'temporary-placeholder' : 'custom' %>"
+              height="72"
+              class="mb-2 d-block"
+              data-brand-asset-status="<%= (typeof brand !== 'undefined' && brand && brand.isDefaultLogo) ? 'official' : 'custom' %>"
             />
-            <% if (typeof brand !== 'undefined' && brand && brand.isPlaceholderLogo) { %>
-              <div class="mb-2">
-                <span class="badge rounded-pill" style="background:#451a03;color:#fde68a;border:1px dashed #f59e0b;font-size:10.5px;">
-                  <%= brand.placeholderBadge %>
-                </span>
-              </div>
+            <% if (typeof brand !== 'undefined' && brand && brand.isDefaultLogo) { %>
+              <div class="fw-bold text-white mb-2"><%= siteSettings.site_name %></div>
             <% } %>
             <p class="small mb-3" style="color: #cbd5e1;">
               <%= t('store.footerTagline') %>
@@ -340,6 +336,14 @@
       </div>
       <button type="button" class="btn-close ms-auto" style="font-size:10px;" aria-label="<%= t('a11y.closeModal') %>" onclick="document.getElementById('verifiedOrderToast').classList.remove('show')"></button>
     </div>
+
+    <% if (typeof brand !== 'undefined' && brand && brand.whatsappUrl) { %>
+      <a href="<%= brand.whatsappUrl %>" class="mt-wa-fab" target="_blank" rel="noopener noreferrer"
+         aria-label="<%= locale === 'en' ? 'Chat with us on WhatsApp' : 'হোয়াটসঅ্যাপে আমাদের সাথে চ্যাট করুন' %>"
+         title="<%= locale === 'en' ? 'Chat on WhatsApp' : 'হোয়াটসঅ্যাপে চ্যাট' %>">
+        <i class="fab fa-whatsapp" aria-hidden="true"></i>
+      </a>
+    <% } %>
 
     <!-- Live Support Floating Chat -->
     <button type="button" id="lsFabBtn" class="ls-fab" aria-label="<%= t('store.liveSupport') %>">
